@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
-use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_adpcm, parse_als, parse_amr, parse_ape, parse_au, parse_caf, parse_dts, parse_flac, parse_la, parse_mp3, parse_mpc, parse_speex, parse_tta, parse_twin_vq, parse_wvpk};
-use mediainfo_parsers_container::{parse_aiff, parse_avi, parse_cdxa, parse_dpg, parse_hds_f4m, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_ogg, parse_skm, parse_swf, parse_wav};
+use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_adpcm, parse_als, parse_amr, parse_ape, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_extended_module, parse_flac, parse_la, parse_mp3, parse_mpc, parse_speex, parse_tta, parse_twin_vq, parse_wvpk};
+use mediainfo_parsers_container::{parse_aiff, parse_amv, parse_avi, parse_cdxa, parse_dpg, parse_hds_f4m, parse_hls, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_ogg, parse_skm, parse_swf, parse_wav};
 use mediainfo_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
 
 fn main() -> ExitCode {
@@ -111,13 +111,15 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 48] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 54] = [
         ("WAV", parse_wav),
         ("AVI", parse_avi),
         ("CDXA", parse_cdxa),
+        ("AMV", parse_amv),
         ("WebP", parse_webp),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
+        ("DSDIFF", parse_dsdiff),
         ("CAF", parse_caf),
         ("MP4", parse_mp4),
         ("MKV", parse_mkv),
@@ -128,6 +130,8 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("SKM", parse_skm),
         ("DPG", parse_dpg),
         ("HDS-F4M", parse_hds_f4m),
+        ("HLS", parse_hls),
+        ("DSF", parse_dsf),
         ("PNG", parse_png),
         ("JPEG", parse_jpeg),
         ("BMP", parse_bmp),
@@ -155,6 +159,8 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("TTA", parse_tta),
         ("WavPack", parse_wvpk),
         ("TwinVQ", parse_twin_vq),
+        ("XM", parse_extended_module),
+        ("DAT", parse_dat),
         ("MP3", parse_mp3),
         ("TGA", parse_tga),
         ("GainMap", parse_gain_map),
