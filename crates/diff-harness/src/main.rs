@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
 use mediainfo_parsers_audio::{parse_flac, parse_mp3};
-use mediainfo_parsers_container::{parse_aiff, parse_wav};
+use mediainfo_parsers_container::{parse_aiff, parse_mp4, parse_wav};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -108,11 +108,12 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("stat failed: {e}"))?;
     let mut fa = FileAnalyze::new(&bytes);
 
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 4] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 5] = [
         ("WAV", parse_wav),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
         ("MP3", parse_mp3),
+        ("MP4", parse_mp4),
     ];
     let mut parsed = false;
     for (_name, parser) in parsers {
