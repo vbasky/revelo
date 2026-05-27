@@ -227,15 +227,23 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
         }
     }
 
-    // General StreamSize = file overhead = FileSize - audio data.
-    // Skip when audio_size >= file_size (Ogg/Vorbis reports
-    // bitrate-derived StreamSize larger than the file, in which case
-    // the oracle omits General.StreamSize entirely).
+    // General StreamSize = file overhead = FileSize - audio data -
+    // video data. Skip when total elementary-stream size ≥ file_size
+    // (Ogg/Vorbis reports bitrate-derived StreamSize larger than the
+    // file, in which case the oracle omits General.StreamSize).
+    let video_stream_size: u64 = fa
+        .Retrieve(StreamKind::Video, 0, "StreamSize")
+        .and_then(|z| z.as_str().parse().ok())
+        .unwrap_or(0);
     if let Some(audio_size) = audio_stream_size {
-        if audio_size < file_size {
-            let overhead = file_size - audio_size;
+        let elementary = audio_size + video_stream_size;
+        if elementary < file_size {
+            let overhead = file_size - elementary;
             fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), false);
         }
+    } else if video_stream_size > 0 && video_stream_size < file_size {
+        let overhead = file_size - video_stream_size;
+        fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), false);
     }
 
     if let Ok(modified) = metadata.modified() {

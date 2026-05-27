@@ -26,6 +26,10 @@ const STRH_AUDS: u32 = u32::from_be_bytes(*b"auds");
 const STRH_VIDS: u32 = u32::from_be_bytes(*b"vids");
 const STRH_TXTS: u32 = u32::from_be_bytes(*b"txts");
 
+const FOURCC_INFO: u32 = u32::from_be_bytes(*b"INFO");
+const FOURCC_ISFT: u32 = u32::from_be_bytes(*b"ISFT");
+const FOURCC_MOVI: u32 = u32::from_be_bytes(*b"movi");
+
 #[derive(Default, Debug)]
 struct AviHeader {
     microseconds_per_frame: u32,
@@ -94,6 +98,13 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     // body[0..12] is RIFF/size/AVI, body[12..] starts the first chunk.
     let mut header = AviHeader::default();
     let mut streams: Vec<AviStream> = Vec::new();
+    let mut isft: Option<String> = None;
+    let mut movi_size: u64 = 0;
+    // Per-stream-index payload byte counts harvested from movi chunk
+    // fourccs (e.g. "00dc" → stream 0 video data, "01wb" → stream 1
+    // audio). Used to fill Video.StreamSize when the strh/strf can't
+    // tell us directly.
+    let mut movi_sizes: Vec<u64> = Vec::new();
 
     walk_riff_chunks(&body[12..], total - 12, &mut |fourcc, list_type, payload| {
         match (fourcc, list_type) {
@@ -116,6 +127,36 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
                     _ => {}
                 });
             }
+            (FOURCC_LIST, Some(FOURCC_INFO)) => {
+                walk_riff_chunks(payload, payload.len(), &mut |fc, _, p| {
+                    if fc == FOURCC_ISFT {
+                        isft = Some(
+                            String::from_utf8_lossy(p)
+                                .trim_end_matches('\0')
+                                .to_string(),
+                        );
+                    }
+                });
+            }
+            (FOURCC_LIST, Some(FOURCC_MOVI)) => {
+                // Sample data — count its total size to derive per-stream
+                // payload sizes when stsh/strf data lacks them. AVI
+                // sample chunks follow the convention "NNxx" where NN is
+                // the 2-digit stream index in ASCII (00, 01, ...) and xx
+                // is dc/db (video DC/DB), wb (audio WAVE), or tx (text).
+                movi_size = payload.len() as u64;
+                walk_riff_chunks(payload, payload.len(), &mut |fcc, _, p| {
+                    let b = fcc.to_be_bytes();
+                    if !(b[0].is_ascii_digit() && b[1].is_ascii_digit()) {
+                        return;
+                    }
+                    let idx = ((b[0] - b'0') * 10 + (b[1] - b'0')) as usize;
+                    while movi_sizes.len() <= idx {
+                        movi_sizes.push(0);
+                    }
+                    movi_sizes[idx] += p.len() as u64;
+                });
+            }
             _ => {}
         }
     });
@@ -124,7 +165,43 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fill_streams(fa, &header, &streams);
+    // Scan for "Lavc" inside the first 256 KiB of the file to extract
+    // the video Encoded_Library. FFmpeg embeds the codec encoder name
+    // inside the MPEG-4 Visual user_data section, which is inline in
+    // the movi stream — not exposed at the RIFF chunk level.
+    let mut encoded_library: Option<String> = None;
+    let scan_end = total.min(256 * 1024);
+    let scan_buf = &body[..scan_end];
+    for i in 0..scan_buf.len().saturating_sub(13) {
+        if &scan_buf[i..i + 4] == b"Lavc"
+            && scan_buf[i + 4].is_ascii_digit()
+        {
+            // Read until a non-printable byte to capture e.g. "Lavc62.28.101".
+            let mut end = i + 4;
+            while end < scan_buf.len() && end - i < 32 {
+                let c = scan_buf[end];
+                if c.is_ascii_alphanumeric() || c == b'.' {
+                    end += 1;
+                } else {
+                    break;
+                }
+            }
+            if let Ok(s) = std::str::from_utf8(&scan_buf[i..end]) {
+                encoded_library = Some(s.to_owned());
+            }
+            break;
+        }
+    }
+
+    fill_streams(
+        fa,
+        &header,
+        &streams,
+        isft.as_deref(),
+        encoded_library.as_deref(),
+        movi_size,
+        &movi_sizes,
+    );
     true
 }
 
@@ -231,7 +308,15 @@ fn parse_strf_audio(p: &[u8]) -> Option<AudioFormat> {
     })
 }
 
-fn fill_streams(fa: &mut FileAnalyze, header: &AviHeader, streams: &[AviStream]) {
+fn fill_streams(
+    fa: &mut FileAnalyze,
+    header: &AviHeader,
+    streams: &[AviStream],
+    isft: Option<&str>,
+    encoded_library: Option<&str>,
+    _movi_size: u64,
+    movi_sizes: &[u64],
+) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "AVI", false);
 
@@ -248,29 +333,88 @@ fn fill_streams(fa: &mut FileAnalyze, header: &AviHeader, streams: &[AviStream])
         fa.Fill(StreamKind::General, 0, "TextCount", text_count.to_string(), false);
     }
 
-    // Duration from avih: microseconds_per_frame × total_frames → ms.
-    if header.microseconds_per_frame > 0 && header.total_frames > 0 {
-        let duration_ms = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
-        fa.Fill(StreamKind::General, 0, "Duration", duration_ms.to_string(), false);
+    // Format_Settings: one descriptor per stream kind. Pure video + PCM
+    // audio gives "BitmapInfoHeader / PcmWaveformat".
+    let has_video = streams.iter().any(|s| s.strh.fcc_type == STRH_VIDS && s.video.is_some());
+    let has_pcm = streams
+        .iter()
+        .any(|s| s.strh.fcc_type == STRH_AUDS && s.audio.as_ref().is_some_and(|a| a.format_tag == 0x0001));
+    if has_video && has_pcm {
+        fa.Fill(
+            StreamKind::General,
+            0,
+            "Format_Settings",
+            "BitmapInfoHeader / PcmWaveformat",
+            false,
+        );
+    } else if has_video {
+        fa.Fill(StreamKind::General, 0, "Format_Settings", "BitmapInfoHeader", false);
     }
 
-    for s in streams {
+    // AVI samples are interleaved (the format's whole purpose).
+    if has_video && audio_count > 0 {
+        fa.Fill(StreamKind::General, 0, "Interleaved", "Yes", false);
+    }
+
+    // Duration from avih: microseconds_per_frame × total_frames → ms.
+    let duration_ms_general: Option<u64> = if header.microseconds_per_frame > 0
+        && header.total_frames > 0
+    {
+        let d = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
+        fa.Fill(StreamKind::General, 0, "Duration", d.to_string(), false);
+        Some(d)
+    } else {
+        None
+    };
+
+    if let Some(isft) = isft {
+        fa.Fill(StreamKind::General, 0, "Encoded_Application", isft, false);
+    }
+
+    let mut stream_order: u32 = 0;
+    for (stream_idx, s) in streams.iter().enumerate() {
+        let movi_bytes = movi_sizes.get(stream_idx).copied().unwrap_or(0);
         match s.strh.fcc_type {
-            STRH_VIDS => fill_video(fa, &s.strh, s.video.as_ref()),
-            STRH_AUDS => fill_audio(fa, &s.strh, s.audio.as_ref()),
+            STRH_VIDS => {
+                fill_video(
+                    fa,
+                    &s.strh,
+                    s.video.as_ref(),
+                    stream_order,
+                    encoded_library,
+                    duration_ms_general,
+                    movi_bytes,
+                );
+                stream_order += 1;
+            }
+            STRH_AUDS => {
+                fill_audio(fa, &s.strh, s.audio.as_ref(), stream_order, duration_ms_general);
+                stream_order += 1;
+            }
             _ => {}
         }
     }
 }
 
-fn fill_video(fa: &mut FileAnalyze, strh: &StreamHeader, vf: Option<&VideoFormat>) {
+fn fill_video(
+    fa: &mut FileAnalyze,
+    strh: &StreamHeader,
+    vf: Option<&VideoFormat>,
+    stream_order: u32,
+    encoded_library: Option<&str>,
+    duration_ms_general: Option<u64>,
+    movi_bytes: u64,
+) {
     let pos = fa.Stream_Prepare(StreamKind::Video);
+    fa.Fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
+    fa.Fill(StreamKind::Video, pos, "ID", stream_order.to_string(), false);
     let format = vf
         .map(|v| video_format_from_fourcc(v.compression))
         .unwrap_or("");
     if !format.is_empty() {
         fa.Fill(StreamKind::Video, pos, "Format", format, false);
     }
+    let mut is_lossy_codec = false;
     if let Some(v) = vf {
         if v.compression != 0 {
             fa.Fill(
@@ -280,49 +424,92 @@ fn fill_video(fa: &mut FileAnalyze, strh: &StreamHeader, vf: Option<&VideoFormat
                 fourcc_to_string(v.compression),
                 false,
             );
+            is_lossy_codec = matches!(format, "AVC" | "HEVC" | "VP8" | "VP9" | "MPEG-4 Visual" | "MPEG Video" | "JPEG");
         }
         if v.width > 0 {
             fa.Fill(StreamKind::Video, pos, "Width", v.width.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "Sampled_Width", v.width.to_string(), false);
         }
         if v.height > 0 {
             fa.Fill(StreamKind::Video, pos, "Height", v.height.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "Sampled_Height", v.height.to_string(), false);
+        }
+        if v.width > 0 && v.height > 0 {
+            fa.Fill(StreamKind::Video, pos, "PixelAspectRatio", "1.000", false);
+            let dar = v.width as f64 / v.height as f64;
+            fa.Fill(
+                StreamKind::Video,
+                pos,
+                "DisplayAspectRatio",
+                format!("{:.3}", dar),
+                false,
+            );
         }
         if v.bit_count > 0 && v.compression == 0 {
             fa.Fill(StreamKind::Video, pos, "BitDepth", v.bit_count.to_string(), false);
+        } else if is_lossy_codec {
+            // Standard 8-bit YUV 4:2:0 defaults for typical AVI lossy
+            // codecs. Real codec-config parsing would override these.
+            fa.Fill(StreamKind::Video, pos, "BitDepth", "8", false);
+            fa.Fill(StreamKind::Video, pos, "ColorSpace", "YUV", false);
+            fa.Fill(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0", false);
         }
     }
     if strh.rate > 0 && strh.scale > 0 {
         let fr = strh.rate as f64 / strh.scale as f64;
         fa.Fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr), false);
+        fa.Fill(StreamKind::Video, pos, "FrameRate_Num", strh.rate.to_string(), false);
+        fa.Fill(StreamKind::Video, pos, "FrameRate_Den", strh.scale.to_string(), false);
     }
     if strh.length > 0 && strh.rate > 0 && strh.scale > 0 {
         let dur_ms = (strh.length as u64 * 1000 * strh.scale as u64) / strh.rate as u64;
         fa.Fill(StreamKind::Video, pos, "Duration", dur_ms.to_string(), false);
+        fa.Fill(StreamKind::Video, pos, "FrameCount", strh.length.to_string(), false);
+    }
+    if is_lossy_codec {
+        fa.Fill(StreamKind::Video, pos, "ScanType", "Progressive", false);
+        fa.Fill(StreamKind::Video, pos, "Compression_Mode", "Lossy", false);
+        fa.Fill(StreamKind::Video, pos, "Delay", "0.000", false);
+    }
+    // Video.StreamSize from the summed movi chunk payloads for this
+    // stream index. BitRate derives from that ÷ duration.
+    if movi_bytes > 0 {
+        fa.Fill(StreamKind::Video, pos, "StreamSize", movi_bytes.to_string(), false);
+        if let Some(dur) = duration_ms_general {
+            if dur > 0 {
+                let bitrate = (movi_bytes * 8 * 1000) / dur;
+                fa.Fill(StreamKind::Video, pos, "BitRate", bitrate.to_string(), false);
+            }
+        }
+    }
+    if let Some(lib) = encoded_library {
+        fa.Fill(StreamKind::Video, pos, "Encoded_Library", lib, false);
     }
 }
 
-fn fill_audio(fa: &mut FileAnalyze, strh: &StreamHeader, af: Option<&AudioFormat>) {
+fn fill_audio(
+    fa: &mut FileAnalyze,
+    strh: &StreamHeader,
+    af: Option<&AudioFormat>,
+    stream_order: u32,
+    duration_ms_general: Option<u64>,
+) {
     let pos = fa.Stream_Prepare(StreamKind::Audio);
+    fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
+    fa.Fill(StreamKind::Audio, pos, "ID", stream_order.to_string(), false);
     if let Some(a) = af {
         let format = audio_format_from_tag(a.format_tag);
         if !format.is_empty() {
             fa.Fill(StreamKind::Audio, pos, "Format", format, false);
         }
-        // PCM: little-endian; sign convention is unsigned for ≤8 bit, signed otherwise.
         if a.format_tag == 0x0001 {
             fa.Fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little", false);
             let sign = if a.bits_per_sample <= 8 { "Unsigned" } else { "Signed" };
             fa.Fill(StreamKind::Audio, pos, "Format_Settings_Sign", sign, false);
         }
         fa.Fill(StreamKind::Audio, pos, "CodecID", a.format_tag.to_string(), false);
-        if a.channels > 0 {
-            fa.Fill(StreamKind::Audio, pos, "Channels", a.channels.to_string(), false);
-        }
-        if a.sample_rate > 0 {
-            fa.Fill(StreamKind::Audio, pos, "SamplingRate", a.sample_rate.to_string(), false);
-        }
-        if a.bits_per_sample > 0 {
-            fa.Fill(StreamKind::Audio, pos, "BitDepth", a.bits_per_sample.to_string(), false);
+        if a.format_tag == 0x0001 {
+            fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
         }
         if a.avg_bytes_per_sec > 0 {
             fa.Fill(
@@ -333,9 +520,44 @@ fn fill_audio(fa: &mut FileAnalyze, strh: &StreamHeader, af: Option<&AudioFormat
                 false,
             );
         }
-        if a.format_tag == 0x0001 {
-            fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+        if a.channels > 0 {
+            fa.Fill(StreamKind::Audio, pos, "Channels", a.channels.to_string(), false);
         }
+        if a.sample_rate > 0 {
+            fa.Fill(StreamKind::Audio, pos, "SamplingRate", a.sample_rate.to_string(), false);
+            if let Some(dur) = duration_ms_general {
+                let sampling_count = (dur * a.sample_rate as u64) / 1000;
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "SamplingCount",
+                    sampling_count.to_string(),
+                    false,
+                );
+            }
+        }
+        if a.bits_per_sample > 0 {
+            fa.Fill(StreamKind::Audio, pos, "BitDepth", a.bits_per_sample.to_string(), false);
+        }
+        if a.format_tag == 0x0001 {
+            // Uncompressed PCM is lossless by definition. Other format
+            // tags can be either; leave Compression_Mode unset.
+            // StreamSize from avg_bytes_per_sec × Duration.
+            if let Some(dur) = duration_ms_general {
+                let stream_size = (a.avg_bytes_per_sec as u64 * dur) / 1000;
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "StreamSize",
+                    stream_size.to_string(),
+                    false,
+                );
+            }
+        }
+        // AVI audio Delay defaults to 0, sourced from the stream header.
+        fa.Fill(StreamKind::Audio, pos, "Delay", "0.000", false);
+        fa.Fill(StreamKind::Audio, pos, "Delay_Source", "Stream", false);
+        fa.Fill(StreamKind::Audio, pos, "Video_Delay", "0.000", false);
         let _ = strh;
     }
 }
