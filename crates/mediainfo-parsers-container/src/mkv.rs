@@ -33,6 +33,13 @@ const SEGMENT_INFO: u64 = 0x1549A966;
 const TRACKS: u64 = 0x1654AE6B;
 const CLUSTER: u64 = 0x1F43B675;
 const SEEK_HEAD: u64 = 0x114D9B74;
+const TAGS: u64 = 0x1254C367;
+const TAG: u64 = 0x7373;
+const TAG_TARGETS: u64 = 0x63C0;
+const TAG_TARGETS_TRACK_UID: u64 = 0x63C5;
+const SIMPLE_TAG: u64 = 0x67C8;
+const TAG_NAME: u64 = 0x45A3;
+const TAG_STRING: u64 = 0x4487;
 const CRC32: u64 = 0xBF;
 
 // Info children.
@@ -72,6 +79,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
     let mut cluster_seen = false;
     let mut seekhead_before_cluster = true;
     let mut crc32_at_level1 = false;
+    let mut tag_pairs: Vec<TagEntry> = Vec::new();
 
     walk_elements(fa, file_size, &mut |fa, id, size, _start| {
         match id {
@@ -113,6 +121,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
                             cluster_seen = true;
                             fa.Skip_Hexa(sz, "cluster");
                         }
+                        TAGS => parse_tags(fa, sz, &mut tag_pairs),
                         _ => fa.Skip_Hexa(sz, "segment_child"),
                     }
                 });
@@ -134,6 +143,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
         doc_type_version,
         seekhead_seen && seekhead_before_cluster,
         crc32_at_level1,
+        &tag_pairs,
     );
     true
 }
@@ -158,6 +168,58 @@ struct TrackInfo {
     audio_sampling_rate: Option<f64>,
     audio_channels: Option<u64>,
     audio_bit_depth: Option<u64>,
+}
+
+/// A (target track UID, tag name, tag value) tuple harvested from the
+/// Tags section. A target UID of 0 means the tag applies globally.
+struct TagEntry {
+    target_track_uid: u64,
+    name: String,
+    value: String,
+}
+
+fn parse_tags(fa: &mut FileAnalyze, size: usize, tag_pairs: &mut Vec<TagEntry>) {
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        TAG => {
+            let mut target_uid: u64 = 0;
+            let mut pairs: Vec<(String, String)> = Vec::new();
+            walk_elements(fa, sz, &mut |fa, id, sz, _| match id {
+                TAG_TARGETS => {
+                    walk_elements(fa, sz, &mut |fa, id, sz, _| match id {
+                        TAG_TARGETS_TRACK_UID => target_uid = read_uint(fa, sz),
+                        _ => fa.Skip_Hexa(sz, "tag_targets_child"),
+                    });
+                }
+                SIMPLE_TAG => {
+                    let mut name = String::new();
+                    let mut value = String::new();
+                    walk_elements(fa, sz, &mut |fa, id, sz, _| match id {
+                        TAG_NAME => {
+                            let bytes = fa.read_raw(sz).to_vec();
+                            name = strip_nuls(&bytes);
+                        }
+                        TAG_STRING => {
+                            let bytes = fa.read_raw(sz).to_vec();
+                            value = strip_nuls(&bytes);
+                        }
+                        _ => fa.Skip_Hexa(sz, "simple_tag_child"),
+                    });
+                    if !name.is_empty() {
+                        pairs.push((name, value));
+                    }
+                }
+                _ => fa.Skip_Hexa(sz, "tag_child"),
+            });
+            for (n, v) in pairs {
+                tag_pairs.push(TagEntry {
+                    target_track_uid: target_uid,
+                    name: n,
+                    value: v,
+                });
+            }
+        }
+        _ => fa.Skip_Hexa(sz, "tags_child"),
+    });
 }
 
 fn parse_segment_info(fa: &mut FileAnalyze, size: usize, movie: &mut MovieInfo) {
@@ -224,6 +286,7 @@ fn fill_streams(
     doc_type_version: u64,
     is_streamable: bool,
     crc32_at_level1: bool,
+    tag_pairs: &[TagEntry],
 ) {
     fa.Stream_Prepare(StreamKind::General);
     if let Some(uuid) = movie.segment_uuid.as_ref() {
@@ -297,7 +360,8 @@ fn fill_streams(
                 }
                 if let Some(ch) = track.audio_channels {
                     fa.Fill(StreamKind::Audio, pos, "Channels", ch.to_string(), false);
-                    let (positions, layout) = channel_layout(ch as u16);
+                    let codec_id = track.codec_id.as_deref().unwrap_or("");
+                    let (positions, layout) = channel_layout_for_codec(ch as u16, codec_id);
                     if let Some(p) = positions {
                         fa.Fill(StreamKind::Audio, pos, "ChannelPositions", p, false);
                     }
@@ -356,6 +420,35 @@ fn fill_streams(
                         false,
                     );
                 }
+                // Pull Encoded_Library from a matching ENCODER tag.
+                // Prefer a track-targeted tag over a global one (files
+                // can carry both a muxer-level ENCODER like "Lavf..."
+                // and a codec-level ENCODER like "Lavc... libopus").
+                if let Some(track_uid) = track.uid {
+                    let mut track_value: Option<&str> = None;
+                    let mut global_value: Option<&str> = None;
+                    for tag in tag_pairs {
+                        if !tag.name.eq_ignore_ascii_case("ENCODER") {
+                            continue;
+                        }
+                        if tag.target_track_uid == track_uid {
+                            track_value = Some(&tag.value);
+                            break;
+                        }
+                        if tag.target_track_uid == 0 && global_value.is_none() {
+                            global_value = Some(&tag.value);
+                        }
+                    }
+                    if let Some(v) = track_value.or(global_value) {
+                        fa.Fill(
+                            StreamKind::Audio,
+                            pos,
+                            "Encoded_Library",
+                            v.to_string(),
+                            false,
+                        );
+                    }
+                }
                 audio_count += 1;
             }
             Some(1) => video_count += 1,
@@ -380,6 +473,18 @@ fn channel_layout(channels: u16) -> (Option<&'static str>, Option<&'static str>)
         2 => (Some("Front: L R"), Some("L R")),
         _ => (None, None),
     }
+}
+
+/// Channel-layout strings vary by codec. Vorbis/Opus mono is "M"
+/// (matches oracle for Ogg/WebM); AC-3-style mono uses "C".
+fn channel_layout_for_codec(
+    channels: u16,
+    codec_id: &str,
+) -> (Option<&'static str>, Option<&'static str>) {
+    if matches!(codec_id, "A_OPUS" | "A_VORBIS") && channels == 1 {
+        return (Some("Front: C"), Some("M"));
+    }
+    channel_layout(channels)
 }
 
 fn mkv_codec_to_format(codec_id: &str) -> Option<&'static str> {

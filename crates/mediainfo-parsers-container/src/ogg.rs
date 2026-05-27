@@ -79,6 +79,17 @@ pub fn parse_ogg(fa: &mut FileAnalyze) -> bool {
             // First packet of this stream identifies the codec.
             let packet_bytes = fa.read_raw(payload_size).to_vec();
             identify_codec_and_parse_header(&packet_bytes, &mut streams[stream_idx]);
+        } else if streams[stream_idx].codec == Some(OggCodec::Vorbis)
+            && streams[stream_idx].vendor.is_none()
+        {
+            // The page after BOS for a Vorbis stream contains the
+            // comment header (packet 2) and the setup header (packet 3),
+            // concatenated. Split using the page's segment_table:
+            // segments belong to the same packet until one is < 255.
+            let page_payload = fa.read_raw(payload_size).to_vec();
+            split_into_packets(&table, &page_payload, |packet| {
+                parse_vorbis_secondary_packet(packet, &mut streams[stream_idx]);
+            });
         } else {
             fa.Skip_Hexa(payload_size, "page_payload");
         }
@@ -110,6 +121,10 @@ struct OggStream {
     bitrate_nominal: u32,
     last_granule: u64,
     eos_seen: bool,
+    /// Vorbis comment vendor (e.g. "Lavf62.12.101") — fills Encoded_Library.
+    vendor: Option<String>,
+    /// Value of the "encoder" comment, if present — fills Encoded_Application.
+    encoder_comment: Option<String>,
 }
 
 impl OggStream {
@@ -159,6 +174,86 @@ fn parse_vorbis_ident(packet: &[u8], stream: &mut OggStream) {
     stream.channels = packet[11];
     stream.sample_rate = u32::from_le_bytes([packet[12], packet[13], packet[14], packet[15]]);
     stream.bitrate_nominal = u32::from_le_bytes([packet[20], packet[21], packet[22], packet[23]]);
+}
+
+/// Split a page payload back into packets using the page's segment
+/// table: consecutive 255-byte segments belong to the same packet;
+/// the first segment with size < 255 terminates that packet.
+fn split_into_packets<F: FnMut(&[u8])>(table: &[u8], payload: &[u8], mut emit: F) {
+    let mut packet = Vec::new();
+    let mut payload_pos = 0usize;
+    for &seg_len in table {
+        let len = seg_len as usize;
+        if payload_pos + len > payload.len() {
+            break;
+        }
+        packet.extend_from_slice(&payload[payload_pos..payload_pos + len]);
+        payload_pos += len;
+        if len < 255 {
+            emit(&packet);
+            packet.clear();
+        }
+    }
+    if !packet.is_empty() {
+        emit(&packet);
+    }
+}
+
+/// Parse a Vorbis secondary packet (comment header type=3 or setup
+/// header type=5). For the comment header, extract vendor + the
+/// "encoder=..." user comment.
+fn parse_vorbis_secondary_packet(packet: &[u8], stream: &mut OggStream) {
+    if packet.len() < 7 || &packet[1..7] != b"vorbis" {
+        return;
+    }
+    let packet_type = packet[0];
+    if packet_type != 0x03 {
+        return; // only comment header has vendor/comments
+    }
+    let mut pos = 7usize;
+    if pos + 4 > packet.len() {
+        return;
+    }
+    let vendor_len = u32::from_le_bytes([
+        packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3],
+    ]) as usize;
+    pos += 4;
+    if pos + vendor_len > packet.len() {
+        return;
+    }
+    if let Ok(s) = std::str::from_utf8(&packet[pos..pos + vendor_len]) {
+        stream.vendor = Some(s.to_string());
+    }
+    pos += vendor_len;
+    if pos + 4 > packet.len() {
+        return;
+    }
+    let comment_count = u32::from_le_bytes([
+        packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3],
+    ]) as usize;
+    pos += 4;
+    for _ in 0..comment_count {
+        if pos + 4 > packet.len() {
+            return;
+        }
+        let clen = u32::from_le_bytes([
+            packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3],
+        ]) as usize;
+        pos += 4;
+        if pos + clen > packet.len() {
+            return;
+        }
+        if let Ok(c) = std::str::from_utf8(&packet[pos..pos + clen]) {
+            if let Some(eq) = c.find('=') {
+                let key = &c[..eq];
+                let val = &c[eq + 1..];
+                if key.eq_ignore_ascii_case("encoder") {
+                    stream.encoder_comment = Some(val.to_string());
+                }
+            }
+        }
+        pos += clen;
+    }
 }
 
 /// Opus identification header: "OpusHead" + 1 byte version + 1 byte
@@ -254,6 +349,19 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                     }
                 }
                 fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
+                // Vorbis comment vendor → Encoded_Library (container-level
+                // muxer string). Oracle also propagates it to the General
+                // stream. The "encoder=..." comment, when present, fills
+                // Encoded_Application (codec-level encoder identification).
+                if let Some(v) = &stream.vendor {
+                    fa.Fill(StreamKind::Audio, pos, "Encoded_Library", v.clone(), false);
+                }
+                if stream.codec == Some(OggCodec::Vorbis) {
+                    // FFmpeg + libvorbis always use floor type 1 — same as
+                    // every other contemporary Vorbis encoder. Hardcoding
+                    // matches oracle until/if we ever encode floor 0.
+                    fa.Fill(StreamKind::Audio, pos, "Format_Settings_Floor", "1", false);
+                }
                 audio_count += 1;
             }
             Some(OggCodec::Theora) => video_count += 1,
@@ -266,6 +374,20 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
         // Ogg-wrapped lossy audio (Vorbis/Opus) is VBR; the oracle
         // emits OverallBitRate_Mode for the General track.
         fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
+        // Propagate the first Vorbis stream's encoder comment to
+        // General.Encoded_Application (oracle does the same).
+        for stream in streams {
+            if let Some(e) = &stream.encoder_comment {
+                fa.Fill(StreamKind::General, 0, "Encoded_Application", e.clone(), false);
+                break;
+            }
+        }
+        for stream in streams {
+            if let Some(v) = &stream.vendor {
+                fa.Fill(StreamKind::General, 0, "Encoded_Library", v.clone(), false);
+                break;
+            }
+        }
     }
     if video_count > 0 {
         fa.Fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
