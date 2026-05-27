@@ -4,6 +4,8 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+pub mod aiff;
 pub mod wav;
 
+pub use aiff::parse_aiff;
 pub use wav::parse_wav;

@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
-use mediainfo_parsers_container::parse_wav;
+use mediainfo_parsers_container::{parse_aiff, parse_wav};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -107,7 +107,10 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("stat failed: {e}"))?;
     let mut fa = FileAnalyze::new(&bytes);
 
-    let parsed = parse_wav(&mut fa);
+    let parsed = parse_wav(&mut fa) || {
+        fa = FileAnalyze::new(&bytes);
+        parse_aiff(&mut fa)
+    };
     if !parsed {
         return Err(format!(
             "no rust parser matched ({} bytes)",
@@ -148,10 +151,12 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
         fa.Fill(StreamKind::General, 0, "Duration", ms.to_string(), false);
     }
 
-    // OverallBitRate = FileSize * 8 / Duration_seconds, rounded.
+    // OverallBitRate = FileSize * 8 * 1000 / Duration_ms, rounded to
+    // nearest (the C++ side fills with AfterComma=0 which renders via
+    // `%.0f` — round-half-to-even).
     if let Some(ms) = duration_ms {
         if ms > 0 {
-            let overall = (file_size as u128 * 8 * 1000) / ms as u128;
+            let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
             fa.Fill(
                 StreamKind::General,
                 0,
