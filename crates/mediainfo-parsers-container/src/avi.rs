@@ -105,6 +105,11 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     // audio). Used to fill Video.StreamSize when the strh/strf can't
     // tell us directly.
     let mut movi_sizes: Vec<u64> = Vec::new();
+    // Per-stream chunk counts (for Interleave_VideoFrames /
+    // Interleave_Duration). Audio is typically packetized into many
+    // small chunks; the ratio of video frames to audio chunks gives
+    // the average interleave step.
+    let mut movi_chunk_counts: Vec<u64> = Vec::new();
 
     walk_riff_chunks(&body[12..], total - 12, &mut |fourcc, list_type, payload| {
         match (fourcc, list_type) {
@@ -153,8 +158,10 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
                     let idx = ((b[0] - b'0') * 10 + (b[1] - b'0')) as usize;
                     while movi_sizes.len() <= idx {
                         movi_sizes.push(0);
+                        movi_chunk_counts.push(0);
                     }
                     movi_sizes[idx] += p.len() as u64;
+                    movi_chunk_counts[idx] += 1;
                 });
             }
             _ => {}
@@ -201,6 +208,7 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
         encoded_library.as_deref(),
         movi_size,
         &movi_sizes,
+        &movi_chunk_counts,
     );
     true
 }
@@ -316,6 +324,7 @@ fn fill_streams(
     encoded_library: Option<&str>,
     _movi_size: u64,
     movi_sizes: &[u64],
+    movi_chunk_counts: &[u64],
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "AVI", false);
@@ -371,6 +380,23 @@ fn fill_streams(
         fa.Fill(StreamKind::General, 0, "Encoded_Application", isft, false);
     }
 
+    // Interleave_VideoFrames / Interleave_Duration: derived once across
+    // all streams. Video frames per audio chunk = video_frame_count /
+    // audio_chunk_count. Audio chunk duration = total_audio_duration_ms /
+    // audio_chunk_count.
+    let video_chunk_count: u64 = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.strh.fcc_type == STRH_VIDS)
+        .map(|(i, _)| movi_chunk_counts.get(i).copied().unwrap_or(0))
+        .sum();
+    let audio_chunk_count: u64 = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.strh.fcc_type == STRH_AUDS)
+        .map(|(i, _)| movi_chunk_counts.get(i).copied().unwrap_or(0))
+        .sum();
+
     let mut stream_order: u32 = 0;
     for (stream_idx, s) in streams.iter().enumerate() {
         let movi_bytes = movi_sizes.get(stream_idx).copied().unwrap_or(0);
@@ -388,7 +414,15 @@ fn fill_streams(
                 stream_order += 1;
             }
             STRH_AUDS => {
-                fill_audio(fa, &s.strh, s.audio.as_ref(), stream_order, duration_ms_general);
+                fill_audio(
+                    fa,
+                    &s.strh,
+                    s.audio.as_ref(),
+                    stream_order,
+                    duration_ms_general,
+                    video_chunk_count,
+                    audio_chunk_count,
+                );
                 stream_order += 1;
             }
             _ => {}
@@ -504,6 +538,8 @@ fn fill_audio(
     af: Option<&AudioFormat>,
     stream_order: u32,
     duration_ms_general: Option<u64>,
+    video_chunk_count: u64,
+    audio_chunk_count: u64,
 ) {
     let pos = fa.Stream_Prepare(StreamKind::Audio);
     fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
@@ -572,6 +608,27 @@ fn fill_audio(
         // AVI audio is sample-aligned by convention (frames don't span
         // chunk boundaries). Real verification needs idx1 walking.
         fa.Fill(StreamKind::Audio, pos, "Alignment", "Aligned", false);
+        // Interleave statistics from movi chunk counts.
+        if audio_chunk_count > 0 {
+            let vf_per_audio = video_chunk_count as f64 / audio_chunk_count as f64;
+            fa.Fill(
+                StreamKind::Audio,
+                pos,
+                "Interleave_VideoFrames",
+                format!("{:.2}", vf_per_audio),
+                false,
+            );
+            if let Some(dur_ms) = duration_ms_general {
+                let chunk_dur_sec = (dur_ms as f64 / 1000.0) / audio_chunk_count as f64;
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "Interleave_Duration",
+                    format!("{:.3}", chunk_dur_sec),
+                    false,
+                );
+            }
+        }
         let _ = strh;
     }
 }
