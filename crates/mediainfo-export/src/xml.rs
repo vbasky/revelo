@@ -283,6 +283,7 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "Language",
             "Default",
             "Forced",
+            "AlternateGroup",
         ],
         StreamKind::Video => &[
             "Count",

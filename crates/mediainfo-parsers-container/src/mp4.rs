@@ -41,6 +41,7 @@ const BOX_META: int32u = u32::from_be_bytes(*b"meta");
 const BOX_ILST: int32u = u32::from_be_bytes(*b"ilst");
 const BOX_DATA: int32u = u32::from_be_bytes(*b"data");
 const BOX_MDAT: int32u = u32::from_be_bytes(*b"mdat");
+const BOX_TKHD: int32u = u32::from_be_bytes(*b"tkhd");
 
 /// iTunes-style `©too` (tool/encoder) metadata key.
 const ITUNES_KEY_TOOL: int32u = 0xA9_74_6F_6F;
@@ -83,6 +84,15 @@ struct TrackInfo {
     /// Sum of all per-sample sizes from `stsz` — raw byte count
     /// before any edit-list trimming.
     source_stream_size: Option<u64>,
+    /// Size in bytes of the first stsz entry. Subtracted from
+    /// Source_StreamSize to derive the post-elst Audio.StreamSize.
+    first_sample_size: Option<u32>,
+    /// tkhd track_ID; if absent we fall back to (track_index+1).
+    track_id: Option<u32>,
+    /// tkhd alternate_group (2 bytes, 0 if unused).
+    alternate_group: Option<u16>,
+    /// True if the tkhd flags' track_enabled bit (bit 0) is set.
+    track_enabled: Option<bool>,
     has_data: bool,
 }
 
@@ -298,6 +308,13 @@ fn handle_inner(
         BOX_MVHD => {
             parse_mvhd(fa, box_size, movie);
         }
+        BOX_TKHD => {
+            if let Some(track) = tracks.last_mut() {
+                parse_tkhd(fa, box_size, track);
+            } else {
+                fa.Skip_Hexa(box_size.saturating_sub(8), "tkhd");
+            }
+        }
         BOX_MDHD => {
             if let Some(track) = tracks.last_mut() {
                 parse_mdhd(fa, box_size, track);
@@ -336,6 +353,61 @@ fn handle_inner(
         _ => {
             fa.Skip_Hexa(box_size.saturating_sub(8), "BoxBody");
         }
+    }
+}
+
+/// Parse tkhd v0/v1 — extract track_ID, alternate_group, and the
+/// track_enabled flag bit. Layout (v0):
+///   1 byte version + 3 bytes flags (bit 0 = track_enabled)
+///   4 bytes creation_time
+///   4 bytes modification_time
+///   4 bytes track_ID
+///   4 bytes reserved
+///   4 bytes duration
+///   8 bytes reserved
+///   2 bytes layer
+///   2 bytes alternate_group
+///   2 bytes volume + 2 bytes reserved
+///   36 bytes matrix
+///   4 bytes width (16.16 fixed)
+///   4 bytes height (16.16 fixed)
+/// v1 uses 8-byte timestamps and 8-byte duration.
+fn parse_tkhd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
+    let body_size = box_size.saturating_sub(8);
+    if body_size < 24 {
+        fa.Skip_Hexa(body_size, "tkhd_short");
+        return;
+    }
+    let start = fa.Element_Offset();
+    let mut version_flags: int32u = 0;
+    fa.Get_B4(&mut version_flags, "version_flags");
+    let version = (version_flags >> 24) as u8;
+    let flags = version_flags & 0x00FF_FFFF;
+    track.track_enabled = Some((flags & 0x1) != 0);
+
+    if version == 1 {
+        fa.Skip_Hexa(16, "creation_modification");
+    } else {
+        fa.Skip_Hexa(8, "creation_modification");
+    }
+    let mut tid: int32u = 0;
+    fa.Get_B4(&mut tid, "track_ID");
+    track.track_id = Some(tid);
+    fa.Skip_Hexa(4, "reserved");
+    if version == 1 {
+        fa.Skip_Hexa(8, "duration");
+    } else {
+        fa.Skip_Hexa(4, "duration");
+    }
+    fa.Skip_Hexa(8, "reserved");
+    fa.Skip_Hexa(2, "layer");
+    let mut alt_group: zenlib::int16u = 0;
+    fa.Get_B2(&mut alt_group, "alternate_group");
+    track.alternate_group = Some(alt_group);
+
+    let consumed = fa.Element_Offset() - start;
+    if consumed < body_size {
+        fa.Skip_Hexa(body_size - consumed, "tkhd_tail");
     }
 }
 
@@ -808,6 +880,7 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     if sample_size != 0 {
         // Uniform sample size — no per-sample table follows.
         track.source_stream_size = Some((sample_count as u64) * (sample_size as u64));
+        track.first_sample_size = Some(sample_size);
     } else {
         // Per-sample size table: 4 bytes per entry, sample_count entries.
         let table_bytes = (sample_count as usize) * 4;
@@ -815,9 +888,12 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         let read_bytes = table_bytes.min(available);
         let entries = read_bytes / 4;
         let mut total: u64 = 0;
-        for _ in 0..entries {
+        for idx in 0..entries {
             let mut entry: int32u = 0;
             fa.Get_B4(&mut entry, "sample_size_entry");
+            if idx == 0 {
+                track.first_sample_size = Some(entry);
+            }
             total = total.saturating_add(entry as u64);
         }
         track.source_stream_size = Some(total);
@@ -917,9 +993,9 @@ fn fill_streams(
         if track.handler == HANDLER_SOUN && track.has_data {
             let pos = fa.Stream_Prepare(StreamKind::Audio);
             fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
-            // ID in MP4 tracks is 1-based; we don't yet parse tkhd's
-            // track_ID, so derive from position in the moov box.
-            fa.Fill(StreamKind::Audio, pos, "ID", (track_idx + 1).to_string(), false);
+            // Prefer tkhd's track_ID; fall back to position in moov.
+            let id = track.track_id.unwrap_or((track_idx + 1) as u32);
+            fa.Fill(StreamKind::Audio, pos, "ID", id.to_string(), false);
             stream_order += 1;
             if let Some(f) = track.audio_format {
                 fa.Fill(StreamKind::Audio, pos, "Format", f, false);
@@ -1063,6 +1139,11 @@ fn fill_streams(
                     }
                 }
             }
+            // Audio StreamSize (post-elst sample sum) deferred — the
+            // simple "subtract first stsz entry" formula gives 23798
+            // for our test, oracle wants 23700. Specific subtraction
+            // rule needs follow-up read of File_Mpeg4 logic.
+            let _ = track.first_sample_size;
             if let Some(size) = track.source_stream_size {
                 fa.Fill(
                     StreamKind::Audio,
@@ -1071,6 +1152,26 @@ fn fill_streams(
                     size.to_string(),
                     false,
                 );
+            }
+            if let Some(enabled) = track.track_enabled {
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "Default",
+                    if enabled { "Yes" } else { "No" },
+                    false,
+                );
+            }
+            if let Some(group) = track.alternate_group {
+                if group != 0 {
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "AlternateGroup",
+                        group.to_string(),
+                        false,
+                    );
+                }
             }
             audio_count += 1;
         } else if track.handler == HANDLER_VIDE && track.has_data {
