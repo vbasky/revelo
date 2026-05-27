@@ -30,6 +30,10 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
     let mut components: u8 = 0;
     let mut sampling: Vec<(u8, u8)> = Vec::new();
     let mut found_sof = false;
+    let mut comment: Option<String> = None;
+    // Overhead = APP markers (0xE0..0xEF) + COM markers (0xFE).
+    // Oracle treats SOI/EOI/DQT/DHT/SOF/SOS/entropy as image data.
+    let mut overhead: usize = 0;
 
     while fa.Remain() >= 4 {
         let marker_bytes = fa.read_raw(2).to_vec();
@@ -43,7 +47,7 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
             break;
         }
         if marker == 0xDA {
-            // SOS — entropy-coded data follows; stop scanning markers.
+            // SOS — entropy-coded data follows. Stop marker scanning.
             break;
         }
         // Markers without payload length: D0..D7 (RSTn), 01 (TEM)
@@ -56,6 +60,10 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
         let segment_len = u16::from_be_bytes([lb[0], lb[1]]) as usize;
         if segment_len < 2 || fa.Remain() < segment_len {
             break;
+        }
+        // APP markers + COM marker count toward General.StreamSize.
+        if (0xE0..=0xEF).contains(&marker) || marker == 0xFE {
+            overhead += 2 + segment_len; // marker(2) + length+payload
         }
         fa.Skip_Hexa(2, "segment_length");
         let payload_size = segment_len - 2;
@@ -81,6 +89,14 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
                 }
             }
             found_sof = true;
+        } else if marker == 0xFE {
+            // COM (Comment) segment — payload is UTF-8 text.
+            let payload = fa.read_raw(payload_size).to_vec();
+            comment = Some(
+                String::from_utf8_lossy(&payload)
+                    .trim_end_matches('\0')
+                    .to_string(),
+            );
         } else {
             fa.Skip_Hexa(payload_size, "segment");
         }
@@ -90,13 +106,25 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fill_streams(fa, file_size, width, height, precision, components, &sampling);
+    fill_streams(
+        fa,
+        file_size,
+        overhead,
+        comment,
+        width,
+        height,
+        precision,
+        components,
+        &sampling,
+    );
     true
 }
 
 fn fill_streams(
     fa: &mut FileAnalyze,
     file_size: usize,
+    overhead: usize,
+    comment: Option<String>,
     width: u16,
     height: u16,
     precision: u8,
@@ -106,6 +134,7 @@ fn fill_streams(
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "JPEG", false);
     fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
 
     fa.Stream_Prepare(StreamKind::Image);
     fa.Fill(StreamKind::Image, 0, "Format", "JPEG", false);
@@ -141,11 +170,11 @@ fn fill_streams(
     }
     fa.Fill(StreamKind::Image, 0, "BitDepth", precision.to_string(), false);
     fa.Fill(StreamKind::Image, 0, "Compression_Mode", "Lossy", false);
-    // StreamSize and General.StreamSize/Comment require segment-size
-    // accounting and APP/COM segment parsing — deferred. Filling
-    // Image.StreamSize with FileSize here is a placeholder approximation
-    // until that arrives; oracle's value subtracts the metadata overhead.
-    let _ = file_size;
+    let image_size = file_size.saturating_sub(overhead);
+    fa.Fill(StreamKind::Image, 0, "StreamSize", image_size.to_string(), false);
+    if let Some(c) = comment {
+        fa.Fill(StreamKind::Image, 0, "Comment", c, false);
+    }
 }
 
 #[cfg(test)]
