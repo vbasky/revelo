@@ -73,6 +73,8 @@ struct AacInfo {
 
 #[derive(Default, Debug)]
 struct Program {
+    program_number: u16,
+    pmt_pid: u16,
     format_identifier: u32,
     streams: Vec<ElementaryStream>,
 }
@@ -247,12 +249,32 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
 
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", container_format, true);
+    // General.ID = program_number of the first program (matches oracle
+    // for single-program files; multi-program TS would list each).
+    if let Some(first_prog) = programs_by_pmt_pid.values().next() {
+        fa.Fill(
+            StreamKind::General,
+            0,
+            "ID",
+            first_prog.program_number.to_string(),
+            false,
+        );
+    }
 
     // Count elementary streams by kind for *Count fields.
     let mut video_count = 0u32;
     let mut audio_count = 0u32;
     let mut text_count = 0u32;
-    let mut menu_count = 0u32;
+    // MenuCount tracks our emitted Menu streams (one per program with
+    // at least one identifiable ES), not stream_type→Menu mapping.
+    let menu_count = programs_by_pmt_pid
+        .values()
+        .filter(|p| {
+            p.streams
+                .iter()
+                .any(|es| !stream_format(es.stream_type, prog_or_es_fid(p, es)).is_empty())
+        })
+        .count() as u32;
 
     for prog in programs_by_pmt_pid.values() {
         for es in &prog.streams {
@@ -261,7 +283,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 Some(StreamKind::Video) => video_count += 1,
                 Some(StreamKind::Audio) => audio_count += 1,
                 Some(StreamKind::Text) => text_count += 1,
-                Some(StreamKind::Menu) => menu_count += 1,
+                Some(StreamKind::Menu) => { /* counted separately above */ }
                 _ => {}
             }
         }
@@ -280,8 +302,8 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     }
 
     // Emit per-stream entries in (program, ES) order.
-    for prog in programs_by_pmt_pid.values() {
-        for es in &prog.streams {
+    for (prog_idx, prog) in programs_by_pmt_pid.values().enumerate() {
+        for (es_idx, es) in prog.streams.iter().enumerate() {
             let fid = prog_or_es_fid(prog, es);
             let Some(kind) = stream_kind(es.stream_type, fid) else { continue };
             let format = stream_format(es.stream_type, fid);
@@ -291,9 +313,23 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             }
             fa.Stream_Prepare(kind);
             let pos_in_kind = fa.Count_Get(kind) - 1;
+            // StreamOrder = "<program_idx>-<es_idx_in_program>" per oracle.
+            fa.Fill(
+                kind,
+                pos_in_kind,
+                "StreamOrder",
+                format!("{}-{}", prog_idx, es_idx),
+                false,
+            );
             // ID = PID. Oracle renders as decimal.
             fa.Fill(kind, pos_in_kind, "ID", es.pid.to_string(), false);
+            fa.Fill(kind, pos_in_kind, "MenuID", prog.program_number.to_string(), false);
             fa.Fill(kind, pos_in_kind, "Format", format, false);
+            // Video CodecID = decimal stream_type (oracle convention).
+            // AAC overrides this below with its "<type>-<AOT>" form.
+            if matches!(kind, StreamKind::Video) {
+                fa.Fill(kind, pos_in_kind, "CodecID", es.stream_type.to_string(), false);
+            }
             if let Some(aac) = &es.aac {
                 // AAC ADTS payload → unlocks Format_Version, AOT, CodecID,
                 // MuxingMode=ADTS, Channels, SamplingRate, SamplesPerFrame.
@@ -328,6 +364,25 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             }
             let _ = codec;
         }
+    }
+
+    // Emit one Menu stream per program. Format = joined ES format names
+    // (in declaration order). ID = PMT_PID. MenuID = program_number.
+    for (prog_idx, prog) in programs_by_pmt_pid.values().enumerate() {
+        let formats: Vec<&'static str> = prog
+            .streams
+            .iter()
+            .map(|es| stream_format(es.stream_type, prog_or_es_fid(prog, es)))
+            .filter(|f| !f.is_empty())
+            .collect();
+        if formats.is_empty() {
+            continue;
+        }
+        let pos = fa.Stream_Prepare(StreamKind::Menu);
+        fa.Fill(StreamKind::Menu, pos, "StreamOrder", prog_idx.to_string(), false);
+        fa.Fill(StreamKind::Menu, pos, "ID", prog.pmt_pid.to_string(), false);
+        fa.Fill(StreamKind::Menu, pos, "MenuID", prog.program_number.to_string(), false);
+        fa.Fill(StreamKind::Menu, pos, "Format", formats.join(" / "), false);
     }
 
     true
@@ -395,8 +450,9 @@ fn parse_pat(section: &[u8], programs: &mut BTreeMap<u16, Program>) {
             // Network PID — skip.
             continue;
         }
-        let _ = program_number;
         programs.entry(pid).or_insert(Program {
+            program_number,
+            pmt_pid: pid,
             format_identifier: 0,
             streams: Vec::new(),
         });
