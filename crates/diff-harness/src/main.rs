@@ -156,9 +156,19 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
     let audio_stream_size: Option<u64> = fa
         .Retrieve(StreamKind::Audio, 0, "StreamSize")
         .and_then(|z| z.as_str().parse().ok());
+    // Prefer General.Duration when a parser pre-filled it (always
+    // integer ms). Falling back to Audio.Duration works for parsers
+    // that only emit there in int-ms form. Audio.Duration as a float
+    // string (e.g. MKV's "1.500000000") would parse as None here,
+    // which is fine — the parser also fills General.Duration in that
+    // case.
     let duration_ms: Option<u64> = fa
-        .Retrieve(StreamKind::Audio, 0, "Duration")
-        .and_then(|z| z.as_str().parse().ok());
+        .Retrieve(StreamKind::General, 0, "Duration")
+        .and_then(|z| z.as_str().parse().ok())
+        .or_else(|| {
+            fa.Retrieve(StreamKind::Audio, 0, "Duration")
+                .and_then(|z| z.as_str().parse().ok())
+        });
 
     // General Duration is the same as the audio stream's duration when
     // there is exactly one audio stream and no other streams.

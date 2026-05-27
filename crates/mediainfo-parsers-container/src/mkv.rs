@@ -216,6 +216,15 @@ fn fill_streams(
     is_streamable: bool,
 ) {
     fa.Stream_Prepare(StreamKind::General);
+    if let Some(uuid) = movie.segment_uuid.as_ref() {
+        if uuid.len() == 16 {
+            let mut v: u128 = 0;
+            for b in uuid {
+                v = (v << 8) | (*b as u128);
+            }
+            fa.Fill(StreamKind::General, 0, "UniqueID", v.to_string(), false);
+        }
+    }
     fa.Fill(StreamKind::General, 0, "Format", "Matroska", false);
     if doc_type_version > 0 {
         fa.Fill(
@@ -241,9 +250,10 @@ fn fill_streams(
     );
 
     let timecode_scale_ns: f64 = movie.timecode_scale.unwrap_or(1_000_000) as f64;
-    let duration_ms: Option<u64> = movie
+    let duration_seconds: Option<f64> = movie
         .duration_units
-        .map(|units| ((units * timecode_scale_ns) / 1_000_000.0).round() as u64);
+        .map(|units| units * timecode_scale_ns / 1_000_000_000.0);
+    let duration_ms: Option<u64> = duration_seconds.map(|s| (s * 1000.0).round() as u64);
 
     let mut audio_count: u32 = 0;
     let mut video_count: u32 = 0;
@@ -255,6 +265,9 @@ fn fill_streams(
                 fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
                 if let Some(n) = track.number {
                     fa.Fill(StreamKind::Audio, pos, "ID", n.to_string(), false);
+                }
+                if let Some(uid) = track.uid {
+                    fa.Fill(StreamKind::Audio, pos, "UniqueID", uid.to_string(), false);
                 }
                 stream_order += 1;
                 if let Some(c) = track.codec_id.as_deref() {
@@ -305,8 +318,18 @@ fn fill_streams(
                 // missing values to "No".
                 let forced = track.flag_forced.unwrap_or(false);
                 fa.Fill(StreamKind::Audio, pos, "Forced", if forced { "Yes" } else { "No" }, false);
-                if let Some(ms) = duration_ms {
-                    fa.Fill(StreamKind::Audio, pos, "Duration", ms.to_string(), false);
+                // MKV oracle emits Audio.Duration with 9 fractional
+                // digits (the file's float precision). Store the
+                // pre-formatted string here so the exporter's
+                // ms-to-seconds conversion doesn't touch it.
+                if let Some(s) = duration_seconds {
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "Duration",
+                        format!("{:.9}", s),
+                        false,
+                    );
                 }
                 audio_count += 1;
             }
