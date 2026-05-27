@@ -40,6 +40,7 @@ const BOX_UDTA: int32u = u32::from_be_bytes(*b"udta");
 const BOX_META: int32u = u32::from_be_bytes(*b"meta");
 const BOX_ILST: int32u = u32::from_be_bytes(*b"ilst");
 const BOX_DATA: int32u = u32::from_be_bytes(*b"data");
+const BOX_MDAT: int32u = u32::from_be_bytes(*b"mdat");
 
 /// iTunes-style `©too` (tool/encoder) metadata key.
 const ITUNES_KEY_TOOL: int32u = 0xA9_74_6F_6F;
@@ -96,29 +97,42 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
     let mut tracks: Vec<TrackInfo> = Vec::new();
     let mut ftyp_brands: Vec<String> = Vec::new();
     let mut movie = MovieInfo::default();
+    let mut mdat_offset: Option<usize> = None;
+    let mut mdat_size: Option<usize> = None;
+    let mut moov_offset: Option<usize> = None;
+    let file_size = fa.Remain();
 
-    let buffer_len = fa.Remain();
-    walk_boxes(fa, buffer_len, 0, &mut |fa, box_type, box_size, depth| {
+    walk_boxes(fa, file_size, 0, &mut |fa, box_type, box_size, box_start, depth| {
         match box_type {
             BOX_FTYP => {
                 ftyp_brands = parse_ftyp(fa, box_size);
             }
+            BOX_MDAT => {
+                if mdat_offset.is_none() {
+                    mdat_offset = Some(box_start);
+                    mdat_size = Some(box_size);
+                }
+                fa.Skip_Hexa(box_size.saturating_sub(8), "mdat_body");
+            }
             BOX_MOOV => {
+                if moov_offset.is_none() {
+                    moov_offset = Some(box_start);
+                }
                 let inner = box_size.saturating_sub(8);
-                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
+                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
                     handle_inner(fa, t, s, &mut tracks, &mut movie);
                 });
             }
             BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
                 let inner = box_size.saturating_sub(8);
-                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
+                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
                     handle_inner(fa, t, s, &mut tracks, &mut movie);
                 });
             }
             BOX_TRAK => {
                 tracks.push(TrackInfo::default());
                 let inner = box_size.saturating_sub(8);
-                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
+                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
                     handle_inner(fa, t, s, &mut tracks, &mut movie);
                 });
             }
@@ -128,17 +142,32 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
         }
     });
 
-    fill_streams(fa, &ftyp_brands, &tracks, &movie);
+    let layout = BoxLayout {
+        file_size,
+        mdat_offset,
+        mdat_size,
+        moov_offset,
+    };
+    fill_streams(fa, &ftyp_brands, &tracks, &movie, &layout);
     true
+}
+
+struct BoxLayout {
+    file_size: usize,
+    mdat_offset: Option<usize>,
+    mdat_size: Option<usize>,
+    moov_offset: Option<usize>,
 }
 
 /// Iterate boxes from the current position for up to `region_size`
 /// bytes (or to end of buffer if 0). Stops early on truncated reads.
+/// Visitor receives `(fa, box_type, total_size, box_start_offset, depth)`
+/// where `box_start_offset` is the file offset of the box header.
 fn walk_boxes(
     fa: &mut FileAnalyze,
     region_size: usize,
     depth: usize,
-    visit: &mut dyn FnMut(&mut FileAnalyze, int32u, usize, usize),
+    visit: &mut dyn FnMut(&mut FileAnalyze, int32u, usize, usize, usize),
 ) {
     let region_end = fa.Element_Offset() + region_size;
     while fa.Element_Offset() + 8 <= region_end && fa.Remain() >= 8 {
@@ -175,7 +204,7 @@ fn walk_boxes(
         // position back to body_end after the visitor returns.
         fa.Element_Begin(box_type_name(box_type).as_str());
         let _name = box_type_name(box_type);
-        visit(fa, box_type, total_size, depth);
+        visit(fa, box_type, total_size, start, depth);
         fa.Element_End();
         if fa.Element_Offset() < body_end {
             fa.Skip_Hexa(body_end - fa.Element_Offset(), "BoxTail");
@@ -236,7 +265,7 @@ fn handle_inner(
     match box_type {
         BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
             let inner = box_size.saturating_sub(8);
-            walk_boxes(fa, inner, 1, &mut |fa, t, s, _| {
+            walk_boxes(fa, inner, 1, &mut |fa, t, s, _, _| {
                 handle_inner(fa, t, s, tracks, movie);
             });
         }
@@ -253,7 +282,7 @@ fn handle_inner(
                 fa.Skip_Hexa(inner, "meta_short");
             } else {
                 fa.Skip_Hexa(4, "version_flags");
-                walk_boxes(fa, inner - 4, 1, &mut |fa, t, s, _| match t {
+                walk_boxes(fa, inner - 4, 1, &mut |fa, t, s, _, _| match t {
                     BOX_ILST => parse_ilst(fa, s, movie),
                     _ => fa.Skip_Hexa(s.saturating_sub(8), "meta_child"),
                 });
@@ -262,7 +291,7 @@ fn handle_inner(
         BOX_TRAK => {
             tracks.push(TrackInfo::default());
             let inner = box_size.saturating_sub(8);
-            walk_boxes(fa, inner, 1, &mut |fa, t, s, _| {
+            walk_boxes(fa, inner, 1, &mut |fa, t, s, _, _| {
                 handle_inner(fa, t, s, tracks, movie);
             });
         }
@@ -805,9 +834,30 @@ fn fill_streams(
     ftyp_brands: &[String],
     tracks: &[TrackInfo],
     movie: &MovieInfo,
+    layout: &BoxLayout,
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG-4", false);
+
+    // mdat-positioning fields. The C++ side reports:
+    //   HeaderSize = bytes before mdat box (ftyp + free + any pre-mdat moov)
+    //   DataSize   = mdat total size (header + body)
+    //   FooterSize = bytes after mdat
+    //   StreamSize (general) = FileSize - mdat_body_size = HeaderSize + 8 + FooterSize
+    //   IsStreamable = "Yes" if moov precedes mdat, else "No"
+    if let (Some(mdat_off), Some(mdat_tot)) = (layout.mdat_offset, layout.mdat_size) {
+        let footer_size = layout.file_size.saturating_sub(mdat_off + mdat_tot);
+        let stream_size = layout.file_size.saturating_sub(mdat_tot.saturating_sub(8));
+        fa.Fill(StreamKind::General, 0, "StreamSize", stream_size.to_string(), true);
+        fa.Fill(StreamKind::General, 0, "HeaderSize", mdat_off.to_string(), false);
+        fa.Fill(StreamKind::General, 0, "DataSize", mdat_tot.to_string(), false);
+        fa.Fill(StreamKind::General, 0, "FooterSize", footer_size.to_string(), false);
+        let is_streamable = match layout.moov_offset {
+            Some(mv_off) if mv_off < mdat_off => "Yes",
+            _ => "No",
+        };
+        fa.Fill(StreamKind::General, 0, "IsStreamable", is_streamable, false);
+    }
 
     // Presence of any iTunes metadata triggers the "Apple audio with iTunes
     // info" profile descriptor, regardless of which keys are populated.
