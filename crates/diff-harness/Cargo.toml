@@ -14,3 +14,4 @@ mediainfo-core = { path = "../mediainfo-core" }
 mediainfo-export = { path = "../mediainfo-export" }
 mediainfo-parsers-audio = { path = "../mediainfo-parsers-audio" }
 mediainfo-parsers-container = { path = "../mediainfo-parsers-container" }
+mediainfo-parsers-image = { path = "../mediainfo-parsers-image" }

@@ -6,6 +6,7 @@ members = [
     "crates/mediainfo-export",
     "crates/mediainfo-parsers-audio",
     "crates/mediainfo-parsers-container",
+    "crates/mediainfo-parsers-image",
     "crates/zenlib",
 ]
 
