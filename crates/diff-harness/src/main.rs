@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
 use mediainfo_parsers_audio::{parse_flac, parse_mp3};
-use mediainfo_parsers_container::{parse_aiff, parse_mp4, parse_wav};
+use mediainfo_parsers_container::{parse_aiff, parse_mkv, parse_mp4, parse_wav};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -108,12 +108,15 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("stat failed: {e}"))?;
     let mut fa = FileAnalyze::new(&bytes);
 
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 5] = [
+    // Structured/magic-based parsers first; sync-based MP3 last so it
+    // only fires when nothing else claimed the file.
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 6] = [
         ("WAV", parse_wav),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
-        ("MP3", parse_mp3),
         ("MP4", parse_mp4),
+        ("MKV", parse_mkv),
+        ("MP3", parse_mp3),
     ];
     let mut parsed = false;
     for (_name, parser) in parsers {
@@ -165,17 +168,17 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
 
     // OverallBitRate = FileSize * 8 * 1000 / Duration_ms, rounded to
     // nearest (the C++ side fills with AfterComma=0 which renders via
-    // `%.0f` — round-half-to-even).
+    // `%.0f` — round-half-to-even). OverallBitRate_Mode mirrors Audio's
+    // BitRate_Mode only when that field is set — emitting a default
+    // mode for codecs whose oracle output omits the field (e.g. Opus
+    // in MKV) would produce spurious lines.
     if let Some(ms) = duration_ms {
         if ms > 0 {
             let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-            // Mirror the audio stream's BitRate_Mode rather than hardcoding —
-            // a parser may have flagged the audio as VBR (e.g. FLAC).
-            let bitrate_mode = fa
-                .Retrieve(StreamKind::Audio, 0, "BitRate_Mode")
-                .map(|z| z.as_str().to_owned())
-                .unwrap_or_else(|| "CBR".to_owned());
-            fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", bitrate_mode, false);
+            if let Some(bm) = fa.Retrieve(StreamKind::Audio, 0, "BitRate_Mode") {
+                let mode = bm.as_str().to_owned();
+                fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
+            }
             fa.Fill(
                 StreamKind::General,
                 0,

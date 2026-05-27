@@ -192,22 +192,23 @@ fn looks_like_info_frame(frame_bytes: &[u8], version: u8, channel_mode: u8) -> b
 }
 
 pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
-    // ID3v2: 3-byte magic + 7 bytes header + syncsafe size.
+    // Sync must be either at byte 0 OR immediately after an ID3v2
+    // header. Scanning for sync further into the file produces false
+    // positives on any container that happens to contain 0xFF 0xE/F
+    // bytes (which is most of them). Container parsers run before
+    // this so by the time we're here it's not been claimed.
     let id3v2_size = detect_id3v2(fa);
     if id3v2_size > 0 {
         fa.Skip_Hexa(id3v2_size, "ID3v2");
     }
-    let audio_start_offset = fa.Element_Offset();
-    let _ = audio_start_offset;
 
-    // Find first frame sync within a small scan window.
-    let scan_offset = find_first_sync(fa);
-    if scan_offset.is_none() {
+    let head = fa.peek_raw(4);
+    let Some(h) = head else { return false };
+    if h[0] != 0xFF || (h[1] & 0xE0) != 0xE0 {
         return false;
     }
-    let skip_to_sync = scan_offset.unwrap();
-    if skip_to_sync > 0 {
-        fa.Skip_Hexa(skip_to_sync, "PreSync");
+    if parse_frame_header(&h[..4]).is_none() {
+        return false;
     }
 
     // Peek the first frame header.
@@ -279,20 +280,6 @@ fn detect_id3v2(fa: &mut FileAnalyze) -> usize {
     10 + size
 }
 
-fn find_first_sync(fa: &mut FileAnalyze) -> Option<usize> {
-    const MAX_SCAN: usize = 4096;
-    let remain = fa.Remain().min(MAX_SCAN);
-    let Some(window) = fa.peek_raw(remain) else { return None };
-    for i in 0..window.len().saturating_sub(1) {
-        if window[i] == 0xFF && (window[i + 1] & 0xE0) == 0xE0 {
-            // Trial-parse to reject false positives.
-            if window.len() - i >= 4 && parse_frame_header(&window[i..i + 4]).is_some() {
-                return Some(i);
-            }
-        }
-    }
-    None
-}
 
 /// Scan frames sequentially from the current position, returning
 /// (frame_count, total_bytes_consumed). Stops at the first unparseable
