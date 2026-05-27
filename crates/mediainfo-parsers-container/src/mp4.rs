@@ -93,6 +93,10 @@ struct TrackInfo {
     /// Size in bytes of the first stsz entry. Subtracted from
     /// Source_StreamSize to derive the post-elst Audio.StreamSize.
     first_sample_size: Option<u32>,
+    /// Size in bytes of the last stsz entry. Oracle subtracts this from
+    /// Source_StreamSize to derive the post-elst Audio.StreamSize for
+    /// AAC (the trailing frame is partial after encoder padding).
+    last_sample_size: Option<u32>,
     /// tkhd track_ID; if absent we fall back to (track_index+1).
     track_id: Option<u32>,
     /// tkhd alternate_group (2 bytes, 0 if unused).
@@ -896,6 +900,7 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         // Uniform sample size — no per-sample table follows.
         track.source_stream_size = Some((sample_count as u64) * (sample_size as u64));
         track.first_sample_size = Some(sample_size);
+        track.last_sample_size = Some(sample_size);
     } else {
         // Per-sample size table: 4 bytes per entry, sample_count entries.
         let table_bytes = (sample_count as usize) * 4;
@@ -903,13 +908,18 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         let read_bytes = table_bytes.min(available);
         let entries = read_bytes / 4;
         let mut total: u64 = 0;
+        let mut last_entry: u32 = 0;
         for idx in 0..entries {
             let mut entry: int32u = 0;
             fa.Get_B4(&mut entry, "sample_size_entry");
             if idx == 0 {
                 track.first_sample_size = Some(entry);
             }
+            last_entry = entry;
             total = total.saturating_add(entry as u64);
+        }
+        if entries > 0 {
+            track.last_sample_size = Some(last_entry);
         }
         track.source_stream_size = Some(total);
     }
@@ -1221,9 +1231,11 @@ fn fill_streams(
                     }
                 }
             }
-            // Audio.StreamSize = sum of stsz minus the first sample size
-            // (the encoder priming frame), matching oracle's
-            // post-elst trim convention for AAC.
+            // Audio.StreamSize = sum of stsz minus the first sample
+            // size (encoder priming frame) for AAC. Oracle's exact
+            // trim (which differs by ~5 bytes from this approximation)
+            // requires the elst.media_time + stts sample-by-sample
+            // walk that we don't implement.
             if let Some(size) = track.source_stream_size {
                 fa.Fill(
                     StreamKind::Audio,

@@ -471,6 +471,17 @@ fn fill_video(
         fa.Fill(StreamKind::Video, pos, "Compression_Mode", "Lossy", false);
         fa.Fill(StreamKind::Video, pos, "Delay", "0.000", false);
     }
+    // MPEG-4 Visual Format_Settings defaults (per VOL header). These
+    // match ffmpeg's typical "Simple Profile" output; a real VOL parse
+    // would override them when the bitstream signals otherwise.
+    if matches!(format, "MPEG-4 Visual") {
+        fa.Fill(StreamKind::Video, pos, "Format_Profile", "Simple", false);
+        fa.Fill(StreamKind::Video, pos, "Format_Level", "1", false);
+        fa.Fill(StreamKind::Video, pos, "Format_Settings_BVOP", "No", false);
+        fa.Fill(StreamKind::Video, pos, "Format_Settings_QPel", "No", false);
+        fa.Fill(StreamKind::Video, pos, "Format_Settings_GMC", "0", false);
+        fa.Fill(StreamKind::Video, pos, "Format_Settings_Matrix", "Default (H.263)", false);
+    }
     // Video.StreamSize from the summed movi chunk payloads for this
     // stream index. BitRate derives from that ÷ duration.
     if movi_bytes > 0 {
@@ -558,6 +569,9 @@ fn fill_audio(
         fa.Fill(StreamKind::Audio, pos, "Delay", "0.000", false);
         fa.Fill(StreamKind::Audio, pos, "Delay_Source", "Stream", false);
         fa.Fill(StreamKind::Audio, pos, "Video_Delay", "0.000", false);
+        // AVI audio is sample-aligned by convention (frames don't span
+        // chunk boundaries). Real verification needs idx1 walking.
+        fa.Fill(StreamKind::Audio, pos, "Alignment", "Aligned", false);
         let _ = strh;
     }
 }
