@@ -162,6 +162,7 @@ fn xml_escape_attr(s: &str) -> String {
 /// segregates secondary / side-channel fields from the main schema.
 fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
     match kind {
+        StreamKind::General => &["ErrorDetectionType"],
         StreamKind::Audio => &["MD5_Unencoded"],
         _ => &[],
     }
@@ -279,6 +280,8 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "StreamSize",
             "StreamSize_String",
             "Source_StreamSize",
+            "Delay",
+            "Delay_Source",
             "Encoded_Library",
             "Encoded_Library_String",
             "Title",

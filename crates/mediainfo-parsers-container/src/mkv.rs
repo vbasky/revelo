@@ -33,6 +33,7 @@ const SEGMENT_INFO: u64 = 0x1549A966;
 const TRACKS: u64 = 0x1654AE6B;
 const CLUSTER: u64 = 0x1F43B675;
 const SEEK_HEAD: u64 = 0x114D9B74;
+const CRC32: u64 = 0xBF;
 
 // Info children.
 const SEGMENT_UUID: u64 = 0x73A4;
@@ -70,6 +71,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
     let mut seekhead_seen = false;
     let mut cluster_seen = false;
     let mut seekhead_before_cluster = true;
+    let mut crc32_at_level1 = false;
 
     walk_elements(fa, file_size, &mut |fa, id, size, _start| {
         match id {
@@ -88,25 +90,31 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
                 });
             }
             SEGMENT => {
-                walk_elements(fa, size, &mut |fa, id, sz, _| match id {
-                    SEEK_HEAD => {
-                        seekhead_seen = true;
-                        if cluster_seen {
-                            seekhead_before_cluster = false;
+                walk_elements(fa, size, &mut |fa, id, sz, _| {
+                    // CRC-32 typically appears as the FIRST CHILD of a
+                    // level-1 master element (SeekHead, Info, Tracks,
+                    // Cluster). MediaInfoLib reports "Per level 1" when
+                    // any level-1 container starts with a CRC-32.
+                    let first_byte_is_crc32 = fa.peek_raw(1).map(|b| b[0] == 0xBF).unwrap_or(false);
+                    if first_byte_is_crc32 {
+                        crc32_at_level1 = true;
+                    }
+                    match id {
+                        SEEK_HEAD => {
+                            seekhead_seen = true;
+                            if cluster_seen {
+                                seekhead_before_cluster = false;
+                            }
+                            fa.Skip_Hexa(sz, "seekhead");
                         }
-                        fa.Skip_Hexa(sz, "seekhead");
+                        SEGMENT_INFO => parse_segment_info(fa, sz, &mut movie),
+                        TRACKS => parse_tracks(fa, sz, &mut tracks),
+                        CLUSTER => {
+                            cluster_seen = true;
+                            fa.Skip_Hexa(sz, "cluster");
+                        }
+                        _ => fa.Skip_Hexa(sz, "segment_child"),
                     }
-                    SEGMENT_INFO => {
-                        parse_segment_info(fa, sz, &mut movie);
-                    }
-                    TRACKS => {
-                        parse_tracks(fa, sz, &mut tracks);
-                    }
-                    CLUSTER => {
-                        cluster_seen = true;
-                        fa.Skip_Hexa(sz, "cluster");
-                    }
-                    _ => fa.Skip_Hexa(sz, "segment_child"),
                 });
             }
             _ => {
@@ -125,6 +133,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
         &tracks,
         doc_type_version,
         seekhead_seen && seekhead_before_cluster,
+        crc32_at_level1,
     );
     true
 }
@@ -214,6 +223,7 @@ fn fill_streams(
     tracks: &[TrackInfo],
     doc_type_version: u64,
     is_streamable: bool,
+    crc32_at_level1: bool,
 ) {
     fa.Stream_Prepare(StreamKind::General);
     if let Some(uuid) = movie.segment_uuid.as_ref() {
@@ -248,6 +258,15 @@ fn fill_streams(
         if is_streamable { "Yes" } else { "No" },
         false,
     );
+    if crc32_at_level1 {
+        fa.Fill(
+            StreamKind::General,
+            0,
+            "ErrorDetectionType",
+            "Per level 1",
+            false,
+        );
+    }
 
     let timecode_scale_ns: f64 = movie.timecode_scale.unwrap_or(1_000_000) as f64;
     let duration_seconds: Option<f64> = movie
@@ -318,6 +337,12 @@ fn fill_streams(
                 // missing values to "No".
                 let forced = track.flag_forced.unwrap_or(false);
                 fa.Fill(StreamKind::Audio, pos, "Forced", if forced { "Yes" } else { "No" }, false);
+                // For MKV, Delay defaults to 0.000s and Delay_Source is
+                // "Container" — oracle emits these for every audio
+                // track even when no explicit CodecDelay element is
+                // present.
+                fa.Fill(StreamKind::Audio, pos, "Delay", "0.000", false);
+                fa.Fill(StreamKind::Audio, pos, "Delay_Source", "Container", false);
                 // MKV oracle emits Audio.Duration with 9 fractional
                 // digits (the file's float precision). Store the
                 // pre-formatted string here so the exporter's
