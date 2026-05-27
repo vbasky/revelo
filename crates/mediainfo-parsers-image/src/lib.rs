@@ -5,6 +5,7 @@
 #![allow(non_upper_case_globals)]
 
 pub mod bmp;
+pub mod dds;
 pub mod dpx;
 pub mod gif;
 pub mod ico;
@@ -15,6 +16,7 @@ pub mod tiff;
 pub mod webp;
 
 pub use bmp::parse_bmp;
+pub use dds::parse_dds;
 pub use dpx::parse_dpx;
 pub use gif::parse_gif;
 pub use ico::parse_ico;
