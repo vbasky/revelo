@@ -100,10 +100,15 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    // Sniff audio frames before mutating fa (buf borrow lives until here).
+    // Sniff audio + video payloads before mutating fa (buf borrow
+    // lives until here).
     let audio_frames: Vec<Option<MpegAudioFrame>> = audio_ids
         .iter()
         .map(|sid| sniff_mpeg_audio(buf, *sid))
+        .collect();
+    let video_seqs: Vec<Option<Mpeg2SeqHeader>> = video_ids
+        .iter()
+        .map(|sid| sniff_mpeg2_sequence(buf, *sid))
         .collect();
 
     fa.Stream_Prepare(StreamKind::General);
@@ -123,18 +128,26 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
     }
 
     let mut stream_order: u32 = 0;
-    for sid in &video_ids {
+    for (idx, sid) in video_ids.iter().enumerate() {
         let pos = fa.Stream_Prepare(StreamKind::Video);
         fa.Fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
         fa.Fill(StreamKind::Video, pos, "ID", sid.to_string(), false);
         stream_order += 1;
         fa.Fill(StreamKind::Video, pos, "Format", "MPEG Video", false);
-        // MPEG-PS sync 0x000001E0..EF carries MPEG-2 video; oracle
-        // defaults to V2 since MPEG-1 PS uses a different sync set.
         fa.Fill(StreamKind::Video, pos, "Format_Version", "2", false);
         fa.Fill(StreamKind::Video, pos, "BitRate_Mode", "VBR", false);
-        // Defaults for typical MPEG-2 video; full sequence header parse
-        // would refine these.
+        if let Some(seq) = &video_seqs[idx] {
+            fa.Fill(StreamKind::Video, pos, "Width", seq.width.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "Height", seq.height.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "Sampled_Width", seq.width.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "Sampled_Height", seq.height.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "PixelAspectRatio", "1.000", false);
+            let dar = seq.width as f64 / seq.height as f64;
+            fa.Fill(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar), false);
+            fa.Fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", seq.frame_rate), false);
+            fa.Fill(StreamKind::Video, pos, "FrameRate_Num", seq.frame_rate_num.to_string(), false);
+            fa.Fill(StreamKind::Video, pos, "FrameRate_Den", seq.frame_rate_den.to_string(), false);
+        }
         fa.Fill(StreamKind::Video, pos, "ColorSpace", "YUV", false);
         fa.Fill(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0", false);
         fa.Fill(StreamKind::Video, pos, "BitDepth", "8", false);
@@ -168,6 +181,83 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
     }
 
     true
+}
+
+struct Mpeg2SeqHeader {
+    width: u32,
+    height: u32,
+    frame_rate: f64,
+    frame_rate_num: u32,
+    frame_rate_den: u32,
+}
+
+/// MPEG-2 Sequence Header start code = 0x000001B3, followed by:
+///   12 bits horizontal_size_value
+///   12 bits vertical_size_value
+///    4 bits aspect_ratio_info
+///    4 bits frame_rate_code
+const FRAME_RATE_TABLE: [(u32, u32); 9] = [
+    (0, 1),
+    (24000, 1001), // 23.976
+    (24, 1),
+    (25, 1),
+    (30000, 1001), // 29.97
+    (30, 1),
+    (50, 1),
+    (60000, 1001), // 59.94
+    (60, 1),
+];
+
+fn sniff_mpeg2_sequence(buf: &[u8], sid: u8) -> Option<Mpeg2SeqHeader> {
+    let mut i = 0;
+    while i + 6 < buf.len() {
+        if buf[i] != 0 || buf[i + 1] != 0 || buf[i + 2] != 1 || buf[i + 3] != sid {
+            i += 1;
+            continue;
+        }
+        let pes_len = ((buf[i + 4] as usize) << 8) | (buf[i + 5] as usize);
+        if pes_len == 0 || i + 6 + pes_len > buf.len() {
+            i += 1;
+            continue;
+        }
+        let pes = &buf[i + 6..i + 6 + pes_len];
+        let pes_payload_off = if pes.len() >= 3 && (pes[0] & 0xC0) == 0x80 {
+            3 + pes[2] as usize
+        } else {
+            0
+        };
+        if pes_payload_off >= pes.len() {
+            i += 1;
+            continue;
+        }
+        let payload = &pes[pes_payload_off..];
+        // Scan for sequence header start code 0x000001B3.
+        for j in 0..payload.len().saturating_sub(8) {
+            if payload[j] == 0
+                && payload[j + 1] == 0
+                && payload[j + 2] == 1
+                && payload[j + 3] == 0xB3
+            {
+                let h = &payload[j + 4..];
+                let width = ((h[0] as u32) << 4) | ((h[1] as u32) >> 4);
+                let height = (((h[1] & 0x0F) as u32) << 8) | (h[2] as u32);
+                let fr_code = (h[3] & 0x0F) as usize;
+                if fr_code == 0 || fr_code >= FRAME_RATE_TABLE.len() {
+                    return None;
+                }
+                let (num, den) = FRAME_RATE_TABLE[fr_code];
+                return Some(Mpeg2SeqHeader {
+                    width,
+                    height,
+                    frame_rate: num as f64 / den as f64,
+                    frame_rate_num: num,
+                    frame_rate_den: den,
+                });
+            }
+        }
+        i = i + 6 + pes_len;
+    }
+    None
 }
 
 struct MpegAudioFrame {
