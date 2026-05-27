@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/diff-harness",
+]
+
+[workspace.package]
+edition = "2024"
+license = "BSD-2-Clause"
+repository = "https://github.com/MediaArea/MediaInfo"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
