@@ -16,3 +16,4 @@ mediainfo-parsers-audio = { path = "../mediainfo-parsers-audio" }
 mediainfo-parsers-container = { path = "../mediainfo-parsers-container" }
 mediainfo-parsers-image = { path = "../mediainfo-parsers-image" }
 mediainfo-parsers-text = { path = "../mediainfo-parsers-text" }
+mediainfo-parsers-video = { path = "../mediainfo-parsers-video" }

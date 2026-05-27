@@ -8,6 +8,7 @@ members = [
     "crates/mediainfo-parsers-container",
     "crates/mediainfo-parsers-image",
     "crates/mediainfo-parsers-text",
+    "crates/mediainfo-parsers-video",
     "crates/zenlib",
 ]
 

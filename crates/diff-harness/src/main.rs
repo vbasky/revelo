@@ -6,10 +6,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
-use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_adpcm, parse_als, parse_amr, parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_extended_module, parse_flac, parse_la, parse_mp3, parse_mpc, parse_rkau, parse_speex, parse_tta, parse_twin_vq, parse_wvpk};
-use mediainfo_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_hds_f4m, parse_hls, parse_ibi, parse_lxf, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_nut, parse_ogg, parse_skm, parse_swf, parse_wav};
+use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr, parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker, parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau, parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk};
+use mediainfo_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_nsv, parse_nut, parse_ogg, parse_pmp, parse_rm, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv};
 use mediainfo_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle, parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs, parse_sub_rip, parse_ttml};
 use mediainfo_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
+use mediainfo_parsers_video::{parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9, parse_y4m};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -112,7 +113,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 80] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 106] = [
         ("WAV", parse_wav),
         ("AVI", parse_avi),
         ("CDXA", parse_cdxa),
@@ -144,6 +145,15 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("FLV", parse_flv),
         ("LXF", parse_lxf),
         ("Nut", parse_nut),
+        ("WM", parse_wm),
+        ("WTV", parse_wtv),
+        ("RM", parse_rm),
+        ("IVF", parse_ivf),
+        ("ISM", parse_ism),
+        ("MiXml", parse_mi_xml),
+        ("NSV", parse_nsv),
+        ("PMP", parse_pmp),
+        ("GXF", parse_gxf),
         ("CDP", parse_cdp),
         ("PGS", parse_pgs),
         ("DVB-Sub", parse_dvb_subtitle),
@@ -169,9 +179,19 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("PCX", parse_pcx),
         ("ArriRaw", parse_arriraw),
         ("AmigaIcon", parse_amiga_icon),
+        ("Y4M", parse_y4m),
+        ("AVC", parse_avc),
+        ("HEVC", parse_hevc),
+        ("VP8", parse_vp8),
+        ("VP9", parse_vp9),
+        ("Theora", parse_theora),
         ("AC3", parse_ac3),
+        ("AC4", parse_ac4),
         ("DTS", parse_dts),
+        ("DTS-UHD", parse_dts_uhd),
         ("AAC-ADTS", parse_aac_adts),
+        ("IAB", parse_iab),
+        ("IAMF", parse_iamf),
         ("ALS", parse_als),
         ("APE", parse_ape),
         ("AU", parse_au),
@@ -179,6 +199,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("Speex", parse_speex),
         ("MPC", parse_mpc),
         ("LA", parse_la),
+        ("TAK", parse_tak),
         ("TTA", parse_tta),
         ("WavPack", parse_wvpk),
         ("TwinVQ", parse_twin_vq),
@@ -186,6 +207,11 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("DAT", parse_dat),
         ("RKAU", parse_rkau),
         ("aptX100", parse_aptx100),
+        ("OpenMG", parse_open_mg),
+        ("Midi", parse_midi),
+        ("Module", parse_module),
+        ("IT", parse_impulse_tracker),
+        ("S3M", parse_scream_tracker3),
         ("MP3", parse_mp3),
         ("TGA", parse_tga),
         ("GainMap", parse_gain_map),
@@ -193,6 +219,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("ADPCM", parse_adpcm),
         ("EIA-608", parse_eia608),
         ("EIA-708", parse_eia708),
+        ("VBI", parse_vbi),
     ];
     let mut parsed = false;
     for (_name, parser) in parsers {
