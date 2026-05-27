@@ -9,6 +9,7 @@ pub mod gif;
 pub mod ico;
 pub mod jpeg;
 pub mod png;
+pub mod psd;
 pub mod tiff;
 pub mod webp;
 
@@ -17,5 +18,6 @@ pub use gif::parse_gif;
 pub use ico::parse_ico;
 pub use jpeg::parse_jpeg;
 pub use png::parse_png;
+pub use psd::parse_psd;
 pub use tiff::parse_tiff;
 pub use webp::parse_webp;
