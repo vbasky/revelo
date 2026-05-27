@@ -5,6 +5,7 @@
 #![allow(non_upper_case_globals)]
 
 pub mod bmp;
+pub mod bpg;
 pub mod dds;
 pub mod dpx;
 pub mod exr;
@@ -19,6 +20,7 @@ pub mod tiff;
 pub mod webp;
 
 pub use bmp::parse_bmp;
+pub use bpg::parse_bpg;
 pub use dds::parse_dds;
 pub use dpx::parse_dpx;
 pub use exr::parse_exr;
