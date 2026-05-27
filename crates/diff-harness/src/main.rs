@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
-use mediainfo_parsers_audio::{parse_ac3, parse_flac, parse_mp3};
+use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_flac, parse_mp3};
 use mediainfo_parsers_container::{parse_aiff, parse_mkv, parse_mp4, parse_ogg, parse_wav};
 use mediainfo_parsers_image::{parse_bmp, parse_gif, parse_jpeg, parse_png};
 
@@ -111,7 +111,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 12] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 13] = [
         ("WAV", parse_wav),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
@@ -123,6 +123,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("BMP", parse_bmp),
         ("GIF", parse_gif),
         ("AC3", parse_ac3),
+        ("AAC-ADTS", parse_aac_adts),
         ("MP3", parse_mp3),
     ];
     let mut parsed = false;
