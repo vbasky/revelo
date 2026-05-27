@@ -163,7 +163,16 @@ fn xml_escape_attr(s: &str) -> String {
 fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
     match kind {
         StreamKind::General => &["ErrorDetectionType"],
-        StreamKind::Audio => &["MD5_Unencoded"],
+        StreamKind::Audio => &[
+            "MD5_Unencoded",
+            "bsid",
+            "dialnorm",
+            "dsurmod",
+            "acmod",
+            "lfeon",
+            "dialnorm_Average",
+            "dialnorm_Minimum",
+        ],
         _ => &[],
     }
 }
@@ -266,9 +275,9 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "BitRate_Maximum",
             "Channels",
             "Channels_String",
-            "SamplesPerFrame",
             "ChannelPositions",
             "ChannelLayout",
+            "SamplesPerFrame",
             "SamplingRate",
             "SamplingRate_String",
             "SamplingCount",
@@ -290,6 +299,7 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "Default",
             "Forced",
             "AlternateGroup",
+            "ServiceKind",
         ],
         StreamKind::Image => &[
             "Count",
