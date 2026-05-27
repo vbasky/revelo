@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
-use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_amr, parse_ape, parse_au, parse_dts, parse_flac, parse_mp3};
-use mediainfo_parsers_container::{parse_aiff, parse_avi, parse_cdxa, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_ogg, parse_swf, parse_wav};
+use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_als, parse_amr, parse_ape, parse_au, parse_caf, parse_dts, parse_flac, parse_la, parse_mp3, parse_mpc, parse_speex};
+use mediainfo_parsers_container::{parse_aiff, parse_avi, parse_cdxa, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_ogg, parse_skm, parse_swf, parse_wav};
 use mediainfo_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
 
 fn main() -> ExitCode {
@@ -111,19 +111,21 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 36] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 42] = [
         ("WAV", parse_wav),
         ("AVI", parse_avi),
         ("CDXA", parse_cdxa),
         ("WebP", parse_webp),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
+        ("CAF", parse_caf),
         ("MP4", parse_mp4),
         ("MKV", parse_mkv),
         ("Ogg", parse_ogg),
         ("MPEG-TS", parse_mpeg_ts),
         ("MPEG-PS", parse_mpeg_ps),
         ("SWF", parse_swf),
+        ("SKM", parse_skm),
         ("PNG", parse_png),
         ("JPEG", parse_jpeg),
         ("BMP", parse_bmp),
@@ -141,9 +143,13 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("AC3", parse_ac3),
         ("DTS", parse_dts),
         ("AAC-ADTS", parse_aac_adts),
+        ("ALS", parse_als),
         ("APE", parse_ape),
         ("AU", parse_au),
         ("AMR", parse_amr),
+        ("Speex", parse_speex),
+        ("MPC", parse_mpc),
+        ("LA", parse_la),
         ("MP3", parse_mp3),
         ("TGA", parse_tga),
         ("GainMap", parse_gain_map),

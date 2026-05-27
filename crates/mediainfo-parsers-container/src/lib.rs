@@ -12,6 +12,7 @@ pub mod mp4;
 pub mod mpeg_ps;
 pub mod mpeg_ts;
 pub mod ogg;
+pub mod skm;
 pub mod swf;
 pub mod wav;
 
@@ -23,5 +24,6 @@ pub use mp4::parse_mp4;
 pub use mpeg_ps::parse_mpeg_ps;
 pub use mpeg_ts::parse_mpeg_ts;
 pub use ogg::parse_ogg;
+pub use skm::parse_skm;
 pub use swf::parse_swf;
 pub use wav::parse_wav;
