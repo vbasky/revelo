@@ -173,6 +173,7 @@ fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
             "dialnorm_Average",
             "dialnorm_Minimum",
         ],
+        StreamKind::Image => &["Density_X", "Density_Y", "Density_Unit", "Density_String"],
         _ => &[],
     }
 }
@@ -239,6 +240,8 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "File_Modified_Date_Local",
             "Encoded_Date",
             "Tagged_Date",
+            "Encoded_Application",
+            "Encoded_Application_Name",
         ],
         StreamKind::Audio => &[
             "Count",
@@ -316,10 +319,13 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "StreamKindID",
             "StreamKindPos",
             "ID",
+            "Type",
             "Format",
             "Format_Profile",
+            "Format_Version",
             "Format_Compression",
             "Format_Settings_Packing",
+            "Format_Settings_Endianness",
             "Width",
             "Height",
             "PixelAspectRatio",

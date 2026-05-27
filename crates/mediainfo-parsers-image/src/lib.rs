@@ -8,10 +8,12 @@ pub mod bmp;
 pub mod gif;
 pub mod jpeg;
 pub mod png;
+pub mod tiff;
 pub mod webp;
 
 pub use bmp::parse_bmp;
 pub use gif::parse_gif;
 pub use jpeg::parse_jpeg;
 pub use png::parse_png;
+pub use tiff::parse_tiff;
 pub use webp::parse_webp;
