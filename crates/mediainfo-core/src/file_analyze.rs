@@ -24,6 +24,12 @@ pub struct FileAnalyze<'a> {
     truncated: bool,
     tree: ElementTree,
     streams: StreamCollection,
+    /// When non-zero, bitstream mode is active and `Get_S*` reads consume
+    /// from `buffer[element_offset..]` starting `bs_bits_consumed` bits in.
+    /// `BS_End` byte-aligns by advancing `element_offset` and clearing
+    /// `bs_bits_consumed`.
+    bs_active: bool,
+    bs_bits_consumed: usize,
     /// When false, `Get_*` methods skip recording entries on the trace
     /// tree — mirrors the C++ `Trace_Activated` flag.
     pub trace_activated: bool,
@@ -37,6 +43,8 @@ impl<'a> FileAnalyze<'a> {
             truncated: false,
             tree: ElementTree::new(),
             streams: StreamCollection::new(),
+            bs_active: false,
+            bs_bits_consumed: 0,
             trace_activated: true,
         }
     }
@@ -474,6 +482,111 @@ impl<'a> FileAnalyze<'a> {
     pub fn Skip_LF8(&mut self, _name: &str) { self.skip(8) }
 
     // ----------------------------------------------------------------------
+    // Bitstream mode — BS_Begin / Get_S* / BS_End
+    //
+    // Mirrors the C++ pattern: callers issue `BS_Begin()`, then read
+    // bits MSB-first via `Get_S*(N, &mut info, "Name")`, then
+    // `BS_End()` to byte-align. Bit reads consume from
+    // `buffer[element_offset..]` starting at `bs_bits_consumed` bits
+    // past the byte boundary. `BS_End` advances `element_offset` to
+    // the next byte boundary and clears the bit cursor.
+    // ----------------------------------------------------------------------
+
+    pub fn BS_Begin(&mut self) {
+        self.bs_active = true;
+        self.bs_bits_consumed = 0;
+    }
+
+    pub fn BS_End(&mut self) {
+        if self.bs_bits_consumed > 0 {
+            self.element_offset += 1;
+            self.bs_bits_consumed = 0;
+        }
+        self.bs_active = false;
+    }
+
+    /// Read `n` bits MSB-first from the bitstream cursor. Returns 0 on
+    /// underrun and marks the buffer truncated. `n` must be <= 64.
+    fn read_bits_be(&mut self, n: usize) -> u64 {
+        debug_assert!(self.bs_active, "Get_S* called outside BS_Begin/BS_End");
+        if n == 0 {
+            return 0;
+        }
+        debug_assert!(n <= 64);
+
+        // Bytes required from current byte to satisfy `n` bits.
+        let bits_in_current_byte = 8 - self.bs_bits_consumed;
+        let bytes_after_current = if n <= bits_in_current_byte {
+            0
+        } else {
+            (n - bits_in_current_byte).div_ceil(8)
+        };
+        let bytes_needed = 1 + bytes_after_current;
+
+        if self.element_offset + bytes_needed > self.buffer.len() {
+            self.truncated = true;
+            self.element_offset = self.buffer.len();
+            self.bs_bits_consumed = 0;
+            return 0;
+        }
+
+        let mut value: u64 = 0;
+        let mut bits_left = n;
+        let mut cursor_byte = self.element_offset;
+        let mut bit_in_byte = self.bs_bits_consumed;
+
+        while bits_left > 0 {
+            let avail = 8 - bit_in_byte;
+            let take = bits_left.min(avail);
+            let shift_in_byte = avail - take;
+            let chunk = (self.buffer[cursor_byte] >> shift_in_byte) as u64 & ((1u64 << take) - 1);
+            value = (value << take) | chunk;
+            bits_left -= take;
+            bit_in_byte += take;
+            if bit_in_byte == 8 {
+                cursor_byte += 1;
+                bit_in_byte = 0;
+            }
+        }
+
+        self.element_offset = cursor_byte;
+        self.bs_bits_consumed = bit_in_byte;
+        value
+    }
+
+    pub fn Get_S1(&mut self, n: usize, info: &mut int8u, name: &str) {
+        *info = self.read_bits_be(n) as int8u;
+        self.param(name, *info);
+    }
+    pub fn Get_S2(&mut self, n: usize, info: &mut int16u, name: &str) {
+        *info = self.read_bits_be(n) as int16u;
+        self.param(name, *info);
+    }
+    pub fn Get_S3(&mut self, n: usize, info: &mut int32u, name: &str) {
+        *info = self.read_bits_be(n) as int32u;
+        self.param(name, *info);
+    }
+    pub fn Get_S4(&mut self, n: usize, info: &mut int32u, name: &str) {
+        *info = self.read_bits_be(n) as int32u;
+        self.param(name, *info);
+    }
+    pub fn Get_S5(&mut self, n: usize, info: &mut int64u, name: &str) {
+        *info = self.read_bits_be(n);
+        self.param(name, *info);
+    }
+    pub fn Get_S8(&mut self, n: usize, info: &mut int64u, name: &str) {
+        *info = self.read_bits_be(n);
+        self.param(name, *info);
+    }
+
+    pub fn Skip_S1(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn Skip_S2(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn Skip_S3(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn Skip_S4(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn Skip_S5(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn Skip_S8(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+
+    // ----------------------------------------------------------------------
     // 4CC / Character codes (Get_C4 is used everywhere for MP4 atoms, RIFF)
     // ----------------------------------------------------------------------
 
@@ -809,6 +922,92 @@ mod tests {
             Some("FLAC")
         );
         assert_eq!(fa.Count_Get(StreamKind::Audio), 1);
+    }
+
+    #[test]
+    fn bs_get_s_reads_bit_aligned_fields() {
+        // 0xAB 0xCD = 1010 1011 1100 1101
+        // Read: 4 bits (1010 = 0xA), 4 bits (1011 = 0xB), 8 bits (1100 1101 = 0xCD)
+        let buf = [0xAB, 0xCD];
+        let mut fa = FileAnalyze::new(&buf);
+        fa.BS_Begin();
+        let mut a: int8u = 0;
+        let mut b: int8u = 0;
+        let mut c: int8u = 0;
+        fa.Get_S1(4, &mut a, "a");
+        fa.Get_S1(4, &mut b, "b");
+        fa.Get_S1(8, &mut c, "c");
+        fa.BS_End();
+        assert_eq!(a, 0xA);
+        assert_eq!(b, 0xB);
+        assert_eq!(c, 0xCD);
+        assert_eq!(fa.Element_Offset(), 2);
+    }
+
+    #[test]
+    fn bs_streaminfo_layout_decoded_correctly() {
+        // FLAC STREAMINFO packed field: 20 bits sample rate, 3 bits
+        // channels-1, 5 bits bits_per_sample-1, 36 bits samples.
+        // Encode: sample_rate=48000 (0x0BB80), channels-1=1, bits-1=15, samples=71638.
+        //
+        // bits: 00000000101110111000  001  01111  000000000000000000010001011110010110
+        //                 0x0BB80      1   0x0F    0x0000_117_96 (71638)
+        // Pack into 8 bytes (64 bits).
+        let mut packed: u64 = 0;
+        let sample_rate: u64 = 48000;
+        let channels_m1: u64 = 1; // 2 channels
+        let bps_m1: u64 = 15; // 16 bits
+        let samples: u64 = 71638;
+        packed |= sample_rate << (3 + 5 + 36);
+        packed |= channels_m1 << (5 + 36);
+        packed |= bps_m1 << 36;
+        packed |= samples;
+        let buf = packed.to_be_bytes();
+
+        let mut fa = FileAnalyze::new(&buf);
+        fa.BS_Begin();
+        let mut sr: int32u = 0;
+        let mut ch: int8u = 0;
+        let mut bps: int8u = 0;
+        let mut samp: int64u = 0;
+        fa.Get_S3(20, &mut sr, "SampleRate");
+        fa.Get_S1(3, &mut ch, "Channels");
+        fa.Get_S1(5, &mut bps, "BitsPerSample");
+        fa.Get_S5(36, &mut samp, "Samples");
+        fa.BS_End();
+        assert_eq!(sr, 48000);
+        assert_eq!(ch + 1, 2);
+        assert_eq!(bps + 1, 16);
+        assert_eq!(samp, 71638);
+        assert_eq!(fa.Element_Offset(), 8);
+    }
+
+    #[test]
+    fn bs_end_byte_aligns_when_partially_consumed() {
+        let buf = [0xFF, 0x12];
+        let mut fa = FileAnalyze::new(&buf);
+        fa.BS_Begin();
+        let mut a: int8u = 0;
+        fa.Get_S1(3, &mut a, "a");
+        assert_eq!(a, 0b111);
+        fa.BS_End();
+        // Aligned: should now be at byte index 1
+        assert_eq!(fa.Element_Offset(), 1);
+        let mut b: int8u = 0;
+        fa.Get_B1(&mut b, "b");
+        assert_eq!(b, 0x12);
+    }
+
+    #[test]
+    fn bs_end_no_op_when_already_aligned() {
+        let buf = [0xAA, 0xBB];
+        let mut fa = FileAnalyze::new(&buf);
+        fa.BS_Begin();
+        let mut a: int8u = 0;
+        fa.Get_S1(8, &mut a, "a");
+        fa.BS_End();
+        assert_eq!(a, 0xAA);
+        assert_eq!(fa.Element_Offset(), 1);
     }
 
     #[test]

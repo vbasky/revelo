@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
+use mediainfo_parsers_audio::parse_flac;
 use mediainfo_parsers_container::{parse_aiff, parse_wav};
 
 fn main() -> ExitCode {
@@ -107,10 +108,16 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("stat failed: {e}"))?;
     let mut fa = FileAnalyze::new(&bytes);
 
-    let parsed = parse_wav(&mut fa) || {
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 3] =
+        [("WAV", parse_wav), ("AIFF", parse_aiff), ("FLAC", parse_flac)];
+    let mut parsed = false;
+    for (_name, parser) in parsers {
         fa = FileAnalyze::new(&bytes);
-        parse_aiff(&mut fa)
-    };
+        if parser(&mut fa) {
+            parsed = true;
+            break;
+        }
+    }
     if !parsed {
         return Err(format!(
             "no rust parser matched ({} bytes)",
@@ -157,13 +164,13 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
     if let Some(ms) = duration_ms {
         if ms > 0 {
             let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-            fa.Fill(
-                StreamKind::General,
-                0,
-                "OverallBitRate_Mode",
-                "CBR",
-                false,
-            );
+            // Mirror the audio stream's BitRate_Mode rather than hardcoding —
+            // a parser may have flagged the audio as VBR (e.g. FLAC).
+            let bitrate_mode = fa
+                .Retrieve(StreamKind::Audio, 0, "BitRate_Mode")
+                .map(|z| z.as_str().to_owned())
+                .unwrap_or_else(|| "CBR".to_owned());
+            fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", bitrate_mode, false);
             fa.Fill(
                 StreamKind::General,
                 0,

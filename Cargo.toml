@@ -4,6 +4,7 @@ members = [
     "crates/diff-harness",
     "crates/mediainfo-core",
     "crates/mediainfo-export",
+    "crates/mediainfo-parsers-audio",
     "crates/mediainfo-parsers-container",
     "crates/zenlib",
 ]

@@ -12,4 +12,5 @@ path = "src/main.rs"
 [dependencies]
 mediainfo-core = { path = "../mediainfo-core" }
 mediainfo-export = { path = "../mediainfo-export" }
+mediainfo-parsers-audio = { path = "../mediainfo-parsers-audio" }
 mediainfo-parsers-container = { path = "../mediainfo-parsers-container" }
