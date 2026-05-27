@@ -36,6 +36,13 @@ const BOX_STSZ: int32u = u32::from_be_bytes(*b"stsz");
 const BOX_MVHD: int32u = u32::from_be_bytes(*b"mvhd");
 const BOX_EDTS: int32u = u32::from_be_bytes(*b"edts");
 const BOX_ELST: int32u = u32::from_be_bytes(*b"elst");
+const BOX_UDTA: int32u = u32::from_be_bytes(*b"udta");
+const BOX_META: int32u = u32::from_be_bytes(*b"meta");
+const BOX_ILST: int32u = u32::from_be_bytes(*b"ilst");
+const BOX_DATA: int32u = u32::from_be_bytes(*b"data");
+
+/// iTunes-style `©too` (tool/encoder) metadata key.
+const ITUNES_KEY_TOOL: int32u = 0xA9_74_6F_6F;
 
 const HANDLER_SOUN: int32u = u32::from_be_bytes(*b"soun");
 const HANDLER_VIDE: int32u = u32::from_be_bytes(*b"vide");
@@ -47,6 +54,9 @@ const BOX_ESDS: int32u = u32::from_be_bytes(*b"esds");
 struct MovieInfo {
     timescale: u32,
     duration: u64,
+    /// iTunes-style metadata items from udta > meta > ilst. Keyed by
+    /// the 4-byte item type code (e.g. `©too` = 0xA9_74_6F_6F).
+    itunes_metadata: Vec<(int32u, String)>,
 }
 
 #[derive(Debug, Default)]
@@ -99,7 +109,7 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
                     handle_inner(fa, t, s, &mut tracks, &mut movie);
                 });
             }
-            BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS => {
+            BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
                 let inner = box_size.saturating_sub(8);
                 walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
                     handle_inner(fa, t, s, &mut tracks, &mut movie);
@@ -224,11 +234,30 @@ fn handle_inner(
     movie: &mut MovieInfo,
 ) {
     match box_type {
-        BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS => {
+        BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
             let inner = box_size.saturating_sub(8);
             walk_boxes(fa, inner, 1, &mut |fa, t, s, _| {
                 handle_inner(fa, t, s, tracks, movie);
             });
+        }
+        BOX_META => {
+            // meta has a 4-byte version_flags header before its
+            // nested children (hdlr, keys, ilst, etc). We don't
+            // recurse through handle_inner here because meta's hdlr
+            // declares the metadata namespace (e.g. "mdir" for
+            // iTunes) — not the track-level audio/video handler —
+            // and feeding it to parse_hdlr would clobber the audio
+            // track's handler classification. Dispatch only ilst.
+            let inner = box_size.saturating_sub(8);
+            if inner < 4 {
+                fa.Skip_Hexa(inner, "meta_short");
+            } else {
+                fa.Skip_Hexa(4, "version_flags");
+                walk_boxes(fa, inner - 4, 1, &mut |fa, t, s, _| match t {
+                    BOX_ILST => parse_ilst(fa, s, movie),
+                    _ => fa.Skip_Hexa(s.saturating_sub(8), "meta_child"),
+                });
+            }
         }
         BOX_TRAK => {
             tracks.push(TrackInfo::default());
@@ -316,6 +345,61 @@ fn parse_mvhd(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
     let consumed = fa.Element_Offset() - start;
     if consumed < body_size {
         fa.Skip_Hexa(body_size - consumed, "mvhd_tail");
+    }
+}
+
+/// Parse the iTunes `ilst` (item list) box. Each item is a `[size][4cc]`
+/// box containing a nested `data` box. Captures UTF-8 string items
+/// indexed by their 4cc type.
+fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
+    let inner = box_size.saturating_sub(8);
+    let end = fa.Element_Offset() + inner;
+    while fa.Element_Offset() + 8 <= end {
+        let item_start = fa.Element_Offset();
+        let mut item_size: int32u = 0;
+        fa.Get_B4(&mut item_size, "item_size");
+        let mut item_type: int32u = 0;
+        fa.Get_C4(&mut item_type, "item_type");
+        let item_total = item_size as usize;
+        if item_total < 8 || item_start + item_total > end {
+            break;
+        }
+        let body = item_total - 8;
+        let body_end = fa.Element_Offset() + body;
+
+        // Inside each item is a `data` box (and maybe other helpers).
+        while fa.Element_Offset() + 8 <= body_end {
+            let mut sub_size: int32u = 0;
+            fa.Get_B4(&mut sub_size, "sub_size");
+            let mut sub_type: int32u = 0;
+            fa.Get_C4(&mut sub_type, "sub_type");
+            let sub_total = sub_size as usize;
+            if sub_total < 8 || sub_total > (body_end - fa.Element_Offset() + 8) {
+                break;
+            }
+            let sub_body = sub_total - 8;
+            if sub_type == BOX_DATA && sub_body >= 8 {
+                // data box: 4 bytes type_indicator, 4 bytes locale, then payload.
+                let mut type_indicator: int32u = 0;
+                fa.Get_B4(&mut type_indicator, "type_indicator");
+                fa.Skip_Hexa(4, "locale");
+                let payload_size = sub_body - 8;
+                let payload = fa.read_raw(payload_size).to_vec();
+                if type_indicator == 1 {
+                    let s = String::from_utf8_lossy(&payload).into_owned();
+                    movie.itunes_metadata.push((item_type, s));
+                }
+            } else {
+                fa.Skip_Hexa(sub_body, "sub_body");
+            }
+        }
+        // Pin to item boundary in case the loop above bailed.
+        if fa.Element_Offset() < body_end {
+            fa.Skip_Hexa(body_end - fa.Element_Offset(), "item_tail");
+        }
+    }
+    if fa.Element_Offset() < end {
+        fa.Skip_Hexa(end - fa.Element_Offset(), "ilst_tail");
     }
 }
 
@@ -724,6 +808,29 @@ fn fill_streams(
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG-4", false);
+
+    // Presence of any iTunes metadata triggers the "Apple audio with iTunes
+    // info" profile descriptor, regardless of which keys are populated.
+    if !movie.itunes_metadata.is_empty() {
+        fa.Fill(
+            StreamKind::General,
+            0,
+            "Format_Profile",
+            "Apple audio with iTunes info",
+            false,
+        );
+        for (key, value) in &movie.itunes_metadata {
+            if *key == ITUNES_KEY_TOOL {
+                fa.Fill(
+                    StreamKind::General,
+                    0,
+                    "Encoded_Application",
+                    value.clone(),
+                    false,
+                );
+            }
+        }
+    }
 
     if !ftyp_brands.is_empty() {
         fa.Fill(
