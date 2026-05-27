@@ -58,6 +58,17 @@ struct ElementaryStream {
     /// Registration descriptor format identifier (4 ASCII bytes packed
     /// big-endian, e.g. 'HDMV' = 0x48444D56).
     format_identifier: u32,
+    /// AAC payload params extracted from first ADTS frame inside PES,
+    /// when stream_type indicates AAC (0x0F/0x11/0x1C).
+    aac: Option<AacInfo>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AacInfo {
+    /// AudioObjectType: profile + 1 (e.g. 2 = LC, 5 = HE-AAC SBR).
+    aot: u8,
+    sample_rate: u32,
+    channels: u8,
 }
 
 #[derive(Default, Debug)]
@@ -166,6 +177,68 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
+    // Second pass: sniff first PES payload for AAC streams to extract
+    // ADTS header (AOT/SamplingRate/Channels/Format_Version). Walk the
+    // same packet stream, accumulating up to 1 KiB of PES bytes per AAC
+    // PID, then parse the ADTS sync once we have enough.
+    let mut aac_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
+    for prog in programs_by_pmt_pid.values() {
+        for es in &prog.streams {
+            if matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
+                aac_pids.insert(es.pid, Vec::new());
+            }
+        }
+    }
+    if !aac_pids.is_empty() {
+        let mut pos = first_offset;
+        while pos + 188 <= buf.len() {
+            let sync_pos = pos + layout.bdav_prefix;
+            if sync_pos + 188 > buf.len() || buf[sync_pos] != SYNC {
+                pos += stride;
+                continue;
+            }
+            let pkt = &buf[sync_pos..sync_pos + 188];
+            let pid = (((pkt[1] & 0x1F) as u16) << 8) | (pkt[2] as u16);
+            let Some(accum) = aac_pids.get_mut(&pid) else {
+                pos += stride;
+                continue;
+            };
+            if accum.len() >= 1024 {
+                pos += stride;
+                continue;
+            }
+            let adaptation_control = (pkt[3] >> 4) & 0x3;
+            let has_adaptation = adaptation_control == 2 || adaptation_control == 3;
+            let has_payload = adaptation_control == 1 || adaptation_control == 3;
+            if !has_payload {
+                pos += stride;
+                continue;
+            }
+            let mut payload_off = 4usize;
+            if has_adaptation {
+                let af_len = pkt[4] as usize;
+                payload_off = 5 + af_len;
+            }
+            if payload_off >= 188 {
+                pos += stride;
+                continue;
+            }
+            accum.extend_from_slice(&pkt[payload_off..]);
+            pos += stride;
+        }
+        // Now parse each accumulator: skip past PES header to ES payload,
+        // then find ADTS sync.
+        for prog in programs_by_pmt_pid.values_mut() {
+            for es in prog.streams.iter_mut() {
+                if !matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
+                    continue;
+                }
+                let Some(accum) = aac_pids.get(&es.pid) else { continue };
+                es.aac = sniff_aac_adts(accum);
+            }
+        }
+    }
+
     let container_format = match (layout.packet_size, layout.bdav_prefix) {
         (192, 4) => "BDAV",
         (204, 0) => "MPEG-TS 188+16",
@@ -221,11 +294,38 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             // ID = PID. Oracle renders as decimal.
             fa.Fill(kind, pos_in_kind, "ID", es.pid.to_string(), false);
             fa.Fill(kind, pos_in_kind, "Format", format, false);
-            // CodecID / MuxingMode are deliberately omitted: oracle's
-            // CodecID for AAC-in-TS is "<stream_type>-<AOT>" (needs PES
-            // payload AOT parsing) and MuxingMode is "ADTS" for AAC
-            // payloads (needs PES → ADTS frame inspection). Emitting
-            // generic values here would diverge from oracle output.
+            if let Some(aac) = &es.aac {
+                // AAC ADTS payload → unlocks Format_Version, AOT, CodecID,
+                // MuxingMode=ADTS, Channels, SamplingRate, SamplesPerFrame.
+                fa.Fill(kind, pos_in_kind, "Format_Version", "4", false);
+                if let Some(profile) = aac_profile_name(aac.aot) {
+                    fa.Fill(kind, pos_in_kind, "Format_AdditionalFeatures", profile, false);
+                }
+                fa.Fill(kind, pos_in_kind, "MuxingMode", "ADTS", false);
+                fa.Fill(
+                    kind,
+                    pos_in_kind,
+                    "CodecID",
+                    format!("{}-{}", es.stream_type, aac.aot),
+                    false,
+                );
+                fa.Fill(kind, pos_in_kind, "BitRate_Mode", "VBR", false);
+                fa.Fill(kind, pos_in_kind, "Channels", aac.channels.to_string(), false);
+                let (positions, layout) = aac_channel_layout(aac.channels);
+                if let Some(p) = positions {
+                    fa.Fill(kind, pos_in_kind, "ChannelPositions", p, false);
+                }
+                if let Some(l) = layout {
+                    fa.Fill(kind, pos_in_kind, "ChannelLayout", l, false);
+                }
+                fa.Fill(kind, pos_in_kind, "SamplesPerFrame", "1024", false);
+                fa.Fill(kind, pos_in_kind, "SamplingRate", aac.sample_rate.to_string(), false);
+                if aac.sample_rate > 0 {
+                    let frame_rate = aac.sample_rate as f64 / 1024.0;
+                    fa.Fill(kind, pos_in_kind, "FrameRate", format!("{:.3}", frame_rate), false);
+                }
+                fa.Fill(kind, pos_in_kind, "Compression_Mode", "Lossy", false);
+            }
             let _ = codec;
         }
     }
@@ -344,6 +444,7 @@ fn parse_pmt(section: &[u8], prog: &mut Program) {
             pid: es_pid,
             stream_type,
             format_identifier: es_fid,
+            aac: None,
         });
         i = desc_end;
     }
@@ -494,6 +595,56 @@ fn stream_codec(stream_type: u8, fid: u32) -> &'static str {
                 _ => "",
             },
         },
+    }
+}
+
+/// Scan a PES payload accumulator for the first ADTS sync (0xFFF) and
+/// decode the header. Returns None if no sync found in the first 1 KiB
+/// or if the header fields are invalid.
+fn sniff_aac_adts(buf: &[u8]) -> Option<AacInfo> {
+    const SAMPLE_RATE_TABLE: [u32; 13] = [
+        96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
+    ];
+    for i in 0..buf.len().saturating_sub(7) {
+        if buf[i] == 0xFF && (buf[i + 1] & 0xF0) == 0xF0 {
+            let profile = (buf[i + 2] >> 6) & 0x3;
+            let sample_rate_idx = ((buf[i + 2] >> 2) & 0xF) as usize;
+            let channel_config = ((buf[i + 2] & 0x1) << 2) | ((buf[i + 3] >> 6) & 0x3);
+            if sample_rate_idx >= SAMPLE_RATE_TABLE.len() {
+                return None;
+            }
+            let sample_rate = SAMPLE_RATE_TABLE[sample_rate_idx];
+            let channels = match channel_config {
+                0 => 0,
+                1..=6 => channel_config,
+                7 => 8,
+                _ => 0,
+            };
+            if channels == 0 || sample_rate == 0 {
+                return None;
+            }
+            return Some(AacInfo { aot: profile + 1, sample_rate, channels });
+        }
+    }
+    None
+}
+
+fn aac_profile_name(aot: u8) -> Option<&'static str> {
+    match aot {
+        1 => Some("Main"),
+        2 => Some("LC"),
+        3 => Some("SSR"),
+        4 => Some("LTP"),
+        5 => Some("SBR"),
+        _ => None,
+    }
+}
+
+fn aac_channel_layout(channels: u8) -> (Option<&'static str>, Option<&'static str>) {
+    match channels {
+        1 => (Some("Front: C"), Some("M")),
+        2 => (Some("Front: L R"), Some("L R")),
+        _ => (None, None),
     }
 }
 
