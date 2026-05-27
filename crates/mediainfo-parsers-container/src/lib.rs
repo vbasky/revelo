@@ -7,6 +7,8 @@
 pub mod aiff;
 pub mod avi;
 pub mod cdxa;
+pub mod dpg;
+pub mod hds_f4m;
 pub mod mkv;
 pub mod mp4;
 pub mod mpeg_ps;
@@ -19,6 +21,8 @@ pub mod wav;
 pub use aiff::parse_aiff;
 pub use avi::parse_avi;
 pub use cdxa::parse_cdxa;
+pub use dpg::parse_dpg;
+pub use hds_f4m::parse_hds_f4m;
 pub use mkv::parse_mkv;
 pub use mp4::parse_mp4;
 pub use mpeg_ps::parse_mpeg_ps;
