@@ -8,8 +8,10 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+pub mod bitstream;
 pub mod types;
 pub mod ztring;
 
+pub use bitstream::BitStream;
 pub use types::*;
 pub use ztring::Ztring;
