@@ -10,6 +10,9 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+pub mod element;
 pub mod file_analyze;
+mod zenlib_re_export;
 
+pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;
