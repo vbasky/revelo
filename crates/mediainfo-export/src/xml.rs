@@ -309,6 +309,7 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "StreamKindPos",
             "ID",
             "Format",
+            "Format_Profile",
             "Format_Compression",
             "Format_Settings_Packing",
             "Width",
