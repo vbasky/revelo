@@ -1,0 +1,475 @@
+//! AVI (Audio Video Interleave) parser.
+//!
+//! AVI is a RIFF container with FORM type "AVI ". Top-level layout:
+//!   RIFF <size> "AVI "
+//!     LIST <size> "hdrl"
+//!       "avih" <size> <AVIMAINHEADER>
+//!       LIST <size> "strl"  (one per stream)
+//!         "strh" <size> <AVISTREAMHEADER>   (auds/vids/txts/mids/iavs)
+//!         "strf" <size> <BITMAPINFOHEADER | WAVEFORMATEX | ...>
+//!         ...
+//!     LIST <size> "movi"  (sample data — not parsed)
+//!     "idx1" <size> <index entries>  (optional)
+
+use mediainfo_core::{FileAnalyze, StreamKind};
+
+const FOURCC_RIFF: u32 = u32::from_be_bytes(*b"RIFF");
+const FOURCC_AVI: u32 = u32::from_be_bytes(*b"AVI ");
+const FOURCC_LIST: u32 = u32::from_be_bytes(*b"LIST");
+const FOURCC_HDRL: u32 = u32::from_be_bytes(*b"hdrl");
+const FOURCC_STRL: u32 = u32::from_be_bytes(*b"strl");
+const FOURCC_AVIH: u32 = u32::from_be_bytes(*b"avih");
+const FOURCC_STRH: u32 = u32::from_be_bytes(*b"strh");
+const FOURCC_STRF: u32 = u32::from_be_bytes(*b"strf");
+
+const STRH_AUDS: u32 = u32::from_be_bytes(*b"auds");
+const STRH_VIDS: u32 = u32::from_be_bytes(*b"vids");
+const STRH_TXTS: u32 = u32::from_be_bytes(*b"txts");
+
+#[derive(Default, Debug)]
+struct AviHeader {
+    microseconds_per_frame: u32,
+    total_frames: u32,
+    width: u32,
+    height: u32,
+    streams_count: u32,
+}
+
+#[derive(Default, Debug)]
+struct StreamHeader {
+    fcc_type: u32,
+    fcc_handler_fourcc: Option<u32>, // for vids: ASCII fourcc; for auds: a 32-bit number (we won't expose)
+    scale: u32,
+    rate: u32,
+    length: u32,
+    frame_left: u16,
+    frame_top: u16,
+    frame_right: u16,
+    frame_bottom: u16,
+}
+
+#[derive(Default, Debug)]
+struct VideoFormat {
+    width: u32,
+    height: u32,
+    bit_count: u16,
+    compression: u32, // FourCC
+}
+
+#[derive(Default, Debug)]
+struct AudioFormat {
+    format_tag: u16,
+    channels: u16,
+    sample_rate: u32,
+    avg_bytes_per_sec: u32,
+    block_align: u16,
+    bits_per_sample: u16,
+}
+
+#[derive(Default, Debug)]
+struct AviStream {
+    strh: StreamHeader,
+    video: Option<VideoFormat>,
+    audio: Option<AudioFormat>,
+}
+
+pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
+    let head = fa.peek_raw(12);
+    let Some(h) = head else { return false };
+    let magic = u32::from_be_bytes([h[0], h[1], h[2], h[3]]);
+    if magic != FOURCC_RIFF {
+        return false;
+    }
+    let form = u32::from_be_bytes([h[8], h[9], h[10], h[11]]);
+    if form != FOURCC_AVI {
+        return false;
+    }
+    // Riff size (LE at h[4..8]) declared but we walk the actual file.
+    let _ = u32::from_le_bytes([h[4], h[5], h[6], h[7]]);
+    let total = fa.Remain();
+    let body = match fa.peek_raw(total) {
+        Some(b) => b,
+        None => return false,
+    };
+    // body[0..12] is RIFF/size/AVI, body[12..] starts the first chunk.
+    let mut header = AviHeader::default();
+    let mut streams: Vec<AviStream> = Vec::new();
+
+    walk_riff_chunks(&body[12..], total - 12, &mut |fourcc, list_type, payload| {
+        match (fourcc, list_type) {
+            (FOURCC_LIST, Some(FOURCC_HDRL)) => {
+                walk_riff_chunks(payload, payload.len(), &mut |fc, lt, p| match (fc, lt) {
+                    (FOURCC_AVIH, _) => parse_avih(p, &mut header),
+                    (FOURCC_LIST, Some(FOURCC_STRL)) => {
+                        let mut s = AviStream::default();
+                        walk_riff_chunks(p, p.len(), &mut |fc2, _lt2, p2| match fc2 {
+                            FOURCC_STRH => parse_strh(p2, &mut s.strh),
+                            FOURCC_STRF => match s.strh.fcc_type {
+                                STRH_VIDS => s.video = parse_strf_video(p2),
+                                STRH_AUDS => s.audio = parse_strf_audio(p2),
+                                _ => {}
+                            },
+                            _ => {}
+                        });
+                        streams.push(s);
+                    }
+                    _ => {}
+                });
+            }
+            _ => {}
+        }
+    });
+
+    if streams.is_empty() && header.streams_count == 0 {
+        return false;
+    }
+
+    fill_streams(fa, &header, &streams);
+    true
+}
+
+/// Walk a buffer of RIFF chunks. For each chunk, invoke `visit(fourcc,
+/// list_type, payload)` where `list_type` is `Some(t)` when fourcc=LIST
+/// (the 4-byte type that follows the size field).
+fn walk_riff_chunks<F: FnMut(u32, Option<u32>, &[u8])>(buf: &[u8], len: usize, visit: &mut F) {
+    let mut i = 0;
+    while i + 8 <= len {
+        let fourcc = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
+        let size = u32::from_le_bytes([buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7]]) as usize;
+        let data_start = i + 8;
+        let data_end = data_start + size;
+        if data_end > len {
+            break;
+        }
+        if fourcc == FOURCC_LIST && size >= 4 {
+            let list_type = u32::from_be_bytes([
+                buf[data_start],
+                buf[data_start + 1],
+                buf[data_start + 2],
+                buf[data_start + 3],
+            ]);
+            visit(fourcc, Some(list_type), &buf[data_start + 4..data_end]);
+        } else {
+            visit(fourcc, None, &buf[data_start..data_end]);
+        }
+        // Chunks pad to 2-byte alignment.
+        let advance = 8 + size + (size & 1);
+        i += advance;
+    }
+}
+
+fn parse_avih(p: &[u8], h: &mut AviHeader) {
+    if p.len() < 40 {
+        return;
+    }
+    h.microseconds_per_frame = u32::from_le_bytes([p[0], p[1], p[2], p[3]]);
+    // p[4..8] MaxBytesPerSec, p[8..12] PaddingGranularity, p[12..16] Flags
+    h.total_frames = u32::from_le_bytes([p[16], p[17], p[18], p[19]]);
+    // p[20..24] InitialFrames
+    h.streams_count = u32::from_le_bytes([p[24], p[25], p[26], p[27]]);
+    // p[28..32] SuggestedBufferSize
+    h.width = u32::from_le_bytes([p[32], p[33], p[34], p[35]]);
+    h.height = u32::from_le_bytes([p[36], p[37], p[38], p[39]]);
+}
+
+fn parse_strh(p: &[u8], s: &mut StreamHeader) {
+    if p.len() < 48 {
+        return;
+    }
+    s.fcc_type = u32::from_be_bytes([p[0], p[1], p[2], p[3]]);
+    s.fcc_handler_fourcc = Some(u32::from_be_bytes([p[4], p[5], p[6], p[7]]));
+    // p[8..12] Flags, p[12..14] Priority, p[14..16] Language, p[16..20] InitialFrames
+    s.scale = u32::from_le_bytes([p[20], p[21], p[22], p[23]]);
+    s.rate = u32::from_le_bytes([p[24], p[25], p[26], p[27]]);
+    // p[28..32] Start
+    s.length = u32::from_le_bytes([p[32], p[33], p[34], p[35]]);
+    // p[36..40] SuggestedBufferSize, p[40..44] Quality, p[44..48] SampleSize
+    if p.len() >= 56 {
+        s.frame_left = u16::from_le_bytes([p[48], p[49]]);
+        s.frame_top = u16::from_le_bytes([p[50], p[51]]);
+        s.frame_right = u16::from_le_bytes([p[52], p[53]]);
+        s.frame_bottom = u16::from_le_bytes([p[54], p[55]]);
+    }
+}
+
+fn parse_strf_video(p: &[u8]) -> Option<VideoFormat> {
+    if p.len() < 40 {
+        return None;
+    }
+    // BITMAPINFOHEADER layout, little-endian:
+    //   biSize(4), biWidth(4), biHeight(4), biPlanes(2), biBitCount(2),
+    //   biCompression(4 FourCC), biSizeImage(4), biXPelsPerMeter(4),
+    //   biYPelsPerMeter(4), biClrUsed(4), biClrImportant(4)
+    let width = u32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+    let height = u32::from_le_bytes([p[8], p[9], p[10], p[11]]);
+    let bit_count = u16::from_le_bytes([p[14], p[15]]);
+    let compression = u32::from_be_bytes([p[16], p[17], p[18], p[19]]);
+    Some(VideoFormat { width, height, bit_count, compression })
+}
+
+fn parse_strf_audio(p: &[u8]) -> Option<AudioFormat> {
+    if p.len() < 14 {
+        return None;
+    }
+    let format_tag = u16::from_le_bytes([p[0], p[1]]);
+    let channels = u16::from_le_bytes([p[2], p[3]]);
+    let sample_rate = u32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+    let avg_bytes_per_sec = u32::from_le_bytes([p[8], p[9], p[10], p[11]]);
+    let block_align = u16::from_le_bytes([p[12], p[13]]);
+    let bits_per_sample = if p.len() >= 16 {
+        u16::from_le_bytes([p[14], p[15]])
+    } else {
+        0
+    };
+    Some(AudioFormat {
+        format_tag,
+        channels,
+        sample_rate,
+        avg_bytes_per_sec,
+        block_align,
+        bits_per_sample,
+    })
+}
+
+fn fill_streams(fa: &mut FileAnalyze, header: &AviHeader, streams: &[AviStream]) {
+    fa.Stream_Prepare(StreamKind::General);
+    fa.Fill(StreamKind::General, 0, "Format", "AVI", false);
+
+    let video_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_VIDS).count();
+    let audio_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_AUDS).count();
+    let text_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_TXTS).count();
+    if video_count > 0 {
+        fa.Fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
+    }
+    if audio_count > 0 {
+        fa.Fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
+    }
+    if text_count > 0 {
+        fa.Fill(StreamKind::General, 0, "TextCount", text_count.to_string(), false);
+    }
+
+    // Duration from avih: microseconds_per_frame × total_frames → ms.
+    if header.microseconds_per_frame > 0 && header.total_frames > 0 {
+        let duration_ms = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
+        fa.Fill(StreamKind::General, 0, "Duration", duration_ms.to_string(), false);
+    }
+
+    for s in streams {
+        match s.strh.fcc_type {
+            STRH_VIDS => fill_video(fa, &s.strh, s.video.as_ref()),
+            STRH_AUDS => fill_audio(fa, &s.strh, s.audio.as_ref()),
+            _ => {}
+        }
+    }
+}
+
+fn fill_video(fa: &mut FileAnalyze, strh: &StreamHeader, vf: Option<&VideoFormat>) {
+    let pos = fa.Stream_Prepare(StreamKind::Video);
+    let format = vf
+        .map(|v| video_format_from_fourcc(v.compression))
+        .unwrap_or("");
+    if !format.is_empty() {
+        fa.Fill(StreamKind::Video, pos, "Format", format, false);
+    }
+    if let Some(v) = vf {
+        if v.compression != 0 {
+            fa.Fill(
+                StreamKind::Video,
+                pos,
+                "CodecID",
+                fourcc_to_string(v.compression),
+                false,
+            );
+        }
+        if v.width > 0 {
+            fa.Fill(StreamKind::Video, pos, "Width", v.width.to_string(), false);
+        }
+        if v.height > 0 {
+            fa.Fill(StreamKind::Video, pos, "Height", v.height.to_string(), false);
+        }
+        if v.bit_count > 0 && v.compression == 0 {
+            fa.Fill(StreamKind::Video, pos, "BitDepth", v.bit_count.to_string(), false);
+        }
+    }
+    if strh.rate > 0 && strh.scale > 0 {
+        let fr = strh.rate as f64 / strh.scale as f64;
+        fa.Fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr), false);
+    }
+    if strh.length > 0 && strh.rate > 0 && strh.scale > 0 {
+        let dur_ms = (strh.length as u64 * 1000 * strh.scale as u64) / strh.rate as u64;
+        fa.Fill(StreamKind::Video, pos, "Duration", dur_ms.to_string(), false);
+    }
+}
+
+fn fill_audio(fa: &mut FileAnalyze, strh: &StreamHeader, af: Option<&AudioFormat>) {
+    let pos = fa.Stream_Prepare(StreamKind::Audio);
+    if let Some(a) = af {
+        let format = audio_format_from_tag(a.format_tag);
+        if !format.is_empty() {
+            fa.Fill(StreamKind::Audio, pos, "Format", format, false);
+        }
+        // PCM: little-endian; sign convention is unsigned for ≤8 bit, signed otherwise.
+        if a.format_tag == 0x0001 {
+            fa.Fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little", false);
+            let sign = if a.bits_per_sample <= 8 { "Unsigned" } else { "Signed" };
+            fa.Fill(StreamKind::Audio, pos, "Format_Settings_Sign", sign, false);
+        }
+        fa.Fill(StreamKind::Audio, pos, "CodecID", a.format_tag.to_string(), false);
+        if a.channels > 0 {
+            fa.Fill(StreamKind::Audio, pos, "Channels", a.channels.to_string(), false);
+        }
+        if a.sample_rate > 0 {
+            fa.Fill(StreamKind::Audio, pos, "SamplingRate", a.sample_rate.to_string(), false);
+        }
+        if a.bits_per_sample > 0 {
+            fa.Fill(StreamKind::Audio, pos, "BitDepth", a.bits_per_sample.to_string(), false);
+        }
+        if a.avg_bytes_per_sec > 0 {
+            fa.Fill(
+                StreamKind::Audio,
+                pos,
+                "BitRate",
+                (a.avg_bytes_per_sec as u64 * 8).to_string(),
+                false,
+            );
+        }
+        if a.format_tag == 0x0001 {
+            fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+        }
+        let _ = strh;
+    }
+}
+
+fn audio_format_from_tag(tag: u16) -> &'static str {
+    match tag {
+        0x0001 => "PCM",
+        0x0002 => "ADPCM",
+        0x0003 => "PCM",         // IEEE float
+        0x0006 => "A-law",
+        0x0007 => "µ-law",
+        0x0050 => "MPEG Audio",  // MP1/2
+        0x0055 => "MPEG Audio",  // MP3
+        0x00FF => "AAC",
+        0x2000 => "AC-3",
+        0x2001 => "DTS",
+        0x706D | 0xA106 => "AAC",
+        _ => "",
+    }
+}
+
+fn video_format_from_fourcc(fcc: u32) -> &'static str {
+    // Subset of common codecs MediaInfo recognises by FourCC.
+    match &fcc.to_be_bytes() {
+        b"H264" | b"h264" | b"X264" | b"x264" | b"AVC1" | b"avc1" => "AVC",
+        b"HEVC" | b"hevc" | b"HVC1" | b"hvc1" | b"HEV1" | b"hev1" => "HEVC",
+        b"VP80" | b"vp80" => "VP8",
+        b"VP90" | b"vp90" => "VP9",
+        b"DIV3" | b"div3" | b"DIV4" | b"div4" | b"DIVX" | b"divx" | b"DX50" | b"dx50"
+        | b"XVID" | b"xvid" | b"MP4V" | b"mp4v" | b"FMP4" | b"fmp4" => "MPEG-4 Visual",
+        b"MJPG" | b"mjpg" => "JPEG",
+        b"DV  " | b"dvsd" | b"DVSD" => "DV",
+        b"MPG1" | b"mpg1" | b"mpeg" | b"MPEG" => "MPEG Video",
+        b"MPG2" | b"mpg2" => "MPEG Video",
+        b"\0\0\0\0" => "RGB",
+        b"RGB " | b"RGB2" | b"RGBT" | b"RGBA" => "RGB",
+        b"YV12" | b"YUY2" | b"UYVY" | b"NV12" | b"I420" | b"IYUV" => "YUV",
+        _ => "",
+    }
+}
+
+fn fourcc_to_string(fcc: u32) -> String {
+    let bytes = fcc.to_be_bytes();
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_minimal_avi() -> Vec<u8> {
+        // Single vids stream, no actual movi data — just header structure.
+        let mut avih = vec![0u8; 40];
+        avih[..4].copy_from_slice(&40_000u32.to_le_bytes()); // 25fps → 40000us/frame
+        avih[16..20].copy_from_slice(&25u32.to_le_bytes());  // 25 frames
+        avih[24..28].copy_from_slice(&1u32.to_le_bytes());   // 1 stream
+        avih[32..36].copy_from_slice(&320u32.to_le_bytes()); // width
+        avih[36..40].copy_from_slice(&240u32.to_le_bytes()); // height
+
+        let mut strh = vec![0u8; 56];
+        strh[..4].copy_from_slice(b"vids");
+        strh[4..8].copy_from_slice(b"avc1");
+        strh[20..24].copy_from_slice(&1u32.to_le_bytes());  // Scale
+        strh[24..28].copy_from_slice(&25u32.to_le_bytes()); // Rate
+        strh[32..36].copy_from_slice(&25u32.to_le_bytes()); // Length
+        // Frame_Right/Bottom
+        strh[52..54].copy_from_slice(&320u16.to_le_bytes());
+        strh[54..56].copy_from_slice(&240u16.to_le_bytes());
+
+        let mut strf = vec![0u8; 40];
+        strf[..4].copy_from_slice(&40u32.to_le_bytes()); // biSize
+        strf[4..8].copy_from_slice(&320u32.to_le_bytes());
+        strf[8..12].copy_from_slice(&240u32.to_le_bytes());
+        strf[14..16].copy_from_slice(&24u16.to_le_bytes()); // biBitCount
+        strf[16..20].copy_from_slice(b"avc1");
+
+        let strl = build_list(b"strl", &[(b"strh", strh), (b"strf", strf)]);
+        let hdrl = build_list(b"hdrl", &[(b"avih", avih), (b"LIST", strl)]);
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        let size = 4 + 8 + hdrl.len() as u32; // "AVI " + LIST header + hdrl body
+        out.extend_from_slice(&size.to_le_bytes());
+        out.extend_from_slice(b"AVI ");
+        // Wrap hdrl with LIST header so it's a top-level chunk.
+        out.extend_from_slice(b"LIST");
+        out.extend_from_slice(&(hdrl.len() as u32).to_le_bytes());
+        out.extend_from_slice(&hdrl);
+        out
+    }
+
+    fn build_list(list_type: &[u8; 4], children: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(list_type);
+        for (fcc, data) in children {
+            body.extend_from_slice(*fcc);
+            body.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            body.extend_from_slice(data);
+            if data.len() % 2 == 1 {
+                body.push(0);
+            }
+        }
+        body
+    }
+
+    #[test]
+    fn rejects_non_avi() {
+        let mut fa = FileAnalyze::new(b"RIFF\x00\x00\x00\x00WAVE");
+        assert!(!parse_avi(&mut fa));
+    }
+
+    #[test]
+    fn parses_minimal_avi_with_vids_stream() {
+        let buf = make_minimal_avi();
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_avi(&mut fa));
+        assert_eq!(fa.Count_Get(StreamKind::Video), 1);
+        let v = |k: &str| fa.Retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(v("Format").as_deref(), Some("AVC"));
+        assert_eq!(v("CodecID").as_deref(), Some("avc1"));
+        assert_eq!(v("Width").as_deref(), Some("320"));
+        assert_eq!(v("Height").as_deref(), Some("240"));
+        assert_eq!(v("FrameRate").as_deref(), Some("25.000"));
+        assert_eq!(v("Duration").as_deref(), Some("1000"));
+        assert_eq!(
+            fa.Retrieve(StreamKind::General, 0, "Format")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
+            Some("AVI")
+        );
+        assert_eq!(
+            fa.Retrieve(StreamKind::General, 0, "Duration")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
+            Some("1000")
+        );
+    }
+}

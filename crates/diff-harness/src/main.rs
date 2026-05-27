@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
 use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_flac, parse_mp3};
-use mediainfo_parsers_container::{parse_aiff, parse_mkv, parse_mp4, parse_mpeg_ts, parse_ogg, parse_wav};
+use mediainfo_parsers_container::{parse_aiff, parse_avi, parse_mkv, parse_mp4, parse_mpeg_ts, parse_ogg, parse_wav};
 use mediainfo_parsers_image::{parse_bmp, parse_gif, parse_jpeg, parse_png};
 
 fn main() -> ExitCode {
@@ -111,8 +111,9 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 14] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 15] = [
         ("WAV", parse_wav),
+        ("AVI", parse_avi),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
         ("MP4", parse_mp4),
@@ -194,9 +195,16 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
     if let Some(ms) = duration_ms {
         if ms > 0 {
             let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-            if let Some(bm) = fa.Retrieve(StreamKind::Audio, 0, "BitRate_Mode") {
-                let mode = bm.as_str().to_owned();
-                fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
+            // Only propagate Audio.BitRate_Mode → General.OverallBitRate_Mode
+            // when audio is the sole non-General stream. For mixed
+            // audio+video (AVI, MP4, MKV, TS) the oracle omits the field
+            // since the overall mode isn't well-defined.
+            let has_video = fa.Count_Get(StreamKind::Video) > 0;
+            if !has_video {
+                if let Some(bm) = fa.Retrieve(StreamKind::Audio, 0, "BitRate_Mode") {
+                    let mode = bm.as_str().to_owned();
+                    fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
+                }
             }
             fa.Fill(
                 StreamKind::General,
