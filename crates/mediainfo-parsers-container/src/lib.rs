@@ -7,9 +7,11 @@
 pub mod aiff;
 pub mod mkv;
 pub mod mp4;
+pub mod ogg;
 pub mod wav;
 
 pub use aiff::parse_aiff;
 pub use mkv::parse_mkv;
 pub use mp4::parse_mp4;
+pub use ogg::parse_ogg;
 pub use wav::parse_wav;

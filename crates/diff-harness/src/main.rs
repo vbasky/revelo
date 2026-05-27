@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
 use mediainfo_parsers_audio::{parse_flac, parse_mp3};
-use mediainfo_parsers_container::{parse_aiff, parse_mkv, parse_mp4, parse_wav};
+use mediainfo_parsers_container::{parse_aiff, parse_mkv, parse_mp4, parse_ogg, parse_wav};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -110,12 +110,13 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 6] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 7] = [
         ("WAV", parse_wav),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
         ("MP4", parse_mp4),
         ("MKV", parse_mkv),
+        ("Ogg", parse_ogg),
         ("MP3", parse_mp3),
     ];
     let mut parsed = false;
@@ -200,9 +201,14 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
     }
 
     // General StreamSize = file overhead = FileSize - audio data.
+    // Skip when audio_size >= file_size (Ogg/Vorbis reports
+    // bitrate-derived StreamSize larger than the file, in which case
+    // the oracle omits General.StreamSize entirely).
     if let Some(audio_size) = audio_stream_size {
-        let overhead = file_size.saturating_sub(audio_size);
-        fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), false);
+        if audio_size < file_size {
+            let overhead = file_size - audio_size;
+            fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), false);
+        }
     }
 
     if let Ok(modified) = metadata.modified() {
