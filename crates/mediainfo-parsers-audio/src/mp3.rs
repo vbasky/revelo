@@ -230,6 +230,27 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
         .map(|b| looks_like_info_frame(b, first_header.version, first_header.channel_mode))
         .unwrap_or(false);
 
+    // Extract the LAME encoder string ("LAME3.100"). Search up to the
+    // first 32 KiB of the post-ID3v2 region: libmp3lame stamps the
+    // version in the ancillary data of each audio frame, and FFmpeg
+    // often overwrites the Info tag's Encoder field with its own
+    // branding (e.g. "Lavc..."), so relying on the Info frame alone
+    // misses it. The "LAME" magic + digit at byte 4 is distinctive.
+    let mut lame_version: Option<String> = None;
+    if let Some(scan_buf) = fa.peek_raw(fa.Remain().min(32 * 1024)) {
+        for i in 0..scan_buf.len().saturating_sub(9) {
+            if &scan_buf[i..i + 4] == b"LAME"
+                && scan_buf[i + 4].is_ascii_digit()
+                && scan_buf[i + 5] == b'.'
+            {
+                if let Ok(s) = std::str::from_utf8(&scan_buf[i..i + 9]) {
+                    lame_version = Some(s.to_owned());
+                }
+                break;
+            }
+        }
+    }
+
     let audio_frame_start;
     let audio_frame_header;
     if is_info_frame {
@@ -261,6 +282,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
         audio_bytes,
         is_info_frame,
         id3v2_size,
+        lame_version.as_deref(),
     );
     true
 }
@@ -313,21 +335,33 @@ fn fill_streams(
     audio_bytes_consumed: u64,
     had_info_frame: bool,
     id3v2_size: usize,
+    lame_version: Option<&str>,
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG Audio", false);
+    if let Some(lv) = lame_version {
+        fa.Fill(StreamKind::General, 0, "Encoded_Library", lv, false);
+    }
 
     fa.Stream_Prepare(StreamKind::Audio);
     fa.Fill(StreamKind::Audio, 0, "Format", "MPEG Audio", false);
+    if let Some(lv) = lame_version {
+        fa.Fill(StreamKind::Audio, 0, "Encoded_Library", lv, false);
+    }
     fa.Fill(StreamKind::Audio, 0, "Format_Version", VERSION_NAMES[h.version as usize], false);
     fa.Fill(StreamKind::Audio, 0, "Format_Profile", LAYER_NAMES[h.layer as usize], false);
-    fa.Fill(
-        StreamKind::Audio,
-        0,
-        "Format_Settings_Mode",
-        CHANNEL_MODE_NAMES[h.channel_mode as usize],
-        false,
-    );
+    // Oracle suppresses Format_Settings_Mode for single-channel (mono)
+    // MP3 — the redundant "Single channel" string is omitted when
+    // Channels=1 already implies mono.
+    if h.channel_mode != 3 {
+        fa.Fill(
+            StreamKind::Audio,
+            0,
+            "Format_Settings_Mode",
+            CHANNEL_MODE_NAMES[h.channel_mode as usize],
+            false,
+        );
+    }
     if h.channel_mode == 1 {
         let ext = mode_extension_name(h.layer, h.mode_ext);
         if !ext.is_empty() {
