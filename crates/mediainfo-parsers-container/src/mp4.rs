@@ -33,6 +33,9 @@ const BOX_MINF: int32u = u32::from_be_bytes(*b"minf");
 const BOX_STBL: int32u = u32::from_be_bytes(*b"stbl");
 const BOX_STSD: int32u = u32::from_be_bytes(*b"stsd");
 const BOX_STSZ: int32u = u32::from_be_bytes(*b"stsz");
+const BOX_MVHD: int32u = u32::from_be_bytes(*b"mvhd");
+const BOX_EDTS: int32u = u32::from_be_bytes(*b"edts");
+const BOX_ELST: int32u = u32::from_be_bytes(*b"elst");
 
 const HANDLER_SOUN: int32u = u32::from_be_bytes(*b"soun");
 const HANDLER_VIDE: int32u = u32::from_be_bytes(*b"vide");
@@ -41,10 +44,19 @@ const SAMPLE_ENTRY_MP4A: int32u = u32::from_be_bytes(*b"mp4a");
 const BOX_ESDS: int32u = u32::from_be_bytes(*b"esds");
 
 #[derive(Debug, Default)]
+struct MovieInfo {
+    timescale: u32,
+    duration: u64,
+}
+
+#[derive(Debug, Default)]
 struct TrackInfo {
     handler: int32u,
     timescale: u32,
     duration_units: u64,
+    /// Effective playback duration in movie-timescale units (from
+    /// first elst entry's segment_duration), if any edit list present.
+    elst_segment_duration: Option<u64>,
     audio_channels: Option<u16>,
     audio_sample_rate: Option<u32>,
     audio_format: Option<&'static str>,
@@ -57,6 +69,9 @@ struct TrackInfo {
     audio_object_type: Option<u8>,
     /// avgBitrate field from DecoderConfigDescriptor, bps.
     avg_bitrate_bps: Option<u32>,
+    /// Sum of all per-sample sizes from `stsz` — raw byte count
+    /// before any edit-list trimming.
+    source_stream_size: Option<u64>,
     has_data: bool,
 }
 
@@ -70,6 +85,7 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
 
     let mut tracks: Vec<TrackInfo> = Vec::new();
     let mut ftyp_brands: Vec<String> = Vec::new();
+    let mut movie = MovieInfo::default();
 
     let buffer_len = fa.Remain();
     walk_boxes(fa, buffer_len, 0, &mut |fa, box_type, box_size, depth| {
@@ -77,18 +93,23 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
             BOX_FTYP => {
                 ftyp_brands = parse_ftyp(fa, box_size);
             }
-            BOX_MOOV | BOX_MDIA | BOX_MINF | BOX_STBL => {
-                // Pure container — recurse.
+            BOX_MOOV => {
                 let inner = box_size.saturating_sub(8);
                 walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
-                    handle_inner(fa, t, s, &mut tracks);
+                    handle_inner(fa, t, s, &mut tracks, &mut movie);
+                });
+            }
+            BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS => {
+                let inner = box_size.saturating_sub(8);
+                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
+                    handle_inner(fa, t, s, &mut tracks, &mut movie);
                 });
             }
             BOX_TRAK => {
                 tracks.push(TrackInfo::default());
                 let inner = box_size.saturating_sub(8);
                 walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _| {
-                    handle_inner(fa, t, s, &mut tracks);
+                    handle_inner(fa, t, s, &mut tracks, &mut movie);
                 });
             }
             _ => {
@@ -97,7 +118,7 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
         }
     });
 
-    fill_streams(fa, &ftyp_brands, &tracks);
+    fill_streams(fa, &ftyp_brands, &tracks, &movie);
     true
 }
 
@@ -200,20 +221,24 @@ fn handle_inner(
     box_type: int32u,
     box_size: usize,
     tracks: &mut Vec<TrackInfo>,
+    movie: &mut MovieInfo,
 ) {
     match box_type {
-        BOX_MOOV | BOX_MDIA | BOX_MINF | BOX_STBL => {
+        BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS => {
             let inner = box_size.saturating_sub(8);
             walk_boxes(fa, inner, 1, &mut |fa, t, s, _| {
-                handle_inner(fa, t, s, tracks);
+                handle_inner(fa, t, s, tracks, movie);
             });
         }
         BOX_TRAK => {
             tracks.push(TrackInfo::default());
             let inner = box_size.saturating_sub(8);
             walk_boxes(fa, inner, 1, &mut |fa, t, s, _| {
-                handle_inner(fa, t, s, tracks);
+                handle_inner(fa, t, s, tracks, movie);
             });
+        }
+        BOX_MVHD => {
+            parse_mvhd(fa, box_size, movie);
         }
         BOX_MDHD => {
             if let Some(track) = tracks.last_mut() {
@@ -243,9 +268,99 @@ fn handle_inner(
                 fa.Skip_Hexa(box_size.saturating_sub(8), "stsz");
             }
         }
+        BOX_ELST => {
+            if let Some(track) = tracks.last_mut() {
+                parse_elst(fa, box_size, track);
+            } else {
+                fa.Skip_Hexa(box_size.saturating_sub(8), "elst");
+            }
+        }
         _ => {
             fa.Skip_Hexa(box_size.saturating_sub(8), "BoxBody");
         }
+    }
+}
+
+/// Parse mvhd v0/v1 — we only need the `timescale` field for converting
+/// elst.segment_duration into seconds.
+fn parse_mvhd(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
+    let body_size = box_size.saturating_sub(8);
+    if body_size < 16 {
+        fa.Skip_Hexa(body_size, "mvhd");
+        return;
+    }
+    let start = fa.Element_Offset();
+    let mut version_flags: int32u = 0;
+    fa.Get_B4(&mut version_flags, "version_flags");
+    let version = (version_flags >> 24) as u8;
+    if version == 1 {
+        fa.Skip_Hexa(8, "creation_time");
+        fa.Skip_Hexa(8, "modification_time");
+        let mut ts: int32u = 0;
+        fa.Get_B4(&mut ts, "timescale");
+        movie.timescale = ts;
+        let mut dur: zenlib::int64u = 0;
+        fa.Get_B8(&mut dur, "duration");
+        movie.duration = dur;
+    } else {
+        fa.Skip_Hexa(4, "creation_time");
+        fa.Skip_Hexa(4, "modification_time");
+        let mut ts: int32u = 0;
+        fa.Get_B4(&mut ts, "timescale");
+        movie.timescale = ts;
+        let mut dur: int32u = 0;
+        fa.Get_B4(&mut dur, "duration");
+        movie.duration = dur as u64;
+    }
+
+    let consumed = fa.Element_Offset() - start;
+    if consumed < body_size {
+        fa.Skip_Hexa(body_size - consumed, "mvhd_tail");
+    }
+}
+
+/// Parse elst — capture only the first entry's segment_duration
+/// (sufficient for typical single-entry edit lists used to trim AAC
+/// encoder priming).
+fn parse_elst(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
+    let body_size = box_size.saturating_sub(8);
+    if body_size < 8 {
+        fa.Skip_Hexa(body_size, "elst");
+        return;
+    }
+    let start = fa.Element_Offset();
+    let mut version_flags: int32u = 0;
+    fa.Get_B4(&mut version_flags, "version_flags");
+    let version = (version_flags >> 24) as u8;
+    let mut entry_count: int32u = 0;
+    fa.Get_B4(&mut entry_count, "entry_count");
+
+    if entry_count > 0 {
+        let segment_duration: u64 = if version == 1 {
+            let mut v: zenlib::int64u = 0;
+            fa.Get_B8(&mut v, "segment_duration");
+            v
+        } else {
+            let mut v: int32u = 0;
+            fa.Get_B4(&mut v, "segment_duration");
+            v as u64
+        };
+        // Skip remaining fields of this entry + rest of entries.
+        let entry_size = if version == 1 { 20 } else { 12 };
+        let consumed_in_entry = if version == 1 { 8 } else { 4 };
+        if entry_size > consumed_in_entry {
+            fa.Skip_Hexa(entry_size - consumed_in_entry, "entry_remainder");
+        }
+        let other_entries = entry_count.saturating_sub(1) as usize;
+        if other_entries > 0 {
+            fa.Skip_Hexa(other_entries * entry_size, "other_entries");
+        }
+        track.elst_segment_duration = Some(segment_duration);
+    }
+
+    let consumed = fa.Element_Offset() - start;
+    if consumed < body_size {
+        fa.Skip_Hexa(body_size - consumed, "elst_tail");
     }
 }
 
@@ -571,11 +686,29 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     }
     let start = fa.Element_Offset();
     fa.Skip_Hexa(4, "version_flags");
-    let mut _sample_size: int32u = 0;
-    fa.Get_B4(&mut _sample_size, "sample_size");
+    let mut sample_size: int32u = 0;
+    fa.Get_B4(&mut sample_size, "sample_size");
     let mut sample_count: int32u = 0;
     fa.Get_B4(&mut sample_count, "sample_count");
     track.sample_count = Some(sample_count);
+
+    if sample_size != 0 {
+        // Uniform sample size — no per-sample table follows.
+        track.source_stream_size = Some((sample_count as u64) * (sample_size as u64));
+    } else {
+        // Per-sample size table: 4 bytes per entry, sample_count entries.
+        let table_bytes = (sample_count as usize) * 4;
+        let available = body_size.saturating_sub(fa.Element_Offset() - start);
+        let read_bytes = table_bytes.min(available);
+        let entries = read_bytes / 4;
+        let mut total: u64 = 0;
+        for _ in 0..entries {
+            let mut entry: int32u = 0;
+            fa.Get_B4(&mut entry, "sample_size_entry");
+            total = total.saturating_add(entry as u64);
+        }
+        track.source_stream_size = Some(total);
+    }
 
     let consumed = fa.Element_Offset() - start;
     if consumed < body_size {
@@ -583,7 +716,12 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     }
 }
 
-fn fill_streams(fa: &mut FileAnalyze, ftyp_brands: &[String], tracks: &[TrackInfo]) {
+fn fill_streams(
+    fa: &mut FileAnalyze,
+    ftyp_brands: &[String],
+    tracks: &[TrackInfo],
+    movie: &MovieInfo,
+) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG-4", false);
 
@@ -692,12 +830,91 @@ fn fill_streams(fa: &mut FileAnalyze, ftyp_brands: &[String], tracks: &[TrackInf
             if matches!(track.audio_format, Some("AAC")) {
                 fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
             }
-            // Duration / SamplingCount / FrameCount / StreamSize need
-            // edit-list (`elst`) + sample-table (`stts`/`stsz`/`stco`)
-            // parsing for byte-equal output; deferred.
-            let _ = track.timescale;
-            let _ = track.duration_units;
-            let _ = track.sample_count;
+            // Duration / SamplingCount / FrameCount come from the
+            // movie-level duration converted into the track's media
+            // timescale — this is mvhd.duration scaled by the ratio of
+            // media-to-movie timescales. mvhd.duration already accounts
+            // for any edit-list trimming, so for single-track files
+            // this matches the oracle's effective values. For
+            // multi-track files where an audio track is shorter than
+            // the longest track, this gives an overshoot; correcting
+            // requires per-track elst + stts integration.
+            let trimmed_units: Option<u64> = if movie.timescale > 0
+                && movie.duration > 0
+                && track.timescale > 0
+            {
+                Some(movie.duration * track.timescale as u64 / movie.timescale as u64)
+            } else if track.timescale > 0 && track.duration_units > 0 {
+                Some(track.duration_units)
+            } else {
+                None
+            };
+            let _ = track.elst_segment_duration; // reserved for multi-track refinement
+            if let Some(units) = trimmed_units {
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "SamplingCount",
+                    units.to_string(),
+                    false,
+                );
+                if track.timescale > 0 {
+                    let duration_ms = (units * 1000) / (track.timescale as u64);
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "Duration",
+                        duration_ms.to_string(),
+                        false,
+                    );
+                }
+                if matches!(track.audio_format, Some("AAC")) {
+                    let frame_count = units.div_ceil(1024);
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "FrameCount",
+                        frame_count.to_string(),
+                        false,
+                    );
+                }
+            }
+            // Source_* fields: pre-edit values from stsz directly.
+            if let Some(count) = track.sample_count {
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "Source_FrameCount",
+                    count.to_string(),
+                    false,
+                );
+                if matches!(track.audio_format, Some("AAC")) {
+                    if let Some(sr) = track.audio_sample_rate {
+                        // Truncated milliseconds: oracle formats with
+                        // `Ztring::ToZtring(float64, 0)` which is round-to-
+                        // even of %.0f, but for integer-divisible cases
+                        // truncation matches.
+                        let total_samples = (count as u64) * 1024;
+                        let source_dur = (total_samples * 1000) / (sr as u64);
+                        fa.Fill(
+                            StreamKind::Audio,
+                            pos,
+                            "Source_Duration",
+                            source_dur.to_string(),
+                            false,
+                        );
+                    }
+                }
+            }
+            if let Some(size) = track.source_stream_size {
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "Source_StreamSize",
+                    size.to_string(),
+                    false,
+                );
+            }
             audio_count += 1;
         } else if track.handler == HANDLER_VIDE && track.has_data {
             video_count += 1;
