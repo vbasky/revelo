@@ -5,5 +5,7 @@
 #![allow(non_upper_case_globals)]
 
 pub mod flac;
+pub mod mp3;
 
 pub use flac::parse_flac;
+pub use mp3::parse_mp3;

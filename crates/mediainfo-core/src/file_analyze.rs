@@ -276,6 +276,15 @@ impl<'a> FileAnalyze<'a> {
         &self.buffer[start..start + n]
     }
 
+    /// Non-advancing variant of `read_raw`. Returns `None` if fewer than
+    /// `n` bytes are available.
+    pub fn peek_raw(&self, n: usize) -> Option<&[u8]> {
+        if self.Remain() < n {
+            return None;
+        }
+        Some(&self.buffer[self.element_offset..self.element_offset + n])
+    }
+
     fn skip(&mut self, n: usize) {
         if self.Remain() < n {
             self.truncated = true;
