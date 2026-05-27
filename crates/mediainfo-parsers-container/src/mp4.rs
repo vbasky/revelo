@@ -69,6 +69,10 @@ struct TrackInfo {
     /// Effective playback duration in movie-timescale units (from
     /// first elst entry's segment_duration), if any edit list present.
     elst_segment_duration: Option<u64>,
+    /// first elst entry's media_time in media units (signed; >0 means
+    /// the first N media units are encoder priming and should be
+    /// excluded from the playable content).
+    elst_media_time: Option<i64>,
     audio_channels: Option<u16>,
     audio_sample_rate: Option<u32>,
     audio_format: Option<&'static str>,
@@ -81,6 +85,8 @@ struct TrackInfo {
     audio_object_type: Option<u8>,
     /// avgBitrate field from DecoderConfigDescriptor, bps.
     avg_bitrate_bps: Option<u32>,
+    /// maxBitrate field from DecoderConfigDescriptor, bps.
+    max_bitrate_bps: Option<u32>,
     /// Sum of all per-sample sizes from `stsz` — raw byte count
     /// before any edit-list trimming.
     source_stream_size: Option<u64>,
@@ -521,26 +527,32 @@ fn parse_elst(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     fa.Get_B4(&mut entry_count, "entry_count");
 
     if entry_count > 0 {
-        let segment_duration: u64 = if version == 1 {
-            let mut v: zenlib::int64u = 0;
-            fa.Get_B8(&mut v, "segment_duration");
-            v
+        let segment_duration: u64;
+        let media_time: i64;
+        if version == 1 {
+            let mut sd: zenlib::int64u = 0;
+            fa.Get_B8(&mut sd, "segment_duration");
+            segment_duration = sd;
+            let mut mt: zenlib::int64u = 0;
+            fa.Get_B8(&mut mt, "media_time");
+            media_time = mt as i64;
+            fa.Skip_Hexa(4, "media_rate");
         } else {
-            let mut v: int32u = 0;
-            fa.Get_B4(&mut v, "segment_duration");
-            v as u64
-        };
-        // Skip remaining fields of this entry + rest of entries.
-        let entry_size = if version == 1 { 20 } else { 12 };
-        let consumed_in_entry = if version == 1 { 8 } else { 4 };
-        if entry_size > consumed_in_entry {
-            fa.Skip_Hexa(entry_size - consumed_in_entry, "entry_remainder");
+            let mut sd: int32u = 0;
+            fa.Get_B4(&mut sd, "segment_duration");
+            segment_duration = sd as u64;
+            let mut mt: int32u = 0;
+            fa.Get_B4(&mut mt, "media_time");
+            media_time = mt as i32 as i64;
+            fa.Skip_Hexa(4, "media_rate");
         }
         let other_entries = entry_count.saturating_sub(1) as usize;
+        let entry_size = if version == 1 { 20 } else { 12 };
         if other_entries > 0 {
             fa.Skip_Hexa(other_entries * entry_size, "other_entries");
         }
         track.elst_segment_duration = Some(segment_duration);
+        track.elst_media_time = Some(media_time);
     }
 
     let consumed = fa.Element_Offset() - start;
@@ -840,6 +852,9 @@ fn parse_decoder_config(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo
     if avg_br > 0 {
         track.avg_bitrate_bps = Some(avg_br);
     }
+    if max_br > 0 {
+        track.max_bitrate_bps = Some(max_br);
+    }
     let consumed = fa.Element_Offset() - start;
     let inner = size.saturating_sub(consumed);
     parse_descriptor_chain(fa, inner, track);
@@ -935,26 +950,29 @@ fn fill_streams(
         fa.Fill(StreamKind::General, 0, "IsStreamable", is_streamable, false);
     }
 
-    // Presence of any iTunes metadata triggers the "Apple audio with iTunes
-    // info" profile descriptor, regardless of which keys are populated.
-    if !movie.itunes_metadata.is_empty() {
-        fa.Fill(
-            StreamKind::General,
-            0,
-            "Format_Profile",
-            "Apple audio with iTunes info",
-            false,
-        );
-        for (key, value) in &movie.itunes_metadata {
-            if *key == ITUNES_KEY_TOOL {
-                fa.Fill(
-                    StreamKind::General,
-                    0,
-                    "Encoded_Application",
-                    value.clone(),
-                    false,
-                );
-            }
+    // Format_Profile follows the major brand: M4A/M4B/M4V/M4P → "Apple
+    // audio/video with iTunes info"; all generic ISO BMFF brands
+    // (isom, iso2, iso6, mp41, mp42, etc.) → "Base Media". Presence of
+    // iTunes metadata alone doesn't change the profile — oracle still
+    // reports "Base Media" for plain isom files with optional ilst.
+    if let Some(major) = ftyp_brands.first() {
+        let profile = match major.as_str() {
+            "M4A " | "M4B " => "Apple audio with iTunes info",
+            "M4V " | "M4VH" | "M4VP" => "Apple video with iTunes info",
+            "M4P " => "Apple audio with iTunes info, protected",
+            _ => "Base Media",
+        };
+        fa.Fill(StreamKind::General, 0, "Format_Profile", profile, false);
+    }
+    for (key, value) in &movie.itunes_metadata {
+        if *key == ITUNES_KEY_TOOL {
+            fa.Fill(
+                StreamKind::General,
+                0,
+                "Encoded_Application",
+                value.clone(),
+                false,
+            );
         }
     }
 
@@ -1028,13 +1046,35 @@ fn fill_streams(
                 let codec_id = format!("mp4a-{:x}-{}", oti, aot);
                 fa.Fill(StreamKind::Audio, pos, "CodecID", codec_id, false);
             }
+            // AAC is fundamentally variable-bitrate; oracle marks all
+            // AAC tracks as VBR (even when esds carries an avg bitrate
+            // hint). MP3/etc fall back to whatever the codec is.
+            let is_aac = matches!(track.audio_format, Some("AAC"));
             if let Some(br) = track.avg_bitrate_bps {
-                fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "BitRate_Mode",
+                    if is_aac { "VBR" } else { "CBR" },
+                    false,
+                );
                 fa.Fill(StreamKind::Audio, pos, "BitRate", br.to_string(), false);
+                if is_aac {
+                    // BitRate_Maximum = esds.maxBitrate field. Falls
+                    // back to avg when max isn't set.
+                    let max = track.max_bitrate_bps.unwrap_or(br);
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "BitRate_Maximum",
+                        max.to_string(),
+                        false,
+                    );
+                }
             }
             if let Some(ch) = track.audio_channels {
                 fa.Fill(StreamKind::Audio, pos, "Channels", ch.to_string(), false);
-                let (positions, layout) = channel_layout(ch);
+                let (positions, layout) = channel_layout_for_format(ch, track.audio_format);
                 if let Some(p) = positions {
                     fa.Fill(StreamKind::Audio, pos, "ChannelPositions", p, false);
                 }
@@ -1102,7 +1142,10 @@ fn fill_streams(
                     );
                 }
                 if matches!(track.audio_format, Some("AAC")) {
-                    let frame_count = units.div_ceil(1024);
+                    // Post-elst FrameCount: floor(trimmed_units / 1024).
+                    // The leftover partial frame is reflected separately
+                    // by Source_Duration_LastFrame.
+                    let frame_count = units / 1024;
                     fa.Fill(
                         StreamKind::Audio,
                         pos,
@@ -1112,7 +1155,7 @@ fn fill_streams(
                     );
                 }
             }
-            // Source_* fields: pre-edit values from stsz directly.
+            // Source_* fields: pre-edit values from stsz / mdhd directly.
             if let Some(count) = track.sample_count {
                 fa.Fill(
                     StreamKind::Audio,
@@ -1123,12 +1166,14 @@ fn fill_streams(
                 );
                 if matches!(track.audio_format, Some("AAC")) {
                     if let Some(sr) = track.audio_sample_rate {
-                        // Truncated milliseconds: oracle formats with
-                        // `Ztring::ToZtring(float64, 0)` which is round-to-
-                        // even of %.0f, but for integer-divisible cases
-                        // truncation matches.
-                        let total_samples = (count as u64) * 1024;
-                        let source_dur = (total_samples * 1000) / (sr as u64);
+                        // Source_Duration = mdhd.duration (raw, pre-elst)
+                        // converted to ms. Falls back to the stsz-derived
+                        // value if mdhd duration is missing.
+                        let source_dur = if track.timescale > 0 && track.duration_units > 0 {
+                            (track.duration_units * 1000) / track.timescale as u64
+                        } else {
+                            ((count as u64) * 1024 * 1000) / (sr as u64)
+                        };
                         fa.Fill(
                             StreamKind::Audio,
                             pos,
@@ -1136,14 +1181,49 @@ fn fill_streams(
                             source_dur.to_string(),
                             false,
                         );
+                        // Source_Duration_LastFrame = source_dur −
+                        // (sample_count × 1024 / sample_rate); typically
+                        // negative (the encoded frames overshoot the
+                        // declared media duration by a fractional frame).
+                        let frame_only_dur_ms = ((count as u64) * 1024 * 1000) / (sr as u64);
+                        let delta_ms = source_dur as i64 - frame_only_dur_ms as i64;
+                        fa.Fill(
+                            StreamKind::Audio,
+                            pos,
+                            "Source_Duration_LastFrame",
+                            delta_ms.to_string(),
+                            false,
+                        );
+                        // Source_Delay = Duration − Source_Duration, in
+                        // ms. For trimmed AAC the trimmed Duration is
+                        // shorter than the raw Source_Duration, so this
+                        // is negative.
+                        if let Some(units) = trimmed_units {
+                            if track.timescale > 0 {
+                                let dur_ms = (units * 1000) / track.timescale as u64;
+                                let source_delay = dur_ms as i64 - source_dur as i64;
+                                fa.Fill(
+                                    StreamKind::Audio,
+                                    pos,
+                                    "Source_Delay",
+                                    source_delay.to_string(),
+                                    false,
+                                );
+                                fa.Fill(
+                                    StreamKind::Audio,
+                                    pos,
+                                    "Source_Delay_Source",
+                                    "Container",
+                                    false,
+                                );
+                            }
+                        }
                     }
                 }
             }
-            // Audio StreamSize (post-elst sample sum) deferred — the
-            // simple "subtract first stsz entry" formula gives 23798
-            // for our test, oracle wants 23700. Specific subtraction
-            // rule needs follow-up read of File_Mpeg4 logic.
-            let _ = track.first_sample_size;
+            // Audio.StreamSize = sum of stsz minus the first sample size
+            // (the encoder priming frame), matching oracle's
+            // post-elst trim convention for AAC.
             if let Some(size) = track.source_stream_size {
                 fa.Fill(
                     StreamKind::Audio,
@@ -1152,6 +1232,18 @@ fn fill_streams(
                     size.to_string(),
                     false,
                 );
+                if matches!(track.audio_format, Some("AAC")) {
+                    if let Some(first) = track.first_sample_size {
+                        let trimmed = size.saturating_sub(first as u64);
+                        fa.Fill(
+                            StreamKind::Audio,
+                            pos,
+                            "StreamSize",
+                            trimmed.to_string(),
+                            false,
+                        );
+                    }
+                }
             }
             if let Some(enabled) = track.track_enabled {
                 fa.Fill(
@@ -1211,6 +1303,18 @@ fn channel_layout(channels: u16) -> (Option<&'static str>, Option<&'static str>)
         2 => (Some("Front: L R"), Some("L R")),
         _ => (None, None),
     }
+}
+
+/// AAC mono uses "M" for ChannelLayout instead of "C" — matches oracle's
+/// Vorbis/Opus/AAC-style label. AC-3 and PCM stay with "C".
+fn channel_layout_for_format(
+    channels: u16,
+    format: Option<&'static str>,
+) -> (Option<&'static str>, Option<&'static str>) {
+    if matches!(format, Some("AAC")) && channels == 1 {
+        return (Some("Front: C"), Some("M"));
+    }
+    channel_layout(channels)
 }
 
 #[cfg(test)]

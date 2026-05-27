@@ -120,6 +120,7 @@ fn is_duration_field(name: &str) -> bool {
     name == "Duration"
         || name.ends_with("_Duration")
         || name.ends_with("/Duration")
+        || name == "Source_Duration_LastFrame"
 }
 
 fn format_milliseconds_as_seconds(ms: i64) -> String {
@@ -172,6 +173,8 @@ fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
             "lfeon",
             "dialnorm_Average",
             "dialnorm_Minimum",
+            "Source_Delay",
+            "Source_Delay_Source",
         ],
         StreamKind::Image => &["FrameRate", "DPI", "Density_X", "Density_Y", "Density_Unit", "Density_String"],
         _ => &[],
