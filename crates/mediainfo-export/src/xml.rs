@@ -173,7 +173,7 @@ fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
             "dialnorm_Average",
             "dialnorm_Minimum",
         ],
-        StreamKind::Image => &["Density_X", "Density_Y", "Density_Unit", "Density_String"],
+        StreamKind::Image => &["FrameRate", "Density_X", "Density_Y", "Density_Unit", "Density_String"],
         _ => &[],
     }
 }

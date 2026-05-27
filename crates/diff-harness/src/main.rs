@@ -8,7 +8,7 @@ use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
 use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_dts, parse_flac, parse_mp3};
 use mediainfo_parsers_container::{parse_aiff, parse_avi, parse_mkv, parse_mp4, parse_mpeg_ts, parse_ogg, parse_wav};
-use mediainfo_parsers_image::{parse_bmp, parse_dds, parse_dpx, parse_gif, parse_ico, parse_jpeg, parse_png, parse_psd, parse_tiff, parse_webp};
+use mediainfo_parsers_image::{parse_bmp, parse_dds, parse_dpx, parse_exr, parse_gif, parse_ico, parse_jpeg, parse_png, parse_psd, parse_tiff, parse_webp};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -111,7 +111,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 22] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 23] = [
         ("WAV", parse_wav),
         ("AVI", parse_avi),
         ("WebP", parse_webp),
@@ -130,6 +130,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("PSD", parse_psd),
         ("DPX", parse_dpx),
         ("DDS", parse_dds),
+        ("EXR", parse_exr),
         ("AC3", parse_ac3),
         ("DTS", parse_dts),
         ("AAC-ADTS", parse_aac_adts),
