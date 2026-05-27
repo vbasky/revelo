@@ -8,7 +8,7 @@ use mediainfo_core::{FileAnalyze, StreamKind};
 use mediainfo_export::to_xml;
 use mediainfo_parsers_audio::{parse_flac, parse_mp3};
 use mediainfo_parsers_container::{parse_aiff, parse_mkv, parse_mp4, parse_ogg, parse_wav};
-use mediainfo_parsers_image::parse_png;
+use mediainfo_parsers_image::{parse_jpeg, parse_png};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -111,7 +111,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 8] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 9] = [
         ("WAV", parse_wav),
         ("AIFF", parse_aiff),
         ("FLAC", parse_flac),
@@ -119,6 +119,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("MKV", parse_mkv),
         ("Ogg", parse_ogg),
         ("PNG", parse_png),
+        ("JPEG", parse_jpeg),
         ("MP3", parse_mp3),
     ];
     let mut parsed = false;
