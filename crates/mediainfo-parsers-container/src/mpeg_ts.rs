@@ -61,6 +61,9 @@ struct ElementaryStream {
     /// AAC payload params extracted from first ADTS frame inside PES,
     /// when stream_type indicates AAC (0x0F/0x11/0x1C).
     aac: Option<AacInfo>,
+    /// x264 encoder version string scanned from AVC SEI user_data
+    /// (free-form ASCII inside SEI NAL units).
+    avc_encoder: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -184,14 +187,18 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     // same packet stream, accumulating up to 1 KiB of PES bytes per AAC
     // PID, then parse the ADTS sync once we have enough.
     let mut aac_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
+    let mut avc_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
     for prog in programs_by_pmt_pid.values() {
         for es in &prog.streams {
             if matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
                 aac_pids.insert(es.pid, Vec::new());
             }
+            if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
+                avc_pids.insert(es.pid, Vec::new());
+            }
         }
     }
-    if !aac_pids.is_empty() {
+    if !aac_pids.is_empty() || !avc_pids.is_empty() {
         let mut pos = first_offset;
         while pos + 188 <= buf.len() {
             let sync_pos = pos + layout.bdav_prefix;
@@ -201,14 +208,6 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             }
             let pkt = &buf[sync_pos..sync_pos + 188];
             let pid = (((pkt[1] & 0x1F) as u16) << 8) | (pkt[2] as u16);
-            let Some(accum) = aac_pids.get_mut(&pid) else {
-                pos += stride;
-                continue;
-            };
-            if accum.len() >= 1024 {
-                pos += stride;
-                continue;
-            }
             let adaptation_control = (pkt[3] >> 4) & 0x3;
             let has_adaptation = adaptation_control == 2 || adaptation_control == 3;
             let has_payload = adaptation_control == 1 || adaptation_control == 3;
@@ -225,18 +224,32 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 pos += stride;
                 continue;
             }
-            accum.extend_from_slice(&pkt[payload_off..]);
+            if let Some(accum) = aac_pids.get_mut(&pid) {
+                if accum.len() < 1024 {
+                    accum.extend_from_slice(&pkt[payload_off..]);
+                }
+            }
+            if let Some(accum) = avc_pids.get_mut(&pid) {
+                if accum.len() < 32 * 1024 {
+                    accum.extend_from_slice(&pkt[payload_off..]);
+                }
+            }
             pos += stride;
         }
         // Now parse each accumulator: skip past PES header to ES payload,
         // then find ADTS sync.
         for prog in programs_by_pmt_pid.values_mut() {
             for es in prog.streams.iter_mut() {
-                if !matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
-                    continue;
+                if matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
+                    if let Some(accum) = aac_pids.get(&es.pid) {
+                        es.aac = sniff_aac_adts(accum);
+                    }
                 }
-                let Some(accum) = aac_pids.get(&es.pid) else { continue };
-                es.aac = sniff_aac_adts(accum);
+                if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
+                    if let Some(accum) = avc_pids.get(&es.pid) {
+                        es.avc_encoder = sniff_x264_encoder(accum);
+                    }
+                }
             }
         }
     }
@@ -329,6 +342,28 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             // AAC overrides this below with its "<type>-<AOT>" form.
             if matches!(kind, StreamKind::Video) {
                 fa.Fill(kind, pos_in_kind, "CodecID", es.stream_type.to_string(), false);
+                // AVC defaults — full SPS parse would refine
+                // Format_Profile/Level/Width/Height/ChromaSubsampling.
+                if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
+                    fa.Fill(kind, pos_in_kind, "FrameRate_Mode", "VFR", false);
+                    fa.Fill(kind, pos_in_kind, "BitDepth", "8", false);
+                    fa.Fill(kind, pos_in_kind, "ScanType", "Progressive", false);
+                    fa.Fill(kind, pos_in_kind, "Compression_Mode", "Lossy", false);
+                    if let Some(ref lib) = es.avc_encoder {
+                        fa.Fill(kind, pos_in_kind, "Encoded_Library", lib.clone(), false);
+                        // Split "x264 - core 165 r3222 b35605a" into name + version.
+                        if let Some(rest) = lib.strip_prefix("x264 - ") {
+                            fa.Fill(kind, pos_in_kind, "Encoded_Library_Name", "x264", false);
+                            fa.Fill(
+                                kind,
+                                pos_in_kind,
+                                "Encoded_Library_Version",
+                                rest,
+                                false,
+                            );
+                        }
+                    }
+                }
             }
             if let Some(aac) = &es.aac {
                 // AAC ADTS payload → unlocks Format_Version, AOT, CodecID,
@@ -501,6 +536,7 @@ fn parse_pmt(section: &[u8], prog: &mut Program) {
             stream_type,
             format_identifier: es_fid,
             aac: None,
+            avc_encoder: None,
         });
         i = desc_end;
     }
@@ -694,6 +730,38 @@ fn aac_profile_name(aot: u8) -> Option<&'static str> {
         5 => Some("SBR"),
         _ => None,
     }
+}
+
+/// Scan AVC ES payload for the "x264 - core N rXXXX hash" string
+/// that x264 stamps into an SEI user_data NAL. Oracle truncates the
+/// Encoded_Library at the hash (before " - H.264..."), so we do too.
+fn sniff_x264_encoder(buf: &[u8]) -> Option<String> {
+    let needle = b"x264 - core ";
+    for i in 0..buf.len().saturating_sub(needle.len() + 10) {
+        if &buf[i..i + needle.len()] != needle {
+            continue;
+        }
+        let start = i;
+        // Stop at the " - H." that immediately follows the hash, or at
+        // any non-printable byte. End at the first such marker.
+        let max_end = (start + 256).min(buf.len());
+        let mut end = start;
+        while end < max_end {
+            // Stop at " - H." boundary.
+            if end + 5 <= buf.len() && &buf[end..end + 5] == b" - H." {
+                break;
+            }
+            let c = buf[end];
+            if c != b' ' && !c.is_ascii_graphic() {
+                break;
+            }
+            end += 1;
+        }
+        if let Ok(s) = std::str::from_utf8(&buf[start..end]) {
+            return Some(s.trim_end().to_string());
+        }
+    }
+    None
 }
 
 fn aac_channel_layout(channels: u8) -> (Option<&'static str>, Option<&'static str>) {
