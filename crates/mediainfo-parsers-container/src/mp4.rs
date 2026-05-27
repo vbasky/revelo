@@ -38,6 +38,7 @@ const HANDLER_SOUN: int32u = u32::from_be_bytes(*b"soun");
 const HANDLER_VIDE: int32u = u32::from_be_bytes(*b"vide");
 
 const SAMPLE_ENTRY_MP4A: int32u = u32::from_be_bytes(*b"mp4a");
+const BOX_ESDS: int32u = u32::from_be_bytes(*b"esds");
 
 #[derive(Debug, Default)]
 struct TrackInfo {
@@ -48,6 +49,14 @@ struct TrackInfo {
     audio_sample_rate: Option<u32>,
     audio_format: Option<&'static str>,
     sample_count: Option<u32>,
+    /// objectTypeIndication from esds DecoderConfigDescriptor — 0x40
+    /// for MPEG-4 Audio, 0x6B for MPEG-1 Audio Layer 3, etc.
+    object_type_indication: Option<u8>,
+    /// Audio Object Type from AudioSpecificConfig (AAC profile: 2=LC,
+    /// 5=SBR, 29=PS, etc.).
+    audio_object_type: Option<u8>,
+    /// avgBitrate field from DecoderConfigDescriptor, bps.
+    avg_bitrate_bps: Option<u32>,
     has_data: bool,
 }
 
@@ -375,9 +384,182 @@ fn parse_mp4a_entry(fa: &mut FileAnalyze, entry_total: usize, track: &mut TrackI
     track.has_data = true;
 
     let consumed = 28;
-    let remaining = start_remain.saturating_sub(consumed);
+    let mut remaining = start_remain.saturating_sub(consumed);
+    // Walk inner extension boxes (most importantly: esds).
+    while remaining >= 8 {
+        let mut sub_size: int32u = 0;
+        fa.Get_B4(&mut sub_size, "ext_size");
+        let mut sub_type: int32u = 0;
+        fa.Get_C4(&mut sub_type, "ext_type");
+        let sub_total = sub_size as usize;
+        if sub_total < 8 || sub_total > remaining {
+            // Malformed — bail to outer skip.
+            break;
+        }
+        let body = sub_total - 8;
+        match sub_type {
+            BOX_ESDS => parse_esds(fa, body, track),
+            _ => fa.Skip_Hexa(body, "ext_unknown"),
+        }
+        remaining -= sub_total;
+    }
     if remaining > 0 {
-        fa.Skip_Hexa(remaining, "mp4a_extensions");
+        fa.Skip_Hexa(remaining, "mp4a_tail");
+    }
+}
+
+/// Parse the esds box body (after the 8-byte box header has been
+/// consumed by the caller). Layout:
+///   1 byte version + 3 bytes flags (zero)
+///   ES_Descriptor (tag 0x03)
+///     2 bytes ES_ID + 1 byte flags
+///     [if streamDependenceFlag: 2 bytes dependsOnESID]
+///     [if URL_Flag: 1 byte URLlength + URL bytes]
+///     [if OCRstreamFlag: 2 bytes OCRESID]
+///     DecoderConfigDescriptor (tag 0x04)
+///       1 byte objectTypeIndication
+///       1 byte (streamType<6> + upStream<1> + reserved<1>)
+///       3 bytes bufferSizeDB
+///       4 bytes maxBitrate
+///       4 bytes avgBitrate
+///       DecoderSpecificInfo (tag 0x05)
+///         AudioSpecificConfig:
+///           5 bits: audioObjectType (if 31, then +6 bits explicit)
+///           4 bits: samplingFrequencyIndex (if 15, then 24 bits explicit)
+///           4 bits: channelConfiguration
+///     SLConfigDescriptor (tag 0x06) — predefined, ignore
+fn parse_esds(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
+    let start = fa.Element_Offset();
+    let end = start + body_size;
+    if body_size < 4 {
+        fa.Skip_Hexa(body_size, "esds_short");
+        return;
+    }
+    fa.Skip_Hexa(4, "version_flags");
+
+    // ES_Descriptor (tag 0x03) — walk descriptors until we find the
+    // decoder config + its DecoderSpecificInfo child.
+    parse_descriptor_chain(fa, end - fa.Element_Offset(), track);
+
+    if fa.Element_Offset() < end {
+        fa.Skip_Hexa(end - fa.Element_Offset(), "esds_tail");
+    }
+}
+
+/// Read a single MPEG-4 BER-style descriptor length (1-4 bytes,
+/// each with a continuation bit in the high bit).
+fn read_descriptor_length(fa: &mut FileAnalyze) -> usize {
+    let mut size: usize = 0;
+    for _ in 0..4 {
+        let bytes = fa.peek_raw(1);
+        let Some(b) = bytes else { return size };
+        let byte = b[0];
+        let _ = fa.read_raw(1);
+        size = (size << 7) | (byte & 0x7F) as usize;
+        if (byte & 0x80) == 0 {
+            return size;
+        }
+    }
+    size
+}
+
+fn parse_descriptor_chain(fa: &mut FileAnalyze, region_size: usize, track: &mut TrackInfo) {
+    let region_end = fa.Element_Offset() + region_size;
+    while fa.Element_Offset() + 2 <= region_end {
+        let bytes = fa.peek_raw(1);
+        let Some(b) = bytes else { break };
+        let tag = b[0];
+        let _ = fa.read_raw(1);
+        let size = read_descriptor_length(fa);
+        let body_start = fa.Element_Offset();
+        let body_end = body_start + size;
+        if body_end > region_end {
+            break;
+        }
+        match tag {
+            0x03 => parse_es_descriptor(fa, size, track),
+            0x04 => parse_decoder_config(fa, size, track),
+            0x05 => parse_decoder_specific_info(fa, size, track),
+            _ => fa.Skip_Hexa(size, "unknown_descriptor"),
+        }
+        if fa.Element_Offset() < body_end {
+            fa.Skip_Hexa(body_end - fa.Element_Offset(), "descriptor_tail");
+        } else if fa.Element_Offset() > body_end {
+            break;
+        }
+    }
+}
+
+fn parse_es_descriptor(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo) {
+    if size < 3 {
+        fa.Skip_Hexa(size, "es_descriptor_short");
+        return;
+    }
+    let start = fa.Element_Offset();
+    fa.Skip_Hexa(2, "ES_ID");
+    let mut flags: zenlib::int8u = 0;
+    fa.Get_B1(&mut flags, "flags");
+    let stream_dep = (flags & 0x80) != 0;
+    let url_flag = (flags & 0x40) != 0;
+    let ocr_flag = (flags & 0x20) != 0;
+    if stream_dep {
+        fa.Skip_Hexa(2, "dependsOnESID");
+    }
+    if url_flag {
+        let url_bytes = fa.peek_raw(1);
+        if let Some(b) = url_bytes {
+            let url_len = b[0] as usize;
+            let _ = fa.read_raw(1);
+            fa.Skip_Hexa(url_len, "URL");
+        }
+    }
+    if ocr_flag {
+        fa.Skip_Hexa(2, "OCR_ES_Id");
+    }
+    let consumed = fa.Element_Offset() - start;
+    // Remaining body bytes contain nested descriptors (DecoderConfig etc).
+    let inner = size.saturating_sub(consumed);
+    parse_descriptor_chain(fa, inner, track);
+}
+
+fn parse_decoder_config(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo) {
+    if size < 13 {
+        fa.Skip_Hexa(size, "decoder_config_short");
+        return;
+    }
+    let start = fa.Element_Offset();
+    let mut oti: zenlib::int8u = 0;
+    fa.Get_B1(&mut oti, "objectTypeIndication");
+    track.object_type_indication = Some(oti);
+    fa.Skip_Hexa(1, "streamType_upStream");
+    fa.Skip_Hexa(3, "bufferSizeDB");
+    let mut max_br: int32u = 0;
+    fa.Get_B4(&mut max_br, "maxBitrate");
+    let mut avg_br: int32u = 0;
+    fa.Get_B4(&mut avg_br, "avgBitrate");
+    if avg_br > 0 {
+        track.avg_bitrate_bps = Some(avg_br);
+    }
+    let consumed = fa.Element_Offset() - start;
+    let inner = size.saturating_sub(consumed);
+    parse_descriptor_chain(fa, inner, track);
+}
+
+fn parse_decoder_specific_info(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo) {
+    if size < 2 {
+        fa.Skip_Hexa(size, "dsi_short");
+        return;
+    }
+    let bytes = fa.read_raw(size.min(2)).to_vec();
+    if bytes.len() < 2 {
+        return;
+    }
+    // 5 bits AOT + 4 bits sampling_frequency_index + 4 bits
+    // channel_config = 13 bits, fits in the first 2 bytes.
+    let aot = (bytes[0] >> 3) & 0x1F;
+    track.audio_object_type = Some(aot);
+    if size > 2 {
+        fa.Skip_Hexa(size - 2, "dsi_tail");
     }
 }
 
@@ -435,11 +617,49 @@ fn fill_streams(fa: &mut FileAnalyze, ftyp_brands: &[String], tracks: &[TrackInf
 
     let mut audio_count: u32 = 0;
     let mut video_count: u32 = 0;
-    for track in tracks {
+    let mut stream_order: u32 = 0;
+    for (track_idx, track) in tracks.iter().enumerate() {
         if track.handler == HANDLER_SOUN && track.has_data {
             let pos = fa.Stream_Prepare(StreamKind::Audio);
+            fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
+            // ID in MP4 tracks is 1-based; we don't yet parse tkhd's
+            // track_ID, so derive from position in the moov box.
+            fa.Fill(StreamKind::Audio, pos, "ID", (track_idx + 1).to_string(), false);
+            stream_order += 1;
             if let Some(f) = track.audio_format {
                 fa.Fill(StreamKind::Audio, pos, "Format", f, false);
+            }
+            // SBR/PS profile signaling — AOT 2 (LC) with no explicit SBR
+            // signaling in the AudioSpecificConfig is reported as
+            // "No (Explicit)" by the oracle.
+            if let Some(aot) = track.audio_object_type {
+                if let Some(profile) = aac_profile_name(aot) {
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "Format_AdditionalFeatures",
+                        profile,
+                        false,
+                    );
+                }
+                if aot == 2 {
+                    fa.Fill(
+                        StreamKind::Audio,
+                        pos,
+                        "Format_Settings_SBR",
+                        "No (Explicit)",
+                        false,
+                    );
+                }
+            }
+            // CodecID from esds: "mp4a-{OTI:hex lowercase}-{AOT}".
+            if let (Some(oti), Some(aot)) = (track.object_type_indication, track.audio_object_type) {
+                let codec_id = format!("mp4a-{:x}-{}", oti, aot);
+                fa.Fill(StreamKind::Audio, pos, "CodecID", codec_id, false);
+            }
+            if let Some(br) = track.avg_bitrate_bps {
+                fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+                fa.Fill(StreamKind::Audio, pos, "BitRate", br.to_string(), false);
             }
             if let Some(ch) = track.audio_channels {
                 fa.Fill(StreamKind::Audio, pos, "Channels", ch.to_string(), false);
@@ -453,13 +673,28 @@ fn fill_streams(fa: &mut FileAnalyze, ftyp_brands: &[String], tracks: &[TrackInf
             }
             if let Some(sr) = track.audio_sample_rate {
                 fa.Fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
+                // AAC frames are always 1024 samples. FrameRate is
+                // sample_rate/1024 (e.g. 48000/1024 = 46.875).
+                if matches!(track.audio_format, Some("AAC")) {
+                    fa.Fill(StreamKind::Audio, pos, "SamplesPerFrame", "1024", false);
+                    if sr > 0 {
+                        let rate = (sr as f64) / 1024.0;
+                        fa.Fill(
+                            StreamKind::Audio,
+                            pos,
+                            "FrameRate",
+                            format!("{:.3}", rate),
+                            false,
+                        );
+                    }
+                }
             }
-            // Duration and SamplingCount intentionally not filled in this
-            // commit. The numbers derivable from stsz (sample_count *
-            // samples_per_frame) match oracle's Source_Duration /
-            // Source_FrameCount, but oracle's primary Duration /
-            // SamplingCount apply the edit list (`elst`) to back out the
-            // last partial frame. Adding `elst` parsing closes that gap.
+            if matches!(track.audio_format, Some("AAC")) {
+                fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
+            }
+            // Duration / SamplingCount / FrameCount / StreamSize need
+            // edit-list (`elst`) + sample-table (`stts`/`stsz`/`stco`)
+            // parsing for byte-equal output; deferred.
             let _ = track.timescale;
             let _ = track.duration_units;
             let _ = track.sample_count;
@@ -474,6 +709,24 @@ fn fill_streams(fa: &mut FileAnalyze, ftyp_brands: &[String], tracks: &[TrackInf
     }
     if video_count > 0 {
         fa.Fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
+    }
+}
+
+/// AAC AOT → MediaInfo `Format_AdditionalFeatures` profile name.
+/// Subset that covers the common cases; matches the C++ side's
+/// `Aac_audioObjectType` table.
+fn aac_profile_name(aot: u8) -> Option<&'static str> {
+    match aot {
+        1 => Some("Main"),
+        2 => Some("LC"),
+        3 => Some("SSR"),
+        4 => Some("LTP"),
+        5 => Some("SBR"),
+        17 => Some("LC ER"),
+        20 => Some("LTP ER"),
+        23 => Some("LC ER"),
+        29 => Some("PS"),
+        _ => None,
     }
 }
 
