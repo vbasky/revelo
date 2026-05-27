@@ -4,12 +4,14 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+pub mod amiga_icon;
 pub mod arriraw;
 pub mod bmp;
 pub mod bpg;
 pub mod dds;
 pub mod dpx;
 pub mod exr;
+pub mod gain_map;
 pub mod gif;
 pub mod ico;
 pub mod jpeg;
@@ -21,12 +23,14 @@ pub mod tga;
 pub mod tiff;
 pub mod webp;
 
+pub use amiga_icon::parse_amiga_icon;
 pub use arriraw::parse_arriraw;
 pub use bmp::parse_bmp;
 pub use bpg::parse_bpg;
 pub use dds::parse_dds;
 pub use dpx::parse_dpx;
 pub use exr::parse_exr;
+pub use gain_map::parse_gain_map;
 pub use gif::parse_gif;
 pub use ico::parse_ico;
 pub use jpeg::parse_jpeg;

@@ -6,12 +6,18 @@
 
 pub mod aac_adts;
 pub mod ac3;
+pub mod amr;
+pub mod ape;
+pub mod au;
 pub mod dts;
 pub mod flac;
 pub mod mp3;
 
 pub use aac_adts::parse_aac_adts;
 pub use ac3::parse_ac3;
+pub use amr::parse_amr;
+pub use ape::parse_ape;
+pub use au::parse_au;
 pub use dts::parse_dts;
 pub use flac::parse_flac;
 pub use mp3::parse_mp3;
