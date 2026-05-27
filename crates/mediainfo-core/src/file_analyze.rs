@@ -14,7 +14,7 @@
 //! pinned at the end, the out-parameter is left zeroed, and `truncated()`
 //! returns true — matching the C++ flag-and-continue semantics.
 
-use zenlib::{int8u, int16u, int32u, int64u, int128u};
+use zenlib::{float32, float64, float80, int128u, int16u, int32u, int64u, int8u};
 
 pub struct FileAnalyze<'a> {
     buffer: &'a [u8],
@@ -183,6 +183,203 @@ impl<'a> FileAnalyze<'a> {
     }
 
     // ----------------------------------------------------------------------
+    // Little-endian — Get_L*
+    // ----------------------------------------------------------------------
+
+    fn read_le_u64(&mut self, n: usize) -> Option<u64> {
+        if self.Remain() < n {
+            self.truncated = true;
+            self.element_offset = self.buffer.len();
+            return None;
+        }
+        let mut v: u64 = 0;
+        for i in 0..n {
+            v |= (self.buffer[self.element_offset + i] as u64) << (8 * i);
+        }
+        self.element_offset += n;
+        Some(v)
+    }
+
+    fn peek_le_u64(&self, n: usize) -> Option<u64> {
+        if self.Remain() < n {
+            return None;
+        }
+        let mut v: u64 = 0;
+        for i in 0..n {
+            v |= (self.buffer[self.element_offset + i] as u64) << (8 * i);
+        }
+        Some(v)
+    }
+
+    pub fn Get_L1(&mut self, info: &mut int8u, _name: &str) {
+        *info = self.read_le_u64(1).unwrap_or(0) as int8u;
+    }
+    pub fn Get_L2(&mut self, info: &mut int16u, _name: &str) {
+        *info = self.read_le_u64(2).unwrap_or(0) as int16u;
+    }
+    pub fn Get_L3(&mut self, info: &mut int32u, _name: &str) {
+        *info = self.read_le_u64(3).unwrap_or(0) as int32u;
+    }
+    pub fn Get_L4(&mut self, info: &mut int32u, _name: &str) {
+        *info = self.read_le_u64(4).unwrap_or(0) as int32u;
+    }
+    pub fn Get_L5(&mut self, info: &mut int64u, _name: &str) {
+        *info = self.read_le_u64(5).unwrap_or(0);
+    }
+    pub fn Get_L6(&mut self, info: &mut int64u, _name: &str) {
+        *info = self.read_le_u64(6).unwrap_or(0);
+    }
+    pub fn Get_L7(&mut self, info: &mut int64u, _name: &str) {
+        *info = self.read_le_u64(7).unwrap_or(0);
+    }
+    pub fn Get_L8(&mut self, info: &mut int64u, _name: &str) {
+        *info = self.read_le_u64(8).unwrap_or(0);
+    }
+    pub fn Get_L16(&mut self, info: &mut int128u, _name: &str) {
+        if self.Remain() < 16 {
+            *info = 0;
+            self.truncated = true;
+            self.element_offset = self.buffer.len();
+            return;
+        }
+        let mut v: u128 = 0;
+        for i in 0..16 {
+            v |= (self.buffer[self.element_offset + i] as u128) << (8 * i);
+        }
+        self.element_offset += 16;
+        *info = v;
+    }
+
+    pub fn Peek_L1(&self, info: &mut int8u) {
+        *info = self.peek_le_u64(1).unwrap_or(0) as int8u;
+    }
+    pub fn Peek_L2(&self, info: &mut int16u) {
+        *info = self.peek_le_u64(2).unwrap_or(0) as int16u;
+    }
+    pub fn Peek_L3(&self, info: &mut int32u) {
+        *info = self.peek_le_u64(3).unwrap_or(0) as int32u;
+    }
+    pub fn Peek_L4(&self, info: &mut int32u) {
+        *info = self.peek_le_u64(4).unwrap_or(0) as int32u;
+    }
+    pub fn Peek_L5(&self, info: &mut int64u) {
+        *info = self.peek_le_u64(5).unwrap_or(0);
+    }
+    pub fn Peek_L6(&self, info: &mut int64u) {
+        *info = self.peek_le_u64(6).unwrap_or(0);
+    }
+    pub fn Peek_L7(&self, info: &mut int64u) {
+        *info = self.peek_le_u64(7).unwrap_or(0);
+    }
+    pub fn Peek_L8(&self, info: &mut int64u) {
+        *info = self.peek_le_u64(8).unwrap_or(0);
+    }
+    pub fn Peek_L16(&self, info: &mut int128u) {
+        if self.Remain() < 16 {
+            *info = 0;
+            return;
+        }
+        let mut v: u128 = 0;
+        for i in 0..16 {
+            v |= (self.buffer[self.element_offset + i] as u128) << (8 * i);
+        }
+        *info = v;
+    }
+
+    pub fn Skip_L1(&mut self, _name: &str) { self.skip(1) }
+    pub fn Skip_L2(&mut self, _name: &str) { self.skip(2) }
+    pub fn Skip_L3(&mut self, _name: &str) { self.skip(3) }
+    pub fn Skip_L4(&mut self, _name: &str) { self.skip(4) }
+    pub fn Skip_L5(&mut self, _name: &str) { self.skip(5) }
+    pub fn Skip_L6(&mut self, _name: &str) { self.skip(6) }
+    pub fn Skip_L7(&mut self, _name: &str) { self.skip(7) }
+    pub fn Skip_L8(&mut self, _name: &str) { self.skip(8) }
+    pub fn Skip_L16(&mut self, _name: &str) { self.skip(16) }
+
+    // ----------------------------------------------------------------------
+    // Floats — BF* (big-endian), LF* (little-endian)
+    // ----------------------------------------------------------------------
+
+    pub fn Get_BF4(&mut self, info: &mut float32, _name: &str) {
+        if let Some(bits) = self.read_be_u64(4) {
+            *info = f32::from_bits(bits as u32);
+        } else {
+            *info = 0.0;
+        }
+    }
+    pub fn Get_BF8(&mut self, info: &mut float64, _name: &str) {
+        if let Some(bits) = self.read_be_u64(8) {
+            *info = f64::from_bits(bits);
+        } else {
+            *info = 0.0;
+        }
+    }
+    pub fn Get_BF10(&mut self, info: &mut float80, _name: &str) {
+        // 80-bit IEEE 754 extended precision, big-endian — used in AIFF.
+        // Decode as a finite f64 approximation; matches the C++ side which
+        // also narrows to float64 on storage.
+        if self.Remain() < 10 {
+            *info = 0.0;
+            self.truncated = true;
+            self.element_offset = self.buffer.len();
+            return;
+        }
+        let bytes = &self.buffer[self.element_offset..self.element_offset + 10];
+        self.element_offset += 10;
+        *info = decode_f80_be(bytes);
+    }
+
+    pub fn Get_LF4(&mut self, info: &mut float32, _name: &str) {
+        if let Some(bits) = self.read_le_u64(4) {
+            *info = f32::from_bits(bits as u32);
+        } else {
+            *info = 0.0;
+        }
+    }
+    pub fn Get_LF8(&mut self, info: &mut float64, _name: &str) {
+        if let Some(bits) = self.read_le_u64(8) {
+            *info = f64::from_bits(bits);
+        } else {
+            *info = 0.0;
+        }
+    }
+
+    pub fn Peek_BF4(&self, info: &mut float32) {
+        if let Some(bits) = self.peek_be_u64(4) {
+            *info = f32::from_bits(bits as u32);
+        } else {
+            *info = 0.0;
+        }
+    }
+    pub fn Peek_BF8(&self, info: &mut float64) {
+        if let Some(bits) = self.peek_be_u64(8) {
+            *info = f64::from_bits(bits);
+        } else {
+            *info = 0.0;
+        }
+    }
+    pub fn Peek_LF4(&self, info: &mut float32) {
+        if let Some(bits) = self.peek_le_u64(4) {
+            *info = f32::from_bits(bits as u32);
+        } else {
+            *info = 0.0;
+        }
+    }
+    pub fn Peek_LF8(&self, info: &mut float64) {
+        if let Some(bits) = self.peek_le_u64(8) {
+            *info = f64::from_bits(bits);
+        } else {
+            *info = 0.0;
+        }
+    }
+
+    pub fn Skip_BF4(&mut self, _name: &str) { self.skip(4) }
+    pub fn Skip_BF8(&mut self, _name: &str) { self.skip(8) }
+    pub fn Skip_BF10(&mut self, _name: &str) { self.skip(10) }
+    pub fn Skip_LF4(&mut self, _name: &str) { self.skip(4) }
+    pub fn Skip_LF8(&mut self, _name: &str) { self.skip(8) }
+
+    // ----------------------------------------------------------------------
     // 4CC / Character codes (Get_C4 is used everywhere for MP4 atoms, RIFF)
     // ----------------------------------------------------------------------
 
@@ -199,6 +396,37 @@ impl<'a> FileAnalyze<'a> {
     pub fn Skip_C4(&mut self, _name: &str) {
         self.skip(4)
     }
+}
+
+/// Decode a 10-byte big-endian IEEE 754 extended precision (80-bit)
+/// floating point value into f64.
+///
+/// Format (Apple SANE / AIFF):
+///   sign (1 bit) | exponent (15 bits) | integer-bit (1) | fraction (63 bits)
+/// Bias is 16383; the integer bit is explicit (unlike IEEE 754 binary32/64).
+fn decode_f80_be(bytes: &[u8]) -> f64 {
+    debug_assert_eq!(bytes.len(), 10);
+    let sign = (bytes[0] >> 7) & 1;
+    let exp = (((bytes[0] & 0x7F) as u16) << 8) | bytes[1] as u16;
+    let mut mant: u64 = 0;
+    for i in 0..8 {
+        mant = (mant << 8) | bytes[2 + i] as u64;
+    }
+    if exp == 0 && mant == 0 {
+        return if sign == 1 { -0.0 } else { 0.0 };
+    }
+    if exp == 0x7FFF {
+        return if mant == 0 {
+            if sign == 1 { f64::NEG_INFINITY } else { f64::INFINITY }
+        } else {
+            f64::NAN
+        };
+    }
+    // Reconstruct value from explicit integer bit + 63 fraction bits.
+    // value = mant / 2^63 * 2^(exp - 16383)
+    let scaled = (mant as f64) / (1u64 << 63) as f64;
+    let result = scaled * 2f64.powi(exp as i32 - 16383);
+    if sign == 1 { -result } else { result }
 }
 
 #[cfg(test)]
@@ -286,5 +514,94 @@ mod tests {
         let mut code: int32u = 0;
         fa.Get_C4(&mut code, "Type");
         assert_eq!(code, 0x6674_7970);
+    }
+
+    #[test]
+    fn get_l1_through_l8_read_little_endian() {
+        // Same bytes as the BE test; expect bytes reversed in numeric value.
+        let buf = [0x12, 0x34, 0x56, 0x78];
+        let mut fa = FileAnalyze::new(&buf);
+        let mut a: int8u = 0;
+        let mut b: int16u = 0;
+        fa.Get_L1(&mut a, "a");
+        fa.Get_L2(&mut b, "b");
+        assert_eq!(a, 0x12);
+        assert_eq!(b, 0x5634);
+
+        let buf2 = [0x12, 0x34, 0x56, 0x78];
+        let mut fa2 = FileAnalyze::new(&buf2);
+        let mut c: int32u = 0;
+        fa2.Get_L4(&mut c, "c");
+        assert_eq!(c, 0x7856_3412);
+    }
+
+    #[test]
+    fn get_l16_reads_uuid_little_endian() {
+        // First 8 bytes form low 64 bits, last 8 bytes form high 64 bits.
+        let buf: [u8; 16] = [
+            0xEF, 0xCD, 0xAB, 0x90, 0x78, 0x56, 0x34, 0x12,
+            0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11,
+        ];
+        let mut fa = FileAnalyze::new(&buf);
+        let mut v: int128u = 0;
+        fa.Get_L16(&mut v, "uuid");
+        assert_eq!(v, 0x1122_3344_5566_7788_1234_5678_90AB_CDEF);
+    }
+
+    #[test]
+    fn get_bf4_reads_be_float32() {
+        let v = 3.14159_f32;
+        let buf = v.to_be_bytes();
+        let mut fa = FileAnalyze::new(&buf);
+        let mut out: float32 = 0.0;
+        fa.Get_BF4(&mut out, "pi");
+        assert_eq!(out, v);
+    }
+
+    #[test]
+    fn get_bf8_reads_be_float64() {
+        let v = std::f64::consts::E;
+        let buf = v.to_be_bytes();
+        let mut fa = FileAnalyze::new(&buf);
+        let mut out: float64 = 0.0;
+        fa.Get_BF8(&mut out, "e");
+        assert_eq!(out, v);
+    }
+
+    #[test]
+    fn get_lf4_lf8_read_le_floats() {
+        let f4 = 1.5_f32;
+        let f8 = std::f64::consts::PI;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&f4.to_le_bytes());
+        buf.extend_from_slice(&f8.to_le_bytes());
+        let mut fa = FileAnalyze::new(&buf);
+        let mut a: float32 = 0.0;
+        let mut b: float64 = 0.0;
+        fa.Get_LF4(&mut a, "a");
+        fa.Get_LF8(&mut b, "b");
+        assert_eq!(a, f4);
+        assert_eq!(b, f8);
+    }
+
+    #[test]
+    fn get_bf10_aiff_sample_rate_44100() {
+        // 44100.0 Hz encoded as IEEE 754 extended precision, big-endian.
+        // Sign=0, exp=16383+15=16398=0x400E, integer-bit=1, frac=44100<<32 == 0xAC44_0000_0000_0000
+        // First two bytes: 0x40 0x0E; then 0xAC, 0x44, six zero bytes.
+        let buf: [u8; 10] = [0x40, 0x0E, 0xAC, 0x44, 0, 0, 0, 0, 0, 0];
+        let mut fa = FileAnalyze::new(&buf);
+        let mut hz: float80 = 0.0;
+        fa.Get_BF10(&mut hz, "SampleRate");
+        assert!((hz - 44100.0).abs() < 1e-9, "got {hz}");
+    }
+
+    #[test]
+    fn get_bf10_zero() {
+        let buf = [0u8; 10];
+        let mut fa = FileAnalyze::new(&buf);
+        let mut v: float80 = 1.0;
+        fa.Get_BF10(&mut v, "zero");
+        assert_eq!(v, 0.0);
     }
 }
