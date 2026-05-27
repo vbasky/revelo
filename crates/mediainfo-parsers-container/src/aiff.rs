@@ -6,9 +6,10 @@
 //! 754 extended-precision float.
 //!
 //! Layout:
-//!   "FORM" <u32 BE total-size-minus-8> "AIFF"
+//!   "FORM" <u32 BE total-size-minus-8> ("AIFF" | "AIFC")
 //!     chunks:
 //!       "COMM" <u32 BE size> numChannels<2> numSampleFrames<4> sampleSize<2> sampleRate<10 80-bit BE>
+//!                            [AIFC only:] compressionType<4 FourCC> compressionName<Pascal string>
 //!       "SSND" <u32 BE size> offset<4> blockSize<4> samples<size-8>
 //!       (other chunks ignored)
 //!
@@ -23,6 +24,7 @@ use zenlib::{float80, int16u, int32u, int8u};
 
 const FOURCC_FORM: int32u = u32::from_be_bytes(*b"FORM");
 const FOURCC_AIFF: int32u = u32::from_be_bytes(*b"AIFF");
+const FOURCC_AIFC: int32u = u32::from_be_bytes(*b"AIFC");
 const FOURCC_COMM: int32u = u32::from_be_bytes(*b"COMM");
 const FOURCC_SSND: int32u = u32::from_be_bytes(*b"SSND");
 
@@ -32,6 +34,64 @@ struct CommChunk {
     num_sample_frames: int32u,
     sample_size: int16u,
     sample_rate: float80,
+    // AIFC-only: present when the FORM type is "AIFC".
+    compression_type: Option<int32u>,
+}
+
+/// Decoded codec mapping for an AIFC compressionType FourCC. `format`
+/// is empty when the compressionType is unknown (caller should skip
+/// filling Format in that case).
+#[derive(Debug, Default)]
+struct AifcCodec {
+    format: &'static str,
+    endianness: Option<&'static str>,
+    sign: Option<&'static str>,
+    is_float: bool,
+}
+
+fn map_aifc_compression(fourcc: int32u) -> AifcCodec {
+    // FourCCs matched as ASCII bytes; AIFC compressionType is case-sensitive
+    // per the spec but real files use both cases for the same codec, so we
+    // accept both. Endianness/Sign assignments follow File_Pcm.cpp's table.
+    match &fourcc.to_be_bytes() {
+        b"NONE" | b"twos" => AifcCodec {
+            format: "PCM",
+            endianness: Some("Big"),
+            sign: Some("Signed"),
+            ..Default::default()
+        },
+        // "sowt" = "twos" reversed; QuickTime's marker for little-endian PCM.
+        b"sowt" => AifcCodec {
+            format: "PCM",
+            endianness: Some("Little"),
+            sign: Some("Signed"),
+            ..Default::default()
+        },
+        b"raw " => AifcCodec {
+            format: "PCM",
+            endianness: Some("Little"),
+            sign: Some("Unsigned"),
+            ..Default::default()
+        },
+        b"fl32" | b"FL32" | b"fl64" | b"FL64" => AifcCodec {
+            format: "PCM",
+            is_float: true,
+            ..Default::default()
+        },
+        b"alaw" | b"ALAW" => AifcCodec {
+            format: "A-law",
+            ..Default::default()
+        },
+        b"ulaw" | b"ULAW" => AifcCodec {
+            format: "\u{00B5}-law",
+            ..Default::default()
+        },
+        b"ima4" => AifcCodec {
+            format: "ADPCM",
+            ..Default::default()
+        },
+        _ => AifcCodec::default(),
+    }
 }
 
 pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
@@ -49,10 +109,11 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
     let mut form_type: int32u = 0;
     fa.Get_C4(&mut form_type, "Type");
 
-    if form_type != FOURCC_AIFF {
+    if form_type != FOURCC_AIFF && form_type != FOURCC_AIFC {
         fa.Element_End();
         return false;
     }
+    let is_aifc = form_type == FOURCC_AIFC;
 
     let mut comm: Option<CommChunk> = None;
     let mut audio_stream_size: u64 = 0;
@@ -80,7 +141,33 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
                 let mut sample_rate: float80 = 0.0;
                 fa.Get_BF10(&mut sample_rate, "sampleRate");
 
-                let consumed: usize = 18;
+                let mut consumed: usize = 18;
+                let mut compression_type: Option<int32u> = None;
+                if is_aifc && chunk_size_usize >= consumed + 4 {
+                    let mut ct: int32u = 0;
+                    fa.Get_C4(&mut ct, "compressionType");
+                    compression_type = Some(ct);
+                    consumed += 4;
+                    // Pascal string: 1-byte length + payload, then padded to
+                    // even total length within the chunk body.
+                    if chunk_size_usize >= consumed + 1 {
+                        let mut pa_len: int8u = 0;
+                        fa.Get_B1(&mut pa_len, "compressionName_length");
+                        consumed += 1;
+                        let pa_total = pa_len as usize;
+                        let pa_take = pa_total.min(chunk_size_usize - consumed);
+                        if pa_take > 0 {
+                            fa.Skip_Hexa(pa_take, "compressionName");
+                            consumed += pa_take;
+                        }
+                        // Pascal string occupies (1 + len) bytes, padded so
+                        // the whole pair is even.
+                        if (1 + pa_total) % 2 == 1 && chunk_size_usize > consumed {
+                            fa.Skip_Hexa(1, "compressionName_pad");
+                            consumed += 1;
+                        }
+                    }
+                }
                 if chunk_size_usize > consumed {
                     fa.Skip_Hexa(chunk_size_usize - consumed, "Extension");
                 }
@@ -95,6 +182,7 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
                     num_sample_frames,
                     sample_size,
                     sample_rate,
+                    compression_type,
                 });
             }
             FOURCC_SSND => {
@@ -139,14 +227,27 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
     fa.Fill(StreamKind::General, 0, "Format", "AIFF", false);
 
     fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "PCM", false);
-    fa.Fill(
-        StreamKind::Audio,
-        0,
-        "Format_Settings_Endianness",
-        "Big",
-        false,
-    );
+    let codec = match comm.compression_type {
+        Some(ct) => map_aifc_compression(ct),
+        None => AifcCodec {
+            format: "PCM",
+            endianness: Some("Big"),
+            sign: Some("Signed"),
+            ..Default::default()
+        },
+    };
+    if !codec.format.is_empty() {
+        fa.Fill(StreamKind::Audio, 0, "Format", codec.format, false);
+    }
+    if let Some(end) = codec.endianness {
+        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", end, false);
+    }
+    if let Some(sign) = codec.sign {
+        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Sign", sign, false);
+    }
+    if codec.is_float {
+        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Floating", "Yes", false);
+    }
 
     // Duration as integer milliseconds, matching the C++ AfterComma=0 fill
     // of `numSampleFrames/sampleRate*1000`.
@@ -306,12 +407,92 @@ mod tests {
         let mut buf = Vec::new();
         buf.extend_from_slice(b"FORM");
         buf.extend_from_slice(&8u32.to_be_bytes());
-        buf.extend_from_slice(b"AIFC");
+        buf.extend_from_slice(b"WAVE");
         buf.extend_from_slice(&[0; 4]);
         let mut fa = FileAnalyze::new(&buf);
-        // AIFC is technically also FORM-style; we only handle plain AIFF
-        // in this commit. AIFC support comes later.
         assert!(!parse_aiff(&mut fa));
+    }
+
+    /// Build a minimal AIFC with the given compressionType FourCC and an
+    /// empty Pascal compressionName (length=0, then 1 pad byte → 2 bytes
+    /// total). COMM body is 18 (base) + 4 (compressionType) + 2 (Pascal) = 24.
+    fn make_aifc(
+        channels: u16,
+        sample_rate_hz: u32,
+        bits: u16,
+        frame_count: u32,
+        compression_type: &[u8; 4],
+    ) -> Vec<u8> {
+        let block_align = channels * (bits / 8);
+        let data_size = frame_count * block_align as u32;
+        let ssnd_chunk_size = 8 + data_size;
+        let comm_chunk_size: u32 = 18 + 4 + 2;
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"FORM");
+        let form_size = 4 + (8 + comm_chunk_size) + (8 + ssnd_chunk_size);
+        buf.extend_from_slice(&form_size.to_be_bytes());
+        buf.extend_from_slice(b"AIFC");
+
+        buf.extend_from_slice(b"COMM");
+        buf.extend_from_slice(&comm_chunk_size.to_be_bytes());
+        buf.extend_from_slice(&channels.to_be_bytes());
+        buf.extend_from_slice(&frame_count.to_be_bytes());
+        buf.extend_from_slice(&bits.to_be_bytes());
+        buf.extend_from_slice(&encode_f80_be(sample_rate_hz as f64));
+        buf.extend_from_slice(compression_type);
+        // Pascal string with zero-length name: 0x00 + 1 byte pad to even.
+        buf.push(0);
+        buf.push(0);
+
+        buf.extend_from_slice(b"SSND");
+        buf.extend_from_slice(&ssnd_chunk_size.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.resize(buf.len() + data_size as usize, 0);
+        buf
+    }
+
+    #[test]
+    fn parse_aifc_sowt_is_little_endian_pcm() {
+        let buf = make_aifc(2, 48000, 16, 48000, b"sowt");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_aiff(&mut fa));
+        let a = |key: &str| fa.Retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let g = |key: &str| fa.Retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
+        assert_eq!(g("Format").as_deref(), Some("AIFF"));
+        assert_eq!(a("Format").as_deref(), Some("PCM"));
+        assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Little"));
+        assert_eq!(a("Format_Settings_Sign").as_deref(), Some("Signed"));
+        assert_eq!(a("Channels").as_deref(), Some("2"));
+        assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
+        assert_eq!(a("BitDepth").as_deref(), Some("16"));
+    }
+
+    #[test]
+    fn parse_aifc_fl32_is_float_pcm() {
+        let buf = make_aifc(1, 44100, 32, 44100, b"fl32");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_aiff(&mut fa));
+        let a = |key: &str| fa.Retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format").as_deref(), Some("PCM"));
+        assert_eq!(a("Format_Settings_Floating").as_deref(), Some("Yes"));
+        // No Endianness/Sign fills for float per task spec.
+        assert!(a("Format_Settings_Endianness").is_none());
+        assert!(a("Format_Settings_Sign").is_none());
+    }
+
+    #[test]
+    fn parse_aifc_none_matches_aiff_defaults() {
+        // AIFC with compressionType "NONE" should produce the same Format
+        // metadata as a plain AIFF file.
+        let buf = make_aifc(2, 48000, 24, 48000, b"NONE");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_aiff(&mut fa));
+        let a = |key: &str| fa.Retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format").as_deref(), Some("PCM"));
+        assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Big"));
+        assert_eq!(a("Format_Settings_Sign").as_deref(), Some("Signed"));
     }
 
     #[test]

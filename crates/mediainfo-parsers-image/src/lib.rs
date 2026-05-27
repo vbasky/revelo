@@ -4,6 +4,7 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+pub mod arriraw;
 pub mod bmp;
 pub mod bpg;
 pub mod dds;
@@ -15,10 +16,12 @@ pub mod jpeg;
 pub mod pcx;
 pub mod png;
 pub mod psd;
+pub mod rle;
 pub mod tga;
 pub mod tiff;
 pub mod webp;
 
+pub use arriraw::parse_arriraw;
 pub use bmp::parse_bmp;
 pub use bpg::parse_bpg;
 pub use dds::parse_dds;
@@ -30,6 +33,7 @@ pub use jpeg::parse_jpeg;
 pub use pcx::parse_pcx;
 pub use png::parse_png;
 pub use psd::parse_psd;
+pub use rle::parse_rle;
 pub use tga::parse_tga;
 pub use tiff::parse_tiff;
 pub use webp::parse_webp;
