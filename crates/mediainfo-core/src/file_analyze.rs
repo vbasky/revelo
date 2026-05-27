@@ -15,13 +15,15 @@
 //! returns true — matching the C++ flag-and-continue semantics.
 
 use crate::element::ElementTree;
-use zenlib::{float32, float64, float80, int128u, int16u, int32u, int64u, int8u};
+use crate::stream::{StreamCollection, StreamKind};
+use zenlib::{Ztring, float32, float64, float80, int128u, int16u, int32u, int64u, int8u};
 
 pub struct FileAnalyze<'a> {
     buffer: &'a [u8],
     element_offset: usize,
     truncated: bool,
     tree: ElementTree,
+    streams: StreamCollection,
     /// When false, `Get_*` methods skip recording entries on the trace
     /// tree — mirrors the C++ `Trace_Activated` flag.
     pub trace_activated: bool,
@@ -34,6 +36,7 @@ impl<'a> FileAnalyze<'a> {
             element_offset: 0,
             truncated: false,
             tree: ElementTree::new(),
+            streams: StreamCollection::new(),
             trace_activated: true,
         }
     }
@@ -44,6 +47,37 @@ impl<'a> FileAnalyze<'a> {
 
     pub fn tree_mut(&mut self) -> &mut ElementTree {
         &mut self.tree
+    }
+
+    pub fn streams(&self) -> &StreamCollection {
+        &self.streams
+    }
+
+    pub fn streams_mut(&mut self) -> &mut StreamCollection {
+        &mut self.streams
+    }
+
+    pub fn Stream_Prepare(&mut self, kind: StreamKind) -> usize {
+        self.streams.Stream_Prepare(kind)
+    }
+
+    pub fn Fill(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+        replace: bool,
+    ) {
+        self.streams.Fill(kind, pos, parameter, value, replace);
+    }
+
+    pub fn Retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {
+        self.streams.Retrieve(kind, pos, parameter)
+    }
+
+    pub fn Count_Get(&self, kind: StreamKind) -> usize {
+        self.streams.Count_Get(kind)
     }
 
     pub fn Element_Begin(&mut self, name: &str) {
@@ -761,6 +795,20 @@ mod tests {
         fa.Element_End();
         assert_eq!(v, 0x1234_5678);
         assert!(fa.tree().root().children[0].infos.is_empty());
+    }
+
+    #[test]
+    fn file_analyze_fills_streams_directly() {
+        let buf = [0; 4];
+        let mut fa = FileAnalyze::new(&buf);
+        let pos = fa.Stream_Prepare(StreamKind::Audio);
+        fa.Fill(StreamKind::Audio, pos, "Format", "FLAC", false);
+        fa.Fill(StreamKind::Audio, pos, "BitDepth", "24", false);
+        assert_eq!(
+            fa.Retrieve(StreamKind::Audio, pos, "Format").map(|z| z.as_str()),
+            Some("FLAC")
+        );
+        assert_eq!(fa.Count_Get(StreamKind::Audio), 1);
     }
 
     #[test]

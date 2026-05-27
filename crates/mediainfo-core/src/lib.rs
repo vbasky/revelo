@@ -12,7 +12,9 @@
 
 pub mod element;
 pub mod file_analyze;
+pub mod stream;
 mod zenlib_re_export;
 
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;
+pub use stream::{Stream, StreamCollection, StreamKind};
