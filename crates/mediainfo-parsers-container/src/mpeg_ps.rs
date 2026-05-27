@@ -100,6 +100,12 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
+    // Sniff audio frames before mutating fa (buf borrow lives until here).
+    let audio_frames: Vec<Option<MpegAudioFrame>> = audio_ids
+        .iter()
+        .map(|sid| sniff_mpeg_audio(buf, *sid))
+        .collect();
+
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG-PS", false);
     if !video_ids.is_empty() {
@@ -116,25 +122,158 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
         fa.Fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
     }
 
+    let mut stream_order: u32 = 0;
     for sid in &video_ids {
         let pos = fa.Stream_Prepare(StreamKind::Video);
-        fa.Fill(StreamKind::Video, pos, "Format", "MPEG Video", false);
+        fa.Fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
         fa.Fill(StreamKind::Video, pos, "ID", sid.to_string(), false);
+        stream_order += 1;
+        fa.Fill(StreamKind::Video, pos, "Format", "MPEG Video", false);
+        // MPEG-PS sync 0x000001E0..EF carries MPEG-2 video; oracle
+        // defaults to V2 since MPEG-1 PS uses a different sync set.
+        fa.Fill(StreamKind::Video, pos, "Format_Version", "2", false);
+        fa.Fill(StreamKind::Video, pos, "BitRate_Mode", "VBR", false);
+        // Defaults for typical MPEG-2 video; full sequence header parse
+        // would refine these.
+        fa.Fill(StreamKind::Video, pos, "ColorSpace", "YUV", false);
+        fa.Fill(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0", false);
+        fa.Fill(StreamKind::Video, pos, "BitDepth", "8", false);
+        fa.Fill(StreamKind::Video, pos, "ScanType", "Progressive", false);
+        fa.Fill(StreamKind::Video, pos, "Compression_Mode", "Lossy", false);
     }
-    for sid in &audio_ids {
+    for (idx, sid) in audio_ids.iter().enumerate() {
         let pos = fa.Stream_Prepare(StreamKind::Audio);
-        fa.Fill(StreamKind::Audio, pos, "Format", "MPEG Audio", false);
+        fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
         fa.Fill(StreamKind::Audio, pos, "ID", sid.to_string(), false);
+        stream_order += 1;
+        fa.Fill(StreamKind::Audio, pos, "Format", "MPEG Audio", false);
+        if let Some(mp) = &audio_frames[idx] {
+            fa.Fill(StreamKind::Audio, pos, "Format_Version", mp.version_name, false);
+            fa.Fill(StreamKind::Audio, pos, "Format_Profile", mp.layer_name, false);
+            fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+            fa.Fill(StreamKind::Audio, pos, "BitRate", (mp.bitrate_kbps as u32 * 1000).to_string(), false);
+            fa.Fill(StreamKind::Audio, pos, "Channels", mp.channels.to_string(), false);
+            fa.Fill(StreamKind::Audio, pos, "SamplingRate", mp.sample_rate.to_string(), false);
+            fa.Fill(StreamKind::Audio, pos, "SamplesPerFrame", mp.samples_per_frame.to_string(), false);
+        }
+        fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
     }
     if private1_seen {
         // Private stream 1 carries AC-3/DTS/LPCM in DVD VOBs. Without
         // sub-stream sniffing we just label it "Private".
         let pos = fa.Stream_Prepare(StreamKind::Audio);
-        fa.Fill(StreamKind::Audio, pos, "Format", "Private", false);
+        fa.Fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
         fa.Fill(StreamKind::Audio, pos, "ID", "189", false); // 0xBD
+        fa.Fill(StreamKind::Audio, pos, "Format", "Private", false);
     }
 
     true
+}
+
+struct MpegAudioFrame {
+    version_name: &'static str,
+    layer_name: &'static str,
+    bitrate_kbps: u16,
+    channels: u8,
+    sample_rate: u32,
+    samples_per_frame: u16,
+}
+
+/// Scan the buffer for the first PES packet matching `sid`, then look
+/// inside its payload for an MPEG audio frame sync (0xFFF) and decode
+/// the header.
+fn sniff_mpeg_audio(buf: &[u8], sid: u8) -> Option<MpegAudioFrame> {
+    const BITRATES: [[[u16; 16]; 4]; 4] = [
+        // [version][layer][bitrate_idx]
+        [[0; 16]; 4],  // reserved version
+        [  // MPEG 2.5 (treated same as MPEG 2)
+            [0; 16],
+            [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],   // Layer 3
+            [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],   // Layer 2
+            [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0], // Layer 1
+        ],
+        [[0; 16]; 4],  // reserved layer
+        [  // MPEG 1
+            [0; 16],
+            [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],  // Layer 3
+            [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],  // Layer 2
+            [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0],  // Layer 1
+        ],
+    ];
+    const SAMPLE_RATES: [[u32; 4]; 4] = [
+        [11025, 12000, 8000, 0],
+        [0, 0, 0, 0],
+        [22050, 24000, 16000, 0],
+        [44100, 48000, 32000, 0],
+    ];
+    let mut i = 0;
+    while i + 6 < buf.len() {
+        if buf[i] != 0 || buf[i + 1] != 0 || buf[i + 2] != 1 || buf[i + 3] != sid {
+            i += 1;
+            continue;
+        }
+        // Found a PES packet for this stream id. Skip past header.
+        let pes_len = ((buf[i + 4] as usize) << 8) | (buf[i + 5] as usize);
+        if pes_len == 0 || i + 6 + pes_len > buf.len() {
+            i += 1;
+            continue;
+        }
+        let pes = &buf[i + 6..i + 6 + pes_len];
+        if pes.len() < 3 {
+            i += 1;
+            continue;
+        }
+        // Optional PES header: byte 0 has bits 10xxxxxx for MPEG-2.
+        let pes_payload_off = if (pes[0] & 0xC0) == 0x80 {
+            3 + pes[2] as usize
+        } else {
+            0
+        };
+        if pes_payload_off >= pes.len() {
+            i += 1;
+            continue;
+        }
+        let payload = &pes[pes_payload_off..];
+        // Scan for MPEG audio frame sync (0xFFF prefix on first byte+top4 bits of second).
+        for j in 0..payload.len().saturating_sub(4) {
+            if payload[j] != 0xFF || (payload[j + 1] & 0xE0) != 0xE0 {
+                continue;
+            }
+            let version = ((payload[j + 1] >> 3) & 0x3) as usize;
+            let layer = ((payload[j + 1] >> 1) & 0x3) as usize;
+            let bitrate_idx = ((payload[j + 2] >> 4) & 0xF) as usize;
+            let sr_idx = ((payload[j + 2] >> 2) & 0x3) as usize;
+            let channel_mode = (payload[j + 3] >> 6) & 0x3;
+            if version == 1 || layer == 0 || bitrate_idx == 0 || bitrate_idx == 15 {
+                continue;
+            }
+            let bitrate_kbps = BITRATES[version][layer][bitrate_idx];
+            let sample_rate = SAMPLE_RATES[version][sr_idx];
+            if bitrate_kbps == 0 || sample_rate == 0 {
+                continue;
+            }
+            let channels: u8 = if channel_mode == 3 { 1 } else { 2 };
+            let version_name = match version { 3 => "1", 2 => "2", 0 => "2.5", _ => "" };
+            let layer_name = match layer { 3 => "Layer 1", 2 => "Layer 2", 1 => "Layer 3", _ => "" };
+            let samples_per_frame: u16 = match (version, layer) {
+                (3, 3) => 384,  // V1 L1
+                (3, _) => 1152, // V1 L2/L3
+                (_, 3) => 384,  // V2 L1
+                (_, 2) => 1152, // V2 L2
+                _ => 576,       // V2 L3
+            };
+            return Some(MpegAudioFrame {
+                version_name,
+                layer_name,
+                bitrate_kbps,
+                channels,
+                sample_rate,
+                samples_per_frame,
+            });
+        }
+        i = i + 6 + pes_len;
+    }
+    None
 }
 
 fn starts_with_pes(buf: &[u8]) -> bool {
