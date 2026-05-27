@@ -261,6 +261,21 @@ impl<'a> FileAnalyze<'a> {
         self.skip(bytes);
     }
 
+    /// Read `n` raw bytes from the current position, advancing the
+    /// cursor. Returns an empty slice on underrun (and marks truncated).
+    /// Used by parsers reading variable-length payloads like the
+    /// VORBIS_COMMENT vendor string.
+    pub fn read_raw(&mut self, n: usize) -> &[u8] {
+        if self.Remain() < n {
+            self.truncated = true;
+            self.element_offset = self.buffer.len();
+            return &[];
+        }
+        let start = self.element_offset;
+        self.element_offset += n;
+        &self.buffer[start..start + n]
+    }
+
     fn skip(&mut self, n: usize) {
         if self.Remain() < n {
             self.truncated = true;

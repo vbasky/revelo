@@ -30,6 +30,7 @@ use mediainfo_core::{FileAnalyze, StreamKind};
 use zenlib::{int128u, int16u, int32u, int64u, int8u};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
+const BLOCK_TYPE_VORBIS_COMMENT: u8 = 4;
 
 #[derive(Debug, Default)]
 struct StreamInfo {
@@ -39,6 +40,7 @@ struct StreamInfo {
     channels: int8u,
     bits_per_sample: int8u,
     total_samples: int64u,
+    md5: int128u,
 }
 
 pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
@@ -56,6 +58,7 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
     fa.Get_C4(&mut magic_consume, "Magic");
 
     let mut streaminfo: Option<StreamInfo> = None;
+    let mut vendor: Option<String> = None;
 
     loop {
         if fa.Remain() < 4 {
@@ -78,10 +81,14 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
                 fa.Element_Begin("STREAMINFO");
                 streaminfo = Some(parse_streaminfo(fa));
                 fa.Element_End();
-                // STREAMINFO is exactly 34 bytes; if the block declared more, skip.
                 if block_len_usize > 34 {
                     fa.Skip_Hexa(block_len_usize - 34, "Extension");
                 }
+            }
+            BLOCK_TYPE_VORBIS_COMMENT => {
+                fa.Element_Begin("VORBIS_COMMENT");
+                vendor = parse_vorbis_comment(fa, block_len_usize);
+                fa.Element_End();
             }
             _ => {
                 fa.Skip_Hexa(block_len_usize, "MetadataBlock");
@@ -97,11 +104,64 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
     fa.Element_End();
 
     if let Some(info) = streaminfo {
-        fill_streams(fa, &info, audio_stream_size);
+        fill_streams(fa, &info, audio_stream_size, vendor.as_deref());
         true
     } else {
         false
     }
+}
+
+/// Parse a FLAC VORBIS_COMMENT block payload (block_len bytes after the
+/// 4-byte metadata header). Returns the vendor string. Comments
+/// themselves are read past but not stored — TITLE/ARTIST/etc. mapping
+/// lands in a follow-up commit.
+///
+/// Note: lengths inside the VORBIS_COMMENT block are little-endian, even
+/// though the rest of FLAC is big-endian. This is inherited from the
+/// Vorbis/Ogg origin of the comment format.
+fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<String> {
+    let start_offset = fa.Element_Offset();
+    let end_offset = start_offset + block_len;
+
+    let mut vendor_len: int32u = 0;
+    fa.Get_L4(&mut vendor_len, "vendor_length");
+    let vendor_len_usize = vendor_len as usize;
+    if fa.Element_Offset() + vendor_len_usize > end_offset {
+        // Malformed — skip to block end.
+        if fa.Remain() < end_offset - fa.Element_Offset() {
+            return None;
+        }
+        fa.Skip_Hexa(end_offset - fa.Element_Offset(), "MalformedComment");
+        return None;
+    }
+
+    let vendor_bytes = fa.read_raw(vendor_len_usize);
+    let vendor = String::from_utf8_lossy(vendor_bytes).into_owned();
+
+    // Consume remaining comments (length-prefixed UTF-8 strings).
+    let mut num_comments: int32u = 0;
+    if fa.Remain() >= 4 {
+        fa.Get_L4(&mut num_comments, "user_comment_list_length");
+        for _ in 0..num_comments {
+            if fa.Element_Offset() + 4 > end_offset {
+                break;
+            }
+            let mut comment_len: int32u = 0;
+            fa.Get_L4(&mut comment_len, "comment_length");
+            let cl = comment_len as usize;
+            if fa.Element_Offset() + cl > end_offset {
+                break;
+            }
+            fa.Skip_Hexa(cl, "user_comment");
+        }
+    }
+
+    // If the block declared more bytes than we consumed, skip the trailer.
+    if fa.Element_Offset() < end_offset {
+        fa.Skip_Hexa(end_offset - fa.Element_Offset(), "Padding");
+    }
+
+    Some(vendor)
 }
 
 fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
@@ -125,8 +185,8 @@ fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
     fa.Get_S5(36, &mut samples, "Samples");
     fa.BS_End();
 
-    let mut _md5: int128u = 0;
-    fa.Get_B16(&mut _md5, "MD5");
+    let mut md5: int128u = 0;
+    fa.Get_B16(&mut md5, "MD5");
 
     StreamInfo {
         min_frame_size,
@@ -135,10 +195,16 @@ fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
         channels,
         bits_per_sample: bps,
         total_samples: samples,
+        md5,
     }
 }
 
-fn fill_streams(fa: &mut FileAnalyze, info: &StreamInfo, audio_stream_size: u64) {
+fn fill_streams(
+    fa: &mut FileAnalyze,
+    info: &StreamInfo,
+    audio_stream_size: u64,
+    vendor: Option<&str>,
+) {
     if info.sample_rate == 0 {
         return;
     }
@@ -198,6 +264,16 @@ fn fill_streams(fa: &mut FileAnalyze, info: &StreamInfo, audio_stream_size: u64)
     fa.Fill(StreamKind::Audio, 0, "BitDepth", bps.to_string(), false);
     fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
     fa.Fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
+
+    if let Some(v) = vendor {
+        fa.Fill(StreamKind::Audio, 0, "Encoded_Library", v, false);
+        fa.Fill(StreamKind::General, 0, "Encoded_Application", v, false);
+    }
+
+    // MD5 of unencoded audio, rendered as 32-hex-char uppercase string.
+    // Goes in the <extra> section per oracle output.
+    let md5_hex = format!("{:032X}", info.md5);
+    fa.Fill(StreamKind::Audio, 0, "MD5_Unencoded", md5_hex, false);
 
     fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
 }

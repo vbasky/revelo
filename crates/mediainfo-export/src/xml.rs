@@ -64,6 +64,7 @@ pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str
 
 fn emit_stream_fields(out: &mut String, kind: StreamKind, stream: &mediainfo_core::Stream) {
     let canonical = canonical_field_order(kind);
+    let extras = extra_field_order(kind);
     let mut emitted: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
     for field in canonical {
@@ -72,10 +73,25 @@ fn emit_stream_fields(out: &mut String, kind: StreamKind, stream: &mediainfo_cor
             emitted.insert(*field);
         }
     }
+    // Non-canonical, non-extra fields fall through here in insertion order.
+    let extras_set: std::collections::HashSet<&'static str> = extras.iter().copied().collect();
     for (k, v) in stream.iter() {
-        if !emitted.contains(k) {
+        if !emitted.contains(k) && !extras_set.contains(k) {
             push_field(out, k, v.as_str());
         }
+    }
+    // Extra fields are wrapped in a <extra>...</extra> section, present
+    // only when at least one such field is set on the stream.
+    let mut extra_buf = String::new();
+    for field in extras {
+        if let Some(z) = stream.get(field) {
+            push_field(&mut extra_buf, field, z.as_str());
+        }
+    }
+    if !extra_buf.is_empty() {
+        out.push_str("<extra>\n");
+        out.push_str(&extra_buf);
+        out.push_str("</extra>\n");
     }
 }
 
@@ -139,6 +155,16 @@ fn xml_escape_attr(s: &str) -> String {
         }
     }
     out
+}
+
+/// Fields that get wrapped in `<extra>...</extra>` when present on a
+/// stream. Mirrors MediaInfoLib's `InfoOption_ShowInXml` flagging that
+/// segregates secondary / side-channel fields from the main schema.
+fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
+    match kind {
+        StreamKind::Audio => &["MD5_Unencoded"],
+        _ => &[],
+    }
 }
 
 /// Canonical field order per stream kind. Mirrors MediaInfoLib's
@@ -238,8 +264,11 @@ fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
             "FrameCount",
             "BitDepth",
             "BitDepth_String",
+            "Compression_Mode",
             "StreamSize",
             "StreamSize_String",
+            "Encoded_Library",
+            "Encoded_Library_String",
             "Title",
             "Language",
             "Default",
