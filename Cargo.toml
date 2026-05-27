@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/diff-harness",
     "crates/mediainfo-core",
+    "crates/mediainfo-parsers-container",
     "crates/zenlib",
 ]
 

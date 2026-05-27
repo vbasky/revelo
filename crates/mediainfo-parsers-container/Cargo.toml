@@ -1,14 +1,14 @@
 [package]
-name = "diff-harness"
+name = "mediainfo-parsers-container"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "diff-harness"
-path = "src/main.rs"
+[lib]
+name = "mediainfo_parsers_container"
+path = "src/lib.rs"
 
 [dependencies]
 mediainfo-core = { path = "../mediainfo-core" }
-mediainfo-parsers-container = { path = "../mediainfo-parsers-container" }
+zenlib = { path = "../zenlib" }
