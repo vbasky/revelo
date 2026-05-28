@@ -201,6 +201,44 @@ mod tests {
     }
 
     #[test]
+    fn propagates_video_framerate_and_framecount_to_general() {
+        let mut fa = FileAnalyze::new(b"");
+        fa.Stream_Prepare(StreamKind::General);
+        fa.Fill(StreamKind::Video, 0, "FrameRate", "24.000", false);
+        fa.Fill(StreamKind::Video, 0, "FrameCount", "1440", false);
+        let info = FileLevelInfo {
+            file_size: 1,
+            extension: None,
+            modified_unix_secs: None,
+            local_offset_secs: 0,
+        };
+        fill_file_level_fields(&mut fa, &info);
+        assert_eq!(
+            fa.Retrieve(StreamKind::General, 0, "FrameRate").map(|z| z.as_str().to_owned()).as_deref(),
+            Some("24.000")
+        );
+        assert_eq!(
+            fa.Retrieve(StreamKind::General, 0, "FrameCount").map(|z| z.as_str().to_owned()).as_deref(),
+            Some("1440")
+        );
+    }
+
+    #[test]
+    fn does_not_propagate_framerate_without_video() {
+        let mut fa = FileAnalyze::new(b"");
+        fa.Stream_Prepare(StreamKind::General);
+        fa.Fill(StreamKind::Audio, 0, "Format", "AAC", false);
+        let info = FileLevelInfo {
+            file_size: 1,
+            extension: None,
+            modified_unix_secs: None,
+            local_offset_secs: 0,
+        };
+        fill_file_level_fields(&mut fa, &info);
+        assert!(fa.Retrieve(StreamKind::General, 0, "FrameRate").is_none());
+    }
+
+    #[test]
     fn computes_overall_bitrate_from_duration() {
         let mut fa = FileAnalyze::new(b"");
         fa.Stream_Prepare(StreamKind::General);

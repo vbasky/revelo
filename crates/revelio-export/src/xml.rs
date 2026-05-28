@@ -253,6 +253,8 @@ pub(crate) fn canonical_field_order(kind: StreamKind) -> &'static [&'static str]
             "OverallBitRate_Minimum",
             "OverallBitRate_Nominal",
             "OverallBitRate_Maximum",
+            "FrameRate",
+            "FrameCount",
             "StreamSize",
             "HeaderSize",
             "DataSize",
