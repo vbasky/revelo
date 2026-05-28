@@ -22,8 +22,12 @@ C++ `mediainfo` CLI.
 | Tags | 12 | 86% | ID3v1/v2, APE Tag, Vorbis Comment, Lyrics3, EXIF, XMP, ICC, IIM/IPTC, C2PA, PropertyList, SphericalVideo |
 | Reader | 4 | 100% | File, Directory, HTTP, MMS |
 
+
+Complete format catalog with spec references: **[docs/formats.md](docs/formats.md)**
+
 ### Deep codec analysis
 
+- **AV1:** Profile-derived bit depth (0=8-bit, 1=10-bit, 2=12-bit) and chroma subsampling (0-1=4:2:0, 2=4:2:2). OBU sequence header parsing for frame dimensions, level from operating point. Container support via avcC-style config in MP4/WebM.
 - **AVC/H.264:** Full SPS VUI (colour primaries/transfer/matrix, aspect ratio, chroma sample location, video full range), EncoderInfo with name/version/settings extraction from x264/x265 SEI, GOP detection (M=X, N=Y)
 - **HEVC/H.265:** Full SPS VUI, HDR10 mastering display colour volume SEI (primaries, white point, luminance), content light level SEI (MaxCLL/MaxFALL), x265 encoder string extraction
 - **Dolby Vision:** dvcC/dvvC configuration box parsing in MP4, codec ID recognition in MKV, standalone XML metadata parser, HDR format profile/level extraction

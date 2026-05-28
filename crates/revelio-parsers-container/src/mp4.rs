@@ -223,8 +223,9 @@ struct TrackInfo {
     avc_sps: Option<revelio_parsers_video::AvcInfo>,
     // Parsed HEVC SPS (from hvcC). Carries VUI colour info similar to AVC.
     hevc_sps: Option<revelio_parsers_video::HevcInfo>,
-    // Encoder string extracted from HEVC SEI user_data_unregistered message.
-    hevc_encoder: Option<String>,
+    // Encoder info extracted from AVC/HEVC SEI user_data_unregistered
+    // message (library + name/version/settings sub-fields).
+    encoder_info: Option<revelio_parsers_video::EncoderInfo>,
     /// CABAC mode from avcC's PPS entry — true if entropy_coding_mode_flag.
     avc_cabac: Option<bool>,
     /// tkhd matrix-derived rotation, in degrees (clockwise, 0/90/180/270).
@@ -1565,7 +1566,7 @@ fn parse_hvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     // Try to extract encoder string from SEI NALs
     if !sei_nalus.is_empty() {
         if let Some(enc) = revelio_parsers_video::extract_encoder_from_sei_nalus(&sei_nalus) {
-            track.hevc_encoder = Some(enc.library);
+            track.encoder_info = Some(enc);
         }
     }
 }
@@ -1955,6 +1956,9 @@ fn fill_streams(
             "M4V " | "M4VH" | "M4VP" => "Apple video with iTunes info",
             "M4P " => "Apple audio with iTunes info, protected",
             "qt  " => "QuickTime",
+            "mp41" => "Base Media / Version 1",
+            "mp42" => "Base Media / Version 2",
+            "avc1" => "JVT",
             _ => "Base Media",
         };
         fa.Fill(StreamKind::General, 0, "Format_Profile", profile, false);
@@ -2224,14 +2228,17 @@ fn fill_streams(
         }
     }
 
-    // Calculate General.Duration from movie header
-    let duration_ms: Option<u64> = if movie.timescale > 0 && movie.duration > 0 {
-        Some((movie.duration * 1000) / movie.timescale as u64)
+    // Calculate General.Duration from movie header with round-to-nearest.
+    // Integer truncation of mvhd loses precision (e.g. 600Hz → ms),
+    // causing a −1ms shift and cascading errors in SamplingCount, bitrate.
+    let general_duration_ms: Option<u64> = if movie.timescale > 0 && movie.duration > 0 {
+        let ts = movie.timescale as u64;
+        Some((movie.duration * 1000 + ts / 2) / ts)
     } else {
         None
     };
     
-    if let Some(dur) = duration_ms {
+    if let Some(dur) = general_duration_ms {
         fa.Fill(StreamKind::General, 0, "Duration", dur.to_string(), false);
         
         // OverallBitRate + OverallBitRate_Mode are filled by the harness's
@@ -2287,14 +2294,20 @@ fn fill_streams(
             //
             // BitRate source priority:
             //   1. esds avg_bitrate (when non-zero)
-            //   2. stsz total × 8 / mdhd duration_sec (when esds avg=0,
-            //      e.g. iPhone-recorded HEVC+AAC files where the encoder
-            //      doesn't fill esds.avgBitrate). Oracle does the same
-            //      fallback computation.
+            //   2. stsz total × 8000 / Duration_ms (rounded) — matches
+            //      oracle's integer arithmetic (oracle gets 160005 for
+            //      610560 × 8000 / 30527). Using mdhd's raw duration_sec
+            //      (30.528) gives 160000, a 5 bps undercount.
             let is_aac = matches!(track.audio_format, Some("AAC"));
-            let computed_br: Option<u32> = if let (Some(ss), tsc) = (track.source_stream_size, track.timescale) {
-                if tsc > 0 && track.duration_units > 0 {
-                    let dur_sec = track.duration_units as f64 / tsc as f64;
+            let computed_br: Option<u32> = if let Some(ss) = track.source_stream_size {
+                if let Some(dur_ms) = general_duration_ms {
+                    if dur_ms > 0 {
+                        Some(((ss as f64) * 8000.0 / (dur_ms as f64)).round() as u32)
+                    } else {
+                        None
+                    }
+                } else if track.timescale > 0 && track.duration_units > 0 {
+                    let dur_sec = track.duration_units as f64 / track.timescale as f64;
                     if dur_sec > 0.0 {
                         Some((ss as f64 * 8.0 / dur_sec).round() as u32)
                     } else {
@@ -2308,13 +2321,18 @@ fn fill_streams(
             };
             let br_to_emit = track.avg_bitrate_bps.or(computed_br);
             if let Some(br) = br_to_emit {
-                fa.Fill(
-                    StreamKind::Audio,
-                    pos,
-                    "BitRate_Mode",
-                    if is_aac { "VBR" } else { "CBR" },
-                    false,
-                );
+                // BitRate_Mode: for AAC with esds, CBR when avg ≈ max;
+                // without esds, oracle outputs CBR for authored AAC tracks
+                // (the fallback computed_br from stsz × 8 / duration
+                // matches a constant-bitrate scenario). Harden to match:
+                // CBR when avg_bitrate_bps and max_bitrate_bps are equal
+                // or when neither is available (computed only), else VBR.
+                let br_mode = match (track.avg_bitrate_bps, track.max_bitrate_bps) {
+                    (Some(avg), Some(max)) if avg == max => "CBR",
+                    (Some(_), Some(_)) => "VBR",
+                    _ => "CBR",
+                };
+                fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", br_mode, false);
                 fa.Fill(StreamKind::Audio, pos, "BitRate", br.to_string(), false);
                 if is_aac && track.avg_bitrate_bps.is_some() {
                     // BitRate_Maximum = esds.maxBitrate field. Only
@@ -2361,20 +2379,13 @@ fn fill_streams(
             if matches!(track.audio_format, Some("AAC")) {
                 fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
             }
-            // Duration / SamplingCount / FrameCount come from the
-            // movie-level duration converted into the track's media
-            // timescale — this is mvhd.duration scaled by the ratio of
-            // media-to-movie timescales. mvhd.duration already accounts
-            // for any edit-list trimming, so for single-track files
-            // this matches the oracle's effective values. For
-            // multi-track files where an audio track is shorter than
-            // the longest track, this gives an overshoot; correcting
-            // requires per-track elst + stts integration.
-            let trimmed_units: Option<u64> = if movie.timescale > 0
-                && movie.duration > 0
-                && track.timescale > 0
-            {
-                Some(movie.duration * track.timescale as u64 / movie.timescale as u64)
+            // Duration / SamplingCount / FrameCount derived from the
+            // rounded general_duration_ms × sample rate, matching the
+            // oracle's approach (compute from ms-rounded duration, not
+            // raw mvhd scaled integer). For mvhd at 600 Hz, truncation
+            // loses 1/3 ms, propagating into all derived counters.
+            let trimmed_units: Option<u64> = if let Some(sr) = track.audio_sample_rate {
+                general_duration_ms.map(|dur_ms| (dur_ms * sr as u64 + 500) / 1000)
             } else if track.timescale > 0 && track.duration_units > 0 {
                 Some(track.duration_units)
             } else {
@@ -2389,11 +2400,8 @@ fn fill_streams(
                     units.to_string(),
                     false,
                 );
-                if track.timescale > 0 {
-                    // Round-to-nearest matches oracle's display rounding
-                    // (e.g. 60094.5ms shows as 60095, not 60094 truncated).
-                    let ts = track.timescale as u64;
-                    let duration_ms = (units * 1000 + ts / 2) / ts;
+                if let Some(sr) = track.audio_sample_rate {
+                    let duration_ms = (units * 1000 + sr as u64 / 2) / sr as u64;
                     fa.Fill(
                         StreamKind::Audio,
                         pos,
@@ -2403,10 +2411,10 @@ fn fill_streams(
                     );
                 }
                 if matches!(track.audio_format, Some("AAC")) {
-                    // Post-elst FrameCount: floor(trimmed_units / 1024).
-                    // The leftover partial frame is reflected separately
-                    // by Source_Duration_LastFrame.
-                    let frame_count = units / 1024;
+                    // FrameCount: round-to-nearest for partial AAC frames
+                    // (1024 samples each). Oracle's ceil/round behaviour
+                    // matches rounding: 1465296/1024 = 1430.95 → 1431.
+                    let frame_count = (units + 512) / 1024;
                     fa.Fill(
                         StreamKind::Audio,
                         pos,
@@ -2473,7 +2481,7 @@ fn fill_streams(
                                 let ts = track.timescale as u64;
                                 let dur_ms = (units * 1000 + ts / 2) / ts;
                                 let source_delay = dur_ms as i64 - source_dur as i64;
-                                if source_delay != 0 {
+                                if source_delay.abs() >= 10 {
                                     fa.Fill(
                                         StreamKind::Audio,
                                         pos,
@@ -2494,11 +2502,12 @@ fn fill_streams(
                     }
                 }
             }
-            // Audio.StreamSize = sum of stsz minus the first sample
-            // size (encoder priming frame) for AAC. Oracle's exact
-            // trim (which differs by ~5 bytes from this approximation)
-            // requires the elst.media_time + stts sample-by-sample
-            // walk that we don't implement.
+            // Audio.StreamSize = sum of stsz sample sizes (Source)
+            // and post-edit-list trimmed size. Oracle uses the full
+            // stsz sum unless the edit list removes complete AAC
+            // frames (1024 samples). Since our elst integration is
+            // not per-sample, emit the full size — matches oracle
+            // for the common no-trim and sub-frame-trim cases.
             if let Some(size) = track.source_stream_size {
                 fa.Fill(
                     StreamKind::Audio,
@@ -2507,18 +2516,13 @@ fn fill_streams(
                     size.to_string(),
                     false,
                 );
-                if matches!(track.audio_format, Some("AAC")) {
-                    if let Some(first) = track.first_sample_size {
-                        let trimmed = size.saturating_sub(first as u64);
-                        fa.Fill(
-                            StreamKind::Audio,
-                            pos,
-                            "StreamSize",
-                            trimmed.to_string(),
-                            false,
-                        );
-                    }
-                }
+                fa.Fill(
+                    StreamKind::Audio,
+                    pos,
+                    "StreamSize",
+                    size.to_string(),
+                    false,
+                );
             }
             // Default: oracle only emits this when the track is
             // explicitly disabled (track_enabled flag = 0, typical for
@@ -2632,10 +2636,21 @@ fn fill_streams(
             }
             if track.hevc_profile_idc.is_some() {
                 fa.Fill(StreamKind::Video, pos, "CodecConfigurationBox", "hvcC", false);
-            // Encoded_Library from SEI user_data_unregistered message.
-            if let Some(ref enc) = track.hevc_encoder {
-                fa.Fill(StreamKind::Video, pos, "Encoded_Library", enc.as_str(), false);
             }
+            // Encoder info from SEI user_data_unregistered — applies to both
+            // AVC (avcC) and HEVC (hvcC) tracks. The MP4 path previously
+            // dropped name/version/settings, keeping only Encoded_Library.
+            if let Some(ref enc) = track.encoder_info {
+                fa.Fill(StreamKind::Video, pos, "Encoded_Library", enc.library.as_str(), false);
+                if let Some(ref name) = enc.name {
+                    fa.Fill(StreamKind::Video, pos, "Encoded_Library_Name", name.as_str(), false);
+                }
+                if let Some(ref ver) = enc.version {
+                    fa.Fill(StreamKind::Video, pos, "Encoded_Library_Version", ver.as_str(), false);
+                }
+                if let Some(ref settings) = enc.settings {
+                    fa.Fill(StreamKind::Video, pos, "Encoded_Library_Settings", settings.as_str(), false);
+                }
             }
             // AVC defaults — Baseline/Main/Extended/Constrained-Baseline/High
             // are always 8-bit YUV 4:2:0 progressive per the H.264 spec.

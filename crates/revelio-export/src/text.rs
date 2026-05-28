@@ -72,7 +72,9 @@ fn display_fields(kind: StreamKind) -> &'static [&'static str] {
             "CodecID", "Duration", "BitRate", "Width", "Height",
             "DisplayAspectRatio", "FrameRate_Mode", "FrameRate",
             "ColorSpace", "ChromaSubsampling", "BitDepth", "ScanType",
-            "StreamSize", "Title", "Language", "Default", "Forced",
+            "Bits_Pixel_Frame", "StreamSize", "Encoded_Library",
+            "Encoded_Library_Settings", "Title", "Language", "Default", "Forced",
+            "Encoded_Date", "Tagged_Date",
             "colour_range", "colour_primaries", "transfer_characteristics",
             "matrix_coefficients", "CodecConfigurationBox",
         ],
@@ -258,6 +260,19 @@ fn render(
         }
         "BitDepth" => Some(("Bit depth", format!("{} bits", s.get("BitDepth")?.as_str()))),
         "ScanType" => Some(("Scan type", s.get("ScanType")?.as_str().to_owned())),
+        // Text-only derived field (absent from XML): bitrate per pixel per
+        // frame = BitRate / (Width · Height · FrameRate).
+        "Bits_Pixel_Frame" => {
+            let bitrate: f64 = s.get("BitRate")?.as_str().parse().ok()?;
+            let width: f64 = s.get("Width")?.as_str().parse().ok()?;
+            let height: f64 = s.get("Height")?.as_str().parse().ok()?;
+            let fr: f64 = s.get("FrameRate")?.as_str().parse().ok()?;
+            let denom = width * height * fr;
+            if denom <= 0.0 {
+                return None;
+            }
+            Some(("Bits/(Pixel*Frame)", format!("{:.3}", bitrate / denom)))
+        }
 
         "Channels" => {
             let n = s.get("Channels")?.as_str().to_owned();
@@ -284,6 +299,9 @@ fn render(
 
         "Encoded_Library" => {
             Some(("Writing library", s.get("Encoded_Library")?.as_str().to_owned()))
+        }
+        "Encoded_Library_Settings" => {
+            Some(("Encoding settings", s.get("Encoded_Library_Settings")?.as_str().to_owned()))
         }
         "Encoded_Application" => {
             Some(("Writing application", s.get("Encoded_Application")?.as_str().to_owned()))
