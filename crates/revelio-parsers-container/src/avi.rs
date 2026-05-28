@@ -53,7 +53,7 @@ struct AviHeader {
 
 #[derive(Default, Debug)]
 struct AviMetadata {
-    software: Option<String>,
+    _software: Option<String>,
     artist: Option<String>,
     comments: Option<String>,
     copyright: Option<String>,
@@ -95,7 +95,7 @@ struct AudioFormat {
     channels: u16,
     sample_rate: u32,
     avg_bytes_per_sec: u32,
-    block_align: u16,
+    _block_align: u16,
     bits_per_sample: u16,
 }
 
@@ -344,7 +344,7 @@ fn parse_strf_audio(p: &[u8]) -> Option<AudioFormat> {
     let channels = u16::from_le_bytes([p[2], p[3]]);
     let sample_rate = u32::from_le_bytes([p[4], p[5], p[6], p[7]]);
     let avg_bytes_per_sec = u32::from_le_bytes([p[8], p[9], p[10], p[11]]);
-    let block_align = u16::from_le_bytes([p[12], p[13]]);
+    let _block_align = u16::from_le_bytes([p[12], p[13]]);
     let bits_per_sample = if p.len() >= 16 {
         u16::from_le_bytes([p[14], p[15]])
     } else {
@@ -355,7 +355,7 @@ fn parse_strf_audio(p: &[u8]) -> Option<AudioFormat> {
         channels,
         sample_rate,
         avg_bytes_per_sec,
-        block_align,
+        _block_align,
         bits_per_sample,
     })
 }
@@ -645,7 +645,9 @@ fn fill_audio(
             let sign = if a.bits_per_sample <= 8 { "Unsigned" } else { "Signed" };
             fa.Fill(StreamKind::Audio, pos, "Format_Settings_Sign", sign, false);
         }
-        fa.Fill(StreamKind::Audio, pos, "CodecID", a.format_tag.to_string(), false);
+        // CodecID is the WAVE wFormatTag as uppercase hex (MP3 0x0055 ->
+        // "55", PCM 0x0001 -> "1"), matching the oracle — not decimal.
+        fa.Fill(StreamKind::Audio, pos, "CodecID", format!("{:X}", a.format_tag), false);
         if a.format_tag == 0x0001 {
             fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
         }
