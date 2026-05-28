@@ -1,0 +1,21 @@
+[package]
+name = "mediainfo-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for MediaInfoLib"
+
+[[bin]]
+name = "mediainfo-rs"
+path = "src/main.rs"
+
+[dependencies]
+mediainfo-core = { path = "../mediainfo-core" }
+mediainfo-export = { path = "../mediainfo-export" }
+mediainfo-parsers-audio = { path = "../mediainfo-parsers-audio" }
+mediainfo-parsers-container = { path = "../mediainfo-parsers-container" }
+mediainfo-parsers-image = { path = "../mediainfo-parsers-image" }
+mediainfo-parsers-text = { path = "../mediainfo-parsers-text" }
+mediainfo-parsers-video = { path = "../mediainfo-parsers-video" }
+zenlib = { path = "../zenlib" }
