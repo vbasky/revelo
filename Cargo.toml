@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/diff-harness",
+    "crates/mediainfo-cli",
     "crates/mediainfo-core",
     "crates/mediainfo-export",
     "crates/mediainfo-parsers-audio",

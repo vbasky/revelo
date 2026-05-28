@@ -13,6 +13,8 @@ pub mod y4m;
 pub mod av1;
 pub mod vc1;
 pub mod mpeg2;
+pub mod h263;
+pub mod mpeg4v;
 
 pub use avc::{parse_avc, parse_sps as parse_avc_sps, AvcInfo};
 pub use hevc::{parse_hevc, parse_hevc_sps, extract_encoder_from_sei_nalus, HevcInfo};
