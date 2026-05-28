@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 revelio-core = { path = "../revelio-core" }
 revelio-export = { path = "../revelio-export" }
+revelio-parsers-archive = { path = "../revelio-parsers-archive" }
 revelio-parsers-audio = { path = "../revelio-parsers-audio" }
 revelio-parsers-container = { path = "../revelio-parsers-container" }
 revelio-parsers-image = { path = "../revelio-parsers-image" }

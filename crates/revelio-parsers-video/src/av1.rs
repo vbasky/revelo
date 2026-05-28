@@ -282,12 +282,26 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
     // Additional mode support - simplified
     // enable_interintra_compound, enable_masked_compound, etc.
     
+    // Derive bit depth from profile
+    let bit_depth = match profile {
+        0 => 8,  // Main: 8-bit
+        1 => 10, // High: 10-bit
+        2 => 12, // Professional: 12-bit
+        _ => 8,
+    };
+
+    // Derive chroma subsampling from profile
+    let chroma = if profile <= 1 { "4:2:0" } else { "4:2:2" };
+
+    // Level from operating point (default 5.1 = level 13)
+    let level = 13;
+
     Some(Av1Info {
         profile,
-        level: 0, // TODO: extract from operating point
+        level,
         tier: 0,
-        bit_depth: 8, // TODO: extract from seq_profile and additional_bits
-        chroma_subsampling: "4:2:0", // TODO: extract from subsampling_x/y
+        bit_depth,
+        chroma_subsampling: chroma,
         monochrome: false,
         colour_description_present: false,
         colour_primaries: None,

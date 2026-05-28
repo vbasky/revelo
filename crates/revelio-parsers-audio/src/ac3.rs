@@ -218,7 +218,6 @@ fn fill_streams(
     fa.Fill(StreamKind::General, 0, "Format", format, false);
     fa.Fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
     fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
 
     fa.Stream_Prepare(StreamKind::Audio);
     fa.Fill(StreamKind::Audio, 0, "Format", format, false);
@@ -234,9 +233,13 @@ fn fill_streams(
     fa.Fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
     fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
 
-    // Duration / SamplingCount are derived from the byte size at the CBR
-    // bitrate (Duration_s = StreamSize·8 / BitRate), matching the oracle —
-    // FrameCount·1536 disagrees by a frame or two and is not what MediaInfo
+    // MediaInfo derives the time/size fields in a chain rooted at a
+    // millisecond Duration: Duration_ms = round(file_size·8000 / BitRate),
+    // then SamplingCount and StreamSize are recomputed *from that rounded
+    // Duration* (not from the raw byte count). For CBR AC-3 whose duration
+    // lands on a whole millisecond this is identity (StreamSize == file
+    // size); for E-AC-3, whose duration carries a fraction, StreamSize ends
+    // up a few bytes off the file size — which is exactly what the oracle
     // reports. FrameCount stays size/frame_bytes.
     if sample_rate > 0 && bitrate_bps > 0 {
         let frame_bytes = (bitrate_bps as u64) * samples_per_frame as u64 / (8 * sample_rate as u64);
@@ -244,15 +247,32 @@ fn fill_streams(
             let frame_count = (file_size as u64) / frame_bytes;
             fa.Fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
         }
-        let sampling_count = (file_size as u64) * 8 * sample_rate as u64 / bitrate_bps as u64;
+        let duration_ms =
+            ((file_size as f64) * 8000.0 / (bitrate_bps as f64)).round() as u64;
+        let sampling_count = duration_ms * sample_rate as u64 / 1000;
+        let stream_size =
+            ((duration_ms as f64) * (bitrate_bps as f64) / 8000.0).round() as u64;
         fa.Fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
         let frame_rate = (sample_rate as f64) / (samples_per_frame as f64);
         fa.Fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
-        let duration_ms = (file_size as u64) * 8 * 1000 / bitrate_bps as u64;
         fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+        fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        // General StreamSize = container overhead = file_size − elementary.
+        // Only emitted when non-negative (the oracle omits it when the
+        // derived StreamSize already exceeds the file, as for E-AC-3).
+        if stream_size <= file_size as u64 {
+            fa.Fill(StreamKind::General, 0, "StreamSize",
+                (file_size as u64 - stream_size).to_string(), true);
+        }
+        return fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
     }
     fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
     fa.Fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
+}
+
+fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8, dialnorm: u8) {
     // ServiceKind defaults to "CM" (Complete Main) for typical AC-3 —
     // bsmod=0 means main service, complete description.
     fa.Fill(StreamKind::Audio, 0, "ServiceKind", "CM", false);
