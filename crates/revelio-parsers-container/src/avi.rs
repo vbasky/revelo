@@ -651,6 +651,23 @@ fn fill_audio(
         if a.format_tag == 0x0001 {
             fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
         }
+        // MP3 (wFormatTag 0x0055): the layer is implied by the tag and the
+        // MPEG version follows the sample rate (>=32 kHz → MPEG-1). AVI MP3
+        // carries a constant nAvgBytesPerSec, so it's CBR/Lossy. LAME
+        // Encoded_Library would need the frame header (not parsed here).
+        if a.format_tag == 0x0055 {
+            let version = if a.sample_rate >= 32000 {
+                "1"
+            } else if a.sample_rate >= 16000 {
+                "2"
+            } else {
+                "2.5"
+            };
+            fa.Fill(StreamKind::Audio, pos, "Format_Version", version, false);
+            fa.Fill(StreamKind::Audio, pos, "Format_Profile", "Layer 3", false);
+            fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+            fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
+        }
         if a.avg_bytes_per_sec > 0 {
             fa.Fill(
                 StreamKind::Audio,
