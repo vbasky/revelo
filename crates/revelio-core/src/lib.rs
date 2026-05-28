@@ -22,6 +22,12 @@ pub use file_level::{fill_file_level_fields, FileLevelInfo};
 pub use stream::{Stream, StreamCollection, StreamKind};
 
 pub mod timecode;
+pub mod events;
+pub mod ibi;
+pub mod mime;
+pub mod channel_splitting;
+pub mod channel_grouping;
+pub mod interlacement;
 /// Container-level reference file tracker.
 pub mod reference {
     use std::collections::HashMap;

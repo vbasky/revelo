@@ -283,6 +283,29 @@ Examples: `mp42→video/mp4`, `av01→video/AV1`, `opus→audio/opus`.
 Tracks multi-file references (BDMV playlists, segmented MP4, SMPTE interop
 packages) linking primary media to companion files.
 
+### Channel Splitting / Grouping (SMPTE ST 337)
+Deinterleaves multi-channel PCM into independent AES3 channel pairs
+for downstream SMPTE 337M/338M/339M parsing. 4-channel → 2 stereo pairs,
+6-channel → 3 stereo pairs. Reverse direction merges mono streams
+into interleaved output (16/20/24-bit support).
+
+### Demux / Event Framework
+4-level demux bitmask: Frame(1), Container(2), Elementary(4), Ancillary(8).
+DemuxState tracks events per stream with PTS/DTS, stream IDs, offsets,
+random_access flags. DemuxEvent emitted per frame/packet for downstream
+consumers (CDI, DTVCC, PCM un-packetizing).
+
+### Trace System
+4 output formats: Tree (MediaInfo-like hierarchy), CSV, XML, MicroXml.
+TraceNode with hierarchical parent/child structure, file offsets, sizes,
+named values, and info sections. Used by all container parsers for
+trace/debug output.
+
+### Field Ordering / Interlacement
+FieldTracker counts top/bottom/progressive fields to infer ScanOrder
+(Progressive/TFF/BFF/Mixed) and InterlacementMode (PPF/Interlaced/
+TFF/BFF/PsF). Maps to Video_ScanOrder/Video_Interlacement output fields.
+
 ## References
 
 ### Container

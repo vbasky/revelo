@@ -9,7 +9,7 @@ C++ `mediainfo` CLI.
 
 ## Status
 
-**185 parsers** registered across 8 domains, **541 tests** passing.
+**185 parsers** registered across 8 domains, **556 tests** passing.
 
 | Category | Parsers | Coverage | Formats |
 |---|---|---|---|
@@ -96,7 +96,7 @@ estimates — each kind has ~60-120 possible fields and the set varies by format
 
 - `revelio-cdylib`: `MediaInfo_New/Open/Close/Inform/Get/Count_Get/Option` entry points
 - `revelio-reader`: File, Directory, HTTP, MMS reader layer
-- `revelio-core`: SMPTE timecode parser (DF/NDF, milliseconds conversion)
+- `revelio-core`: SMPTE timecode parser (DF/NDF, ms conversion), demux/event framework (4-level bitmask, ContentType enum, DemuxState), trace system (Tree/CSV/XML/MicroXml renderers), channel splitting (SMPTE ST 337 AES3 deinterleaving), channel grouping (mono→stereo interleaving), IBI seek table builder, MIME type mapping (40+ container+codec entries), field/interlacement tracker (TFF/BFF/Progressive/PsF), reference file tracker (multi-file BDMV/SMPTE packages)
 - `revelio-export`: 10 output formatters total
 
 ## Building
@@ -117,10 +117,10 @@ cargo build -p revelio-cdylib --release
 
 ## Pending
 
-**Audio (remainder):** ChannelSplitting/Grouping depth
+**Audio (remainder):** None — all parsers + infrastructure complete
 
-**Text (remainder):** None — all text formats covered
+**Text (remainder):** None — all formats covered
 
-**Container infrastructure:** RIFF element tree depth, Ogg sub-elements, MPEG-4 descriptor chain depth
+**Container infrastructure:** RIFF/Ogg element tree depth wiring into parsers
 
-**Core:** MediaInfo_Config field ordering, trace/demux events, multi-file concatenation, duplicate/reference parsing orchestration
+**Core:** Config option dispatch wiring (Config->Demux/Trace level activation), multi-file concatenation pipeline, duplicate/reference resolution in output
