@@ -171,6 +171,8 @@ struct TrackInfo {
     avg_bitrate_bps: Option<u32>,
     /// maxBitrate field from DecoderConfigDescriptor, bps.
     max_bitrate_bps: Option<u32>,
+    /// bufferSizeDB field from DecoderConfigDescriptor (MPEG-4 esds).
+    buffer_size_db: Option<u32>,
     /// Sum of all per-sample sizes from `stsz` — raw byte count
     /// before any edit-list trimming.
     source_stream_size: Option<u64>,
@@ -1292,6 +1294,8 @@ fn parse_descriptor_chain_bytes(data: &[u8], track: &mut TrackInfo) {
                     return;
                 }
                 track.object_type_indication = Some(data[p]);
+                let buf_sz = u32::from_be_bytes([0, data[p+2], data[p+3], data[p+4]]);
+                track.buffer_size_db = Some(buf_sz);
                 let max_br = u32::from_be_bytes([data[p+5], data[p+6], data[p+7], data[p+8]]);
                 let avg_br = u32::from_be_bytes([data[p+9], data[p+10], data[p+11], data[p+12]]);
                 if max_br > 0 { track.max_bitrate_bps = Some(max_br); }

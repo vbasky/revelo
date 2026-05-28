@@ -905,6 +905,9 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
     // Extract HDR metadata from SEI NAL units
     let hdr_metadata = extract_hdr_from_sei_nalus(&sei_nalus);
 
+    // Extract encoder info from SEI user_data_unregistered
+    let encoder_info = extract_encoder_from_sei_nalus(&sei_nalus);
+
     fa.Stream_Prepare(StreamKind::Video);
 
     fa.Fill(StreamKind::Video, 0, "Format", "HEVC", false);
@@ -966,6 +969,20 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         if let Some((max_content, max_frame_avg)) = light_level {
             fa.Fill(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content), false);
             fa.Fill(StreamKind::Video, 0, "MaxFALL", format!("{} cd/m²", max_frame_avg), false);
+        }
+    }
+
+    // Encoder info from SEI user_data_unregistered
+    if let Some(ref enc) = encoder_info {
+        fa.Fill(StreamKind::Video, 0, "Encoded_Library", enc.library.as_str(), false);
+        if let Some(ref name) = enc.name {
+            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
+        }
+        if let Some(ref ver) = enc.version {
+            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
+        }
+        if let Some(ref settings) = enc.settings {
+            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
         }
     }
 

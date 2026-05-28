@@ -9,7 +9,7 @@ C++ `mediainfo` CLI.
 
 ## Status
 
-**185 parsers** registered across 8 domains, **556 tests** passing.
+**185 parsers** registered across 8 domains, **571 tests** passing.
 
 | Category | Parsers | Coverage | Formats |
 |---|---|---|---|
@@ -31,6 +31,15 @@ Complete format catalog with spec references: **[docs/formats.md](docs/formats.m
 - **AVC/H.264:** Full SPS VUI (colour primaries/transfer/matrix, aspect ratio, chroma sample location, video full range), EncoderInfo with name/version/settings extraction from x264/x265 SEI, GOP detection (M=X, N=Y)
 - **HEVC/H.265:** Full SPS VUI, HDR10 mastering display colour volume SEI (primaries, white point, luminance), content light level SEI (MaxCLL/MaxFALL), x265 encoder string extraction
 - **Dolby Vision:** dvcC/dvvC configuration box parsing in MP4, codec ID recognition in MKV, standalone XML metadata parser, HDR format profile/level extraction
+
+### Computed fields (post-parse)
+- **Bits_Pixel_Frame** — computed from BitRate / (Width × Height × FrameRate)
+- **Compression_Ratio** — computed from uncompressed size / StreamSize
+- **FrameRate_Mode_Original** — preserved from original frame rate mode
+- **BufferSize** — filled from MPEG-4 esds DecoderConfigDescriptor
+- **ReplayGain** — extracted from LAME Gaia + ID3v2 RVA2/TXXX frames
+- **BitRate_Maximum / BitRate_Minimum / OverallBitRate_Maximum / OverallBitRate_Minimum** — from container hints + post-parse aggregation
+- **Format_Profile** (General) — "Base Media / Version 2" labels from ftyp
 
 ### Output formatters
 
