@@ -14,7 +14,7 @@ use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, p
     parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau,
     parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk, parse_opus, parse_vorbis, parse_usac};
 use revelio_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv,
-    parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv,
+    parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dcp_pkl, parse_dpg, parse_dv_dif, parse_dvdv,
     parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf,
     parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf,
     parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm,
@@ -55,11 +55,11 @@ fn main() -> process::ExitCode {
         Err(e) => { eprintln!("{path}: {e}"); return process::ExitCode::from(1); }
     };
 
-    let parsers: [fn(&mut FileAnalyze) -> bool; 149] = [
+    let parsers: [fn(&mut FileAnalyze) -> bool; 150] = [
         parse_wav, parse_avi, parse_cdxa, parse_amv, parse_webp, parse_aiff, parse_flac,
         parse_dsdiff, parse_caf, parse_mp4, parse_mkv, parse_ogg, parse_mpeg_ts, parse_mpeg_ps,
         parse_swf, parse_skm, parse_dpg, parse_hds_f4m, parse_hls, parse_dash_mpd, parse_dcp_am,
-        parse_dcp_cpl, parse_ibi, parse_dxw, parse_aaf, parse_mxf, parse_bdmv, parse_dvdv,
+        parse_dcp_cpl, parse_dcp_pkl, parse_ibi, parse_dxw, parse_aaf, parse_mxf, parse_bdmv, parse_dvdv,
         parse_dv_dif, parse_flv, parse_lxf, parse_nut, parse_wm, parse_wtv, parse_rm, parse_ivf,
         parse_ism, parse_mi_xml, parse_p2_clip, parse_xdcam_clip, parse_sequence_info, parse_ptx,
         parse_nsv, parse_pmp, parse_gxf, parse_cdp, parse_pgs, parse_dvb_subtitle,
