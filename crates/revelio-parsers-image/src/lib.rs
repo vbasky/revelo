@@ -21,6 +21,7 @@ pub mod tga;
 pub mod tiff;
 pub mod webp;
 pub mod heif;
+pub mod jp2;
 
 pub use amiga_icon::parse_amiga_icon;
 pub use arriraw::parse_arriraw;
@@ -41,3 +42,4 @@ pub use tga::parse_tga;
 pub use tiff::parse_tiff;
 pub use webp::parse_webp;
 pub use heif::parse_heif;
+pub use jp2::parse_jp2;

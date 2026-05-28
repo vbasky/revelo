@@ -3,14 +3,13 @@ use std::fs;
 use std::path::Path;
 use std::process;
 use std::time::UNIX_EPOCH;
-use rayon::prelude::*;
 
 use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
 use revelio_core::multi_file::MultiFileLoader;
 use revelio_core::multi_file::find_duplicate_streams;
 use revelio_core::computed_fields::fill_computed_fields;
 use revelio_export::{to_xml, to_text, to_json};
-use revelio_dispatcher::table;
+use revelio_dispatcher::detect;
 
 
 fn main() -> process::ExitCode {
@@ -31,14 +30,8 @@ fn main() -> process::ExitCode {
     });
 
     if args.is_empty() {
-        eprintln!(" 1111111
-11     11
-1       1
-1       1
-1       1
- 1111111
-
-Usage: revelio [--xml|--json] <file-path>
+        eprintln!("{}", include_str!("banner.txt"));
+        eprintln!("Usage: revelio [--xml|--json] <file-path>
 Options:
   --xml         XML output
   --json        JSON output
@@ -54,8 +47,6 @@ Options:
         Ok(b) => b,
         Err(e) => { eprintln!("{path}: {e}"); return process::ExitCode::from(1); }
     };
-
-    let parsers = table();
 
     let metadata = fs::metadata(path).ok();
     let mut parsed = false;
@@ -79,21 +70,12 @@ Options:
         bytes.clone()
     };
 
-    // Phase 1: run all parsers in parallel. Each parser peeks at the
-    // shared buffer and returns bool. Once a match is found, we re-run
-    // that parser synchronously for full metadata extraction.
-    let winner: Option<fn(&mut FileAnalyze) -> bool> = {
-        let buf = &parse_buf;
-        parsers
-            .par_iter()
-            .find_any(|&&parser| {
-                let mut fa = FileAnalyze::new(buf);
-                parser(&mut fa)
-            })
-            .copied()
-    };
+    // Phase 1: race all parsers across cores to find the one that
+    // recognizes the buffer, then re-run that winner synchronously below
+    // for full metadata extraction.
+    let winner = detect(&parse_buf);
 
-    if let Some(ref winner) = winner {
+    if let Some(winner) = winner {
         let mut fa = FileAnalyze::new(&parse_buf);
         fa.set_option("demux", &demux_level);
         fa.set_option("trace_level", &trace_level);

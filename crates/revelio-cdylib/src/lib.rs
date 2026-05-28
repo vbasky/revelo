@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 
 use revelio_core::{FileAnalyze, StreamCollection, StreamKind};
-use revelio_dispatcher::table;
+use revelio_dispatcher::detect;
 use revelio_export::to_text;
 
 pub struct MediaInfoHandle {
@@ -40,15 +40,13 @@ pub unsafe extern "C" fn MediaInfo_Open(
         Err(_) => return 0,
     };
 
-    let parsers = table();
-    for parser in parsers {
-        let mut fa = FileAnalyze::new(&bytes);
-        if parser(&mut fa) {
-            handle.streams = Some(fa.streams().clone());
-            return 1;
-        }
-    }
-    0
+    let Some(parser) = detect(&bytes) else {
+        return 0;
+    };
+    let mut fa = FileAnalyze::new(&bytes);
+    parser(&mut fa);
+    handle.streams = Some(fa.streams().clone());
+    1
 }
 
 #[unsafe(no_mangle)]

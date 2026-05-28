@@ -91,11 +91,6 @@ impl<'a> FileAnalyze<'a> {
         self.streams.fill(kind, pos, parameter, value, replace);
     }
 
-    /// Convenience: fill with a `&str` value without requiring `Ztring::from()`.
-    pub fn fill_str(&mut self, kind: StreamKind, pos: usize, parameter: &str, value: &str, replace: bool) {
-        self.fill(kind, pos, parameter, Ztring::from(value), replace)
-    }
-
     /// Fill into the stream's `<extra>` bucket instead of the standard
     /// field list. Used for tag-style metadata (ID3v2 comments, EXIF
     /// sub-IFD camera params, Apple QuickTime keys with no oracle-side

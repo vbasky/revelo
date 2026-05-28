@@ -1,11 +1,4 @@
-   __________
-  /          \
- /            \
-|   R E V E L I O   |
-|  "read what u see" |
- \            /
-  \          /
-   \________/
-       ||
-       ||
-      (__)
+  revelio  (o)--,
+
+  media inspector
+  150+ formats — codec, container, bitrate, resolution, metadata

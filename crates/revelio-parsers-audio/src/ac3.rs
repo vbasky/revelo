@@ -38,7 +38,7 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
     if fb_slice.len() < 8 {
         return false;
     }
-    let fb: [u8; 8] = fb_slice[..8].try_into().unwrap();
+    let fb = [fb_slice[0], fb_slice[1], fb_slice[2], fb_slice[3], fb_slice[4], fb_slice[5], fb_slice[6], fb_slice[7]];
 
     // bsid sits at bit offset 40 (the top 5 bits of byte 5) in BOTH the
     // AC-3 and E-AC-3 BSI layouts — E-AC-3's strmtyp/substreamid/frmsiz
