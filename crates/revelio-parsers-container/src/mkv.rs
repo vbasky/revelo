@@ -889,15 +889,23 @@ fn fill_streams(
                 if track.codec_id.as_deref() == Some("V_AV1") {
                     if let Some(ref private) = track.codec_private {
                         if let Some(info) = revelio_parsers_video::parse_av1_from_codec_config(private) {
-                            // Override defaults with parsed info
-                            if info.width > 0 {
+                            // MKV's container PixelWidth/PixelHeight and
+                            // BitsPerChannel are authoritative — oracle
+                            // reports those, not the AV1 sequence header.
+                            // Only fill from the codec config when the
+                            // container didn't supply them (avoids the
+                            // AV1-OBU parse clobbering 1080x1920 with the
+                            // partially-decoded sequence-header dims).
+                            if info.width > 0 && track.video_width.is_none() {
                                 fa.Fill(StreamKind::Video, pos, "Width", info.width.to_string(), true);
                             }
-                            if info.height > 0 {
+                            if info.height > 0 && track.video_height.is_none() {
                                 fa.Fill(StreamKind::Video, pos, "Height", info.height.to_string(), true);
                             }
-                            fa.Fill(StreamKind::Video, pos, "BitDepth", info.bit_depth.to_string(), true);
-                            fa.Fill(StreamKind::Video, pos, "ChromaSubsampling", info.chroma_subsampling, true);
+                            if track.video_bit_depth.is_none() {
+                                fa.Fill(StreamKind::Video, pos, "BitDepth", info.bit_depth.to_string(), true);
+                            }
+                            fa.Fill(StreamKind::Video, pos, "ChromaSubsampling", info.chroma_subsampling, false);
                             let profile_name = match info.profile {
                                 0 => "Main",
                                 1 => "High",
