@@ -1,10 +1,9 @@
 use std::env;
 use std::fs;
-use std::path::Path;
 use std::process;
 
 use revelio_core::FileAnalyze;
-use revelio_export::to_xml;
+use revelio_export::{to_xml, to_text, to_json};
 use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr,
     parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts,
     parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker,
@@ -28,12 +27,12 @@ use revelio_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, pars
 
 fn main() -> process::ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
-    let mut use_text = false;
-    let mut use_json = false;
+    let mut text_mode = false;
+    let mut json_mode = false;
 
     args.retain(|a| {
-        if a == "--text" { use_text = true; false }
-        else if a == "--json" { use_json = true; false }
+        if a == "--text" { text_mode = true; false }
+        else if a == "--json" { json_mode = true; false }
         else { true }
     });
 
@@ -45,7 +44,7 @@ fn main() -> process::ExitCode {
     let path = &args[0];
     let bytes = match fs::read(path) {
         Ok(b) => b,
-        Err(e) => { eprintln!("{}: {e}", path); return process::ExitCode::from(1); }
+        Err(e) => { eprintln!("{path}: {e}"); return process::ExitCode::from(1); }
     };
 
     let parsers: [fn(&mut FileAnalyze) -> bool; 114] = [
@@ -73,77 +72,22 @@ fn main() -> process::ExitCode {
         let mut fa = FileAnalyze::new(&bytes);
         if parser(&mut fa) {
             parsed = true;
-
-            if use_text {
-                print_text_output(&fa);
-            } else if use_json {
-                print_json_output(&fa);
+            let output = if json_mode {
+                to_json(fa.streams(), path)
+            } else if text_mode {
+                to_text(fa.streams())
             } else {
-                println!("{}", to_xml(fa.streams(), path, env!("CARGO_PKG_VERSION")));
-            }
+                to_xml(fa.streams(), path, env!("CARGO_PKG_VERSION"))
+            };
+            println!("{output}");
             break;
         }
     }
 
     if !parsed {
-        eprintln!("{}: no parser matched ({} bytes)", path, bytes.len());
+        eprintln!("{path}: no parser matched ({} bytes)", bytes.len());
         return process::ExitCode::from(1);
     }
 
     process::ExitCode::SUCCESS
-}
-
-fn print_text_output(fa: &FileAnalyze) {
-    use revelio_core::StreamKind;
-    let kinds = [StreamKind::General, StreamKind::Video, StreamKind::Audio, StreamKind::Text,
-        StreamKind::Other, StreamKind::Image, StreamKind::Menu];
-
-    for kind in kinds {
-        let count = fa.Count_Get(kind);
-        for pos in 0..count {
-            println!("{}", kind.name());
-            if count > 1 { println!("#{}", pos + 1); }
-            if let Some(s) = fa.streams().stream(kind, pos) {
-                for (k, v) in s.iter() {
-                    println!("{} : {}", k, v.as_str());
-                }
-                for (k, v) in s.extras_iter() {
-                    println!("{} : {}", k, v.as_str());
-                }
-            }
-            println!();
-        }
-    }
-}
-
-fn print_json_output(fa: &FileAnalyze) {
-    use revelio_core::StreamKind;
-    let kinds = [StreamKind::General, StreamKind::Video, StreamKind::Audio, StreamKind::Text,
-        StreamKind::Other, StreamKind::Image, StreamKind::Menu];
-
-    print!("{{\"media\":{{\"@ref\":\"\",\"track\":[");
-    let mut first = true;
-    for kind in kinds {
-        let count = fa.Count_Get(kind);
-        for pos in 0..count {
-            if let Some(s) = fa.streams().stream(kind, pos) {
-                if !first { print!(",") } else { first = false; }
-                print!("{{\"@type\":\"{}\"", kind.name());
-                for (k, v) in s.iter() {
-                    let val = json_escape(v.as_str());
-                    print!(",\"{}\":\"{}\"", k, val);
-                }
-                for (k, v) in s.extras_iter() {
-                    let val = json_escape(v.as_str());
-                    print!(",\"{}\":\"{}\"", k, val);
-                }
-                print!("}}");
-            }
-        }
-    }
-    println!("]}}}}");
-}
-
-fn json_escape(s: &str) -> String {
-    s.replace('\\', r"\\").replace('"', "\\\"").replace('\n', "\\n").replace('\t', "\\t")
 }

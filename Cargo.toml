@@ -11,6 +11,7 @@ members = [
     "crates/revelio-parsers-text",
     "crates/revelio-parsers-video",
     "crates/zenlib",
+    "crates/revelio-cdylib",
 ]
 
 [workspace.package]
