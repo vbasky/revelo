@@ -11,4 +11,5 @@ path = "src/lib.rs"
 
 [dependencies]
 mediainfo-core = { path = "../mediainfo-core" }
+mediainfo-parsers-video = { path = "../mediainfo-parsers-video" }
 zenlib = { path = "../zenlib" }

@@ -96,22 +96,39 @@ fn bits_remaining(buffer: &[u8], offset: usize) -> usize {
     buffer.len() * 8 - offset
 }
 
-struct AvcInfo {
-    profile: u8,
-    level: u8,
-    width: u32,
-    height: u32,
-    chroma_format: u8,
-    bit_depth: u8,
-    cabac: bool,
-    ref_frames: u32,
-    frame_count: u32,
-    frame_rate_num: u32,
-    frame_rate_den: u32,
-    encoder_string: Option<String>,
+#[derive(Debug, Clone)]
+pub struct AvcInfo {
+    pub profile: u8,
+    pub level: u8,
+    pub width: u32,
+    pub height: u32,
+    /// Decoded picture height in luma samples before cropping. Equals
+    /// `pic_height_in_map_units * 16 * (2 - frame_mbs_only_flag)`. Used
+    /// for MediaInfo's Stored_Height.
+    pub stored_height: u32,
+    pub chroma_format: u8,
+    pub bit_depth: u8,
+    pub cabac: bool,
+    pub ref_frames: u32,
+    pub frame_count: u32,
+    pub frame_rate_num: u32,
+    pub frame_rate_den: u32,
+    pub encoder_string: Option<String>,
+    // VUI colour_description (present only if both
+    // video_signal_type_present_flag and colour_description_present_flag).
+    pub colour_description_present: bool,
+    pub colour_primaries: Option<u8>,
+    pub transfer_characteristics: Option<u8>,
+    pub matrix_coefficients: Option<u8>,
+    /// video_signal_type_present_flag + video_full_range_flag.
+    pub video_full_range: Option<bool>,
+    /// VUI aspect_ratio. `Some((w,h))` when set, None otherwise.
+    pub sar: Option<(u32, u32)>,
+    /// VUI chroma_sample_loc_type_top_field, if VUI chroma_loc_info_present.
+    pub chroma_sample_loc: Option<u32>,
 }
 
-fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
+pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
     let clean = remove_epb(rbsp);
     if clean.len() < 4 {
         return None;
@@ -207,39 +224,74 @@ fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
     let mut frame_rate_num = 0u32;
     let mut frame_rate_den = 1u32;
 
+    let mut sar: Option<(u32, u32)> = None;
+    let mut video_full_range: Option<bool> = None;
+    let mut colour_description_present = false;
+    let mut colour_primaries: Option<u8> = None;
+    let mut transfer_characteristics: Option<u8> = None;
+    let mut matrix_coefficients: Option<u8> = None;
+    let mut chroma_sample_loc: Option<u32> = None;
+
     let vui_parameters_present_flag = read_bits(&clean, &mut offset, 1)?;
     if vui_parameters_present_flag != 0 {
-        let _aspect_ratio_info_present = read_bits(&clean, &mut offset, 1)?;
-        if _aspect_ratio_info_present != 0 {
+        let aspect_ratio_info_present = read_bits(&clean, &mut offset, 1)?;
+        if aspect_ratio_info_present != 0 {
             let aspect_ratio_idc = read_bits(&clean, &mut offset, 8)?;
             if aspect_ratio_idc == 255 {
-                // Extended_SAR
-                let _sar_width = read_bits(&clean, &mut offset, 16)?;
-                let _sar_height = read_bits(&clean, &mut offset, 16)?;
+                let sar_w = read_bits(&clean, &mut offset, 16)?;
+                let sar_h = read_bits(&clean, &mut offset, 16)?;
+                if sar_w > 0 && sar_h > 0 {
+                    sar = Some((sar_w, sar_h));
+                }
+            } else {
+                // Predefined SAR table from H.264 Table E-1.
+                let preset = match aspect_ratio_idc {
+                    1 => Some((1, 1)),
+                    2 => Some((12, 11)),
+                    3 => Some((10, 11)),
+                    4 => Some((16, 11)),
+                    5 => Some((40, 33)),
+                    6 => Some((24, 11)),
+                    7 => Some((20, 11)),
+                    8 => Some((32, 11)),
+                    9 => Some((80, 33)),
+                    10 => Some((18, 11)),
+                    11 => Some((15, 11)),
+                    12 => Some((64, 33)),
+                    13 => Some((160, 99)),
+                    14 => Some((4, 3)),
+                    15 => Some((3, 2)),
+                    16 => Some((2, 1)),
+                    _ => None,
+                };
+                sar = preset;
             }
         }
-        let _overscan_info_present = read_bits(&clean, &mut offset, 1)?;
-        if _overscan_info_present != 0 {
+        let overscan_info_present = read_bits(&clean, &mut offset, 1)?;
+        if overscan_info_present != 0 {
             let _overscan_appropriate = read_bits(&clean, &mut offset, 1)?;
         }
-        let _video_signal_type_present = read_bits(&clean, &mut offset, 1)?;
-        if _video_signal_type_present != 0 {
+        let video_signal_type_present = read_bits(&clean, &mut offset, 1)?;
+        if video_signal_type_present != 0 {
             let _video_format = read_bits(&clean, &mut offset, 3)?;
-            let _video_full_range = read_bits(&clean, &mut offset, 1)?;
-            let _colour_description_present = read_bits(&clean, &mut offset, 1)?;
-            if _colour_description_present != 0 {
-                let _colour_primaries = read_bits(&clean, &mut offset, 8)?;
-                let _transfer_characteristics = read_bits(&clean, &mut offset, 8)?;
-                let _matrix_coefficients = read_bits(&clean, &mut offset, 8)?;
+            let full_range = read_bits(&clean, &mut offset, 1)?;
+            video_full_range = Some(full_range != 0);
+            let cdp = read_bits(&clean, &mut offset, 1)?;
+            if cdp != 0 {
+                colour_description_present = true;
+                colour_primaries = Some(read_bits(&clean, &mut offset, 8)? as u8);
+                transfer_characteristics = Some(read_bits(&clean, &mut offset, 8)? as u8);
+                matrix_coefficients = Some(read_bits(&clean, &mut offset, 8)? as u8);
             }
         }
-        let _chroma_loc_info_present = read_bits(&clean, &mut offset, 1)?;
-        if _chroma_loc_info_present != 0 {
-            read_ue(&clean, &mut offset)?; // chroma_sample_loc_type_top_field
+        let chroma_loc_info_present = read_bits(&clean, &mut offset, 1)?;
+        if chroma_loc_info_present != 0 {
+            let top = read_ue(&clean, &mut offset)?;
             read_ue(&clean, &mut offset)?; // chroma_sample_loc_type_bottom_field
+            chroma_sample_loc = Some(top);
         }
-        let _timing_info_present_flag = read_bits(&clean, &mut offset, 1)?;
-        if _timing_info_present_flag != 0 {
+        let timing_info_present_flag = read_bits(&clean, &mut offset, 1)?;
+        if timing_info_present_flag != 0 {
             let num_units_in_tick = read_bits(&clean, &mut offset, 32)?;
             let time_scale = read_bits(&clean, &mut offset, 32)?;
             let _fixed_frame_rate_flag = read_bits(&clean, &mut offset, 1)?;
@@ -267,7 +319,8 @@ fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
     };
 
     let width = pic_width_in_mbs * 16 - crop_unit_x * (crop_left + crop_right);
-    let height = pic_height_in_map_units * 16 * (2 - frame_mbs_only_flag)
+    let stored_height = pic_height_in_map_units * 16 * (2 - frame_mbs_only_flag);
+    let height = stored_height
         - crop_unit_y * (2 - frame_mbs_only_flag) * (crop_top + crop_bottom);
 
     let chroma_str = match chroma_format_idc {
@@ -278,11 +331,14 @@ fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
         _ => 1,
     };
 
+    let _ = (constraint_flags, bit_depth_chroma, mb_adaptive_frame_field_flag);
+
     Some(AvcInfo {
         profile: profile_idc,
         level: level_idc,
         width,
         height,
+        stored_height,
         chroma_format: chroma_str,
         bit_depth: bit_depth_luma as u8,
         cabac: false, // updated by parse_pps
@@ -291,6 +347,13 @@ fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
         frame_rate_num,
         frame_rate_den,
         encoder_string: None,
+        colour_description_present,
+        colour_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        video_full_range,
+        sar,
+        chroma_sample_loc,
     })
 }
 
@@ -499,6 +562,82 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     };
     fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
     fa.Fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
+    
+    // Emit color information from VUI if present
+    if info.colour_description_present {
+        if let Some(primaries) = info.colour_primaries {
+            let primaries_str = match primaries {
+                0 => "Reserved",
+                1 => "BT.709",
+                2 => "Unspecified",
+                3 => "Reserved",
+                4 => "BT.470 System M",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "Film",
+                9 => "BT.2020",
+                10 => "SMPTE 428",
+                11 => "DCI P3",
+                12 => "Display P3",
+                22 => "EBU Tech. 3213-E",
+                _ => "Unknown",
+            };
+            if primaries > 0 {
+                fa.Fill(StreamKind::Video, 0, "colour_primaries", primaries_str.to_string(), false);
+            }
+        }
+        if let Some(transfer) = info.transfer_characteristics {
+            let transfer_str = match transfer {
+                0 => "Reserved",
+                1 => "BT.709",
+                2 => "Unspecified",
+                3 => "Reserved",
+                4 => "BT.470 System M",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "Linear",
+                9 => "Logarithmic (100:1)",
+                10 => "Logarithmic (316.22777:1)",
+                11 => "xvYCC",
+                12 => "BT.1361",
+                13 => "sRGB/sYCC",
+                14 => "BT.2020 (10-bit)",
+                15 => "BT.2020 (12-bit)",
+                16 => "SMPTE 2084 (PQ)",
+                17 => "SMPTE 428",
+                18 => "HLG",
+                _ => "Unknown",
+            };
+            if transfer > 0 {
+                fa.Fill(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string(), false);
+            }
+        }
+        if let Some(matrix) = info.matrix_coefficients {
+            let matrix_str = match matrix {
+                0 => "GBR",
+                1 => "BT.709",
+                2 => "Unspecified",
+                3 => "Reserved",
+                4 => "FCC",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "YCgCo",
+                9 => "BT.2020 (non-constant)",
+                10 => "BT.2020 (constant)",
+                11 => "SMPTE 2085",
+                12 => "Chromaticity-derived",
+                13 => "ICtCp",
+                _ => "Unknown",
+            };
+            if matrix > 0 {
+                fa.Fill(StreamKind::Video, 0, "matrix_coefficients", matrix_str.to_string(), false);
+            }
+        }
+    }
+    
     fa.Fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
 
     if let Some(ref enc) = info.encoder_string {

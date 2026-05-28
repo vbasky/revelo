@@ -80,6 +80,21 @@ impl<'a> FileAnalyze<'a> {
         self.streams.Fill(kind, pos, parameter, value, replace);
     }
 
+    /// Fill into the stream's `<extra>` bucket instead of the standard
+    /// field list. Used for tag-style metadata (ID3v2 comments, EXIF
+    /// sub-IFD camera params, Apple QuickTime keys with no oracle-side
+    /// canonical name) that oracle groups under `<extra>...</extra>`.
+    pub fn Fill_Extra(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+        replace: bool,
+    ) {
+        self.streams.Fill_Extra(kind, pos, parameter, value, replace);
+    }
+
     pub fn Retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {
         self.streams.Retrieve(kind, pos, parameter)
     }

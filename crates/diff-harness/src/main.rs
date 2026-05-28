@@ -10,7 +10,7 @@ use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm,
 use mediainfo_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf, parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm, parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv, parse_xdcam_clip};
 use mediainfo_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle, parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs, parse_sub_rip, parse_ttml};
 use mediainfo_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
-use mediainfo_parsers_video::{parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9, parse_y4m};
+use mediainfo_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9, parse_y4m, parse_vc1, parse_mpeg2};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -103,7 +103,10 @@ fn run_oracle(path: &str) -> Result<String, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    String::from_utf8(output.stdout).map_err(|e| format!("non-UTF8 output: {e}"))
+    // Oracle occasionally emits Latin-1 bytes (e.g. 0xB0 for "°" in
+    // GPS-derived Recorded_Location). Use lossy conversion so a single
+    // non-UTF-8 byte doesn't poison the entire diff.
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn run_rust_engine(path: &str) -> Result<String, String> {
@@ -113,7 +116,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 111] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 114] = [
         ("WAV", parse_wav),
         ("AVI", parse_avi),
         ("CDXA", parse_cdxa),
@@ -185,6 +188,9 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("ArriRaw", parse_arriraw),
         ("AmigaIcon", parse_amiga_icon),
         ("Y4M", parse_y4m),
+        ("VC1", parse_vc1),
+        ("MPEG-2", parse_mpeg2),
+        ("AV1", parse_av1),
         ("AVC", parse_avc),
         ("HEVC", parse_hevc),
         ("VP8", parse_vp8),
@@ -293,16 +299,29 @@ fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metad
     if let Some(ms) = duration_ms {
         if ms > 0 {
             let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-            // Only propagate Audio.BitRate_Mode → General.OverallBitRate_Mode
-            // when audio is the sole non-General stream. For mixed
-            // audio+video (AVI, MP4, MKV, TS) the oracle omits the field
-            // since the overall mode isn't well-defined.
+            // OverallBitRate_Mode propagation:
+            //   * audio-only file: mirror Audio.BitRate_Mode (matches
+            //     oracle for raw audio and audio-only containers).
+            //   * video present: emit "VBR" only when Video is VFR.
+            //     Audio-VBR alone in a CFR-video file doesn't qualify —
+            //     authored MP4s like big_buck_bunny have VBR AAC inside
+            //     CFR video and oracle omits OverallBitRate_Mode there.
             let has_video = fa.Count_Get(StreamKind::Video) > 0;
-            if !has_video {
-                if let Some(bm) = fa.Retrieve(StreamKind::Audio, 0, "BitRate_Mode") {
-                    let mode = bm.as_str().to_owned();
-                    fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
+            let overall_mode = if !has_video {
+                fa.Retrieve(StreamKind::Audio, 0, "BitRate_Mode")
+                    .map(|z| z.as_str().to_owned())
+            } else {
+                let video_fr_mode = fa
+                    .Retrieve(StreamKind::Video, 0, "FrameRate_Mode")
+                    .map(|z| z.as_str().to_owned());
+                if video_fr_mode.as_deref() == Some("VFR") {
+                    Some("VBR".to_owned())
+                } else {
+                    None
                 }
+            };
+            if let Some(mode) = overall_mode {
+                fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
             }
             fa.Fill(
                 StreamKind::General,

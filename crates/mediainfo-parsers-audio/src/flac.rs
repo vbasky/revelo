@@ -30,7 +30,12 @@ use mediainfo_core::{FileAnalyze, StreamKind};
 use zenlib::{int128u, int16u, int32u, int64u, int8u};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
+const BLOCK_TYPE_PADDING: u8 = 1;
+const BLOCK_TYPE_APPLICATION: u8 = 2;
+const BLOCK_TYPE_SEEKTABLE: u8 = 3;
 const BLOCK_TYPE_VORBIS_COMMENT: u8 = 4;
+const BLOCK_TYPE_CUESHEET: u8 = 5;
+const BLOCK_TYPE_PICTURE: u8 = 6;
 
 #[derive(Debug, Default)]
 struct StreamInfo {
@@ -58,7 +63,7 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
     fa.Get_C4(&mut magic_consume, "Magic");
 
     let mut streaminfo: Option<StreamInfo> = None;
-    let mut vendor: Option<String> = None;
+    let mut vorbis_comments: Option<VorbisComments> = None;
 
     loop {
         if fa.Remain() < 4 {
@@ -87,7 +92,17 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
             }
             BLOCK_TYPE_VORBIS_COMMENT => {
                 fa.Element_Begin("VORBIS_COMMENT");
-                vendor = parse_vorbis_comment(fa, block_len_usize);
+                vorbis_comments = parse_vorbis_comment(fa, block_len_usize);
+                fa.Element_End();
+            }
+            BLOCK_TYPE_CUESHEET => {
+                fa.Element_Begin("CUESHEET");
+                fa.Skip_Hexa(block_len_usize, "CuesheetBlock");
+                fa.Element_End();
+            }
+            BLOCK_TYPE_PICTURE => {
+                fa.Element_Begin("PICTURE");
+                fa.Skip_Hexa(block_len_usize, "PictureBlock");
                 fa.Element_End();
             }
             _ => {
@@ -104,7 +119,7 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
     fa.Element_End();
 
     if let Some(info) = streaminfo {
-        fill_streams(fa, &info, audio_stream_size, vendor.as_deref());
+        fill_streams(fa, &info, audio_stream_size, vorbis_comments.as_ref());
         true
     } else {
         false
@@ -119,7 +134,19 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
 /// Note: lengths inside the VORBIS_COMMENT block are little-endian, even
 /// though the rest of FLAC is big-endian. This is inherited from the
 /// Vorbis/Ogg origin of the comment format.
-fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<String> {
+#[derive(Debug, Default)]
+struct VorbisComments {
+    vendor: String,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    date: Option<String>,
+    track_number: Option<String>,
+    genre: Option<String>,
+    description: Option<String>,
+}
+
+fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<VorbisComments> {
     let start_offset = fa.Element_Offset();
     let end_offset = start_offset + block_len;
 
@@ -137,6 +164,11 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<String
 
     let vendor_bytes = fa.read_raw(vendor_len_usize);
     let vendor = String::from_utf8_lossy(vendor_bytes).into_owned();
+    
+    let mut comments = VorbisComments {
+        vendor,
+        ..Default::default()
+    };
 
     // Consume remaining comments (length-prefixed UTF-8 strings).
     let mut num_comments: int32u = 0;
@@ -152,7 +184,27 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<String
             if fa.Element_Offset() + cl > end_offset {
                 break;
             }
-            fa.Skip_Hexa(cl, "user_comment");
+            
+            // Read and parse the comment
+            let comment_bytes = fa.read_raw(cl);
+            let comment = String::from_utf8_lossy(comment_bytes);
+            
+            // Vorbis comments are "FIELD=value" format
+            if let Some(eq_pos) = comment.find('=') {
+                let field = &comment[..eq_pos];
+                let value = &comment[eq_pos + 1..];
+                
+                match field.to_uppercase().as_str() {
+                    "TITLE" => comments.title = Some(value.to_string()),
+                    "ARTIST" => comments.artist = Some(value.to_string()),
+                    "ALBUM" => comments.album = Some(value.to_string()),
+                    "DATE" => comments.date = Some(value.to_string()),
+                    "TRACKNUMBER" => comments.track_number = Some(value.to_string()),
+                    "GENRE" => comments.genre = Some(value.to_string()),
+                    "DESCRIPTION" => comments.description = Some(value.to_string()),
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -161,7 +213,7 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<String
         fa.Skip_Hexa(end_offset - fa.Element_Offset(), "Padding");
     }
 
-    Some(vendor)
+    Some(comments)
 }
 
 fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
@@ -203,7 +255,7 @@ fn fill_streams(
     fa: &mut FileAnalyze,
     info: &StreamInfo,
     audio_stream_size: u64,
-    vendor: Option<&str>,
+    vorbis_comments: Option<&VorbisComments>,
 ) {
     if info.sample_rate == 0 {
         return;
@@ -265,9 +317,34 @@ fn fill_streams(
     fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
     fa.Fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
 
-    if let Some(v) = vendor {
-        fa.Fill(StreamKind::Audio, 0, "Encoded_Library", v, false);
-        fa.Fill(StreamKind::General, 0, "Encoded_Application", v, false);
+    if let Some(vc) = vorbis_comments {
+        if !vc.vendor.is_empty() {
+            fa.Fill(StreamKind::Audio, 0, "Encoded_Library", vc.vendor.as_str(), false);
+            fa.Fill(StreamKind::General, 0, "Encoded_Application", vc.vendor.as_str(), false);
+        }
+        
+        // Emit standard metadata fields from Vorbis comments
+        if let Some(ref title) = vc.title {
+            fa.Fill(StreamKind::General, 0, "Track", title.as_str(), false);
+        }
+        if let Some(ref artist) = vc.artist {
+            fa.Fill(StreamKind::General, 0, "Performer", artist.as_str(), false);
+        }
+        if let Some(ref album) = vc.album {
+            fa.Fill(StreamKind::General, 0, "Album", album.as_str(), false);
+        }
+        if let Some(ref date) = vc.date {
+            fa.Fill(StreamKind::General, 0, "Recorded_Date", date.as_str(), false);
+        }
+        if let Some(ref track_num) = vc.track_number {
+            fa.Fill(StreamKind::General, 0, "Track/Position", track_num.as_str(), false);
+        }
+        if let Some(ref genre) = vc.genre {
+            fa.Fill(StreamKind::General, 0, "Genre", genre.as_str(), false);
+        }
+        if let Some(ref desc) = vc.description {
+            fa.Fill(StreamKind::General, 0, "Description", desc.as_str(), false);
+        }
     }
 
     // MD5 of unencoded audio, rendered as 32-hex-char uppercase string.

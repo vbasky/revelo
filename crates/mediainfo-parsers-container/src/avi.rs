@@ -27,7 +27,19 @@ const STRH_VIDS: u32 = u32::from_be_bytes(*b"vids");
 const STRH_TXTS: u32 = u32::from_be_bytes(*b"txts");
 
 const FOURCC_INFO: u32 = u32::from_be_bytes(*b"INFO");
-const FOURCC_ISFT: u32 = u32::from_be_bytes(*b"ISFT");
+const FOURCC_ISFT: u32 = u32::from_be_bytes(*b"ISFT");  // Software
+const FOURCC_IART: u32 = u32::from_be_bytes(*b"IART");  // Artist
+const FOURCC_ICMT: u32 = u32::from_be_bytes(*b"ICMT");  // Comments
+const FOURCC_ICOP: u32 = u32::from_be_bytes(*b"ICOP");  // Copyright
+const FOURCC_ICRD: u32 = u32::from_be_bytes(*b"ICRD");  // Creation date
+const FOURCC_IGNR: u32 = u32::from_be_bytes(*b"IGNR");  // Genre
+const FOURCC_IKEY: u32 = u32::from_be_bytes(*b"IKEY");  // Keywords
+const FOURCC_IMED: u32 = u32::from_be_bytes(*b"IMED");  // Medium
+const FOURCC_INAM: u32 = u32::from_be_bytes(*b"INAM");  // Name/Title
+const FOURCC_IPRD: u32 = u32::from_be_bytes(*b"IPRD");  // Product/Album
+const FOURCC_ISBJ: u32 = u32::from_be_bytes(*b"ISBJ");  // Subject
+const FOURCC_ISRC: u32 = u32::from_be_bytes(*b"ISRC");  // Source
+const FOURCC_ITCH: u32 = u32::from_be_bytes(*b"ITCH");  // Technician/Encoded by
 const FOURCC_MOVI: u32 = u32::from_be_bytes(*b"movi");
 
 #[derive(Default, Debug)]
@@ -37,6 +49,23 @@ struct AviHeader {
     width: u32,
     height: u32,
     streams_count: u32,
+}
+
+#[derive(Default, Debug)]
+struct AviMetadata {
+    software: Option<String>,
+    artist: Option<String>,
+    comments: Option<String>,
+    copyright: Option<String>,
+    creation_date: Option<String>,
+    genre: Option<String>,
+    keywords: Option<String>,
+    medium: Option<String>,
+    title: Option<String>,
+    product: Option<String>,
+    subject: Option<String>,
+    source: Option<String>,
+    technician: Option<String>,
 }
 
 #[derive(Default, Debug)]
@@ -99,6 +128,7 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     let mut header = AviHeader::default();
     let mut streams: Vec<AviStream> = Vec::new();
     let mut isft: Option<String> = None;
+    let mut meta = AviMetadata::default();
     let mut movi_size: u64 = 0;
     // Per-stream-index payload byte counts harvested from movi chunk
     // fourccs (e.g. "00dc" → stream 0 video data, "01wb" → stream 1
@@ -134,12 +164,24 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
             }
             (FOURCC_LIST, Some(FOURCC_INFO)) => {
                 walk_riff_chunks(payload, payload.len(), &mut |fc, _, p| {
-                    if fc == FOURCC_ISFT {
-                        isft = Some(
-                            String::from_utf8_lossy(p)
-                                .trim_end_matches('\0')
-                                .to_string(),
-                        );
+                    let s = String::from_utf8_lossy(p)
+                        .trim_end_matches('\0')
+                        .to_string();
+                    match fc {
+                        FOURCC_ISFT => { isft = Some(s); }
+                        FOURCC_IART => { meta.artist = Some(s); }
+                        FOURCC_ICMT => { meta.comments = Some(s); }
+                        FOURCC_ICOP => { meta.copyright = Some(s); }
+                        FOURCC_ICRD => { meta.creation_date = Some(s); }
+                        FOURCC_IGNR => { meta.genre = Some(s); }
+                        FOURCC_IKEY => { meta.keywords = Some(s); }
+                        FOURCC_IMED => { meta.medium = Some(s); }
+                        FOURCC_INAM => { meta.title = Some(s); }
+                        FOURCC_IPRD => { meta.product = Some(s); }
+                        FOURCC_ISBJ => { meta.subject = Some(s); }
+                        FOURCC_ISRC => { meta.source = Some(s); }
+                        FOURCC_ITCH => { meta.technician = Some(s); }
+                        _ => {}
                     }
                 });
             }
@@ -209,6 +251,8 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
         movi_size,
         &movi_sizes,
         &movi_chunk_counts,
+        total,
+        &meta,
     );
     true
 }
@@ -325,6 +369,8 @@ fn fill_streams(
     _movi_size: u64,
     movi_sizes: &[u64],
     movi_chunk_counts: &[u64],
+    file_size: usize,
+    meta: &AviMetadata,
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "AVI", false);
@@ -371,6 +417,14 @@ fn fill_streams(
     {
         let d = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
         fa.Fill(StreamKind::General, 0, "Duration", d.to_string(), false);
+        
+        // Calculate OverallBitRate = FileSize * 8 / Duration_ms * 1000
+        if d > 0 && file_size > 0 {
+            let overall_bitrate = (file_size as u64 * 8 * 1000) / d;
+            fa.Fill(StreamKind::General, 0, "OverallBitRate", overall_bitrate.to_string(), false);
+            fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
+        }
+        
         Some(d)
     } else {
         None
@@ -378,6 +432,42 @@ fn fill_streams(
 
     if let Some(isft) = isft {
         fa.Fill(StreamKind::General, 0, "Encoded_Application", isft, false);
+    }
+    if let Some(ref s) = meta.artist {
+        fa.Fill(StreamKind::General, 0, "Performer", s.clone(), false);
+    }
+    if let Some(ref s) = meta.comments {
+        fa.Fill(StreamKind::General, 0, "Comment", s.clone(), false);
+    }
+    if let Some(ref s) = meta.copyright {
+        fa.Fill(StreamKind::General, 0, "Copyright", s.clone(), false);
+    }
+    if let Some(ref s) = meta.creation_date {
+        fa.Fill(StreamKind::General, 0, "Recorded_Date", s.clone(), false);
+    }
+    if let Some(ref s) = meta.genre {
+        fa.Fill(StreamKind::General, 0, "Genre", s.clone(), false);
+    }
+    if let Some(ref s) = meta.keywords {
+        fa.Fill(StreamKind::General, 0, "Keywords", s.clone(), false);
+    }
+    if let Some(ref s) = meta.medium {
+        fa.Fill(StreamKind::General, 0, "Medium", s.clone(), false);
+    }
+    if let Some(ref s) = meta.title {
+        fa.Fill(StreamKind::General, 0, "Title", s.clone(), false);
+    }
+    if let Some(ref s) = meta.product {
+        fa.Fill(StreamKind::General, 0, "Product", s.clone(), false);
+    }
+    if let Some(ref s) = meta.subject {
+        fa.Fill(StreamKind::General, 0, "Subject", s.clone(), false);
+    }
+    if let Some(ref s) = meta.source {
+        fa.Fill(StreamKind::General, 0, "Source", s.clone(), false);
+    }
+    if let Some(ref s) = meta.technician {
+        fa.Fill(StreamKind::General, 0, "Encoded_By", s.clone(), false);
     }
 
     // Interleave_VideoFrames / Interleave_Duration: derived once across

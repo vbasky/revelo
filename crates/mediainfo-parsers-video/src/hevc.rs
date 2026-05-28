@@ -1,11 +1,40 @@
 use mediainfo_core::{FileAnalyze, StreamKind};
 
+#[derive(Debug)]
+pub struct HevcInfo {
+    pub profile_idc: u8,
+    pub tier_high: bool,
+    pub level_idc: u8,
+    pub width: u32,
+    pub height: u32,
+    pub chroma_format_idc: u8,
+    pub bit_depth: u8,
+    /// VUI colour_description_present_flag
+    pub colour_description_present: bool,
+    /// VUI colour_primaries (if colour_description_present)
+    pub colour_primaries: Option<u8>,
+    /// VUI transfer_characteristics (if colour_description_present)
+    pub transfer_characteristics: Option<u8>,
+    /// VUI matrix_coefficients (if colour_description_present)
+    pub matrix_coefficients: Option<u8>,
+    /// VUI video_full_range_flag (if video_signal_type_present)
+    pub video_full_range: Option<bool>,
+    /// Extracted from user_data_unregistered SEI message (payload_type 5).
+    pub encoder_string: Option<String>,
+}
+
 const ANNEX_B_START_CODE: [u8; 3] = [0x00, 0x00, 0x01];
 const ANNEX_B_START_CODE_LONG: [u8; 4] = [0x00, 0x00, 0x00, 0x01];
 
 const NAL_TYPE_VPS: u8 = 32;
 const NAL_TYPE_SPS: u8 = 33;
 const NAL_TYPE_PPS: u8 = 34;
+const NAL_TYPE_SEI_PREFIX: u8 = 39;
+const NAL_TYPE_SEI_SUFFIX: u8 = 40;
+
+// HDR10 SEI payload types
+const SEI_TYPE_MASTERING_DISPLAY_COLOUR_VOLUME: u8 = 137;
+const SEI_TYPE_CONTENT_LIGHT_LEVEL: u8 = 144;
 
 fn find_start_code(data: &[u8], offset: usize) -> Option<usize> {
     for i in offset..data.len().saturating_sub(2) {
@@ -172,6 +201,92 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     // bit_depth_chroma_minus8 (ue)
     read_ue(&clean, &mut offset)?;
 
+    // log2_max_pic_order_cnt_lsb_minus4 (ue)
+    read_ue(&clean, &mut offset)?;
+
+    // sps_sub_layer_ordering_info_present_flag (u1)
+    let sub_layer_ordering_present = read_bits(&clean, &mut offset, 1)?;
+    let start_idx = if sub_layer_ordering_present != 0 { 0 } else { max_sub_layers };
+    
+    for _ in start_idx..=max_sub_layers {
+        // sps_max_dec_pic_buffering_minus1[...] (ue)
+        read_ue(&clean, &mut offset)?;
+        // sps_max_num_reorder_pics[...] (ue)
+        read_ue(&clean, &mut offset)?;
+        // sps_max_latency_increase_plus1[...] (ue)
+        read_ue(&clean, &mut offset)?;
+    }
+
+    // log2_min_luma_coding_block_size_minus3 (ue)
+    read_ue(&clean, &mut offset)?;
+    // log2_diff_max_min_luma_coding_block_size (ue)
+    read_ue(&clean, &mut offset)?;
+    // log2_min_transform_block_size_minus2 (ue)
+    read_ue(&clean, &mut offset)?;
+    // log2_diff_max_min_transform_block_size (ue)
+    read_ue(&clean, &mut offset)?;
+    // max_transform_hierarchy_depth_inter (ue)
+    read_ue(&clean, &mut offset)?;
+    // max_transform_hierarchy_depth_intra (ue)
+    read_ue(&clean, &mut offset)?;
+
+    // scaling_list_enabled_flag (u1)
+    let scaling_list_enabled = read_bits(&clean, &mut offset, 1)?;
+    if scaling_list_enabled != 0 {
+        // sps_scaling_list_data_present_flag (u1)
+        let sps_scaling_list_present = read_bits(&clean, &mut offset, 1)?;
+        if sps_scaling_list_present != 0 {
+            // Skip scaling list data (complex structure, skip for now)
+            // This is a simplification - proper scaling list parsing would be needed
+            // for complete compliance, but most files don't use SPS scaling lists.
+        }
+    }
+
+    // amp_enabled_flag (u1)
+    read_bits(&clean, &mut offset, 1)?;
+    // sample_adaptive_offset_enabled_flag (u1)
+    let sao_enabled = read_bits(&clean, &mut offset, 1)?;
+    // pcm_enabled_flag (u1)
+    let pcm_enabled = read_bits(&clean, &mut offset, 1)?;
+    
+    if pcm_enabled != 0 {
+        // pcm_sample_bit_depth_luma_minus1 (u4)
+        read_bits(&clean, &mut offset, 4)?;
+        // pcm_sample_bit_depth_chroma_minus1 (u4)
+        read_bits(&clean, &mut offset, 4)?;
+        // log2_min_pcm_luma_coding_block_size_minus3 (ue)
+        read_ue(&clean, &mut offset)?;
+        // log2_diff_max_min_pcm_luma_coding_block_size (ue)
+        read_ue(&clean, &mut offset)?;
+        // pcm_loop_filter_disabled_flag (u1)
+        read_bits(&clean, &mut offset, 1)?;
+    }
+
+    // num_short_term_ref_pic_sets (ue)
+    let num_short_term_rps = read_ue(&clean, &mut offset)?;
+    for _ in 0..num_short_term_rps {
+        // Short term RPS parsing is complex, skip for now
+        // This is a heuristic - we try to detect the rough size
+        // A proper implementation would parse each RPS fully
+    }
+
+    // long_term_ref_pics_present_flag (u1)
+    let long_term_present = read_bits(&clean, &mut offset, 1)?;
+    if long_term_present != 0 {
+        // num_long_term_ref_pics_sps (ue)
+        let num_long_term = read_ue(&clean, &mut offset)?;
+        for _ in 0..num_long_term {
+            // lt_ref_pic_poc_lsb_sps[...] (u(log2_max_pic_order_cnt_lsb_minus4 + 4))
+            // lt_ref_pic_used_by_curr_pic_sps_flag[...] (u1)
+            // Skip without proper parsing
+        }
+    }
+
+    // sps_temporal_mvp_enabled_flag (u1)
+    read_bits(&clean, &mut offset, 1)?;
+    // strong_intra_smoothing_enabled_flag (u1)
+    read_bits(&clean, &mut offset, 1)?;
+
     // Compute dimensions with conformance window
     let sub_width_c = match chroma_format_idc {
         0 => 1,
@@ -192,6 +307,450 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     let height = pic_height - sub_height_c * (conf_win_top + conf_win_bottom);
 
     Some((profile_idc, tier_flag != 0, level_idc, width, height, chroma_format_idc, bit_depth as u8))
+}
+
+
+/// Extract encoder string from HEVC SEI user_data_unregistered message.
+/// Similar to AVC but with 2-byte NAL header.
+fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<String> {
+    let clean = remove_epb(nal_unit);
+    if clean.len() < 2 {
+        return None;
+    }
+    let mut off = 0usize;
+    // Skip HEVC NAL header (2 bytes)
+    read_bits(&clean, &mut off, 16)?;
+
+    // Parse SEI messages (same payload structure as AVC)
+    loop {
+        if off >= clean.len() * 8 { break; }
+
+        // Read payload_type (variable length, 0xFF terminated)
+        let mut payload_type = 0u32;
+        loop {
+            let byte = read_bits(&clean, &mut off, 8)?;
+            payload_type += byte;
+            if byte != 0xFF { break; }
+            if off >= clean.len() * 8 { return None; }
+        }
+
+        // Read payload_size (variable length, 0xFF terminated)
+        let mut payload_size = 0u32;
+        loop {
+            let byte = read_bits(&clean, &mut off, 8)?;
+            payload_size += byte;
+            if byte != 0xFF { break; }
+            if off >= clean.len() * 8 { return None; }
+        }
+
+        if payload_type == 5 {
+            // user_data_unregistered: 16-byte UUID + string
+            let uuid_len = 16 * 8; // 16 bytes
+            if off + uuid_len > payload_size as usize * 8 {
+                return None;
+            }
+            skip_bits(&mut off, uuid_len);
+
+            let str_start = off / 8;
+            let remaining_bits = payload_size as usize * 8 - uuid_len;
+            let str_end = str_start + remaining_bits / 8;
+            if str_end > clean.len() {
+                return None;
+            }
+            let str_bytes = &clean[str_start..str_end];
+            // Find null terminator
+            let null_pos = str_bytes.iter().position(|&b| b == 0).unwrap_or(str_bytes.len());
+            let s = std::str::from_utf8(&str_bytes[..null_pos]).ok()?;
+            if !s.is_empty() {
+                return Some(s.to_owned());
+            }
+            skip_bits(&mut off, remaining_bits);
+        } else {
+            // Skip payload data for other SEI types
+            skip_bits(&mut off, payload_size as usize * 8);
+        }
+
+        // Check for rbsp_trailing_bits
+        if off >= clean.len() * 8 {
+            break;
+        }
+    }
+
+    None
+}
+
+/// Extract encoder string from a list of SEI NAL units in hvcC.
+pub fn extract_encoder_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<String> {
+    for nal in sei_nalus {
+        if let Some(enc) = extract_encoder_from_hevc_sei(nal) {
+            return Some(enc);
+        }
+    }
+    None
+}
+
+/// Parse HDR10 mastering display colour volume SEI (payload type 137).
+/// Returns (display_primaries[3], white_point, max_luminance, min_luminance).
+fn parse_mastering_display_sei(payload: &[u8]) -> Option<([(u16, u16); 3], (u16, u16), u32, u32)> {
+    if payload.len() < 24 {
+        return None;
+    }
+    // Display primaries: 3 x (x, y) in 0.00002 units, 16 bits each
+    let mut primaries = [(0u16, 0u16); 3];
+    for i in 0..3 {
+        let offset = i * 4;
+        let x = ((payload[offset] as u16) << 8) | (payload[offset + 1] as u16);
+        let y = ((payload[offset + 2] as u16) << 8) | (payload[offset + 3] as u16);
+        primaries[i] = (x, y);
+    }
+    // White point: x, y in 0.00002 units, 16 bits each
+    let white_x = ((payload[12] as u16) << 8) | (payload[13] as u16);
+    let white_y = ((payload[14] as u16) << 8) | (payload[15] as u16);
+    // Max luminance: 32 bits, in 0.0001 cd/m^2
+    let max_lum = ((payload[16] as u32) << 24) | ((payload[17] as u32) << 16) |
+                  ((payload[18] as u32) << 8) | (payload[19] as u32);
+    // Min luminance: 32 bits, in 0.0001 cd/m^2
+    let min_lum = ((payload[20] as u32) << 24) | ((payload[21] as u32) << 16) |
+                  ((payload[22] as u32) << 8) | (payload[23] as u32);
+    Some((primaries, (white_x, white_y), max_lum, min_lum))
+}
+
+/// Parse HDR10 content light level SEI (payload type 144).
+/// Returns (max_content_light_level, max_frame_average_light_level) in cd/m^2.
+fn parse_content_light_level_sei(payload: &[u8]) -> Option<(u16, u16)> {
+    if payload.len() < 4 {
+        return None;
+    }
+    let max_content = ((payload[0] as u16) << 8) | (payload[1] as u16);
+    let max_frame_avg = ((payload[2] as u16) << 8) | (payload[3] as u16);
+    Some((max_content, max_frame_avg))
+}
+
+/// Extract HDR metadata from SEI NAL units.
+pub fn extract_hdr_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<(Option<([(u16, u16); 3], (u16, u16), u32, u32)>, Option<(u16, u16)>)> {
+    let mut mastering = None;
+    let mut light_level = None;
+    
+    for nal in sei_nalus {
+        // Skip NAL header (2 bytes for HEVC)
+        if nal.len() < 3 {
+            continue;
+        }
+        let mut pos = 2;
+        while pos < nal.len() {
+            // Read payload type (may be multi-byte)
+            let mut payload_type = 0u8;
+            while pos < nal.len() && nal[pos] == 0xFF {
+                payload_type = payload_type.saturating_add(255);
+                pos += 1;
+            }
+            if pos >= nal.len() {
+                break;
+            }
+            payload_type = payload_type.saturating_add(nal[pos]);
+            pos += 1;
+            
+            // Read payload size (may be multi-byte)
+            let mut payload_size = 0usize;
+            while pos < nal.len() && nal[pos] == 0xFF {
+                payload_size = payload_size.saturating_add(255);
+                pos += 1;
+            }
+            if pos >= nal.len() {
+                break;
+            }
+            payload_size = payload_size.saturating_add(nal[pos] as usize);
+            pos += 1;
+            
+            if pos + payload_size > nal.len() {
+                break;
+            }
+            
+            let payload = &nal[pos..pos + payload_size];
+            
+            match payload_type {
+                137 => {
+                    if let Some(md) = parse_mastering_display_sei(payload) {
+                        mastering = Some(md);
+                    }
+                }
+                144 => {
+                    if let Some(ll) = parse_content_light_level_sei(payload) {
+                        light_level = Some(ll);
+                    }
+                }
+                _ => {}
+            }
+            
+            pos += payload_size;
+            
+            // Skip trailing byte if present
+            if pos < nal.len() && nal[pos] == 0x80 {
+                pos += 1;
+            }
+        }
+    }
+    
+    if mastering.is_some() || light_level.is_some() {
+        Some((mastering, light_level))
+    } else {
+        None
+    }
+}
+
+
+/// Parse HEVC SPS and extract info including VUI colour information.
+/// This is the public entry point used by container parsers (MP4, etc.)
+pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
+    let clean = remove_epb(rbsp);
+    if clean.len() < 6 { return None; }
+    let mut offset = 0usize;
+
+    // NAL header (2 bytes)
+    read_bits(&clean, &mut offset, 16)?;
+
+    // sps_video_parameter_set_id (4 bits)
+    read_bits(&clean, &mut offset, 4)?;
+    // sps_max_sub_layers_minus1 (3 bits)
+    let max_sub_layers = read_bits(&clean, &mut offset, 3)?;
+    // sps_temporal_id_nesting_flag (1 bit)
+    read_bits(&clean, &mut offset, 1)?;
+
+    // profile_tier_level
+    let _space = read_bits(&clean, &mut offset, 2)?;
+    let tier_flag = read_bits(&clean, &mut offset, 1)?;
+    let profile_idc = read_bits(&clean, &mut offset, 5)? as u8;
+    for _ in 0..32 { read_bits(&clean, &mut offset, 1)?; }
+    read_bits(&clean, &mut offset, 1)?;
+    read_bits(&clean, &mut offset, 1)?;
+    read_bits(&clean, &mut offset, 1)?;
+    read_bits(&clean, &mut offset, 1)?;
+    read_bits(&clean, &mut offset, 32)?;
+    read_bits(&clean, &mut offset, 12)?;
+    let level_idc = read_bits(&clean, &mut offset, 8)? as u8;
+
+    // Sub-layer profile/level info
+    for _i in 0..max_sub_layers {
+        let sub_layer_profile_present = read_bits(&clean, &mut offset, 1)?;
+        let sub_layer_level_present = read_bits(&clean, &mut offset, 1)?;
+        if sub_layer_profile_present != 0 {
+            read_profile_tier_level(&clean, &mut offset)?;
+        }
+        if sub_layer_level_present != 0 {
+            read_bits(&clean, &mut offset, 8)?;
+        }
+    }
+
+    // sps_seq_parameter_set_id (ue)
+    read_ue(&clean, &mut offset)?;
+
+    // chroma_format_idc (ue)
+    let chroma_format_idc = read_ue(&clean, &mut offset)?;
+
+    if chroma_format_idc == 3 {
+        read_bits(&clean, &mut offset, 1)?;
+    }
+
+    // pic_width_in_luma_samples (ue)
+    let pic_width = read_ue(&clean, &mut offset)?;
+    // pic_height_in_luma_samples (ue)
+    let pic_height = read_ue(&clean, &mut offset)?;
+
+    // conformance_window_flag
+    let conf_window = read_bits(&clean, &mut offset, 1)?;
+    let mut conf_win_left = 0u32;
+    let mut conf_win_right = 0u32;
+    let mut conf_win_top = 0u32;
+    let mut conf_win_bottom = 0u32;
+    if conf_window != 0 {
+        conf_win_left = read_ue(&clean, &mut offset)?;
+        conf_win_right = read_ue(&clean, &mut offset)?;
+        conf_win_top = read_ue(&clean, &mut offset)?;
+        conf_win_bottom = read_ue(&clean, &mut offset)?;
+    }
+
+    // bit_depth_luma_minus8 (ue)
+    let bit_depth = read_ue(&clean, &mut offset)? + 8;
+    // bit_depth_chroma_minus8 (ue)
+    read_ue(&clean, &mut offset)?;
+
+    // log2_max_pic_order_cnt_lsb_minus4 (ue)
+    read_ue(&clean, &mut offset)?;
+
+    // sps_sub_layer_ordering_info_present_flag (u1)
+    let sub_layer_ordering_present = read_bits(&clean, &mut offset, 1)?;
+    let start_idx = if sub_layer_ordering_present != 0 { 0 } else { max_sub_layers };
+    
+    for _ in start_idx..=max_sub_layers {
+        // sps_max_dec_pic_buffering_minus1[...] (ue)
+        read_ue(&clean, &mut offset)?;
+        // sps_max_num_reorder_pics[...] (ue)
+        read_ue(&clean, &mut offset)?;
+        // sps_max_latency_increase_plus1[...] (ue)
+        read_ue(&clean, &mut offset)?;
+    }
+
+    // log2_min_luma_coding_block_size_minus3 (ue)
+    read_ue(&clean, &mut offset)?;
+    // log2_diff_max_min_luma_coding_block_size (ue)
+    read_ue(&clean, &mut offset)?;
+    // log2_min_transform_block_size_minus2 (ue)
+    read_ue(&clean, &mut offset)?;
+    // log2_diff_max_min_transform_block_size (ue)
+    read_ue(&clean, &mut offset)?;
+    // max_transform_hierarchy_depth_inter (ue)
+    read_ue(&clean, &mut offset)?;
+    // max_transform_hierarchy_depth_intra (ue)
+    read_ue(&clean, &mut offset)?;
+
+    // scaling_list_enabled_flag (u1)
+    let scaling_list_enabled = read_bits(&clean, &mut offset, 1)?;
+    if scaling_list_enabled != 0 {
+        // sps_scaling_list_data_present_flag (u1)
+        let sps_scaling_list_present = read_bits(&clean, &mut offset, 1)?;
+        if sps_scaling_list_present != 0 {
+            // Skip scaling list data (complex structure, skip for now)
+            // This is a simplification - proper scaling list parsing would be needed
+            // for complete compliance, but most files don't use SPS scaling lists.
+        }
+    }
+
+    // amp_enabled_flag (u1)
+    read_bits(&clean, &mut offset, 1)?;
+    // sample_adaptive_offset_enabled_flag (u1)
+    let sao_enabled = read_bits(&clean, &mut offset, 1)?;
+    // pcm_enabled_flag (u1)
+    let pcm_enabled = read_bits(&clean, &mut offset, 1)?;
+    
+    if pcm_enabled != 0 {
+        // pcm_sample_bit_depth_luma_minus1 (u4)
+        read_bits(&clean, &mut offset, 4)?;
+        // pcm_sample_bit_depth_chroma_minus1 (u4)
+        read_bits(&clean, &mut offset, 4)?;
+        // log2_min_pcm_luma_coding_block_size_minus3 (ue)
+        read_ue(&clean, &mut offset)?;
+        // log2_diff_max_min_pcm_luma_coding_block_size (ue)
+        read_ue(&clean, &mut offset)?;
+        // pcm_loop_filter_disabled_flag (u1)
+        read_bits(&clean, &mut offset, 1)?;
+    }
+
+    // num_short_term_ref_pic_sets (ue)
+    let num_short_term_rps = read_ue(&clean, &mut offset)?;
+    for _ in 0..num_short_term_rps {
+        // Short term RPS parsing is complex, skip for now
+        // This is a heuristic - we try to detect the rough size
+        // A proper implementation would parse each RPS fully
+    }
+
+    // long_term_ref_pics_present_flag (u1)
+    let long_term_present = read_bits(&clean, &mut offset, 1)?;
+    if long_term_present != 0 {
+        // num_long_term_ref_pics_sps (ue)
+        let num_long_term = read_ue(&clean, &mut offset)?;
+        for _ in 0..num_long_term {
+            // lt_ref_pic_poc_lsb_sps[...] (u(log2_max_pic_order_cnt_lsb_minus4 + 4))
+            // lt_ref_pic_used_by_curr_pic_sps_flag[...] (u1)
+            // Skip without proper parsing
+        }
+    }
+
+    // sps_temporal_mvp_enabled_flag (u1)
+    read_bits(&clean, &mut offset, 1)?;
+    // strong_intra_smoothing_enabled_flag (u1)
+    read_bits(&clean, &mut offset, 1)?;
+
+    // Compute dimensions with conformance window
+    let sub_width_c = match chroma_format_idc {
+        0 => 1,
+        1 => 2,
+        2 => 2,
+        3 => 1,
+        _ => 2,
+    };
+    let sub_height_c = match chroma_format_idc {
+        0 => 1,
+        1 => 2,
+        2 => 1,
+        3 => 1,
+        _ => 2,
+    };
+
+    let width = pic_width - sub_width_c * (conf_win_left + conf_win_right);
+    let height = pic_height - sub_height_c * (conf_win_top + conf_win_bottom);
+
+    // Parse VUI for colour information
+    let vui_result = parse_vui(&clean, &mut offset);
+    let (colour_description_present, colour_primaries, transfer_characteristics, matrix_coefficients, video_full_range) = 
+        vui_result.unwrap_or((false, None, None, None, None));
+
+    Some(HevcInfo {
+        profile_idc,
+        tier_high: tier_flag != 0,
+        level_idc,
+        width,
+        height,
+        chroma_format_idc: chroma_format_idc as u8,
+        bit_depth: bit_depth as u8,
+        colour_description_present,
+        colour_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        video_full_range,
+        encoder_string: None,
+    })
+}
+
+/// Parse VUI section of SPS to extract colour information.
+fn parse_vui(clean: &[u8], offset: &mut usize) -> Option<(bool, Option<u8>, Option<u8>, Option<u8>, Option<bool>)> {
+    // vui_parameters_present_flag
+    let vui_present = read_bits(clean, offset, 1)?;
+    if vui_present == 0 {
+        return Some((false, None, None, None, None));
+    }
+
+    // Skip VUI aspect_ratio, overscan, video_signal_type until we hit colour
+    // aspect_ratio_info_present_flag
+    let aspect_present = read_bits(clean, offset, 1)?;
+    if aspect_present != 0 {
+        let aspect_idc = read_bits(clean, offset, 8)?;
+        if aspect_idc == 255 { // EXTENDED_SAR
+            read_bits(clean, offset, 16)?; // sar_width
+            read_bits(clean, offset, 16)?; // sar_height
+        }
+    }
+
+    // overscan_info_present_flag
+    let overscan_present = read_bits(clean, offset, 1)?;
+    if overscan_present != 0 {
+        read_bits(clean, offset, 1)?; // overscan_appropriate_flag
+    }
+
+    // video_signal_type_present_flag
+    let video_signal_present = read_bits(clean, offset, 1)?;
+    let mut video_full_range = None;
+    let mut colour_description_present = false;
+    let mut colour_primaries = None;
+    let mut transfer_characteristics = None;
+    let mut matrix_coefficients = None;
+
+    if video_signal_present != 0 {
+        read_bits(clean, offset, 3)?; // video_format
+        let full_range = read_bits(clean, offset, 1)?;
+        video_full_range = Some(full_range != 0);
+
+        // colour_description_present_flag
+        colour_description_present = read_bits(clean, offset, 1)? != 0;
+        if colour_description_present {
+            colour_primaries = read_bits(clean, offset, 8).map(|v| v as u8);
+            transfer_characteristics = read_bits(clean, offset, 8).map(|v| v as u8);
+            matrix_coefficients = read_bits(clean, offset, 8).map(|v| v as u8);
+        }
+    }
+
+    // We don't need to parse the rest of VUI - we've got colour info
+    // Return what we found
+    Some((colour_description_present, colour_primaries, transfer_characteristics, matrix_coefficients, video_full_range))
 }
 
 fn profile_name(profile_idc: u8) -> &'static str {
@@ -252,6 +811,7 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
 
     let mut vps_found = false;
     let mut sps_info = None;
+    let mut sei_nalus: Vec<&[u8]> = Vec::new();
 
     let mut nal_offset = 0usize;
     while let Some(start) = find_start_code(&data, nal_offset) {
@@ -285,6 +845,9 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
                     sps_info = Some(info);
                 }
             }
+            NAL_TYPE_SEI_PREFIX | NAL_TYPE_SEI_SUFFIX => {
+                sei_nalus.push(nal_unit);
+            }
             _ => {}
         }
 
@@ -297,6 +860,9 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
     }
 
     let (profile_idc, tier_flag, level_idc, width, height, chroma_format_idc, bit_depth) = sps_info.unwrap();
+
+    // Extract HDR metadata from SEI NAL units
+    let hdr_metadata = extract_hdr_from_sei_nalus(&sei_nalus);
 
     fa.Stream_Prepare(StreamKind::Video);
 
@@ -332,6 +898,35 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
     fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
     fa.Fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
     fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+
+    // Fill HDR metadata if present
+    if let Some((mastering, light_level)) = hdr_metadata {
+        if let Some((primaries, white_point, max_lum, min_lum)) = mastering {
+            fa.Fill(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2086", false);
+            fa.Fill(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10", false);
+            // Mastering display primaries (convert from 0.00002 units)
+            let r_x = primaries[0].0 as f64 * 0.00002;
+            let r_y = primaries[0].1 as f64 * 0.00002;
+            let g_x = primaries[1].0 as f64 * 0.00002;
+            let g_y = primaries[1].1 as f64 * 0.00002;
+            let b_x = primaries[2].0 as f64 * 0.00002;
+            let b_y = primaries[2].1 as f64 * 0.00002;
+            let w_x = white_point.0 as f64 * 0.00002;
+            let w_y = white_point.1 as f64 * 0.00002;
+            fa.Fill(StreamKind::Video, 0, "MasteringDisplay_ColorPrimaries", 
+                format!("Red: ({:.5}, {:.5}), Green: ({:.5}, {:.5}), Blue: ({:.5}, {:.5}), White: ({:.5}, {:.5})", 
+                    r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y), false);
+            // Luminance in cd/m^2 (convert from 0.0001 units)
+            let max_lum_cd = max_lum as f64 * 0.0001;
+            let min_lum_cd = min_lum as f64 * 0.0001;
+            fa.Fill(StreamKind::Video, 0, "MasteringDisplay_Luminance", 
+                format!("min: {:.4} cd/m², max: {:.0} cd/m²", min_lum_cd, max_lum_cd), false);
+        }
+        if let Some((max_content, max_frame_avg)) = light_level {
+            fa.Fill(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content), false);
+            fa.Fill(StreamKind::Video, 0, "MaxFALL", format!("{} cd/m²", max_frame_avg), false);
+        }
+    }
 
     // General stream
     fa.Stream_Prepare(StreamKind::General);

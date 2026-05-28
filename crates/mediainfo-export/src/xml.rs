@@ -47,7 +47,18 @@ pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str
     ] {
         let count = streams.Count_Get(kind);
         for pos in 0..count {
-            out.push_str(&format!("<track type=\"{}\">\n", kind.name()));
+            // Oracle emits `typeorder="N"` (1-based) only when there are
+            // multiple streams of the same kind. Single-stream kinds get
+            // a bare `<track type="X">`.
+            if count > 1 {
+                out.push_str(&format!(
+                    "<track type=\"{}\" typeorder=\"{}\">\n",
+                    kind.name(),
+                    pos + 1
+                ));
+            } else {
+                out.push_str(&format!("<track type=\"{}\">\n", kind.name()));
+            }
             if let Some(stream) = streams.stream(kind, pos) {
                 emit_stream_fields(&mut out, kind, stream);
             }
@@ -81,12 +92,19 @@ fn emit_stream_fields(out: &mut String, kind: StreamKind, stream: &mediainfo_cor
         }
     }
     // Extra fields are wrapped in a <extra>...</extra> section, present
-    // only when at least one such field is set on the stream.
+    // only when at least one such field is set on the stream. Sources:
+    //   1. Canonical fields that route to extras by name (Apple QT
+    //      passthrough keys, ID3v2 COMM, etc.) — via `extra_field_order`.
+    //   2. Per-stream extras filled via `Fill_Extra` — these are
+    //      arbitrary tag-style fields parsers chose to bucket as extra.
     let mut extra_buf = String::new();
     for field in extras {
         if let Some(z) = stream.get(field) {
             push_field(&mut extra_buf, field, z.as_str());
         }
+    }
+    for (k, v) in stream.extras_iter() {
+        push_field(&mut extra_buf, k, v.as_str());
     }
     if !extra_buf.is_empty() {
         out.push_str("<extra>\n");
@@ -152,6 +170,7 @@ fn xml_escape_attr(s: &str) -> String {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
             _ => out.push(ch),
         }
     }

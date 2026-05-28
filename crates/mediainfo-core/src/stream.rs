@@ -45,6 +45,11 @@ pub struct Stream {
     fields: BTreeMap<String, Ztring>,
     /// Insertion order, for formatters that want the order parsers wrote in.
     insertion_order: Vec<String>,
+    /// "Extra" fields — emitted in their own `<extra>...</extra>` block
+    /// at the end of the stream, distinct from standard fields. Order
+    /// preserved as inserted. Mirrors MediaInfoLib's
+    /// `Stream::Extra` / `Fill_Measure` two-tier output model.
+    extras: Vec<(String, Ztring)>,
 }
 
 impl Stream {
@@ -62,6 +67,21 @@ impl Stream {
             self.insertion_order.push(key.clone());
         }
         self.fields.insert(key, value);
+    }
+
+    /// Append (or, if `replace`, overwrite) an `<extra>`-bucket entry.
+    /// Extras don't appear in `iter()` — formatters call `extras_iter()`
+    /// separately so they end up in their own XML/JSON block.
+    pub fn set_extra(&mut self, parameter: &str, value: Ztring, replace: bool) {
+        if replace {
+            if let Some(slot) = self.extras.iter_mut().find(|(k, _)| k == parameter) {
+                slot.1 = value;
+                return;
+            }
+        } else if self.extras.iter().any(|(k, _)| k == parameter) {
+            return;
+        }
+        self.extras.push((parameter.to_owned(), value));
     }
 
     pub fn get(&self, parameter: &str) -> Option<&Ztring> {
@@ -82,6 +102,11 @@ impl Stream {
         self.insertion_order
             .iter()
             .filter_map(|k| self.fields.get_key_value(k.as_str()).map(|(k, v)| (k.as_str(), v)))
+    }
+
+    /// Iterate `<extra>`-bucket fields in insertion order.
+    pub fn extras_iter(&self) -> impl Iterator<Item = (&str, &Ztring)> {
+        self.extras.iter().map(|(k, v)| (k.as_str(), v))
     }
 }
 
@@ -124,6 +149,23 @@ impl StreamCollection {
             v.push(Stream::new());
         }
         v[pos].set(parameter, value.into(), replace);
+    }
+
+    /// `Fill_Extra` — like `Fill`, but the parameter ends up in the
+    /// stream's `<extra>` block instead of the main field list.
+    pub fn Fill_Extra(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+        replace: bool,
+    ) {
+        let v = self.by_kind.entry(kind).or_default();
+        while v.len() <= pos {
+            v.push(Stream::new());
+        }
+        v[pos].set_extra(parameter, value.into(), replace);
     }
 
     pub fn Retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {

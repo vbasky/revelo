@@ -197,7 +197,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // positives on any container that happens to contain 0xFF 0xE/F
     // bytes (which is most of them). Container parsers run before
     // this so by the time we're here it's not been claimed.
-    let id3v2_size = detect_id3v2(fa);
+    let (id3v2_size, id3_metadata) = parse_id3v2(fa);
     if id3v2_size > 0 {
         fa.Skip_Hexa(id3v2_size, "ID3v2");
     }
@@ -223,12 +223,28 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
 
     fa.Element_Begin("MPEG Audio");
 
-    // If the first frame is an Xing/Info/VBRI info frame, skip it and
-    // re-parse the next frame for audio params.
-    let first_frame_bytes = fa.peek_raw(first_header.frame_size as usize);
-    let is_info_frame = first_frame_bytes
-        .map(|b| looks_like_info_frame(b, first_header.version, first_header.channel_mode))
-        .unwrap_or(false);
+    // Read the first frame (info frame, if present) up front so we can
+    // capture the magic + Xing/LAME fields without holding a borrow of
+    // `fa` through the later mutable calls.
+    let first_frame_owned: Option<Vec<u8>> = fa
+        .peek_raw(first_header.frame_size as usize)
+        .map(|b| b.to_vec());
+    let info_magic: Option<[u8; 4]> = first_frame_owned.as_ref().and_then(|b| {
+        let off = info_magic_offset(first_header.version, first_header.channel_mode);
+        if b.len() >= off + 4 {
+            Some([b[off], b[off + 1], b[off + 2], b[off + 3]])
+        } else {
+            None
+        }
+    });
+    let is_info_frame = matches!(info_magic, Some(m) if &m == b"Xing" || &m == b"Info" || &m == b"VBRI");
+    // LAME tag's nominal bitrate (1 byte at offset 20 from LAME magic,
+    // which sits ~36 bytes after Xing/Info magic when all 4 flags set).
+    // Also encoder delay+padding (3 bytes packed: 12 bits each).
+    let (xing_nominal_bitrate, xing_delay, xing_padding) = first_frame_owned
+        .as_ref()
+        .map(|b| parse_xing_lame(b, first_header.version, first_header.channel_mode))
+        .unwrap_or((None, None, None));
 
     // Extract the LAME encoder string ("LAME3.100"). Search up to the
     // first 32 KiB of the post-ID3v2 region: libmp3lame stamps the
@@ -271,9 +287,15 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
         audio_frame_header = first_header;
     }
 
-    // Walk frames to count them.
-    let (frame_count, audio_bytes) = scan_frames(fa, audio_frame_start);
+    // Walk frames to count them + detect VBR.
+    let (frame_count, audio_bytes, is_vbr_frames) = scan_frames(fa, audio_frame_start);
     fa.Element_End();
+
+    // Xing magic = VBR header; Info magic = CBR-LAME header. VBRI also
+    // = VBR. Treat the file as VBR if either the header says so OR
+    // per-frame bitrates vary.
+    let xing_says_vbr = matches!(info_magic, Some(m) if &m == b"Xing" || &m == b"VBRI");
+    let is_vbr = is_vbr_frames || xing_says_vbr;
 
     fill_streams(
         fa,
@@ -283,31 +305,289 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
         is_info_frame,
         id3v2_size,
         lame_version.as_deref(),
+        is_vbr,
+        xing_nominal_bitrate,
+        xing_delay,
+        xing_padding,
     );
     true
 }
 
-fn detect_id3v2(fa: &mut FileAnalyze) -> usize {
-    let bytes = fa.peek_raw(10);
-    let Some(b) = bytes else { return 0 };
-    if &b[0..3] != b"ID3" {
-        return 0;
+/// Parse Xing/LAME fields from the info frame. Returns
+/// (nominal_bitrate_kbps, encoder_delay_samples, encoder_padding_samples).
+fn parse_xing_lame(
+    frame: &[u8],
+    version: u8,
+    channel_mode: u8,
+) -> (Option<u16>, Option<u32>, Option<u32>) {
+    let magic_off = info_magic_offset(version, channel_mode);
+    if frame.len() < magic_off + 8 {
+        return (None, None, None);
     }
-    // Bytes 6..10 = syncsafe size: each byte's top bit is 0; lower 7
-    // bits significant. Total tag size = 10 (header) + size_bytes.
-    let size = ((b[6] as usize) << 21)
-        | ((b[7] as usize) << 14)
-        | ((b[8] as usize) << 7)
-        | (b[9] as usize);
-    10 + size
+    let magic = &frame[magic_off..magic_off + 4];
+    let flags = u32::from_be_bytes([
+        frame[magic_off + 4],
+        frame[magic_off + 5],
+        frame[magic_off + 6],
+        frame[magic_off + 7],
+    ]);
+    if magic != b"Xing" && magic != b"Info" {
+        return (None, None, None);
+    }
+    // Walk past optional Xing fields to reach the LAME tag.
+    let mut p = magic_off + 8;
+    if (flags & 0x1) != 0 {
+        p += 4; // frames
+    }
+    if (flags & 0x2) != 0 {
+        p += 4; // bytes
+    }
+    if (flags & 0x4) != 0 {
+        p += 100; // TOC
+    }
+    if (flags & 0x8) != 0 {
+        p += 4; // quality
+    }
+    // LAME tag starts at `p`: 9 bytes encoder string, then a 36-byte
+    // structure. Nominal bitrate = byte 20, delay/padding = bytes 21..24.
+    if p + 24 > frame.len() {
+        return (None, None, None);
+    }
+    let nominal_kbps = frame[p + 9 + 11] as u16; // p + 20
+    let dp_byte0 = frame[p + 9 + 12] as u32;
+    let dp_byte1 = frame[p + 9 + 13] as u32;
+    let dp_byte2 = frame[p + 9 + 14] as u32;
+    // delay = high 12 bits across bytes [0]+[1high4], padding = low 12 bits.
+    let delay = (dp_byte0 << 4) | (dp_byte1 >> 4);
+    let padding = ((dp_byte1 & 0x0F) << 8) | dp_byte2;
+    (
+        if nominal_kbps > 0 { Some(nominal_kbps) } else { None },
+        Some(delay),
+        Some(padding),
+    )
+}
+
+#[derive(Default, Debug)]
+struct Id3Metadata {
+    /// COMM (Comments) frame content — typically free-form text, e.g.
+    /// Suno embeds JSON-ish provenance ("made with suno; created=...").
+    comment: Option<String>,
+    /// TIT2 (Title) frame.
+    title: Option<String>,
+    /// TPE1 (Performer) frame.
+    performer: Option<String>,
+    /// TALB (Album) frame.
+    album: Option<String>,
+    /// TRCK (Track number) frame.
+    track: Option<String>,
+    /// TCON (Genre) frame.
+    genre: Option<String>,
+    /// TDRC / TYER (Year / Recording time) frame.
+    year: Option<String>,
+}
+
+/// Parse the ID3v2 tag at the current position. Returns the total tag
+/// size in bytes (header + payload) and any recognised frame values.
+/// When the file isn't ID3v2 the size is zero and metadata is None.
+fn parse_id3v2(fa: &mut FileAnalyze) -> (usize, Option<Id3Metadata>) {
+    let header = fa.peek_raw(10);
+    let Some(h) = header else { return (0, None) };
+    if &h[0..3] != b"ID3" {
+        return (0, None);
+    }
+    let major = h[3];
+    let _minor = h[4];
+    let flags = h[5];
+    // Syncsafe size: 7 bits per byte, no high bit. Payload size only —
+    // total tag = 10-byte header + size.
+    let payload_size = ((h[6] as usize) << 21)
+        | ((h[7] as usize) << 14)
+        | ((h[8] as usize) << 7)
+        | (h[9] as usize);
+    let total_size = 10 + payload_size;
+
+    // Read the whole tag for frame walking. We won't consume the bytes
+    // from `fa` here — the caller still does Skip_Hexa(total_size) after.
+    let full = match fa.peek_raw(total_size) {
+        Some(b) if b.len() == total_size => b.to_vec(),
+        _ => return (total_size, None),
+    };
+
+    // Extended-header bytes follow the main header when the flag is set.
+    // Skip them — we don't use their content.
+    let mut p = 10usize;
+    if (flags & 0x40) != 0 && p + 4 <= full.len() {
+        let ext_sz = ((full[p] as usize) << 21)
+            | ((full[p + 1] as usize) << 14)
+            | ((full[p + 2] as usize) << 7)
+            | (full[p + 3] as usize);
+        // ID3v2.4 ext header size includes its own 4 bytes; ID3v2.3 doesn't.
+        p += if major >= 4 { ext_sz } else { 4 + ext_sz };
+    }
+
+    let mut md = Id3Metadata::default();
+    // ID3v2.2 used 3-char frame IDs + 3-byte sizes; v2.3+ use 4-char IDs
+    // + 4-byte sizes. We only handle v2.3 and v2.4 (the common cases).
+    let frame_id_len = if major >= 3 { 4 } else { 3 };
+    let frame_hdr_len = if major >= 3 { 10 } else { 6 };
+    while p + frame_hdr_len <= full.len() {
+        // A frame ID starting with 0x00 marks padding — stop.
+        if full[p] == 0 {
+            break;
+        }
+        let id_bytes = &full[p..p + frame_id_len];
+        let id = std::str::from_utf8(id_bytes).unwrap_or("").to_owned();
+        let size_pos = p + frame_id_len;
+        let frame_size = if major >= 4 {
+            // ID3v2.4: syncsafe 4-byte size.
+            ((full[size_pos] as usize) << 21)
+                | ((full[size_pos + 1] as usize) << 14)
+                | ((full[size_pos + 2] as usize) << 7)
+                | (full[size_pos + 3] as usize)
+        } else if major == 3 {
+            // ID3v2.3: plain 4-byte BE size.
+            ((full[size_pos] as usize) << 24)
+                | ((full[size_pos + 1] as usize) << 16)
+                | ((full[size_pos + 2] as usize) << 8)
+                | (full[size_pos + 3] as usize)
+        } else {
+            // ID3v2.2: 3-byte BE size.
+            ((full[size_pos] as usize) << 16)
+                | ((full[size_pos + 1] as usize) << 8)
+                | (full[size_pos + 2] as usize)
+        };
+        let body_pos = p + frame_hdr_len;
+        if body_pos + frame_size > full.len() {
+            break;
+        }
+        let body = &full[body_pos..body_pos + frame_size];
+        let value = decode_text_frame(id.as_str(), body);
+        match id.as_str() {
+            "COMM" | "COM" => {
+                if md.comment.is_none() { md.comment = value; }
+            }
+            "TIT2" | "TT2" => {
+                if md.title.is_none() { md.title = value; }
+            }
+            "TPE1" | "TP1" => {
+                if md.performer.is_none() { md.performer = value; }
+            }
+            "TALB" | "TAL" => {
+                if md.album.is_none() { md.album = value; }
+            }
+            "TRCK" | "TRK" => {
+                if md.track.is_none() { md.track = value; }
+            }
+            "TCON" | "TCO" => {
+                if md.genre.is_none() { md.genre = value; }
+            }
+            "TDRC" | "TYER" | "TYE" => {
+                if md.year.is_none() { md.year = value; }
+            }
+            _ => {}
+        }
+        p = body_pos + frame_size;
+    }
+    (total_size, Some(md))
+}
+
+/// Decode a text-frame body. Layout: 1-byte encoding + bytes.
+/// Encoding: 0=ISO-8859-1, 1=UTF-16 with BOM, 2=UTF-16BE (v2.4),
+/// 3=UTF-8 (v2.4). COMM/COM frames add 3-byte language + null-terminated
+/// short description before the actual text.
+fn decode_text_frame(id: &str, body: &[u8]) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let encoding = body[0];
+    let mut p = 1usize;
+    // COMM/COM: skip 3 language bytes + null-terminated description.
+    if id == "COMM" || id == "COM" {
+        if p + 3 > body.len() {
+            return None;
+        }
+        p += 3;
+        // Find null terminator for description (1 or 2 bytes per char
+        // depending on encoding). For our purposes a single 0x00 byte
+        // is good enough for the simple case; multi-byte encodings
+        // would require pair search.
+        match encoding {
+            1 | 2 => {
+                // 2-byte 0x0000 terminator
+                while p + 1 < body.len() {
+                    if body[p] == 0 && body[p + 1] == 0 {
+                        p += 2;
+                        break;
+                    }
+                    p += 1;
+                }
+            }
+            _ => {
+                while p < body.len() && body[p] != 0 {
+                    p += 1;
+                }
+                if p < body.len() {
+                    p += 1;
+                }
+            }
+        }
+    }
+    let text = &body[p..];
+    decode_text_with_encoding(encoding, text)
+}
+
+fn decode_text_with_encoding(encoding: u8, bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let s = match encoding {
+        // ISO-8859-1
+        0 => bytes.iter().map(|&b| b as char).collect::<String>(),
+        // UTF-16 with BOM
+        1 => {
+            if bytes.len() < 2 {
+                return None;
+            }
+            let (le, payload) = match (bytes[0], bytes[1]) {
+                (0xFF, 0xFE) => (true, &bytes[2..]),
+                (0xFE, 0xFF) => (false, &bytes[2..]),
+                _ => (false, bytes),
+            };
+            let u16s: Vec<u16> = payload
+                .chunks_exact(2)
+                .map(|c| {
+                    if le {
+                        u16::from_le_bytes([c[0], c[1]])
+                    } else {
+                        u16::from_be_bytes([c[0], c[1]])
+                    }
+                })
+                .collect();
+            String::from_utf16_lossy(&u16s)
+        }
+        // UTF-16BE (v2.4)
+        2 => {
+            let u16s: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16_lossy(&u16s)
+        }
+        // UTF-8 (v2.4)
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    };
+    let trimmed = s.trim_end_matches('\0').trim().to_owned();
+    if trimmed.is_empty() { None } else { Some(trimmed) }
 }
 
 
 /// Scan frames sequentially from the current position, returning
-/// (frame_count, total_bytes_consumed). Stops at the first unparseable
-/// frame or end of buffer.
-fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64) {
+/// (frame_count, total_bytes_consumed, is_vbr). VBR is detected by
+/// observing any per-frame bitrate change vs. the first frame.
+fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64, bool) {
     let mut frame_count: u32 = 0;
+    let mut first_bitrate: Option<u16> = None;
+    let mut is_vbr = false;
     let starting_remain = fa.Remain();
     loop {
         let header_bytes = fa.peek_raw(4);
@@ -320,12 +600,19 @@ fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64) {
         if h.frame_size == 0 || fa.Remain() < h.frame_size as usize {
             break;
         }
+        if let Some(fb) = first_bitrate {
+            if h.bitrate_kbps != fb {
+                is_vbr = true;
+            }
+        } else {
+            first_bitrate = Some(h.bitrate_kbps);
+        }
         fa.Skip_Hexa(h.frame_size as usize, "Frame");
         frame_count += 1;
     }
     let consumed = starting_remain.saturating_sub(fa.Remain()) as u64;
     let _ = audio_frame_start;
-    (frame_count, consumed)
+    (frame_count, consumed, is_vbr)
 }
 
 fn fill_streams(
@@ -336,6 +623,10 @@ fn fill_streams(
     had_info_frame: bool,
     id3v2_size: usize,
     lame_version: Option<&str>,
+    is_vbr: bool,
+    xing_nominal_kbps: Option<u16>,
+    xing_delay: Option<u32>,
+    xing_padding: Option<u32>,
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG Audio", false);
@@ -368,8 +659,30 @@ fn fill_streams(
             fa.Fill(StreamKind::Audio, 0, "Format_Settings_ModeExtension", ext, false);
         }
     }
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    let bitrate_bps = (h.bitrate_kbps as u32) * 1000;
+    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", if is_vbr { "VBR" } else { "CBR" }, false);
+    // BitRate selection:
+    //   CBR: use the (constant) frame bitrate.
+    //   VBR: prefer the Xing/LAME nominal-bitrate byte (matches oracle
+    //   exactly for LAME-encoded files); fall back to a computed average
+    //   when LAME isn't present.
+    let bitrate_bps: u32 = if is_vbr {
+        if let Some(nom) = xing_nominal_kbps {
+            nom as u32 * 1000
+        } else if audio_frame_count > 0 && h.sample_rate > 0 {
+            let frames = audio_frame_count as u64;
+            let dur_sec = (frames * h.samples_per_frame as u64) as f64 / h.sample_rate as f64;
+            if dur_sec > 0.0 {
+                let avg = (audio_bytes_consumed as f64 * 8.0 / dur_sec).round() as u32;
+                ((avg + 500) / 1000) * 1000
+            } else {
+                (h.bitrate_kbps as u32) * 1000
+            }
+        } else {
+            (h.bitrate_kbps as u32) * 1000
+        }
+    } else {
+        (h.bitrate_kbps as u32) * 1000
+    };
     fa.Fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
     fa.Fill(
         StreamKind::Audio,
@@ -381,9 +694,12 @@ fn fill_streams(
     fa.Fill(StreamKind::Audio, 0, "SamplesPerFrame", h.samples_per_frame.to_string(), false);
     fa.Fill(StreamKind::Audio, 0, "SamplingRate", h.sample_rate.to_string(), false);
 
-    // SamplingCount counts ALL frames including the info frame's nominal
-    // samples — matches oracle.
-    let total_frame_count = audio_frame_count + had_info_frame as u32;
+    // VBR (Xing/VBRI): info frame is a TOC carrier with no audio samples,
+    // so it doesn't count toward SamplingCount/FrameCount.
+    // CBR (Info magic): oracle includes the info frame's nominal samples
+    // in the count.
+    let info_frame_addend = if had_info_frame && !is_vbr { 1 } else { 0 };
+    let total_frame_count = audio_frame_count + info_frame_addend;
     let sampling_count = (total_frame_count as u64) * (h.samples_per_frame as u64);
     if sampling_count > 0 {
         fa.Fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
