@@ -27,22 +27,6 @@ Complete format catalog with spec references: **[docs/formats.md](docs/formats.m
 
 Complete field coverage with sources: **[docs/field_coverage.md](docs/field_coverage.md)**
 
-### Deep codec analysis
-
-- **AV1:** Profile-derived bit depth (0=8-bit, 1=10-bit, 2=12-bit) and chroma subsampling (0-1=4:2:0, 2=4:2:2). OBU sequence header parsing for frame dimensions, level from operating point. Container support via avcC-style config in MP4/WebM.
-- **AVC/H.264:** Full SPS VUI (colour primaries/transfer/matrix, aspect ratio, chroma sample location, video full range), EncoderInfo with name/version/settings extraction from x264/x265 SEI, GOP detection (M=X, N=Y)
-- **HEVC/H.265:** Full SPS VUI, HDR10 mastering display colour volume SEI (primaries, white point, luminance), content light level SEI (MaxCLL/MaxFALL), x265 encoder string extraction
-- **Dolby Vision:** dvcC/dvvC configuration box parsing in MP4, codec ID recognition in MKV, standalone XML metadata parser, HDR format profile/level extraction
-
-### Computed fields (post-parse)
-- **Bits_Pixel_Frame** — computed from BitRate / (Width × Height × FrameRate)
-- **Compression_Ratio** — computed from uncompressed size / StreamSize
-- **FrameRate_Mode_Original** — preserved from original frame rate mode
-- **BufferSize** — filled from MPEG-4 esds DecoderConfigDescriptor
-- **ReplayGain** — extracted from LAME Gaia + ID3v2 RVA2/TXXX frames
-- **BitRate_Maximum / BitRate_Minimum / OverallBitRate_Maximum / OverallBitRate_Minimum** — from container hints + post-parse aggregation
-- **Format_Profile** (General) — "Base Media / Version 2" labels from ftyp
-
 ### Output formatters
 
 - XML (byte-equal with MediaInfoLib oracle)
@@ -54,7 +38,7 @@ Complete field coverage with sources: **[docs/field_coverage.md](docs/field_cove
 
 - `revelio-cdylib`: `MediaInfo_New/Open/Close/Inform/Get/Count_Get/Option` entry points
 - `revelio-reader`: File, Directory, HTTP, MMS reader layer
-- `revelio-core`: SMPTE timecode parser (DF/NDF, ms conversion), demux/event framework (4-level bitmask, ContentType enum, DemuxState), trace system (Tree/CSV/XML/MicroXml renderers), channel splitting (SMPTE ST 337 AES3 deinterleaving), channel grouping (mono→stereo interleaving), IBI seek table builder, MIME type mapping (40+ container+codec entries), field/interlacement tracker (TFF/BFF/Progressive/PsF), reference file tracker (multi-file BDMV/SMPTE packages), computed_fields (post-parse Bits_Pixel_Frame, Compression_Ratio, FrameRate_Mode_Original, BitRate ranges, Format_Profile), replay_gain (LAME Gaia + ID3v2 RVA2/TXXX extraction)
+- `revelio-core`: full infrastructure layer — see [field_coverage.md](docs/field_coverage.md) for the 185-field catalog
 - `revelio-export`: 10 output formatters total
 
 ## Building
