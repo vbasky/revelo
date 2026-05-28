@@ -4,13 +4,13 @@ use std::path::Path;
 use std::process::{Command, ExitCode};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use mediainfo_core::{FileAnalyze, StreamKind};
-use mediainfo_export::to_xml;
-use mediainfo_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr, parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker, parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau, parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk};
-use mediainfo_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf, parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm, parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv, parse_xdcam_clip};
-use mediainfo_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle, parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs, parse_sub_rip, parse_ttml};
-use mediainfo_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
-use mediainfo_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9, parse_y4m, parse_vc1, parse_mpeg2};
+use revelio_core::{FileAnalyze, StreamKind};
+use revelio_export::to_xml;
+use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr, parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker, parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau, parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk};
+use revelio_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf, parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm, parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv, parse_xdcam_clip};
+use revelio_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle, parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs, parse_sub_rip, parse_ttml};
+use revelio_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
+use revelio_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9, parse_y4m, parse_vc1, parse_mpeg2};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();

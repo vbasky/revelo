@@ -1,60 +1,40 @@
-# MediaInfo Rust Engine — Port Plan
+# revelio
 
-A behavior-equivalent Rust port of the MediaInfoLib engine. Goal is capability
-parity with the C++ engine, validated by differential testing against the
-existing `mediainfo` CLI. Idiomaticity is not a goal — transliteration is
-acceptable.
+A Rust library and CLI for reading technical metadata from media files —
+containers (MP4, MKV, MPEG-TS, AVI, …), audio codecs, video codecs, image
+formats, and subtitle streams.
+
+Built as a port of MediaInfoLib, validated by differential testing against the
+C++ `mediainfo` CLI.
 
 ## Status
 
-Phase 0 — differential test harness only. No engine code yet.
+114 parsers registered and wired through the diff harness:
 
-## Strategy
-
-1. **Differential harness first.** Treat the installed C++ `mediainfo` binary as
-   the oracle. Every parser, every output formatter is "done" when its output
-   matches the oracle's at schema level (not byte-for-byte string equality).
-2. **Transliteration over re-architecture.** Mirror the C++ class hierarchy.
-   `Box<dyn Trait>` for virtuals, `unsafe` and raw pointers where ownership
-   doesn't fit Rust's model, `macro_rules!` for MediaInfoLib's macro-heavy
-   parser idiom (`Get_B4`, `Skip_XX`, `Element_Begin`, etc.).
-3. **ZenLib first, then `File__Analyze`, then parsers.** Nothing else builds
-   without the foundational types. Parsers ported in test-coverage priority:
-   containers → audio codecs → video codecs → long tail.
-4. **C ABI shim last.** Once the engine works, expose a `cdylib` matching the
-   `MediaInfo_*` C entry points so downstream tooling can swap implementations.
-
-## Planned crates
-
-| Crate | Purpose | Status |
+| Category | Formats | Coverage |
 |---|---|---|
-| `diff-harness` | Drives differential testing against the C++ oracle | scaffolded |
-| `zenlib` | Transliteration of ZenLib (`Ztring`, `File`, `BitStream`, etc.) | not started |
-| `mediainfo-core` | `File__Analyze` infrastructure, stream model, config, events | not started |
-| `mediainfo-parsers-container` | MP4, MKV, MPEG-TS, AVI, MPEG-PS, FLV, etc. | not started |
-| `mediainfo-parsers-audio` | AAC, AC3, DTS, FLAC, MP3, Opus, etc. | not started |
-| `mediainfo-parsers-video` | AVC, HEVC, AV1, VC1, MPEG-2, ProRes, etc. | not started |
-| `mediainfo-export` | XML, JSON, Text, EBUCore, MPEG-7 formatters | not started |
-| `mediainfo-cdylib` | C ABI shim exposing `MediaInfo_*` entry points | not started |
+| Containers | 42 | 98% |
+| Audio | 33 | 57% |
+| Video | 12 | 39% |
+| Image | 18 | 100% |
+| Text/Subtitles | 12 | 60% |
+
+Many parsers are byte-equal with the C++ oracle. Remaining work: archive (Zip,
+Rar, 7z, …), tag (ID3, EXIF, XMP, …), reader layer, full export formatters
+(EBUCore, MPEG-7, JSON), and the C ABI shim.
 
 ## Building
 
 ```sh
-cd rust-engine
 cargo build --release
 ```
 
-## Running the harness
+## Running
 
 ```sh
-# Diff against the installed C++ mediainfo binary
+# differential test harness against installed mediainfo CLI
 cargo run -p diff-harness -- /path/to/media-file.mp4
+
+# standalone CLI
+cargo run -p revelio-cli -- --json /path/to/media-file.mp4
 ```
-
-Until a Rust engine exists, the harness only prints the C++ output. Once
-`mediainfo-core` is wired up, the harness will run both engines and diff their
-XML output.
-
-## Reference
-
-The C++ engine lives in a sibling repo: `../../MediaInfoLib`.

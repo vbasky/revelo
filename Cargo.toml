@@ -2,21 +2,21 @@
 resolver = "3"
 members = [
     "crates/diff-harness",
-    "crates/mediainfo-cli",
-    "crates/mediainfo-core",
-    "crates/mediainfo-export",
-    "crates/mediainfo-parsers-audio",
-    "crates/mediainfo-parsers-container",
-    "crates/mediainfo-parsers-image",
-    "crates/mediainfo-parsers-text",
-    "crates/mediainfo-parsers-video",
+    "crates/revelio-cli",
+    "crates/revelio-core",
+    "crates/revelio-export",
+    "crates/revelio-parsers-audio",
+    "crates/revelio-parsers-container",
+    "crates/revelio-parsers-image",
+    "crates/revelio-parsers-text",
+    "crates/revelio-parsers-video",
     "crates/zenlib",
 ]
 
 [workspace.package]
 edition = "2024"
 license = "BSD-2-Clause"
-repository = "https://github.com/MediaArea/MediaInfo"
+repository = "https://github.com/vbasky/revelio"
 
 [profile.release]
 lto = "thin"
