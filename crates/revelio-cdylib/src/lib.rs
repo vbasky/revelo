@@ -2,6 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 
 use revelio_core::{FileAnalyze, StreamCollection, StreamKind};
+use revelio_dispatcher::table;
 use revelio_export::to_text;
 
 pub struct MediaInfoHandle {
@@ -39,7 +40,7 @@ pub unsafe extern "C" fn MediaInfo_Open(
         Err(_) => return 0,
     };
 
-    let parsers: [fn(&mut FileAnalyze) -> bool; 124] = build_parser_table();
+    let parsers = table();
     for parser in parsers {
         let mut fa = FileAnalyze::new(&bytes);
         if parser(&mut fa) {
@@ -175,33 +176,3 @@ fn c_int_to_stream_kind(val: c_int) -> Option<StreamKind> {
     }
 }
 
-fn build_parser_table() -> [fn(&mut FileAnalyze) -> bool; 124] {
-    use revelio_parsers_audio::*;
-    use revelio_parsers_container::*;
-    use revelio_parsers_image::*;
-    use revelio_parsers_text::*;
-    use revelio_parsers_video::*;
-
-    [
-        parse_wav, parse_avi, parse_cdxa, parse_amv, parse_webp, parse_aiff, parse_flac,
-        parse_dsdiff, parse_caf, parse_mp4, parse_mkv, parse_ogg, parse_mpeg_ts, parse_mpeg_ps,
-        parse_swf, parse_skm, parse_dpg, parse_hds_f4m, parse_hls, parse_dash_mpd, parse_dcp_am,
-        parse_dcp_cpl, parse_ibi, parse_dxw, parse_aaf, parse_mxf, parse_bdmv, parse_dvdv,
-        parse_dv_dif, parse_flv, parse_lxf, parse_nut, parse_wm, parse_wtv, parse_rm, parse_ivf,
-        parse_ism, parse_mi_xml, parse_p2_clip, parse_xdcam_clip, parse_sequence_info, parse_ptx,
-        parse_nsv, parse_pmp, parse_gxf, parse_cdp, parse_pgs, parse_dvb_subtitle,
-        parse_arib_std_b24_b37, parse_kate, parse_cmml, parse_ttml, parse_n19, parse_sub_rip,
-        parse_other_text, parse_dsf, parse_png, parse_jpeg, parse_bmp, parse_gif, parse_tiff,
-        parse_ico, parse_psd, parse_dpx, parse_dds, parse_exr, parse_bpg, parse_pcx,
-        parse_arriraw, parse_amiga_icon, parse_y4m, parse_vc1, parse_mpeg2, parse_av1, parse_avc,
-        parse_hevc, parse_vp8, parse_vp9, parse_theora, parse_ac3, parse_ac4, parse_dts,
-        parse_dts_uhd, parse_aac_adts, parse_iab, parse_iamf, parse_als, parse_ape, parse_au,
-        parse_amr, parse_speex, parse_mpc, parse_la, parse_tak, parse_tta, parse_wvpk,
-        parse_twin_vq, parse_extended_module, parse_dat, parse_rkau, parse_aptx100, parse_open_mg,
-        parse_midi, parse_module, parse_impulse_tracker, parse_scream_tracker3, parse_mp3,
-        parse_tga, parse_gain_map, parse_rle, parse_adpcm, parse_eia608, parse_eia708, parse_vbi,
-        parse_vvc, parse_prores, parse_vc3, parse_dolby_vision,
-        parse_opus, parse_vorbis, parse_usac,
-        parse_teletext, parse_scc, parse_timed_text,
-    ]
-}

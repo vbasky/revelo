@@ -32,7 +32,9 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
     }
 
     let file_size = fa.remain();
-    let Some(fb_slice) = fa.peek_raw(8) else { return false };
+    let Some(fb_slice) = fa.peek_raw(8) else {
+        return false;
+    };
     if fb_slice.len() < 8 {
         return false;
     }
@@ -138,8 +140,7 @@ fn parse_eac3(fa: &mut FileAnalyze, file_size: usize, fb: &[u8; 8]) -> bool {
     let samples_per_frame = 256 * numblks;
     // CBR bitrate from the per-frame word count: (frmsiz+1) 16-bit words.
     let bytes_per_frame = ((frmsiz + 1) * 2) as u64;
-    let bitrate_bps =
-        (bytes_per_frame * 8 * sample_rate as u64 / samples_per_frame as u64) as u32;
+    let bitrate_bps = (bytes_per_frame * 8 * sample_rate as u64 / samples_per_frame as u64) as u32;
 
     let channels = channel_count(acmod, lfeon);
     let channel_layout = channel_layout(acmod);
@@ -216,22 +217,64 @@ fn fill_streams(
 ) {
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", format, false);
-    fa.fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
+    fa.fill(
+        StreamKind::General,
+        0,
+        "Format_Commercial_IfAny",
+        commercial,
+        false,
+    );
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
     fa.stream_prepare(StreamKind::Audio);
     fa.fill(StreamKind::Audio, 0, "Format", format, false);
-    fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "Format_Commercial_IfAny",
+        commercial,
+        false,
+    );
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "Format_Settings_Endianness",
+        "Big",
+        false,
+    );
     fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "BitRate",
+        bitrate_bps.to_string(),
+        false,
+    );
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "Channels",
+        channels.to_string(),
+        false,
+    );
     if let Some((p, l)) = channel_layout {
         fa.fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
         fa.fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
     }
-    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "SamplesPerFrame",
+        samples_per_frame.to_string(),
+        false,
+    );
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "SamplingRate",
+        sample_rate.to_string(),
+        false,
+    );
 
     // MediaInfo derives the time/size fields in a chain rooted at a
     // millisecond Duration: Duration_ms = round(file_size·8000 / BitRate),
@@ -242,33 +285,73 @@ fn fill_streams(
     // up a few bytes off the file size — which is exactly what the oracle
     // reports. FrameCount stays size/frame_bytes.
     if sample_rate > 0 && bitrate_bps > 0 {
-        let frame_bytes = (bitrate_bps as u64) * samples_per_frame as u64 / (8 * sample_rate as u64);
+        let frame_bytes =
+            (bitrate_bps as u64) * samples_per_frame as u64 / (8 * sample_rate as u64);
         if frame_bytes > 0 {
             let frame_count = (file_size as u64) / frame_bytes;
-            fa.fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
+            fa.fill(
+                StreamKind::Audio,
+                0,
+                "FrameCount",
+                frame_count.to_string(),
+                false,
+            );
         }
-        let duration_ms =
-            ((file_size as f64) * 8000.0 / (bitrate_bps as f64)).round() as u64;
+        let duration_ms = ((file_size as f64) * 8000.0 / (bitrate_bps as f64)).round() as u64;
         let sampling_count = duration_ms * sample_rate as u64 / 1000;
-        let stream_size =
-            ((duration_ms as f64) * (bitrate_bps as f64) / 8000.0).round() as u64;
-        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        let stream_size = ((duration_ms as f64) * (bitrate_bps as f64) / 8000.0).round() as u64;
+        fa.fill(
+            StreamKind::Audio,
+            0,
+            "SamplingCount",
+            sampling_count.to_string(),
+            false,
+        );
         let frame_rate = (sample_rate as f64) / (samples_per_frame as f64);
-        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(
+            StreamKind::Audio,
+            0,
+            "FrameRate",
+            format!("{:.3}", frame_rate),
+            false,
+        );
+        fa.fill(
+            StreamKind::Audio,
+            0,
+            "Duration",
+            duration_ms.to_string(),
+            false,
+        );
         fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.fill(
+            StreamKind::Audio,
+            0,
+            "StreamSize",
+            stream_size.to_string(),
+            false,
+        );
         // General StreamSize = container overhead = file_size − elementary.
         // Only emitted when non-negative (the oracle omits it when the
         // derived StreamSize already exceeds the file, as for E-AC-3).
         if stream_size <= file_size as u64 {
-            fa.fill(StreamKind::General, 0, "StreamSize",
-                (file_size as u64 - stream_size).to_string(), true);
+            fa.fill(
+                StreamKind::General,
+                0,
+                "StreamSize",
+                (file_size as u64 - stream_size).to_string(),
+                true,
+            );
         }
         return fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
     }
     fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "StreamSize",
+        file_size.to_string(),
+        false,
+    );
     fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
 }
 
@@ -280,8 +363,18 @@ fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8,
     // dialnorm stored as the encoded 5-bit value, displayed as a
     // negative dBFS level.
     fa.fill(StreamKind::Audio, 0, "bsid", bsid.to_string(), false);
-    let dialnorm_display = if dialnorm == 0 { -31i32 } else { -(dialnorm as i32) };
-    fa.fill(StreamKind::Audio, 0, "dialnorm", dialnorm_display.to_string(), false);
+    let dialnorm_display = if dialnorm == 0 {
+        -31i32
+    } else {
+        -(dialnorm as i32)
+    };
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "dialnorm",
+        dialnorm_display.to_string(),
+        false,
+    );
     // dsurmod (Dolby Surround mode) is only present in the bitstream for
     // 2/0 stereo (acmod==2); the oracle omits it otherwise.
     if acmod == 0x02 {
@@ -289,8 +382,20 @@ fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8,
     }
     fa.fill(StreamKind::Audio, 0, "acmod", acmod.to_string(), false);
     fa.fill(StreamKind::Audio, 0, "lfeon", lfeon.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "dialnorm_Average", dialnorm_display.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "dialnorm_Minimum", dialnorm_display.to_string(), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "dialnorm_Average",
+        dialnorm_display.to_string(),
+        false,
+    );
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "dialnorm_Minimum",
+        dialnorm_display.to_string(),
+        false,
+    );
 }
 
 #[cfg(test)]

@@ -16,19 +16,19 @@ mod zenlib_re_export;
 
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;
-pub use file_level::{fill_file_level_fields, FileLevelInfo};
+pub use file_level::{FileLevelInfo, fill_file_level_fields};
 pub use stream::{Stream, StreamCollection, StreamKind};
 
-pub mod timecode;
+pub mod channel_grouping;
+pub mod channel_splitting;
 pub mod events;
 pub mod ibi;
-pub mod mime;
-pub mod channel_splitting;
-pub mod channel_grouping;
 pub mod interlacement;
+pub mod mime;
+pub mod timecode;
 /// Container-level reference file tracker.
 pub mod reference {
-    
+
     pub struct ReferenceFile {
         pub path: String,
         pub format: &'static str,
@@ -38,15 +38,25 @@ pub mod reference {
         pub files: Vec<ReferenceFile>,
     }
     impl ReferenceTracker {
-        pub fn new() -> Self { Self { files: Vec::new() } }
-        pub fn add(&mut self, path: &str, format: &'static str, stream_id: u64) {
-            self.files.push(ReferenceFile { path: path.to_string(), format, stream_id });
+        pub fn new() -> Self {
+            Self { files: Vec::new() }
         }
-        pub fn count(&self) -> usize { self.files.len() }
+        pub fn add(&mut self, path: &str, format: &'static str, stream_id: u64) {
+            self.files.push(ReferenceFile {
+                path: path.to_string(),
+                format,
+                stream_id,
+            });
+        }
+        pub fn count(&self) -> usize {
+            self.files.len()
+        }
     }
-    #[cfg(test)] mod tests {
+    #[cfg(test)]
+    mod tests {
         use super::*;
-        #[test] fn test_ref() {
+        #[test]
+        fn test_ref() {
             let mut t = ReferenceTracker::new();
             t.add("extra.m2ts", "BDAV", 0x1011);
             assert_eq!(t.count(), 1);
@@ -54,5 +64,6 @@ pub mod reference {
     }
 }
 pub mod computed_fields;
+pub mod data_helpers;
 pub mod config;
 pub mod multi_file;

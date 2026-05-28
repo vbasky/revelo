@@ -11,12 +11,7 @@ name = "revelio"
 path = "src/main.rs"
 
 [dependencies]
+revelio-dispatcher = { path = "../revelio-dispatcher" }
 revelio-core = { path = "../revelio-core" }
 revelio-export = { path = "../revelio-export" }
-revelio-parsers-archive = { path = "../revelio-parsers-archive" }
-revelio-parsers-audio = { path = "../revelio-parsers-audio" }
-revelio-parsers-container = { path = "../revelio-parsers-container" }
-revelio-parsers-image = { path = "../revelio-parsers-image" }
-revelio-parsers-text = { path = "../revelio-parsers-text" }
-revelio-parsers-video = { path = "../revelio-parsers-video" }
 zenlib = { path = "../zenlib" }

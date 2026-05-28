@@ -27,7 +27,7 @@
 //!     4 bytes LE: reserved
 //!   "data" chunk: 4 bytes magic + 8 bytes LE size + sample bytes
 
-use revelio_core::{FileAnalyze, StreamKind};
+use revelio_core::{FileAnalyze, StreamKind, data_helpers};
 
 const DSF_CHANNEL_POSITIONS: [&str; 8] = [
     "",
@@ -65,8 +65,8 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     }
 
     // DSD chunk fields at offsets 4, 12, 20.
-    let dsd_chunk_size = u64::from_le_bytes(h[4..12].try_into().unwrap());
-    let total_file_size = u64::from_le_bytes(h[12..20].try_into().unwrap());
+    let dsd_chunk_size = data_helpers::le_u64(&h[4..12]);
+    let total_file_size = data_helpers::le_u64(&h[12..20]);
     // DSD chunk is fixed at 28 bytes.
     if dsd_chunk_size != 28 {
         return false;
@@ -76,17 +76,17 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     if &h[28..32] != b"fmt " {
         return false;
     }
-    let fmt_chunk_size = u64::from_le_bytes(h[32..40].try_into().unwrap());
+    let fmt_chunk_size = data_helpers::le_u64(&h[32..40]);
     if fmt_chunk_size != 52 {
         return false;
     }
-    let format_version = u32::from_le_bytes(h[40..44].try_into().unwrap());
-    let format_id = u32::from_le_bytes(h[44..48].try_into().unwrap());
-    let channel_type = u32::from_le_bytes(h[48..52].try_into().unwrap());
-    let channel_num = u32::from_le_bytes(h[52..56].try_into().unwrap());
-    let sampling_frequency = u32::from_le_bytes(h[56..60].try_into().unwrap());
-    let bits_per_sample = u32::from_le_bytes(h[60..64].try_into().unwrap());
-    let sample_count = u64::from_le_bytes(h[64..72].try_into().unwrap());
+    let format_version = data_helpers::le_u32(&h[40..44]);
+    let format_id = data_helpers::le_u32(&h[44..48]);
+    let channel_type = data_helpers::le_u32(&h[48..52]);
+    let channel_num = data_helpers::le_u32(&h[52..56]);
+    let sampling_frequency = data_helpers::le_u32(&h[56..60]);
+    let bits_per_sample = data_helpers::le_u32(&h[60..64]);
+    let sample_count = data_helpers::le_u64(&h[64..72]);
     // h[72..76] = block_size_per_channel, h[76..80] = reserved (unused).
 
     if sampling_frequency == 0 || channel_num == 0 {
@@ -97,7 +97,7 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     let mut audio_stream_size: u64 = 0;
     if let Some(full) = fa.peek_raw(fa.remain().min(92)) {
         if full.len() >= 92 && &full[80..84] == b"data" {
-            let data_chunk_size = u64::from_le_bytes(full[84..92].try_into().unwrap());
+            let data_chunk_size = data_helpers::le_u64(&full[84..92]);
             // data chunk_size includes the 12-byte chunk header per spec.
             audio_stream_size = data_chunk_size.saturating_sub(12);
         }

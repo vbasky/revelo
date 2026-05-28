@@ -9,32 +9,8 @@ use revelio_core::multi_file::MultiFileLoader;
 use revelio_core::multi_file::find_duplicate_streams;
 use revelio_core::computed_fields::fill_computed_fields;
 use revelio_export::{to_xml, to_text, to_json};
-use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr,
-    parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts,
-    parse_aac,
-    parse_adm, parse_dolby_audio_metadata, parse_pcm_vob, parse_pcm_m2ts, parse_mga,
-    parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker,
-    parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau,
-    parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk, parse_opus, parse_vorbis, parse_usac};
-use revelio_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv,
-    parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dcp_pkl, parse_dpg, parse_dv_dif, parse_dvdv,
-    parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf,
-    parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf,
-    parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm,
-    parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv,
-    parse_xdcam_clip};
-use revelio_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds,
-    parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png,
-    parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
-use revelio_parsers_archive::{parse_zip, parse_rar, parse_7z, parse_tar, parse_gzip, parse_bzip2,
-    parse_iso9660, parse_elf, parse_mach_o, parse_mz_exe, parse_ace};
-use revelio_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle,
-    parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs,
-    parse_pdf, parse_sdp, parse_pac, parse_dtvcc_transport, parse_scte20,
-    parse_sub_rip, parse_ttml, parse_teletext, parse_scc, parse_timed_text};
-use revelio_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9,
-    parse_y4m, parse_vc1, parse_mpeg2, parse_vvc, parse_prores, parse_vc3, parse_dolby_vision,
-    parse_ffv1, parse_h263, parse_mpeg4v};
+use revelio_dispatcher::table;
+
 
 fn main() -> process::ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -78,31 +54,7 @@ fn main() -> process::ExitCode {
         Err(e) => { eprintln!("{path}: {e}"); return process::ExitCode::from(1); }
     };
 
-    let parsers: [fn(&mut FileAnalyze) -> bool; 150] = [
-        parse_wav, parse_avi, parse_cdxa, parse_amv, parse_webp, parse_aiff, parse_flac,
-        parse_dsdiff, parse_caf, parse_mp4, parse_mkv, parse_ogg, parse_mpeg_ts, parse_mpeg_ps,
-        parse_swf, parse_skm, parse_dpg, parse_hds_f4m, parse_hls, parse_dash_mpd, parse_dcp_am,
-        parse_dcp_cpl, parse_dcp_pkl, parse_ibi, parse_dxw, parse_aaf, parse_mxf, parse_bdmv, parse_dvdv,
-        parse_dv_dif, parse_flv, parse_lxf, parse_nut, parse_wm, parse_wtv, parse_rm, parse_ivf,
-        parse_ism, parse_mi_xml, parse_p2_clip, parse_xdcam_clip, parse_sequence_info, parse_ptx,
-        parse_nsv, parse_pmp, parse_gxf, parse_cdp, parse_pgs, parse_dvb_subtitle,
-        parse_arib_std_b24_b37, parse_kate, parse_cmml, parse_ttml, parse_n19, parse_sub_rip,
-        parse_other_text, parse_dsf, parse_png, parse_jpeg, parse_bmp, parse_gif, parse_tiff,
-        parse_ico, parse_psd, parse_dpx, parse_dds, parse_exr, parse_bpg, parse_pcx,
-        parse_arriraw, parse_amiga_icon, parse_y4m, parse_vc1, parse_mpeg2, parse_av1, parse_avc,
-        parse_hevc, parse_vp8, parse_vp9, parse_theora, parse_ffv1, parse_h263, parse_mpeg4v,
-        parse_ac3, parse_ac4, parse_dts, parse_dts_uhd, parse_aac_adts, parse_iab, parse_iamf,
-        parse_als, parse_ape, parse_au, parse_amr, parse_speex, parse_mpc, parse_la, parse_tak,
-        parse_tta, parse_wvpk, parse_twin_vq, parse_extended_module, parse_dat, parse_rkau,
-        parse_aptx100, parse_open_mg, parse_midi, parse_module, parse_impulse_tracker,
-        parse_scream_tracker3, parse_mp3, parse_tga, parse_gain_map, parse_rle, parse_adpcm,
-        parse_adm, parse_dolby_audio_metadata, parse_pcm_vob, parse_pcm_m2ts, parse_mga, parse_aac,
-        parse_pdf, parse_sdp, parse_pac, parse_dtvcc_transport, parse_scte20,
-        parse_eia608, parse_eia708, parse_vbi, parse_vvc, parse_prores, parse_vc3,
-        parse_dolby_vision, parse_opus, parse_vorbis, parse_usac, parse_teletext, parse_scc,
-        parse_timed_text, parse_zip, parse_rar, parse_7z, parse_tar, parse_gzip, parse_bzip2,
-        parse_iso9660, parse_elf, parse_mach_o, parse_mz_exe, parse_ace,
-    ];
+    let parsers = table();
 
     let metadata = fs::metadata(path).ok();
     let mut parsed = false;
