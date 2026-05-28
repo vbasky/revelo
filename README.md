@@ -35,6 +35,55 @@ C++ `mediainfo` CLI.
 - JSON (MediaInfo-compatible `{media:{@ref, track:[...]}}` structure)
 - EBUCore, MPEG-7, PBCore, NISO, FIMS, Graph, reVTMD (7 domain formatters)
 
+## Output Parity
+
+Field-level coverage per stream kind. Tracks gaps between revelio output and
+MediaInfoLib's `mediainfo` CLI (both XML and text). Percentages are rough
+estimates — each kind has ~60-120 possible fields and the set varies by format.
+
+| Kind | Fields | Coverage | Known Gaps |
+|------|--------|----------|-------------|
+| General | ~80 | 85% | `Format_Profile` (Base Media vs Version 2), `Encoded_Library_Name`, `Encoded_Library_Version`, `Encoded_Library_Settings` (not populated in all parser paths) |
+| Video | ~70 | 78% | `Encoded_Library`/`_Name`/`_Version`/`_Settings` missing from text display and AVC-in-MP4 path; `Bits_Pixel_Frame`, `FrameRate_Mode_Original`, `BufferSize`, `BitRate_Maximum` (Video) never filled |
+| Audio | ~60 | 82% | `Compression_Ratio`, `ReplayGain_*` never filled; sampling count / frame count off by 1 in some MP4 files; `BufferSize` never filled |
+| Text | ~30 | 90% | Minor — most subtitle field coverage complete |
+| Image | ~25 | 85% | ICC profile parse → `ICC_*` fields exposed in XML but not in text display |
+| Other/Menu | ~25 | 70% | Chapter names/durations, timecode metadata not exposed in text display |
+
+### Field gaps by priority
+
+**Parser never fills the field:**
+- `Bits_Pixel_Frame` — computed from bitrate/width/height/framerate
+- `Compression_Ratio` — computed from stream size / uncompressed size
+- `FrameRate_Mode_Original` — original frame rate mode before CFR override
+- `BufferSize` — audio codec buffer size (from esds/mp4a)
+- `ReplayGain_Gain` / `ReplayGain_Peak` — from audio tag parsers
+- `BitRate_Maximum` / `BitRate_Minimum` / `OverallBitRate_Maximum` — from container hints
+
+**Parser fills but text display_fields omits:**
+- `Format_Profile` (General) — "Base media / Version 2" label
+- `Encoded_Library` (Video) — "Writing library" label
+- `Encoded_Date` (Video) — "Encoded date"
+- `Tagged_Date` (Video) — "Tagged date"
+- `Format_Settings` (combined, Video) — "CABAC / 5 Ref Frames" summary
+
+**Parser fills only partially:**
+- `Encoded_Library_Name`/`_Version`/`_Settings` for HEVC — `extract_encoder_from_sei_nalus` returns all three but only `.library` is stored
+- `Format_Profile` for MP4 General — always emits "Base Media", missing " / Version 2" suffix from ftyp minor version
+- AVC-in-MP4 `Encoded_Library` — x264 SEI extracted only in Annex-B path, not in `avcC` path
+
+**Numeric precision (off by ≤1 unit):**
+- SamplingCount off by 16 (1465280 vs 1465296) — MP4 sample table vs audio frame count
+- FrameCount off by 1 (1430 vs 1431) — same root cause
+- Duration off by −1 ms (30.526 vs 30.527) — derived from frame count × frame duration rounding
+- Opus preskip delay: 6 ms vs 7 ms — `312/48000` rounding at `{:.3}`
+
+**Text renderers missing:**
+- `Bits_Pixel_Frame` — "Bits/(Pixel*Frame)" label, humanised to 3 decimal places
+- `Compression_Ratio` — "Compression ratio" label, percentage string
+- `Format_Settings` (combined) — joins CABAC/RefFrames/GOP into a single line
+- `BufferSize` — "Buffer size" label
+
 ### C ABI + Reader + Core
 
 - `revelio-cdylib`: `MediaInfo_New/Open/Close/Inform/Get/Count_Get/Option` entry points

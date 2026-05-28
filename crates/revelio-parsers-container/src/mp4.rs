@@ -2670,6 +2670,20 @@ fn fill_streams(
                 }
                 fa.Fill(StreamKind::Video, pos, "ScanType", "Progressive", false);
             }
+            // Dolby Vision — from dvcC/dvvC config box
+            if let Some(dv_prof) = track.dovi_profile {
+                fa.Fill(StreamKind::Video, pos, "Format_Profile", format!("Dolby Vision {}.{}", dv_prof / 10, dv_prof % 10), false);
+                fa.Fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
+                fa.Fill(StreamKind::Video, pos, "HDR_Format_Version", format!("{}.{}", 1, 0), false);
+                if let Some(dv_level) = track.dovi_level {
+                    fa.Fill(StreamKind::Video, pos, "HDR_Format_Level", dv_level.to_string(), false);
+                }
+                if track.dovi_bl_present {
+                    if let Some(cid) = track.dovi_bl_compat_id {
+                        fa.Fill(StreamKind::Video, pos, "HDR_Format_Compatibility", format!("BL:{}", cid), false);
+                    }
+                }
+            }
             if let Some(cid) = track.video_codec_id {
                 fa.Fill(StreamKind::Video, pos, "CodecID", cid, false);
             }
