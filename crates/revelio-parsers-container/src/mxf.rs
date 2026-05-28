@@ -8,11 +8,13 @@ const KLV_ROOT: [u8; 4] = [0x06, 0x0E, 0x2B, 0x34];
 const SCAN_WINDOW: usize = 4096;
 
 // SMPTE Universal Labels for MXF key types
+#[allow(dead_code)]
 const UL_SYSTEM_ITEM: [u8; 16] = [
     0x06, 0x0E, 0x2B, 0x34, 0x02, 0x53, 0x01, 0x01,
     0x0D, 0x01, 0x03, 0x01, 0x14, 0x00, 0x00, 0x00,
 ];
 
+#[allow(dead_code)]
 const UL_TIME_CODE_COMPONENT: [u8; 16] = [
     0x06, 0x0E, 0x2B, 0x34, 0x02, 0x53, 0x01, 0x01,
     0x0D, 0x01, 0x03, 0x01, 0x01, 0x01, 0x01, 0x00,
@@ -33,7 +35,7 @@ fn parse_mxf_timecode(data: &[u8]) -> Option<String> {
     let byte3 = data[3];
     
     let drop_frame = (byte0 & 0x80) != 0;
-    let color_frame = (byte0 & 0x40) != 0;
+    let _color_frame = (byte0 & 0x40) != 0;
     let frames = ((byte0 & 0x3F) as u32) << 2 | ((byte1 >> 6) as u32 & 0x03);
     let seconds = ((byte1 & 0x3F) as u32) << 1 | ((byte2 >> 7) as u32 & 0x01);
     let minutes = ((byte2 & 0x7F) as u32) << 1 | ((byte3 >> 7) as u32 & 0x01);
@@ -44,6 +46,7 @@ fn parse_mxf_timecode(data: &[u8]) -> Option<String> {
 }
 
 /// Parse MXF timecode from 12-byte binary group format (SMPTE 309M)
+#[allow(dead_code)]
 fn parse_timecode_binary_groups(data: &[u8]) -> Option<String> {
     if data.len() < 12 {
         return None;

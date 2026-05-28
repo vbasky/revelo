@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DemuxLevel(pub u8);

@@ -31,7 +31,7 @@ use revelio_parsers_archive::{parse_zip, parse_rar, parse_7z, parse_tar, parse_g
 use revelio_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle,
     parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs,
     parse_pdf, parse_sdp, parse_pac, parse_dtvcc_transport, parse_scte20,
-    parse_sub_rip, parse_ttml, parse_teletext, parse_scc, parse_timed_text, parse_webvtt};
+    parse_sub_rip, parse_ttml, parse_teletext, parse_scc, parse_timed_text};
 use revelio_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9,
     parse_y4m, parse_vc1, parse_mpeg2, parse_vvc, parse_prores, parse_vc3, parse_dolby_vision,
     parse_ffv1, parse_h263, parse_mpeg4v};

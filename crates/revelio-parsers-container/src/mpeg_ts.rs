@@ -58,8 +58,8 @@ struct ElementaryStream {
     /// Registration descriptor format identifier (4 ASCII bytes packed
     /// big-endian, e.g. 'HDMV' = 0x48444D56).
     format_identifier: u32,
-    language: Option<String>,
-    ac3_descriptor: bool,
+    _language: Option<String>,
+    _ac3_descriptor: bool,
     /// AAC payload params extracted from first ADTS frame inside PES,
     /// when stream_type indicates AAC (0x0F/0x11/0x1C).
     aac: Option<AacInfo>,
@@ -263,7 +263,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     };
 
     // Calculate file size and estimate duration from PCR values
-    let file_size = buf.len();
+    let _file_size = buf.len();
     let (duration_ms, overall_bitrate) = estimate_duration_and_bitrate(
         buf, 
         first_offset, 
@@ -489,7 +489,7 @@ fn estimate_duration_and_bitrate(
     first_offset: usize,
     stride: usize,
     bdav_prefix: usize,
-    programs: &BTreeMap<u16, Program>,
+    _programs: &BTreeMap<u16, Program>,
 ) -> (Option<u64>, Option<u64>) {
     // Collect PCR values from adaptation fields
     let mut pcr_values: Vec<(usize, u64)> = Vec::new(); // (byte_position, pcr_value)
@@ -640,8 +640,8 @@ fn parse_pmt(section: &[u8], prog: &mut Program) {
             pid: es_pid,
             stream_type,
             format_identifier: es_fid,
-            language: es_lang,
-            ac3_descriptor: es_ac3,
+            _language: es_lang,
+            _ac3_descriptor: es_ac3,
             aac: None,
             avc_encoder: None,
         });
@@ -831,6 +831,7 @@ fn stream_codec(stream_type: u8, fid: u32) -> &'static str {
 ///   7: more flags (PTS_DTS_flags, ESCR_flag, ES_rate_flag, DSM_trick_mode_flag, etc.)
 ///   8: PES_header_data_length
 ///   9+: optional fields based on flags
+#[allow(dead_code)]
 fn parse_pes_pts(buf: &[u8]) -> Option<u64> {
     if buf.len() < 9 {
         return None;
@@ -848,7 +849,7 @@ fn parse_pes_pts(buf: &[u8]) -> Option<u64> {
     }
     
     // Skip PES_packet_length (2 bytes) to get to flags
-    let flags1 = buf[6];
+    let _flags1 = buf[6];
     let flags2 = buf[7];
     let pes_header_len = buf[8] as usize;
     
@@ -887,6 +888,7 @@ fn parse_pes_pts(buf: &[u8]) -> Option<u64> {
 
 /// Extract frame rate from AVC/H.264 sequence parameter set in PES payload.
 /// Returns frame rate as f64 (frames per second).
+#[allow(dead_code)]
 fn extract_avc_frame_rate(pes_payload: &[u8]) -> Option<f64> {
     // Look for SPS NAL unit: nal_unit_type = 7
     // NAL header: 1 byte (forbidden_zero_bit | nal_ref_idc | nal_unit_type)
@@ -914,6 +916,7 @@ fn extract_avc_frame_rate(pes_payload: &[u8]) -> Option<f64> {
 }
 
 /// Parse SPS to extract frame rate from VUI timing_info.
+#[allow(dead_code)]
 fn parse_sps_for_frame_rate(sps: &[u8]) -> Option<f64> {
     // Simplified: skip to VUI parameters
     // Real implementation would need full Exp-Golomb decoding
@@ -938,6 +941,7 @@ fn parse_sps_for_frame_rate(sps: &[u8]) -> Option<f64> {
 
 /// Calculate frame rate from PTS differences in multiple PES packets.
 /// This is used when we have multiple PCR/PTS samples from the same PID.
+#[allow(dead_code)]
 fn calculate_frame_rate_from_pts(pts_samples: &[(usize, u64)]) -> Option<f64> {
     if pts_samples.len() < 2 {
         return None;
@@ -974,6 +978,7 @@ fn calculate_frame_rate_from_pts(pts_samples: &[(usize, u64)]) -> Option<f64> {
 }
 
 /// Round calculated FPS to common broadcast frame rates.
+#[allow(dead_code)]
 fn round_to_common_fps(fps: f64) -> f64 {
     const COMMON_RATES: [f64; 8] = [23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0];
     

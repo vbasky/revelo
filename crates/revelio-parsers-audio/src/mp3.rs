@@ -182,6 +182,7 @@ fn info_magic_offset(version: u8, channel_mode: u8) -> usize {
     }
 }
 
+#[allow(dead_code)]
 fn looks_like_info_frame(frame_bytes: &[u8], version: u8, channel_mode: u8) -> bool {
     let off = info_magic_offset(version, channel_mode);
     if frame_bytes.len() < off + 4 {
@@ -197,7 +198,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // positives on any container that happens to contain 0xFF 0xE/F
     // bytes (which is most of them). Container parsers run before
     // this so by the time we're here it's not been claimed.
-    let (id3v2_size, id3_metadata) = parse_id3v2(fa);
+    let (id3v2_size, _id3_metadata) = parse_id3v2(fa);
     if id3v2_size > 0 {
         fa.Skip_Hexa(id3v2_size, "ID3v2");
     }
@@ -625,8 +626,8 @@ fn fill_streams(
     lame_version: Option<&str>,
     is_vbr: bool,
     xing_nominal_kbps: Option<u16>,
-    xing_delay: Option<u32>,
-    xing_padding: Option<u32>,
+    _xing_delay: Option<u32>,
+    _xing_padding: Option<u32>,
 ) {
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "MPEG Audio", false);

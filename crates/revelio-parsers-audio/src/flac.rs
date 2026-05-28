@@ -30,8 +30,11 @@ use revelio_core::{FileAnalyze, StreamKind};
 use zenlib::{int128u, int16u, int32u, int64u, int8u};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
+#[allow(dead_code)]
 const BLOCK_TYPE_PADDING: u8 = 1;
+#[allow(dead_code)]
 const BLOCK_TYPE_APPLICATION: u8 = 2;
+#[allow(dead_code)]
 const BLOCK_TYPE_SEEKTABLE: u8 = 3;
 const BLOCK_TYPE_VORBIS_COMMENT: u8 = 4;
 const BLOCK_TYPE_CUESHEET: u8 = 5;

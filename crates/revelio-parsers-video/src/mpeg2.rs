@@ -5,7 +5,6 @@
 //! dimensions, frame rate, aspect ratio, and bitrate.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
 
 /// MPEG-2 profile identifiers.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,7 +86,7 @@ pub fn parse_mpeg2_sequence_header(data: &[u8]) -> Option<Mpeg2Info> {
         return None;
     }
 
-    let mut offset = 0;
+    let offset;
     if data.len() >= 4 && &data[0..3] == &[0x00, 0x00, 0x01] {
         if data[3] != 0xB3 {
             return None;

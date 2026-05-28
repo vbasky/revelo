@@ -5,7 +5,6 @@
 //! dimensions, frame rate, and other metadata.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
 
 /// VC-1 profile identifiers.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -44,7 +44,6 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     while i < buf.len() {
         // End-of-header sentinel: empty name (single null byte).
         if buf[i] == 0 {
-            i += 1;
             break;
         }
         let name_end = match buf[i..].iter().position(|&b| b == 0) {

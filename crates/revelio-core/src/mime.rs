@@ -25,7 +25,7 @@ pub fn mime_for_codec(fourcc: &str) -> Option<&'static str> {
         "hvc1" | "hev1" | "h265" => "video/H265",
         "av01" => "video/AV1",
         "vp09" | "vp9 " | "vp8 " => "video/VP9",
-        "mp3 " | "mp3 " => "audio/mpeg",
+        "mp3 " => "audio/mpeg",
         "aac " | "AAC " => "audio/aac",
         "ac-3" | "ac3 " => "audio/ac3",
         "ec-3" | "eac3" => "audio/eac3",

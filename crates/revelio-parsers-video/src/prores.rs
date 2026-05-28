@@ -37,7 +37,7 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.Remain() as usize) { Some(b) => b, None => return false };
     if buf.len() < 20 { return false; }
 
-    let hdr_size = u16::from_be_bytes([buf[8], buf[9]]);
+    let _hdr_size = u16::from_be_bytes([buf[8], buf[9]]);
     let version = u16::from_be_bytes([buf[10], buf[11]]);
     let creator_id = u32::from_be_bytes([buf[12], buf[13], buf[14], buf[15]]);
     let frame_width = u16::from_be_bytes([buf[16], buf[17]]);

@@ -1,11 +1,16 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 // NAL unit types for VVC
+#[allow(dead_code)]
 const NAL_VPS: u8 = 14;   // Video Parameter Set
 const NAL_SPS: u8 = 15;   // Sequence Parameter Set
+#[allow(dead_code)]
 const NAL_PPS: u8 = 16;   // Picture Parameter Set
+#[allow(dead_code)]
 const NAL_IDR_W_RADL: u8 = 19;
+#[allow(dead_code)]
 const NAL_IDR_N_LP: u8 = 20;
+#[allow(dead_code)]
 const NAL_CRA: u8 = 21;
 
 const ANNEX_B_START_CODE: [u8; 4] = [0x00, 0x00, 0x00, 0x01];
@@ -202,7 +207,7 @@ fn read_bits(data: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
         return None;
     }
     let mut val = 0u64;
-    for i in 0..n {
+    for _i in 0..n {
         let byte = data[*offset / 8];
         let bit = 7 - (*offset % 8);
         val = (val << 1) | (((byte >> bit) & 1) as u64);

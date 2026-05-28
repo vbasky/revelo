@@ -92,6 +92,7 @@ fn skip_bits(offset: &mut usize, n: usize) {
 }
 
 /// Check if we're past the end of the buffer (in bits).
+#[allow(dead_code)]
 fn bits_remaining(buffer: &[u8], offset: usize) -> usize {
     buffer.len() * 8 - offset
 }
@@ -488,6 +489,7 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
     EncoderInfo { library, name, version, settings }
 }
 
+#[allow(dead_code)]
 fn parse_slice_type_from_nal(nal_unit: &[u8]) -> Option<u8> {
     let clean = remove_epb(nal_unit);
     if clean.len() < 3 { return None; }
@@ -591,7 +593,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 
         let nal_unit = &data[nal_start..nal_end];
         let nal_header = nal_unit[0];
-        let nal_ref_idc = (nal_header >> 5) & 3;
+        let _nal_ref_idc = (nal_header >> 5) & 3;
         let nal_type = nal_header & 0x1F;
 
         match nal_type {
@@ -657,7 +659,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     // Determine profile string
     let prof = profile_name(info.profile);
     // Check for constraint_set flags
-    let is_constrained = info.profile == 66; // baseline is always "Constrained Baseline" in MediaInfo
+    let _is_constrained = info.profile == 66; // baseline is always "Constrained Baseline" in MediaInfo
     // Actually, for baseline, the C++ side output "Constrained Baseline" in our test
     let profile_str = match info.profile {
         66 => "Constrained Baseline",

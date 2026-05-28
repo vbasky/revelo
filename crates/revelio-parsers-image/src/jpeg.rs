@@ -15,6 +15,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 #[derive(Default)]
+#[allow(dead_code)]
 struct ExifData {
     make: Option<String>,
     model: Option<String>,

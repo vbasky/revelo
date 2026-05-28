@@ -7,64 +7,6 @@ archive formats, and embedded tags.
 Built as a port of MediaInfoLib, validated by differential testing against the
 C++ `mediainfo` CLI.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         R E V E L I O                               │
-│              The Rust MediaInfo — Read What You See                  │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐        │
-│   │ revelio  │   │ revelio  │   │  diff-   │   │  revelio │        │
-│   │   -cli   │   │ -cdylib  │   │ harness  │   │ -reader  │        │
-│   │          │   │          │   │          │   │          │        │
-│   │ --text   │   │ New/Open │   │  oracle  │   │  File    │        │
-│   │ --xml    │   │ Get/Info │   │  diff    │   │  Dir     │        │
-│   │ --json   │   │ Option   │   │          │   │  HTTP    │        │
-│   └────┬─────┘   └────┬─────┘   └────┬─────┘   │  MMS     │        │
-│        │              │              │          └──────────┘        │
-│   ┌────┴──────────────┴──────────────┴────────────────────────┐     │
-│   │                     revelio-export                         │     │
-│   │   XML │ Text │ JSON │ EBUCore │ MPEG-7 │ PBCore │ ...      │     │
-│   └───────────────────────────┬───────────────────────────────┘     │
-│                               │                                     │
-│   ┌───────────────────────────┴───────────────────────────────┐     │
-│   │                     revelio-core                           │     │
-│   │  ┌──────────┐ ┌─────────┐ ┌────────────┐ ┌─────────────┐ │     │
-│   │  │FileAnalyze│ │ Events  │ │computed_fld│ │channel_split│ │     │
-│   │  │ +Config   │ │ Demux   │ │ BPP/CR/RG  │ │  + group    │ │     │
-│   │  │ +Element  │ │ 4-level │ │ fmt_prof   │ │  ST 337     │ │     │
-│   │  │  Tree     │ │ Trace   │ │ interlace  │ │  interlace  │ │     │
-│   │  └─────┬─────┘ └────┬────┘ └─────┬──────┘ └──────┬──────┘ │     │
-│   │        │            │            │               │         │     │
-│   │  Timecode  │      MIME      │     IBI       │ Reference   │     │
-│   │  DF/NDF    │   container→   │  frame seek   │  Tracker    │     │
-│   │  ms conv   │   codec mapper │  table        │  multi-file │     │
-│   └────────────┴────────────────┴───────────────┴─────────────┘     │
-│                                                                      │
-│   ┌───────────────────────────────────────────────────────────┐     │
-│   │                  parsers (185 across 8 domains)            │     │
-│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐ │     │
-│   │  │container │ │  audio   │ │  video   │ │    image     │ │     │
-│   │  │  MP4 MKV │ │ AAC MP3  │ │AVC HEVC  │ │ JPEG PNG GIF │ │     │
-│   │  │  TS  Ogg │ │FLAC Opus │ │AV1 VVC   │ │ TIFF BMP PSD │ │     │
-│   │  │ AVI  WAV │ │AC3  DTS  │ │VP9 ProRes│ │ 19 parsers   │ │     │
-│   │  │ 42 total │ │DH TrueHD │ │28 parsers│ │              │ │     │
-│   │  │          │ │56 parsers│ │          │ │              │ │     │
-│   │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘ │     │
-│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐ │     │
-│   │  │  text    │ │ archive  │ │   tag    │ │   reader     │ │     │
-│   │  │SRT  PGS  │ │ZIP  RAR  │ │ ID3 EXIF │ │ File  Dir    │ │     │
-│   │  │TTML 708  │ │TAR  7z   │ │ XMP ICC  │ │ HTTP  MMS    │ │     │
-│   │  │PDF VTT   │ │GZ ELF PE │ │ APE Vorb │ │  4 parsers   │ │     │
-│   │  │21 parsers│ │11 parsers│ │12 parsers│ │              │ │     │
-│   │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘ │     │
-│   └───────────────────────────────────────────────────────────┘     │
-│                                                                      │
-│   zenlib (Ztring + bitstream helpers)                                │
-│                                                                      │
-│   576 tests  •  185 parsers  •  byte-equal XML against mediainfo     │
-└──────────────────────────────────────────────────────────────────────┘
-```
 
 ## Status
 

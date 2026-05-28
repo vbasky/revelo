@@ -39,9 +39,13 @@ const BOX_EDTS: int32u = u32::from_be_bytes(*b"edts");
 const BOX_ELST: int32u = u32::from_be_bytes(*b"elst");
 const BOX_UDTA: int32u = u32::from_be_bytes(*b"udta");
 const BOX_META: int32u = u32::from_be_bytes(*b"meta");
+#[allow(dead_code)]
 const BOX_CHPL: int32u = u32::from_be_bytes(*b"chpl"); // Nero chapter list
+#[allow(dead_code)]
 const BOX_NERO: int32u = u32::from_be_bytes(*b"Nero"); // Nero metadata
+#[allow(dead_code)]
 const BOX_COVR: int32u = u32::from_be_bytes(*b"covr"); // iTunes cover art
+#[allow(dead_code)]
 const BOX_THMB: int32u = u32::from_be_bytes(*b"thmb"); // 3GP thumbnail
 const BOX_ILST: int32u = u32::from_be_bytes(*b"ilst");
 const BOX_DATA: int32u = u32::from_be_bytes(*b"data");
@@ -1769,6 +1773,7 @@ impl<'a> BitReader<'a> {
 ///           4 bits: samplingFrequencyIndex (if 15, then 24 bits explicit)
 ///           4 bits: channelConfiguration
 ///     SLConfigDescriptor (tag 0x06) — predefined, ignore
+#[allow(dead_code)]
 fn parse_esds(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     let start = fa.Element_Offset();
     let end = start + body_size;
@@ -1789,6 +1794,7 @@ fn parse_esds(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
 
 /// Read a single MPEG-4 BER-style descriptor length (1-4 bytes,
 /// each with a continuation bit in the high bit).
+#[allow(dead_code)]
 fn read_descriptor_length(fa: &mut FileAnalyze) -> usize {
     let mut size: usize = 0;
     for _ in 0..4 {
@@ -1804,6 +1810,7 @@ fn read_descriptor_length(fa: &mut FileAnalyze) -> usize {
     size
 }
 
+#[allow(dead_code)]
 fn parse_descriptor_chain(fa: &mut FileAnalyze, region_size: usize, track: &mut TrackInfo) {
     let region_end = fa.Element_Offset() + region_size;
     while fa.Element_Offset() + 2 <= region_end {
@@ -1831,6 +1838,7 @@ fn parse_descriptor_chain(fa: &mut FileAnalyze, region_size: usize, track: &mut 
     }
 }
 
+#[allow(dead_code)]
 fn parse_es_descriptor(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo) {
     if size < 3 {
         fa.Skip_Hexa(size, "es_descriptor_short");
@@ -1863,6 +1871,7 @@ fn parse_es_descriptor(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo)
     parse_descriptor_chain(fa, inner, track);
 }
 
+#[allow(dead_code)]
 fn parse_decoder_config(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo) {
     if size < 13 {
         fa.Skip_Hexa(size, "decoder_config_short");
@@ -1889,6 +1898,7 @@ fn parse_decoder_config(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo
     parse_descriptor_chain(fa, inner, track);
 }
 
+#[allow(dead_code)]
 fn parse_decoder_specific_info(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo) {
     if size < 2 {
         fa.Skip_Hexa(size, "dsi_short");

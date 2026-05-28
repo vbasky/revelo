@@ -30,7 +30,7 @@ pub mod channel_grouping;
 pub mod interlacement;
 /// Container-level reference file tracker.
 pub mod reference {
-    use std::collections::HashMap;
+    
     pub struct ReferenceFile {
         pub path: String,
         pub format: &'static str,

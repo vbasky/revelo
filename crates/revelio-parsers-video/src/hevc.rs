@@ -32,12 +32,15 @@ const ANNEX_B_START_CODE_LONG: [u8; 4] = [0x00, 0x00, 0x00, 0x01];
 
 const NAL_TYPE_VPS: u8 = 32;
 const NAL_TYPE_SPS: u8 = 33;
+#[allow(dead_code)]
 const NAL_TYPE_PPS: u8 = 34;
 const NAL_TYPE_SEI_PREFIX: u8 = 39;
 const NAL_TYPE_SEI_SUFFIX: u8 = 40;
 
 // HDR10 SEI payload types
+#[allow(dead_code)]
 const SEI_TYPE_MASTERING_DISPLAY_COLOUR_VOLUME: u8 = 137;
+#[allow(dead_code)]
 const SEI_TYPE_CONTENT_LIGHT_LEVEL: u8 = 144;
 
 fn find_start_code(data: &[u8], offset: usize) -> Option<usize> {
@@ -261,7 +264,7 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     // amp_enabled_flag (u1)
     read_bits(&clean, &mut offset, 1)?;
     // sample_adaptive_offset_enabled_flag (u1)
-    let sao_enabled = read_bits(&clean, &mut offset, 1)?;
+    let _sao_enabled = read_bits(&clean, &mut offset, 1)?;
     // pcm_enabled_flag (u1)
     let pcm_enabled = read_bits(&clean, &mut offset, 1)?;
     
@@ -656,7 +659,7 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
     // amp_enabled_flag (u1)
     read_bits(&clean, &mut offset, 1)?;
     // sample_adaptive_offset_enabled_flag (u1)
-    let sao_enabled = read_bits(&clean, &mut offset, 1)?;
+    let _sao_enabled = read_bits(&clean, &mut offset, 1)?;
     // pcm_enabled_flag (u1)
     let pcm_enabled = read_bits(&clean, &mut offset, 1)?;
     

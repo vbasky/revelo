@@ -7,12 +7,19 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 const OBU_SEQUENCE_HEADER: u8 = 1;
 const OBU_TEMPORAL_DELIMITER: u8 = 2;
+#[allow(dead_code)]
 const OBU_FRAME_HEADER: u8 = 3;
+#[allow(dead_code)]
 const OBU_TILE_GROUP: u8 = 4;
+#[allow(dead_code)]
 const OBU_METADATA: u8 = 5;
+#[allow(dead_code)]
 const OBU_FRAME: u8 = 6;
+#[allow(dead_code)]
 const OBU_REDUNDANT_FRAME_HEADER: u8 = 7;
+#[allow(dead_code)]
 const OBU_TILE_LIST: u8 = 8;
+#[allow(dead_code)]
 const OBU_PADDING: u8 = 15;
 
 /// AV1 sequence header info extracted from OBU.
@@ -91,6 +98,7 @@ fn parse_obu_header(data: &[u8]) -> Option<(u8, bool, bool, usize)> {
     Some((obu_type, obu_extension_flag, obu_has_size_field, obu_size))
 }
 
+#[allow(dead_code)]
 fn read_bits_leb128(data: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
     if n > 64 || *offset + n > data.len() * 8 {
         return None;
@@ -107,6 +115,7 @@ fn read_bits_leb128(data: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
     Some(value)
 }
 
+#[allow(dead_code)]
 fn read_ue(data: &[u8], offset: &mut usize) -> Option<u64> {
     let mut leading_zeros = 0usize;
     // Count leading zeros
@@ -447,7 +456,7 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
     // initial_presentation_delay_minus_one (4 bits) - if present
     // configOBUs (variable)
     
-    let mut offset = 0usize;
+    let _offset = 0usize;
     
     // First byte: marker (1) + version (7)
     let byte0 = config[0];

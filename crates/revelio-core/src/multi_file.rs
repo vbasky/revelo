@@ -99,7 +99,7 @@ impl MultiFileLoader {
 pub fn find_duplicate_streams(
     streams: &super::StreamCollection,
 ) -> Vec<(super::StreamKind, usize)> {
-    use super::{StreamKind, StreamCollection};
+    use super::StreamKind;
     let mut duplicates = Vec::new();
     let kinds = [StreamKind::Video, StreamKind::Audio, StreamKind::Text];
 

@@ -38,16 +38,21 @@ const CHAPTERS: u64 = 0x1043A770;
 const ATTACHMENTS: u64 = 0x1941A469;
 const EDITION_ENTRY: u64 = 0x45B9;
 const CHAPTER_ATOM: u64 = 0xB6;
+#[allow(dead_code)]
 const CHAPTER_TIME_START: u64 = 0x91;
+#[allow(dead_code)]
 const CHAPTER_TIME_END: u64 = 0x92;
 const CHAPTER_DISPLAY: u64 = 0x80;
 const CHAP_STRING: u64 = 0x85;
+#[allow(dead_code)]
 const CHAP_LANGUAGE: u64 = 0x437C;
 const ATTACHED_FILE: u64 = 0x61A7;
 const FILE_DESCRIPTION: u64 = 0x467E;  // File description
 const FILE_NAME: u64 = 0x466E;
 const FILE_MIME_TYPE: u64 = 0x4660;
+#[allow(dead_code)]
 const FILE_DATA: u64 = 0x465C;
+#[allow(dead_code)]
 const FILE_UID: u64 = 0x46AE;
 const TAG: u64 = 0x7373;
 const TAG_TARGETS: u64 = 0x63C0;
@@ -55,6 +60,7 @@ const TAG_TARGETS_TRACK_UID: u64 = 0x63C5;
 const SIMPLE_TAG: u64 = 0x67C8;
 const TAG_NAME: u64 = 0x45A3;
 const TAG_STRING: u64 = 0x4487;
+#[allow(dead_code)]
 const CRC32: u64 = 0xBF;
 
 // Info children.
@@ -644,7 +650,7 @@ fn fill_streams(
                                     | ((private[13] as u32) << 8)
                                     | ((private[14] as u32) << 16)
                                     | ((private[15] as u32) << 24);
-                                let channel_mapping = private[18];
+                                let _channel_mapping = private[18];
                                 
                                 // Opus internally uses 48kHz, but declares output rate here
                                 if sample_rate > 0 {
@@ -1022,7 +1028,7 @@ fn fill_streams(
                                             }
                                         }
                                     }
-                                    sps_offset += sps_len;
+                                    let _ = sps_offset;
                                     break; // Only parse first SPS
                                 }
                             }
