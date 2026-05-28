@@ -22,12 +22,12 @@
 //!   0x30  L4  sample_rate
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
 const PMP_MAGIC_SIZE: usize = 4;
 const PMP_V1_HEADER_SIZE: usize = 52;
 
-fn pmp_video_format(video_format: int32u) -> &'static str {
+fn pmp_video_format(video_format: Int32u) -> &'static str {
     match video_format {
         0 => "MPEG-4 Visual",
         1 => "AVC",
@@ -35,7 +35,7 @@ fn pmp_video_format(video_format: int32u) -> &'static str {
     }
 }
 
-fn pmp_audio_format(audio_format: int32u) -> &'static str {
+fn pmp_audio_format(audio_format: Int32u) -> &'static str {
     match audio_format {
         0 => "MPEG Audio",
         1 => "AAC",
@@ -57,20 +57,20 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.element_begin("PMP");
-    let mut _signature: int32u = 0;
+    let mut _signature: Int32u = 0;
     fa.get_c4(&mut _signature, "Signature");
-    let mut version: int32u = 0;
+    let mut version: Int32u = 0;
     fa.get_l4(&mut version, "Version");
 
-    let mut video_format: int32u = 0;
-    let mut nb_frames: int32u = 0;
-    let mut video_width: int32u = 0;
-    let mut video_height: int32u = 0;
-    let mut time_base_num: int32u = 0;
-    let mut time_base_den: int32u = 0;
-    let mut audio_format: int32u = 0;
-    let mut channels: int32u = 0;
-    let mut sample_rate: int32u = 0;
+    let mut video_format: Int32u = 0;
+    let mut nb_frames: Int32u = 0;
+    let mut video_width: Int32u = 0;
+    let mut video_height: Int32u = 0;
+    let mut time_base_num: Int32u = 0;
+    let mut time_base_den: Int32u = 0;
+    let mut audio_format: Int32u = 0;
+    let mut channels: Int32u = 0;
+    let mut sample_rate: Int32u = 0;
 
     if version == 1 && fa.remain() >= PMP_V1_HEADER_SIZE - 8 {
         fa.get_l4(&mut video_format, "video_format");
@@ -79,11 +79,11 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
         fa.get_l4(&mut video_height, "video_height");
         fa.get_l4(&mut time_base_num, "time_base_num");
         fa.get_l4(&mut time_base_den, "time_base_den");
-        let mut _nb_audio: int32u = 0;
+        let mut _nb_audio: Int32u = 0;
         fa.get_l4(&mut _nb_audio, "number of audio streams");
         fa.get_l4(&mut audio_format, "audio_format");
         fa.get_l4(&mut channels, "channels");
-        let mut _unknown: int32u = 0;
+        let mut _unknown: Int32u = 0;
         fa.get_l4(&mut _unknown, "unknown");
         fa.get_l4(&mut sample_rate, "sample_rate");
     }

@@ -15,7 +15,7 @@
 //!   1 byte:     interlace_method (0=none, 1=Adam7)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1A\n";
 
@@ -33,20 +33,20 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 8 {
         return false;
     }
-    let mut length: int32u = 0;
+    let mut length: Int32u = 0;
     fa.get_b4(&mut length, "IHDR_length");
-    let mut chunk_type: int32u = 0;
+    let mut chunk_type: Int32u = 0;
     fa.get_c4(&mut chunk_type, "chunk_type");
     if chunk_type != u32::from_be_bytes(*b"IHDR") || length < 13 {
         return false;
     }
-    let mut width: int32u = 0;
+    let mut width: Int32u = 0;
     fa.get_b4(&mut width, "Width");
-    let mut height: int32u = 0;
+    let mut height: Int32u = 0;
     fa.get_b4(&mut height, "Height");
-    let mut bit_depth: zenlib::int8u = 0;
+    let mut bit_depth: zenlib::Int8u = 0;
     fa.get_b1(&mut bit_depth, "BitDepth");
-    let mut color_type: zenlib::int8u = 0;
+    let mut color_type: zenlib::Int8u = 0;
     fa.get_b1(&mut color_type, "ColorType");
     // Skip rest of IHDR (compression, filter, interlace) + 4-byte CRC.
     let ihdr_consumed = 10; // already consumed 10 IHDR body bytes
@@ -66,9 +66,9 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     let mut comment: Option<String> = None;
     
     while fa.remain() >= 12 {
-        let mut len: int32u = 0;
+        let mut len: Int32u = 0;
         fa.get_b4(&mut len, "chunk_length");
-        let mut ty: int32u = 0;
+        let mut ty: Int32u = 0;
         fa.get_c4(&mut ty, "chunk_type");
         let payload_len = len as usize;
         if fa.remain() < payload_len + 4 {
@@ -175,8 +175,8 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
 fn fill_streams(
     fa: &mut FileAnalyze,
     file_size: usize,
-    width: int32u,
-    height: int32u,
+    width: Int32u,
+    height: Int32u,
     bit_depth: u8,
     color_type: u8,
     overhead: u64,

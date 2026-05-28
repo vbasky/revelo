@@ -7,7 +7,7 @@
 //! `Header_Parse`/`Data_Parse` parser callback architecture and is handled
 //! separately when that lands.
 
-use crate::zenlib_re_export::int64u;
+use crate::zenlib_re_export::Int64u;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ElementInfo {
@@ -21,7 +21,7 @@ pub struct ElementInfo {
 #[derive(Clone, Debug, Default)]
 pub struct ElementNode {
     pub name: String,
-    pub size: int64u,
+    pub size: Int64u,
     pub infos: Vec<ElementInfo>,
     pub children: Vec<ElementNode>,
     pub has_error: bool,
@@ -41,7 +41,6 @@ impl ElementNode {
 
 /// Stack-based element tree builder. Begin/end pairs must balance; pushing
 /// a child on `End` makes the tree append-only from the consumer's view.
-#[derive(Debug)]
 pub struct ElementTree {
     stack: Vec<ElementNode>,
 }
@@ -107,7 +106,7 @@ impl ElementTree {
         self.stack.len().saturating_sub(1)
     }
 
-    pub fn set_current_size(&mut self, size: int64u) {
+    pub fn set_current_size(&mut self, size: Int64u) {
         if let Some(last) = self.stack.last_mut() {
             last.size = size;
         }

@@ -27,7 +27,7 @@
 //!   16 bytes : category (UTF-8, NUL-padded)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int8u, int16u, int32u};
+use zenlib::{Int8u, Int16u, Int32u};
 
 const KATE_MAGIC: &[u8; 8] = b"\x80kate\x00\x00\x00";
 const IDENTIFICATION_MIN_SIZE: usize = 64;
@@ -45,18 +45,18 @@ pub fn parse_kate(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("Kate");
     fa.skip_hexa(8, "Signature");
 
-    let mut _reserved0: int8u = 0;
-    let mut _version_major: int8u = 0;
-    let mut _version_minor: int8u = 0;
-    let mut _num_headers: int8u = 0;
-    let mut _text_encoding: int8u = 0;
-    let mut _directionality: int8u = 0;
-    let mut _reserved1: int8u = 0;
-    let mut _granule_shift: int8u = 0;
-    let mut _width: int16u = 0;
-    let mut _height: int16u = 0;
-    let mut _gr_num: int32u = 0;
-    let mut _gr_den: int32u = 0;
+    let mut _reserved0: Int8u = 0;
+    let mut _version_major: Int8u = 0;
+    let mut _version_minor: Int8u = 0;
+    let mut _num_headers: Int8u = 0;
+    let mut _text_encoding: Int8u = 0;
+    let mut _directionality: Int8u = 0;
+    let mut _reserved1: Int8u = 0;
+    let mut _granule_shift: Int8u = 0;
+    let mut _width: Int16u = 0;
+    let mut _height: Int16u = 0;
+    let mut _gr_num: Int32u = 0;
+    let mut _gr_den: Int32u = 0;
 
     fa.get_l1(&mut _reserved0, "Reserved");
     fa.get_l1(&mut _version_major, "version major");

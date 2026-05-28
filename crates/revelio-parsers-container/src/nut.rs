@@ -12,7 +12,7 @@
 //!   0x18   1  file_id_string_zero = 0x00
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int8u;
+use zenlib::Int8u;
 
 const NUT_HEADER_SIZE: usize = 25;
 const NUT_FILE_ID: &[u8; 24] = b"nut/multimedia container";
@@ -32,7 +32,7 @@ pub fn parse_nut(fa: &mut FileAnalyze) -> bool {
 
     fa.element_begin("Nut header");
     let _ = fa.read_raw(24);
-    let mut _zero: int8u = 0;
+    let mut _zero: Int8u = 0;
     fa.get_b1(&mut _zero, "file_id_string zero");
     fa.element_end();
 

@@ -27,7 +27,7 @@
 //!   16 bytes: MD5 of unencoded audio
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int128u, int16u, int32u, int64u, int8u};
+use zenlib::{Int128u, Int16u, Int32u, Int64u, Int8u};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
 #[allow(dead_code)]
@@ -42,27 +42,27 @@ const BLOCK_TYPE_PICTURE: u8 = 6;
 
 #[derive(Debug, Default)]
 struct StreamInfo {
-    min_frame_size: int32u,
-    max_frame_size: int32u,
-    sample_rate: int32u,
-    channels: int8u,
-    bits_per_sample: int8u,
-    total_samples: int64u,
-    md5: int128u,
+    min_frame_size: Int32u,
+    max_frame_size: Int32u,
+    sample_rate: Int32u,
+    channels: Int8u,
+    bits_per_sample: Int8u,
+    total_samples: Int64u,
+    md5: Int128u,
 }
 
 pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 4 {
         return false;
     }
-    let mut magic: int32u = 0;
+    let mut magic: Int32u = 0;
     fa.peek_b4(&mut magic);
     if magic != u32::from_be_bytes(*b"fLaC") {
         return false;
     }
 
     fa.element_begin("FLAC");
-    let mut magic_consume: int32u = 0;
+    let mut magic_consume: Int32u = 0;
     fa.get_c4(&mut magic_consume, "Magic");
 
     let mut streaminfo: Option<StreamInfo> = None;
@@ -72,11 +72,11 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
         if fa.remain() < 4 {
             break;
         }
-        let mut header: int8u = 0;
+        let mut header: Int8u = 0;
         fa.get_b1(&mut header, "BlockHeader");
         let is_last = (header & 0x80) != 0;
         let block_type = header & 0x7F;
-        let mut block_length: int32u = 0;
+        let mut block_length: Int32u = 0;
         fa.get_b3(&mut block_length, "BlockLength");
         let block_len_usize = block_length as usize;
 
@@ -153,7 +153,7 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<Vorbis
     let start_offset = fa.element_offset();
     let end_offset = start_offset + block_len;
 
-    let mut vendor_len: int32u = 0;
+    let mut vendor_len: Int32u = 0;
     fa.get_l4(&mut vendor_len, "vendor_length");
     let vendor_len_usize = vendor_len as usize;
     if fa.element_offset() + vendor_len_usize > end_offset {
@@ -174,14 +174,14 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<Vorbis
     };
 
     // Consume remaining comments (length-prefixed UTF-8 strings).
-    let mut num_comments: int32u = 0;
+    let mut num_comments: Int32u = 0;
     if fa.remain() >= 4 {
         fa.get_l4(&mut num_comments, "user_comment_list_length");
         for _ in 0..num_comments {
             if fa.element_offset() + 4 > end_offset {
                 break;
             }
-            let mut comment_len: int32u = 0;
+            let mut comment_len: Int32u = 0;
             fa.get_l4(&mut comment_len, "comment_length");
             let cl = comment_len as usize;
             if fa.element_offset() + cl > end_offset {
@@ -220,27 +220,27 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<Vorbis
 }
 
 fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
-    let mut min_block_size: int16u = 0;
-    let mut max_block_size: int16u = 0;
+    let mut min_block_size: Int16u = 0;
+    let mut max_block_size: Int16u = 0;
     fa.get_b2(&mut min_block_size, "BlockSize_Min");
     fa.get_b2(&mut max_block_size, "BlockSize_Max");
-    let mut min_frame_size: int32u = 0;
-    let mut max_frame_size: int32u = 0;
+    let mut min_frame_size: Int32u = 0;
+    let mut max_frame_size: Int32u = 0;
     fa.get_b3(&mut min_frame_size, "FrameSize_Min");
     fa.get_b3(&mut max_frame_size, "FrameSize_Max");
 
     fa.bs_begin();
-    let mut sample_rate: int32u = 0;
-    let mut channels: int8u = 0;
-    let mut bps: int8u = 0;
-    let mut samples: int64u = 0;
+    let mut sample_rate: Int32u = 0;
+    let mut channels: Int8u = 0;
+    let mut bps: Int8u = 0;
+    let mut samples: Int64u = 0;
     fa.get_s3(20, &mut sample_rate, "SampleRate");
     fa.get_s1(3, &mut channels, "Channels");
     fa.get_s1(5, &mut bps, "BitPerSample");
     fa.get_s5(36, &mut samples, "Samples");
     fa.bs_end();
 
-    let mut md5: int128u = 0;
+    let mut md5: Int128u = 0;
     fa.get_b16(&mut md5, "MD5");
 
     StreamInfo {

@@ -4,9 +4,7 @@
 //! idiomatic Rust. Naming follows the upstream `ZenLib::` namespace
 //! convention to keep parser code visually close to the C++ original.
 
-#![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
 
 pub mod bitstream;
 pub mod types;

@@ -19,9 +19,9 @@
 //!   0x20  ... Per-frame records (frame_size L4 + PTS L8 + payload)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u};
+use zenlib::{Int16u, Int32u};
 
-const FOURCC_DKIF: int32u = u32::from_be_bytes(*b"DKIF");
+const FOURCC_DKIF: Int32u = u32::from_be_bytes(*b"DKIF");
 
 pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
     // Peek the signature so non-IVF buffers leave the cursor untouched
@@ -30,7 +30,7 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
         Some(b) if b.len() == 4 => b,
         _ => return false,
     };
-    let magic = int32u::from_be_bytes([head[0], head[1], head[2], head[3]]);
+    let magic = Int32u::from_be_bytes([head[0], head[1], head[2], head[3]]);
     if magic != FOURCC_DKIF {
         return false;
     }
@@ -42,16 +42,16 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
 
     fa.element_begin("IVF");
     fa.skip_c4("Signature");
-    let mut version: int16u = 0;
+    let mut version: Int16u = 0;
     fa.get_l2(&mut version, "Version");
 
-    let mut header_size: int16u = 0;
-    let mut fourcc: int32u = 0;
-    let mut width: int16u = 0;
-    let mut height: int16u = 0;
-    let mut frame_rate_num: int32u = 0;
-    let mut frame_rate_den: int32u = 0;
-    let mut frame_count: int32u = 0;
+    let mut header_size: Int16u = 0;
+    let mut fourcc: Int32u = 0;
+    let mut width: Int16u = 0;
+    let mut height: Int16u = 0;
+    let mut frame_rate_num: Int32u = 0;
+    let mut frame_rate_den: Int32u = 0;
+    let mut frame_count: Int32u = 0;
 
     if version == 0 {
         fa.get_l2(&mut header_size, "Header Size");
@@ -62,7 +62,7 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
             fa.get_l4(&mut frame_rate_num, "FrameRate Numerator");
             fa.get_l4(&mut frame_rate_den, "FrameRate Denominator");
             fa.get_l4(&mut frame_count, "Frame Count");
-            let mut _unused: int32u = 0;
+            let mut _unused: Int32u = 0;
             fa.get_l4(&mut _unused, "Unused");
             let extra = header_size as usize - 32;
             if extra > 0 && fa.remain() >= extra {
@@ -120,7 +120,7 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
     true
 }
 
-fn video_format_from_fourcc(fcc: int32u) -> &'static str {
+fn video_format_from_fourcc(fcc: Int32u) -> &'static str {
     // FourCCs IVF files use in the wild — kept aligned with the codecs
     // MediaInfoLib's File_Ivf.cpp dispatches to (AV1/AV2/VP8/VP9).
     match &fcc.to_be_bytes() {

@@ -57,29 +57,29 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
     // Bit-level read for the BSI fields after frmsizecod.
     fa.skip_hexa(5, "sync_crc_fscod_frmsize");
     fa.bs_begin();
-    let mut bsid: zenlib::int8u = 0;
+    let mut bsid: zenlib::Int8u = 0;
     fa.get_s1(5, &mut bsid, "bsid");
-    let mut bsmod: zenlib::int8u = 0;
+    let mut bsmod: zenlib::Int8u = 0;
     fa.get_s1(3, &mut bsmod, "bsmod");
-    let mut acmod: zenlib::int8u = 0;
+    let mut acmod: zenlib::Int8u = 0;
     fa.get_s1(3, &mut acmod, "acmod");
     // Conditional cmixlev (when center channel present).
     if (acmod & 0x01) != 0 && acmod != 0x01 {
-        let mut _cmixlev: zenlib::int8u = 0;
+        let mut _cmixlev: zenlib::Int8u = 0;
         fa.get_s1(2, &mut _cmixlev, "");
     }
     // Conditional surmixlev (when surround channel present).
     if (acmod & 0x04) != 0 {
-        let mut _surmixlev: zenlib::int8u = 0;
+        let mut _surmixlev: zenlib::Int8u = 0;
         fa.get_s1(2, &mut _surmixlev, "");
     }
-    let mut dsurmod: zenlib::int8u = 0;
+    let mut dsurmod: zenlib::Int8u = 0;
     if acmod == 0x02 {
         fa.get_s1(2, &mut dsurmod, "dsurmod");
     }
-    let mut lfeon: zenlib::int8u = 0;
+    let mut lfeon: zenlib::Int8u = 0;
     fa.get_s1(1, &mut lfeon, "lfeon");
-    let mut dialnorm: zenlib::int8u = 0;
+    let mut dialnorm: zenlib::Int8u = 0;
     fa.get_s1(5, &mut dialnorm, "dialnorm");
     fa.bs_end();
     let _ = bsmod;

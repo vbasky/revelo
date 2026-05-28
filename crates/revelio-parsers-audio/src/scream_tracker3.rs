@@ -24,7 +24,7 @@
 //!   ... plus more fields and 32-byte channel settings.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int8u};
+use zenlib::{Int16u, Int8u};
 
 const HEADER_MIN_BYTES: usize = 96;
 const SCRM_OFFSET: usize = 0x2C;
@@ -53,25 +53,25 @@ pub fn parse_scream_tracker3(fa: &mut FileAnalyze) -> bool {
     fa.skip_l1("Unknown");
     fa.skip_l1("Unknown");
 
-    let mut ord_num: int16u = 0;
-    let mut ins_num: int16u = 0;
-    let mut pat_num: int16u = 0;
-    let mut flags: int16u = 0;
+    let mut ord_num: Int16u = 0;
+    let mut ins_num: Int16u = 0;
+    let mut pat_num: Int16u = 0;
+    let mut flags: Int16u = 0;
     fa.get_l2(&mut ord_num, "Orders count");
     fa.get_l2(&mut ins_num, "Instruments count");
     fa.get_l2(&mut pat_num, "Paterns count");
     fa.get_l2(&mut flags, "Flags");
 
-    let mut sw_major: int8u = 0;
-    let mut sw_minor: int8u = 0;
+    let mut sw_major: Int8u = 0;
+    let mut sw_minor: Int8u = 0;
     fa.get_l1(&mut sw_major, "Cwt/v (Major)");
     fa.get_l1(&mut sw_minor, "Cwt/v (Minor)");
     fa.skip_l2("File format information");
     fa.skip_b4("Signature");
     fa.skip_l1("global volume");
 
-    let mut initial_speed: int8u = 0;
-    let mut initial_tempo: int8u = 0;
+    let mut initial_speed: Int8u = 0;
+    let mut initial_tempo: Int8u = 0;
     fa.get_l1(&mut initial_speed, "Initial Speed");
     fa.get_l1(&mut initial_tempo, "Initial Temp");
     fa.skip_l1("master volume");
@@ -80,7 +80,7 @@ pub fn parse_scream_tracker3(fa: &mut FileAnalyze) -> bool {
     for _ in 0..8 {
         fa.skip_l1("Unknown");
     }
-    let mut special: int16u = 0;
+    let mut special: Int16u = 0;
     fa.get_l2(&mut special, "Special");
     fa.skip_hexa(32, "Channel settings");
 

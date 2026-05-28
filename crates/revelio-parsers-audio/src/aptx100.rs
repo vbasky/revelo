@@ -8,7 +8,7 @@
 //! terminators) or non-ASCII byte rejects the buffer.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int8u};
+use zenlib::{Int16u, Int8u};
 
 const HEADER_SIZE: usize = 0x5C;
 const ASCII_REGION: usize = 60 + 8 + 7;
@@ -193,9 +193,9 @@ fn read_nul_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[..end]).into_owned()
 }
 
-fn bcd_to_decimal(v: int8u) -> int16u {
-    let tens = (v >> 4) as int16u;
-    let units = (v & 0x0F) as int16u;
+fn bcd_to_decimal(v: Int8u) -> Int16u {
+    let tens = (v >> 4) as Int16u;
+    let units = (v & 0x0F) as Int16u;
     if tens >= 10 || units >= 10 {
         // Sentinel: any value > 99 will fail the validity check below.
         return u16::MAX;
@@ -203,16 +203,16 @@ fn bcd_to_decimal(v: int8u) -> int16u {
     tens * 10 + units
 }
 
-fn timecode_to_ms(hh: int16u, mm: int16u, ss: int16u, ff: int16u) -> i64 {
+fn timecode_to_ms(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> i64 {
     // ff is hundredths of a second (99 fps timed).
     (hh as i64) * 3_600_000 + (mm as i64) * 60_000 + (ss as i64) * 1000 + (ff as i64) * 10
 }
 
-fn format_timecode(hh: int16u, mm: int16u, ss: int16u, ff: int16u) -> String {
+fn format_timecode(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> String {
     format!("{:02}:{:02}:{:02}:{:02}", hh, mm, ss, ff)
 }
 
-fn decrement_frame(hh: int16u, mm: int16u, ss: int16u, ff: int16u) -> (int16u, int16u, int16u, int16u) {
+fn decrement_frame(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> (Int16u, Int16u, Int16u, Int16u) {
     if ff > 0 {
         return (hh, mm, ss, ff - 1);
     }

@@ -41,7 +41,7 @@
 //!   uint32 LE  SampleRate
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int128u, int16u, int32u};
+use zenlib::{Int128u, Int16u, Int32u};
 
 const MAGIC_MAC_SPACE: u32 = u32::from_be_bytes(*b"MAC ");
 const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
@@ -60,18 +60,18 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.element_begin("APE");
-    let mut identifier: int32u = 0;
+    let mut identifier: Int32u = 0;
     fa.get_c4(&mut identifier, "Identifier");
-    let mut version: int16u = 0;
+    let mut version: Int16u = 0;
     fa.get_l2(&mut version, "Version");
 
-    let mut sample_rate: int32u = 0;
-    let mut total_frames: int32u = 0;
-    let mut final_frame_samples: int32u = 0;
-    let mut samples_per_frame: int32u = 0;
-    let mut compression_level: int16u = 0;
-    let mut channels: int16u = 0;
-    let mut resolution: int16u = 0;
+    let mut sample_rate: Int32u = 0;
+    let mut total_frames: Int32u = 0;
+    let mut final_frame_samples: Int32u = 0;
+    let mut samples_per_frame: Int32u = 0;
+    let mut compression_level: Int16u = 0;
+    let mut channels: Int16u = 0;
+    let mut resolution: Int16u = 0;
 
     if version < 3980 {
         if !parse_legacy_header(
@@ -128,21 +128,21 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
 
 fn parse_legacy_header(
     fa: &mut FileAnalyze,
-    version: int16u,
-    compression_level: &mut int16u,
-    channels: &mut int16u,
-    resolution: &mut int16u,
-    sample_rate: &mut int32u,
-    total_frames: &mut int32u,
-    final_frame_samples: &mut int32u,
-    samples_per_frame: &mut int32u,
+    version: Int16u,
+    compression_level: &mut Int16u,
+    channels: &mut Int16u,
+    resolution: &mut Int16u,
+    sample_rate: &mut Int32u,
+    total_frames: &mut Int32u,
+    final_frame_samples: &mut Int32u,
+    samples_per_frame: &mut Int32u,
 ) -> bool {
     // Legacy header is 26 bytes after Version (+ optional 44-byte RIFF + seek table).
     if fa.remain() < 32 {
         return false;
     }
     fa.get_l2(compression_level, "CompressionLevel");
-    let mut flags: int16u = 0;
+    let mut flags: Int16u = 0;
     fa.get_l2(&mut flags, "FormatFlags");
     let resolution8 = (flags & 0x0001) != 0;
     let resolution24 = (flags & 0x0008) != 0;
@@ -162,7 +162,7 @@ fn parse_legacy_header(
     fa.get_l4(final_frame_samples, "FinalFrameSamples");
     *samples_per_frame = ape_samples_per_frame(version, *compression_level);
     fa.skip_l4("PeakLevel");
-    let mut seek_elements: int32u = 0;
+    let mut seek_elements: Int32u = 0;
     fa.get_l4(&mut seek_elements, "SeekElements");
     if !no_wav_header {
         if fa.remain() < 44 {
@@ -180,13 +180,13 @@ fn parse_legacy_header(
 
 fn parse_modern_header(
     fa: &mut FileAnalyze,
-    compression_level: &mut int16u,
-    channels: &mut int16u,
-    resolution: &mut int16u,
-    sample_rate: &mut int32u,
-    total_frames: &mut int32u,
-    final_frame_samples: &mut int32u,
-    samples_per_frame: &mut int32u,
+    compression_level: &mut Int16u,
+    channels: &mut Int16u,
+    resolution: &mut Int16u,
+    sample_rate: &mut Int32u,
+    total_frames: &mut Int32u,
+    final_frame_samples: &mut Int32u,
+    samples_per_frame: &mut Int32u,
 ) -> bool {
     // Descriptor (46) + header (24) bytes after the version field.
     if fa.remain() < 70 {
@@ -200,10 +200,10 @@ fn parse_modern_header(
     fa.skip_l4("APEFrameDataBytes");
     fa.skip_l4("APEFrameDataBytesHigh");
     fa.skip_l4("WavTerminatingDataBytes");
-    let mut _md5: int128u = 0;
+    let mut _md5: Int128u = 0;
     fa.get_l16(&mut _md5, "FileMD5");
     fa.get_l2(compression_level, "CompressionLevel");
-    let mut _flags: int16u = 0;
+    let mut _flags: Int16u = 0;
     fa.get_l2(&mut _flags, "FormatFlags");
     fa.get_l4(samples_per_frame, "BlocksPerFrame");
     fa.get_l4(final_frame_samples, "FinalFrameBlocks");
@@ -214,7 +214,7 @@ fn parse_modern_header(
     true
 }
 
-fn ape_samples_per_frame(version: int16u, compression_level: int16u) -> int32u {
+fn ape_samples_per_frame(version: Int16u, compression_level: Int16u) -> Int32u {
     if version >= 3950 {
         73728 * 4
     } else if version >= 3900 {
@@ -226,7 +226,7 @@ fn ape_samples_per_frame(version: int16u, compression_level: int16u) -> int32u {
     }
 }
 
-fn ape_codec_settings(level: int16u) -> &'static str {
+fn ape_codec_settings(level: Int16u) -> &'static str {
     match level {
         1000 => "Fast",
         2000 => "Normal",
@@ -239,12 +239,12 @@ fn ape_codec_settings(level: int16u) -> &'static str {
 
 fn fill_streams(
     fa: &mut FileAnalyze,
-    identifier: int32u,
-    version: int16u,
-    compression_level: int16u,
-    channels: int16u,
-    resolution: int16u,
-    sample_rate: int32u,
+    identifier: Int32u,
+    version: Int16u,
+    compression_level: Int16u,
+    channels: Int16u,
+    resolution: Int16u,
+    sample_rate: Int32u,
     samples: u64,
 ) {
     let duration_ms: u64 = samples * 1000 / (sample_rate as u64);

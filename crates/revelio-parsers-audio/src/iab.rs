@@ -14,7 +14,7 @@
 //! C++ which simply skips the unknown payload.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int32u, int8u};
+use zenlib::{Int32u, Int8u};
 
 const IAB_SAMPLE_RATE: [u32; 4] = [48000, 96000, 0, 0];
 const IAB_BIT_DEPTH: [u8; 4] = [16, 24, 0, 0];
@@ -81,14 +81,14 @@ pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
     let version = full[iaframe_tag_off + 5];
 
     fa.element_begin("IAB");
-    let mut preamble_tag: int8u = 0;
+    let mut preamble_tag: Int8u = 0;
     fa.get_b1(&mut preamble_tag, "PreambleTag");
-    let mut _preamble_len: int32u = 0;
+    let mut _preamble_len: Int32u = 0;
     fa.get_b4(&mut _preamble_len, "PreambleLength");
     fa.skip_hexa(preamble_length, "PreambleValue");
-    let mut iaframe_tag: int8u = 0;
+    let mut iaframe_tag: Int8u = 0;
     fa.get_b1(&mut iaframe_tag, "IAFrameTag");
-    let mut _ia_len: int32u = 0;
+    let mut _ia_len: Int32u = 0;
     fa.get_b4(&mut _ia_len, "IAFrameLength");
 
     let mut sample_rate: Option<u32> = None;
@@ -96,12 +96,12 @@ pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
     let mut frame_rate: Option<f64> = None;
 
     if version == 1 {
-        let mut _v: int8u = 0;
+        let mut _v: Int8u = 0;
         fa.get_b1(&mut _v, "Version");
         fa.bs_begin();
-        let mut sr_idx: int8u = 0;
-        let mut bd_idx: int8u = 0;
-        let mut fr_idx: int8u = 0;
+        let mut sr_idx: Int8u = 0;
+        let mut bd_idx: Int8u = 0;
+        let mut fr_idx: Int8u = 0;
         fa.get_s1(2, &mut sr_idx, "SampleRate");
         fa.get_s1(2, &mut bd_idx, "BitDepth");
         fa.get_s1(4, &mut fr_idx, "FrameRate");

@@ -36,7 +36,7 @@
 //!  PatNum*4:        Patterns offsets
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int8u};
+use zenlib::{Int16u, Int8u};
 
 const MAGIC: &[u8; 4] = b"IMPM";
 const FIXED_HEADER_BYTES: usize = 192;
@@ -62,32 +62,32 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
     fa.skip_l1("Unknown");
     fa.skip_l1("Unknown");
 
-    let mut ord_num: int16u = 0;
-    let mut ins_num: int16u = 0;
-    let mut smp_num: int16u = 0;
-    let mut pat_num: int16u = 0;
+    let mut ord_num: Int16u = 0;
+    let mut ins_num: Int16u = 0;
+    let mut smp_num: Int16u = 0;
+    let mut pat_num: Int16u = 0;
     fa.get_l2(&mut ord_num, "Orders count");
     fa.get_l2(&mut ins_num, "Instruments count");
     fa.get_l2(&mut smp_num, "Samples count");
     fa.get_l2(&mut pat_num, "Paterns count");
 
-    let mut sw_version_minor: int8u = 0;
-    let mut sw_version_major: int8u = 0;
-    let mut version_minor: int8u = 0;
-    let mut version_major: int8u = 0;
+    let mut sw_version_minor: Int8u = 0;
+    let mut sw_version_major: Int8u = 0;
+    let mut version_minor: Int8u = 0;
+    let mut version_major: Int8u = 0;
     fa.get_l1(&mut sw_version_minor, "Cwt/v (Minor)");
     fa.get_l1(&mut sw_version_major, "Cwt/v (Major)");
     fa.get_l1(&mut version_minor, "Cwt (Minor)");
     fa.get_l1(&mut version_major, "Cwt (Major)");
 
-    let mut flags: int16u = 0;
+    let mut flags: Int16u = 0;
     fa.get_l2(&mut flags, "Flags");
     let stereo = (flags & 0x0001) != 0;
     fa.skip_l2("Special");
     fa.skip_l1("Global volume");
     fa.skip_l1("Mix volume");
-    let mut initial_speed: int8u = 0;
-    let mut initial_tempo: int8u = 0;
+    let mut initial_speed: Int8u = 0;
+    let mut initial_tempo: Int8u = 0;
     fa.get_l1(&mut initial_speed, "Initial Speed");
     fa.get_l1(&mut initial_tempo, "Initial Temp");
     fa.skip_l1("Panning separation between channels");

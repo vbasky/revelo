@@ -20,22 +20,22 @@
 //! 10 decimal digits.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{float80, int16u, int32u, int8u};
+use zenlib::{Float80, Int16u, Int32u, Int8u};
 
-const FOURCC_FORM: int32u = u32::from_be_bytes(*b"FORM");
-const FOURCC_AIFF: int32u = u32::from_be_bytes(*b"AIFF");
-const FOURCC_AIFC: int32u = u32::from_be_bytes(*b"AIFC");
-const FOURCC_COMM: int32u = u32::from_be_bytes(*b"COMM");
-const FOURCC_SSND: int32u = u32::from_be_bytes(*b"SSND");
+const FOURCC_FORM: Int32u = u32::from_be_bytes(*b"FORM");
+const FOURCC_AIFF: Int32u = u32::from_be_bytes(*b"AIFF");
+const FOURCC_AIFC: Int32u = u32::from_be_bytes(*b"AIFC");
+const FOURCC_COMM: Int32u = u32::from_be_bytes(*b"COMM");
+const FOURCC_SSND: Int32u = u32::from_be_bytes(*b"SSND");
 
 #[derive(Debug, Default)]
 struct CommChunk {
-    num_channels: int16u,
-    num_sample_frames: int32u,
-    sample_size: int16u,
-    sample_rate: float80,
+    num_channels: Int16u,
+    num_sample_frames: Int32u,
+    sample_size: Int16u,
+    sample_rate: Float80,
     // AIFC-only: present when the FORM type is "AIFC".
-    compression_type: Option<int32u>,
+    compression_type: Option<Int32u>,
 }
 
 /// Decoded codec mapping for an AIFC compressionType FourCC. `format`
@@ -49,7 +49,7 @@ struct AifcCodec {
     is_float: bool,
 }
 
-fn map_aifc_compression(fourcc: int32u) -> AifcCodec {
+fn map_aifc_compression(fourcc: Int32u) -> AifcCodec {
     // FourCCs matched as ASCII bytes; AIFC compressionType is case-sensitive
     // per the spec but real files use both cases for the same codec, so we
     // accept both. Endianness/Sign assignments follow File_Pcm.cpp's table.
@@ -95,18 +95,18 @@ fn map_aifc_compression(fourcc: int32u) -> AifcCodec {
 }
 
 pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
-    let mut magic: int32u = 0;
+    let mut magic: Int32u = 0;
     fa.peek_b4(&mut magic);
     if magic != FOURCC_FORM {
         return false;
     }
 
     fa.element_begin("FORM");
-    let mut form_id: int32u = 0;
+    let mut form_id: Int32u = 0;
     fa.get_c4(&mut form_id, "ID");
-    let mut form_size: int32u = 0;
+    let mut form_size: Int32u = 0;
     fa.get_b4(&mut form_size, "Size");
-    let mut form_type: int32u = 0;
+    let mut form_type: Int32u = 0;
     fa.get_c4(&mut form_type, "Type");
 
     if form_type != FOURCC_AIFF && form_type != FOURCC_AIFC {
@@ -119,9 +119,9 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
     let mut audio_stream_size: u64 = 0;
 
     while fa.remain() >= 8 {
-        let mut chunk_id: int32u = 0;
+        let mut chunk_id: Int32u = 0;
         fa.get_c4(&mut chunk_id, "ChunkID");
-        let mut chunk_size: int32u = 0;
+        let mut chunk_size: Int32u = 0;
         fa.get_b4(&mut chunk_size, "ChunkSize");
 
         let chunk_size_usize = chunk_size as usize;
@@ -132,26 +132,26 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
         match chunk_id {
             FOURCC_COMM => {
                 fa.element_begin("Common");
-                let mut num_channels: int16u = 0;
+                let mut num_channels: Int16u = 0;
                 fa.get_b2(&mut num_channels, "numChannels");
-                let mut num_sample_frames: int32u = 0;
+                let mut num_sample_frames: Int32u = 0;
                 fa.get_b4(&mut num_sample_frames, "numSampleFrames");
-                let mut sample_size: int16u = 0;
+                let mut sample_size: Int16u = 0;
                 fa.get_b2(&mut sample_size, "sampleSize");
-                let mut sample_rate: float80 = 0.0;
+                let mut sample_rate: Float80 = 0.0;
                 fa.get_bf10(&mut sample_rate, "sampleRate");
 
                 let mut consumed: usize = 18;
-                let mut compression_type: Option<int32u> = None;
+                let mut compression_type: Option<Int32u> = None;
                 if is_aifc && chunk_size_usize >= consumed + 4 {
-                    let mut ct: int32u = 0;
+                    let mut ct: Int32u = 0;
                     fa.get_c4(&mut ct, "compressionType");
                     compression_type = Some(ct);
                     consumed += 4;
                     // Pascal string: 1-byte length + payload, then padded to
                     // even total length within the chunk body.
                     if chunk_size_usize >= consumed + 1 {
-                        let mut pa_len: int8u = 0;
+                        let mut pa_len: Int8u = 0;
                         fa.get_b1(&mut pa_len, "compressionName_length");
                         consumed += 1;
                         let pa_total = pa_len as usize;
@@ -172,7 +172,7 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
                     fa.skip_hexa(chunk_size_usize - consumed, "Extension");
                 }
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: int8u = 0;
+                    let mut _pad: Int8u = 0;
                     fa.get_b1(&mut _pad, "Padding");
                 }
                 fa.element_end();
@@ -187,9 +187,9 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
             }
             FOURCC_SSND => {
                 fa.element_begin("SoundData");
-                let mut offset: int32u = 0;
+                let mut offset: Int32u = 0;
                 fa.get_b4(&mut offset, "offset");
-                let mut block_size: int32u = 0;
+                let mut block_size: Int32u = 0;
                 fa.get_b4(&mut block_size, "blockSize");
                 // Actual audio data is the chunk body minus the 8-byte
                 // offset+blockSize prefix.
@@ -197,7 +197,7 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
                 audio_stream_size = samples_size as u64;
                 fa.skip_hexa(samples_size, "Samples");
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: int8u = 0;
+                    let mut _pad: Int8u = 0;
                     fa.get_b1(&mut _pad, "Padding");
                 }
                 fa.element_end();
@@ -205,7 +205,7 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
             _ => {
                 fa.skip_hexa(chunk_size_usize, "Unknown");
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: int8u = 0;
+                    let mut _pad: Int8u = 0;
                     fa.get_b1(&mut _pad, "Padding");
                 }
             }

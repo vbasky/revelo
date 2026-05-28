@@ -14,7 +14,7 @@
 //!   0x05  B4  DataOffset (header size, typically 9)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int32u, int8u};
+use zenlib::{Int32u, Int8u};
 
 const FLV_HEADER_SIZE: usize = 9;
 const FLV_SIGNATURE: [u8; 3] = *b"FLV";
@@ -37,17 +37,17 @@ pub fn parse_flv(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.element_begin("FLV header");
-    let mut sig0: int8u = 0;
-    let mut sig1: int8u = 0;
-    let mut sig2: int8u = 0;
+    let mut sig0: Int8u = 0;
+    let mut sig1: Int8u = 0;
+    let mut sig2: Int8u = 0;
     fa.get_b1(&mut sig0, "Signature[0]");
     fa.get_b1(&mut sig1, "Signature[1]");
     fa.get_b1(&mut sig2, "Signature[2]");
-    let mut version: int8u = 0;
+    let mut version: Int8u = 0;
     fa.get_b1(&mut version, "Version");
-    let mut type_flags: int8u = 0;
+    let mut type_flags: Int8u = 0;
     fa.get_b1(&mut type_flags, "TypeFlags");
-    let mut data_offset: int32u = 0;
+    let mut data_offset: Int32u = 0;
     fa.get_b4(&mut data_offset, "DataOffset");
     fa.element_end();
 

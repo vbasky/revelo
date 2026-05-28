@@ -6,9 +6,7 @@
 //! Naming follows the C++ side verbatim. Idiomaticity is sacrificed for
 //! 1:1 readability with the upstream parsers.
 
-#![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
 
 pub mod element;
 pub mod file_analyze;

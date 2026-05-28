@@ -18,10 +18,10 @@
 //!              proprietary and the reference parser ignores them).
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
-const FOURCC_RIFF: int32u = u32::from_be_bytes(*b"RIFF");
-const FOURCC_AMV: int32u = u32::from_be_bytes(*b"AMV ");
+const FOURCC_RIFF: Int32u = u32::from_be_bytes(*b"RIFF");
+const FOURCC_AMV: Int32u = u32::from_be_bytes(*b"AMV ");
 
 /// Detect a RIFF/AMV container and fill `General.Format`. Returns `true`
 /// when the magic + form type match; otherwise the FileAnalyze cursor is
@@ -33,18 +33,18 @@ pub fn parse_amv(fa: &mut FileAnalyze) -> bool {
         Some(b) => b,
         None => return false,
     };
-    let magic = int32u::from_be_bytes([header[0], header[1], header[2], header[3]]);
-    let form = int32u::from_be_bytes([header[8], header[9], header[10], header[11]]);
+    let magic = Int32u::from_be_bytes([header[0], header[1], header[2], header[3]]);
+    let form = Int32u::from_be_bytes([header[8], header[9], header[10], header[11]]);
     if magic != FOURCC_RIFF || form != FOURCC_AMV {
         return false;
     }
 
     fa.element_begin("RIFF");
-    let mut riff_id: int32u = 0;
+    let mut riff_id: Int32u = 0;
     fa.get_c4(&mut riff_id, "ID");
-    let mut riff_size: int32u = 0;
+    let mut riff_size: Int32u = 0;
     fa.get_l4(&mut riff_size, "Size");
-    let mut form_type: int32u = 0;
+    let mut form_type: Int32u = 0;
     fa.get_c4(&mut form_type, "Type");
     fa.element_end();
 

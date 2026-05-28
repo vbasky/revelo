@@ -24,7 +24,7 @@
 //!   256 bytes:      Pattern order table
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
+use zenlib::{Int16u, Int32u, Int8u};
 
 const MAGIC: &[u8; 17] = b"Extended Module: ";
 const HEADER_MIN_BYTES: usize = 336;
@@ -55,24 +55,24 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
     let tracker_name_bytes = fa.read_raw(20).to_vec();
     let tracker_name = trim_local_string(&tracker_name_bytes);
 
-    let mut version_minor: int8u = 0;
-    let mut version_major: int8u = 0;
+    let mut version_minor: Int8u = 0;
+    let mut version_major: Int8u = 0;
     fa.get_l1(&mut version_minor, "Version (minor)");
     fa.get_l1(&mut version_major, "Version (major)");
 
-    let mut header_size: int32u = 0;
+    let mut header_size: Int32u = 0;
     fa.get_l4(&mut header_size, "Header size");
 
-    let mut length: int16u = 0;
+    let mut length: Int16u = 0;
     fa.get_l2(&mut length, "Song Length");
     fa.skip_l2("Restart position");
 
-    let mut channels: int16u = 0;
-    let mut patterns: int16u = 0;
-    let mut instruments: int16u = 0;
-    let mut flags: int16u = 0;
-    let mut tempo: int16u = 0;
-    let mut bpm: int16u = 0;
+    let mut channels: Int16u = 0;
+    let mut patterns: Int16u = 0;
+    let mut instruments: Int16u = 0;
+    let mut flags: Int16u = 0;
+    let mut tempo: Int16u = 0;
+    let mut bpm: Int16u = 0;
     fa.get_l2(&mut channels, "Number of channels");
     fa.get_l2(&mut patterns, "Number of patterns");
     fa.get_l2(&mut instruments, "Number of instruments");

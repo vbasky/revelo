@@ -12,9 +12,9 @@
 //!   2 bytes LE height (14 bits valid, top 2 bits for scaling)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u};
+use zenlib::{Int16u, Int32u};
 
-const VP8_START_CODE: int32u = 0x9D012A;
+const VP8_START_CODE: Int32u = 0x9D012A;
 
 pub fn parse_vp8(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 10 {
@@ -36,7 +36,7 @@ pub fn parse_vp8(fa: &mut FileAnalyze) -> bool {
 
     if frame_type == 0 {
         // I-Frame
-        let mut start_code: int32u = 0;
+        let mut start_code: Int32u = 0;
         fa.get_b3(&mut start_code, "start code");
 
         if start_code != VP8_START_CODE {
@@ -44,8 +44,8 @@ pub fn parse_vp8(fa: &mut FileAnalyze) -> bool {
             return false;
         }
 
-        let mut width: int16u = 0;
-        let mut height: int16u = 0;
+        let mut width: Int16u = 0;
+        let mut height: Int16u = 0;
         fa.get_l2(&mut width, "width");
         fa.get_l2(&mut height, "height");
 

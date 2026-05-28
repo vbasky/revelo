@@ -5,7 +5,7 @@
 //! and color info from key frames.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
 const VP9_COLORSPACE_MAP: [u8; 8] = [2, 5, 1, 6, 7, 9, 2, 0];
 
@@ -110,7 +110,7 @@ pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
     let mut has_size = false;
 
     if has_sync_code_color_refresh != 0 {
-        let mut sync_code: int32u = 0;
+        let mut sync_code: Int32u = 0;
         fa.get_s3(24, &mut sync_code, "SYNC_CODE");
 
         if sync_code != 0x498342 {

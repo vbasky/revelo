@@ -1,8 +1,6 @@
 //! Text/subtitle format parsers (SubRip, SSA/ASS, TTML, Kate, etc.).
 
-#![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
 
 pub mod arib_std_b24_b37;
 pub use arib_std_b24_b37::parse_arib_std_b24_b37;

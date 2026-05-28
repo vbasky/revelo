@@ -23,7 +23,7 @@
 //!   uint32  crc32
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
+use zenlib::{Int16u, Int32u, Int8u};
 
 const MAGIC_LA: [u8; 2] = *b"LA";
 const HEADER_LEN: usize = 45;
@@ -41,29 +41,29 @@ pub fn parse_la(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.element_begin("LA");
-    let mut signature: int16u = 0;
+    let mut signature: Int16u = 0;
     fa.get_l2(&mut signature, "signature");
-    let mut major: int8u = 0;
-    let mut minor: int8u = 0;
+    let mut major: Int8u = 0;
+    let mut minor: Int8u = 0;
     fa.get_l1(&mut major, "major_version");
     fa.get_l1(&mut minor, "minor_version");
-    let mut uncompressed_size: int32u = 0;
+    let mut uncompressed_size: Int32u = 0;
     fa.get_l4(&mut uncompressed_size, "uncompressed_size");
     fa.skip_l4("chunk");
     fa.skip_l4("fmt_size");
     fa.skip_l4("fmt_chunk");
     fa.skip_l4("fmt_size");
-    let mut raw_format: int16u = 0;
+    let mut raw_format: Int16u = 0;
     fa.get_l2(&mut raw_format, "raw_format");
-    let mut channels: int16u = 0;
+    let mut channels: Int16u = 0;
     fa.get_l2(&mut channels, "channels");
-    let mut sample_rate: int32u = 0;
+    let mut sample_rate: Int32u = 0;
     fa.get_l4(&mut sample_rate, "sample_rate");
     fa.skip_l4("bytes_per_second");
     fa.skip_l2("bytes_per_sample");
-    let mut bits_per_sample: int16u = 0;
+    let mut bits_per_sample: Int16u = 0;
     fa.get_l2(&mut bits_per_sample, "bits_per_sample");
-    let mut samples: int32u = 0;
+    let mut samples: Int32u = 0;
     fa.get_l4(&mut samples, "samples");
     fa.skip_l1("flags");
     fa.skip_l4("crc");

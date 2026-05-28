@@ -32,7 +32,7 @@
 //!   1 byte:   EncoderVersion     (e.g. 115 → "1.15")
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
+use zenlib::{Int16u, Int32u, Int8u};
 
 const HEADER_SIZE: u64 = 25;
 const SAMPLES_PER_FRAME: u64 = 1152;
@@ -79,21 +79,21 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
     let _sig = fa.read_raw(3).to_vec();
 
     fa.bs_begin();
-    let mut pns: int8u = 0;
-    let mut version: int8u = 0;
+    let mut pns: Int8u = 0;
+    let mut version: Int8u = 0;
     fa.get_s1(4, &mut pns, "PNS");
     fa.get_s1(4, &mut version, "Version");
     fa.bs_end();
 
-    let mut frame_count: int32u = 0;
+    let mut frame_count: Int32u = 0;
     fa.get_l4(&mut frame_count, "FrameCount");
 
     fa.skip_l2("MaxLevel");
 
     fa.bs_begin();
-    let mut profile: int8u = 0;
-    let mut link: int8u = 0;
-    let mut sample_freq_idx: int8u = 0;
+    let mut profile: Int8u = 0;
+    let mut link: Int8u = 0;
+    let mut sample_freq_idx: Int8u = 0;
     fa.get_s1(4, &mut profile, "Profile");
     fa.get_s1(2, &mut link, "Link");
     fa.get_s1(2, &mut sample_freq_idx, "SampleFreq");
@@ -103,11 +103,11 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
     fa.bs_end();
 
     fa.skip_l2("TitlePeak");
-    let mut title_gain: int16u = 0;
+    let mut title_gain: Int16u = 0;
     fa.get_l2(&mut title_gain, "TitleGain");
 
     fa.skip_l2("AlbumPeak");
-    let mut album_gain: int16u = 0;
+    let mut album_gain: Int16u = 0;
     fa.get_l2(&mut album_gain, "AlbumGain");
 
     fa.bs_begin();
@@ -119,7 +119,7 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
     fa.skip_s1(7, "LastFrameLength (part 2)");
     fa.bs_end();
 
-    let mut encoder_version: int8u = 0;
+    let mut encoder_version: Int8u = 0;
     fa.get_l1(&mut encoder_version, "EncoderVersion");
 
     fa.element_end();
@@ -171,7 +171,7 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
 /// human-readable version (e.g. 115 → "1.15"). C++ appends " Beta" when
 /// `v % 10 != 0 && v % 2 == 0` and " Alpha" when `v % 2 == 1`; release
 /// builds (v % 10 == 0) get no suffix.
-fn format_encoder_version(v: int8u) -> String {
+fn format_encoder_version(v: Int8u) -> String {
     if v == 0 {
         return String::new();
     }

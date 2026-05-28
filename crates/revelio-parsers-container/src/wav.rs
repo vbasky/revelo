@@ -13,47 +13,47 @@
 //!       (other chunks ignored)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
+use zenlib::{Int16u, Int32u, Int8u};
 
-const FOURCC_RIFF: int32u = u32::from_be_bytes(*b"RIFF");
-const FOURCC_WAVE: int32u = u32::from_be_bytes(*b"WAVE");
-const FOURCC_FMT: int32u = u32::from_be_bytes(*b"fmt ");
-const FOURCC_DATA: int32u = u32::from_be_bytes(*b"data");
+const FOURCC_RIFF: Int32u = u32::from_be_bytes(*b"RIFF");
+const FOURCC_WAVE: Int32u = u32::from_be_bytes(*b"WAVE");
+const FOURCC_FMT: Int32u = u32::from_be_bytes(*b"fmt ");
+const FOURCC_DATA: Int32u = u32::from_be_bytes(*b"data");
 
 // Common WAVEFORMATEX format codes — only the ones we handle by name.
-const WAVE_FORMAT_PCM: int16u = 0x0001;
-const WAVE_FORMAT_IEEE_FLOAT: int16u = 0x0003;
-const WAVE_FORMAT_ALAW: int16u = 0x0006;
-const WAVE_FORMAT_MULAW: int16u = 0x0007;
-const WAVE_FORMAT_EXTENSIBLE: int16u = 0xFFFE;
+const WAVE_FORMAT_PCM: Int16u = 0x0001;
+const WAVE_FORMAT_IEEE_FLOAT: Int16u = 0x0003;
+const WAVE_FORMAT_ALAW: Int16u = 0x0006;
+const WAVE_FORMAT_MULAW: Int16u = 0x0007;
+const WAVE_FORMAT_EXTENSIBLE: Int16u = 0xFFFE;
 
 #[derive(Debug, Default)]
 struct FmtChunk {
-    audio_format: int16u,
-    num_channels: int16u,
-    sample_rate: int32u,
+    audio_format: Int16u,
+    num_channels: Int16u,
+    sample_rate: Int32u,
     #[allow(dead_code)]
-    byte_rate: int32u,
-    block_align: int16u,
-    bits_per_sample: int16u,
+    byte_rate: Int32u,
+    block_align: Int16u,
+    bits_per_sample: Int16u,
 }
 
 /// Parse a WAV file buffer, filling the General and Audio streams on the
 /// provided FileAnalyze. Returns `true` if a valid RIFF/WAVE container
 /// was recognized.
 pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
-    let mut magic: int32u = 0;
+    let mut magic: Int32u = 0;
     fa.peek_b4(&mut magic);
     if magic != FOURCC_RIFF {
         return false;
     }
 
     fa.element_begin("RIFF");
-    let mut riff_id: int32u = 0;
+    let mut riff_id: Int32u = 0;
     fa.get_c4(&mut riff_id, "ID");
-    let mut riff_size: int32u = 0;
+    let mut riff_size: Int32u = 0;
     fa.get_l4(&mut riff_size, "Size");
-    let mut form_type: int32u = 0;
+    let mut form_type: Int32u = 0;
     fa.get_c4(&mut form_type, "Type");
 
     if form_type != FOURCC_WAVE {
@@ -65,9 +65,9 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     let mut data_size: u32 = 0;
 
     while fa.remain() >= 8 {
-        let mut chunk_id: int32u = 0;
+        let mut chunk_id: Int32u = 0;
         fa.get_c4(&mut chunk_id, "ChunkID");
-        let mut chunk_size: int32u = 0;
+        let mut chunk_size: Int32u = 0;
         fa.get_l4(&mut chunk_size, "ChunkSize");
 
         let chunk_size_usize = chunk_size as usize;
@@ -78,17 +78,17 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
         match chunk_id {
             FOURCC_FMT => {
                 fa.element_begin("fmt");
-                let mut audio_format: int16u = 0;
+                let mut audio_format: Int16u = 0;
                 fa.get_l2(&mut audio_format, "AudioFormat");
-                let mut num_channels: int16u = 0;
+                let mut num_channels: Int16u = 0;
                 fa.get_l2(&mut num_channels, "NumChannels");
-                let mut sample_rate: int32u = 0;
+                let mut sample_rate: Int32u = 0;
                 fa.get_l4(&mut sample_rate, "SampleRate");
-                let mut byte_rate: int32u = 0;
+                let mut byte_rate: Int32u = 0;
                 fa.get_l4(&mut byte_rate, "ByteRate");
-                let mut block_align: int16u = 0;
+                let mut block_align: Int16u = 0;
                 fa.get_l2(&mut block_align, "BlockAlign");
-                let mut bits_per_sample: int16u = 0;
+                let mut bits_per_sample: Int16u = 0;
                 fa.get_l2(&mut bits_per_sample, "BitsPerSample");
 
                 // Consume any trailing extension bytes within this chunk.
@@ -97,7 +97,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                     fa.skip_hexa(chunk_size_usize - consumed_in_fmt, "Extension");
                 }
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: int8u = 0;
+                    let mut _pad: Int8u = 0;
                     fa.get_b1(&mut _pad, "Padding");
                 }
 
@@ -116,7 +116,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 data_size = chunk_size;
                 fa.skip_hexa(chunk_size_usize, "Samples");
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: int8u = 0;
+                    let mut _pad: Int8u = 0;
                     fa.get_b1(&mut _pad, "Padding");
                 }
                 fa.element_end();
@@ -125,7 +125,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 // Unknown chunk — skip it, honoring word-alignment.
                 fa.skip_hexa(chunk_size_usize, "Unknown");
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: int8u = 0;
+                    let mut _pad: Int8u = 0;
                     fa.get_b1(&mut _pad, "Padding");
                 }
             }

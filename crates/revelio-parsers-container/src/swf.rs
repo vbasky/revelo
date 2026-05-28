@@ -21,7 +21,7 @@
 //!             FrameCount (u16 LE)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int8u};
+use zenlib::{Int16u, Int32u, Int8u};
 
 const MAGIC_LEN: usize = 3;
 const HEADER_LEN: usize = 8;
@@ -61,9 +61,9 @@ pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
     // Consume the 8-byte fixed header in trace-friendly steps.
     fa.skip_hexa(MAGIC_LEN, "Signature");
 
-    let mut version: int8u = 0;
+    let mut version: Int8u = 0;
     fa.get_l1(&mut version, "Version");
-    let mut file_length: int32u = 0;
+    let mut file_length: Int32u = 0;
     fa.get_l4(&mut file_length, "FileLength");
     fa.element_end();
 
@@ -91,7 +91,7 @@ pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
     // Body parse — RECT (bit-packed) + frame_rate + frame_count.
     fa.element_begin("Movie header");
     fa.bs_begin();
-    let mut nbits: int8u = 0;
+    let mut nbits: Int8u = 0;
     fa.get_s1(5, &mut nbits, "Nbits");
     let nbits_usize = nbits as usize;
     // Nbits >32 would overflow our u32 accumulators; treat as malformed.
@@ -100,19 +100,19 @@ pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
         fa.element_end();
         return true;
     }
-    let mut xmin: int32u = 0;
-    let mut xmax: int32u = 0;
-    let mut ymin: int32u = 0;
-    let mut ymax: int32u = 0;
+    let mut xmin: Int32u = 0;
+    let mut xmax: Int32u = 0;
+    let mut ymin: Int32u = 0;
+    let mut ymax: Int32u = 0;
     fa.get_s4(nbits_usize, &mut xmin, "Xmin");
     fa.get_s4(nbits_usize, &mut xmax, "Xmax");
     fa.get_s4(nbits_usize, &mut ymin, "Ymin");
     fa.get_s4(nbits_usize, &mut ymax, "Ymax");
     fa.bs_end();
 
-    let mut frame_rate_raw: int16u = 0;
+    let mut frame_rate_raw: Int16u = 0;
     fa.get_l2(&mut frame_rate_raw, "FrameRate");
-    let mut frame_count: int16u = 0;
+    let mut frame_count: Int16u = 0;
     fa.get_l2(&mut frame_count, "FrameCount");
     fa.element_end();
 

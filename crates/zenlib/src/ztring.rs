@@ -6,7 +6,7 @@
 //! `From_*` / `To_*` conversions still convert from/to other encodings; only
 //! the internal storage is unified.
 
-use crate::types::{int8u, int16u, int32u, int64u, int128u, int8s, int16s, int32s, int64s, int128s, float32, float64};
+use crate::types::{Int8u, Int16u, Int32u, Int64u, Int128u, Int8s, Int16s, Int32s, Int64s, Int128s, Float32, Float64};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ztring(pub String);
@@ -91,61 +91,61 @@ impl Ztring {
         }
     }
 
-    pub fn From_CC4(value: int32u) -> Self {
+    pub fn From_CC4(value: Int32u) -> Self {
         let bytes = value.to_be_bytes();
         Self::From_Local(&bytes)
     }
 
-    pub fn From_CC3(value: int32u) -> Self {
+    pub fn From_CC3(value: Int32u) -> Self {
         let bytes = (value & 0x00FF_FFFF).to_be_bytes();
         Self::From_Local(&bytes[1..])
     }
 
-    pub fn From_CC2(value: int16u) -> Self {
+    pub fn From_CC2(value: Int16u) -> Self {
         let bytes = value.to_be_bytes();
         Self::From_Local(&bytes)
     }
 
-    pub fn From_CC1(value: int8u) -> Self {
+    pub fn From_CC1(value: Int8u) -> Self {
         Self::From_Local(&[value])
     }
 
-    pub fn From_Number_int8u(value: int8u, radix: u32) -> Self {
+    pub fn From_Number_int8u(value: Int8u, radix: u32) -> Self {
         from_number_unsigned(value as u128, radix)
     }
-    pub fn From_Number_int16u(value: int16u, radix: u32) -> Self {
+    pub fn From_Number_int16u(value: Int16u, radix: u32) -> Self {
         from_number_unsigned(value as u128, radix)
     }
-    pub fn From_Number_int32u(value: int32u, radix: u32) -> Self {
+    pub fn From_Number_int32u(value: Int32u, radix: u32) -> Self {
         from_number_unsigned(value as u128, radix)
     }
-    pub fn From_Number_int64u(value: int64u, radix: u32) -> Self {
+    pub fn From_Number_int64u(value: Int64u, radix: u32) -> Self {
         from_number_unsigned(value as u128, radix)
     }
-    pub fn From_Number_int128u(value: int128u, radix: u32) -> Self {
+    pub fn From_Number_int128u(value: Int128u, radix: u32) -> Self {
         from_number_unsigned(value, radix)
     }
 
-    pub fn From_Number_int8s(value: int8s, radix: u32) -> Self {
+    pub fn From_Number_int8s(value: Int8s, radix: u32) -> Self {
         from_number_signed(value as i128, radix)
     }
-    pub fn From_Number_int16s(value: int16s, radix: u32) -> Self {
+    pub fn From_Number_int16s(value: Int16s, radix: u32) -> Self {
         from_number_signed(value as i128, radix)
     }
-    pub fn From_Number_int32s(value: int32s, radix: u32) -> Self {
+    pub fn From_Number_int32s(value: Int32s, radix: u32) -> Self {
         from_number_signed(value as i128, radix)
     }
-    pub fn From_Number_int64s(value: int64s, radix: u32) -> Self {
+    pub fn From_Number_int64s(value: Int64s, radix: u32) -> Self {
         from_number_signed(value as i128, radix)
     }
-    pub fn From_Number_int128s(value: int128s, radix: u32) -> Self {
+    pub fn From_Number_int128s(value: Int128s, radix: u32) -> Self {
         from_number_signed(value, radix)
     }
 
-    pub fn From_Number_float32(value: float32, after_comma: u8) -> Self {
+    pub fn From_Number_float32(value: Float32, after_comma: u8) -> Self {
         Ztring(format!("{:.*}", after_comma as usize, value))
     }
-    pub fn From_Number_float64(value: float64, after_comma: u8) -> Self {
+    pub fn From_Number_float64(value: Float64, after_comma: u8) -> Self {
         Ztring(format!("{:.*}", after_comma as usize, value))
     }
 
@@ -161,33 +161,33 @@ impl Ztring {
         self.0.chars().map(|c| (c as u32 & 0xFF) as u8).collect()
     }
 
-    pub fn To_int8u(&self, radix: u32) -> int8u {
+    pub fn To_int8u(&self, radix: u32) -> Int8u {
         parse_unsigned::<u8>(&self.0, radix).unwrap_or(0)
     }
-    pub fn To_int16u(&self, radix: u32) -> int16u {
+    pub fn To_int16u(&self, radix: u32) -> Int16u {
         parse_unsigned::<u16>(&self.0, radix).unwrap_or(0)
     }
-    pub fn To_int32u(&self, radix: u32) -> int32u {
+    pub fn To_int32u(&self, radix: u32) -> Int32u {
         parse_unsigned::<u32>(&self.0, radix).unwrap_or(0)
     }
-    pub fn To_int64u(&self, radix: u32) -> int64u {
+    pub fn To_int64u(&self, radix: u32) -> Int64u {
         parse_unsigned::<u64>(&self.0, radix).unwrap_or(0)
     }
 
-    pub fn To_int8s(&self, radix: u32) -> int8s {
+    pub fn To_int8s(&self, radix: u32) -> Int8s {
         parse_signed::<i8>(&self.0, radix).unwrap_or(0)
     }
-    pub fn To_int16s(&self, radix: u32) -> int16s {
+    pub fn To_int16s(&self, radix: u32) -> Int16s {
         parse_signed::<i16>(&self.0, radix).unwrap_or(0)
     }
-    pub fn To_int32s(&self, radix: u32) -> int32s {
+    pub fn To_int32s(&self, radix: u32) -> Int32s {
         parse_signed::<i32>(&self.0, radix).unwrap_or(0)
     }
-    pub fn To_int64s(&self, radix: u32) -> int64s {
+    pub fn To_int64s(&self, radix: u32) -> Int64s {
         parse_signed::<i64>(&self.0, radix).unwrap_or(0)
     }
 
-    pub fn To_float64(&self) -> float64 {
+    pub fn To_float64(&self) -> Float64 {
         self.0.trim().parse::<f64>().unwrap_or(0.0)
     }
 }
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn cc4_packs_big_endian() {
         // "moov" atom in MP4
-        let val: int32u = 0x6D6F6F76;
+        let val: Int32u = 0x6D6F6F76;
         assert_eq!(Ztring::From_CC4(val).as_str(), "moov");
     }
 

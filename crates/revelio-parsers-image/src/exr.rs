@@ -13,7 +13,7 @@
 //! Common attributes:
 //!   "compression"   type "compression" (1 byte): codec id
 //!   "displayWindow" type "box2i" (16 bytes): xMin/yMin/xMax/yMax → Width/Height
-//!   "pixelAspectRatio" type "float" (4 bytes LE float32)
+//!   "pixelAspectRatio" type "float" (4 bytes LE Float32)
 //!   "framesPerSecond"  type "rational" (4+4 bytes: n, d) → FrameRate
 
 use revelio_core::{FileAnalyze, StreamKind};

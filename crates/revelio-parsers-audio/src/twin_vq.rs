@@ -19,7 +19,7 @@
 //!     DATA: terminates the header (audio payload follows, format unknown)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
 const MAGIC_TWIN: u32 = 0x5457_494E; // "TWIN"
 const CHUNK_COMM: u32 = 0x434F_4D4D; // "COMM"
@@ -27,7 +27,7 @@ const CHUNK_DATA: u32 = 0x4441_5441; // "DATA"
 
 const HEADER_LEN: usize = 4 + 8 + 4; // magic + version + subchunks_size
 
-fn samplerate_from_code(code: int32u) -> Option<u32> {
+fn samplerate_from_code(code: Int32u) -> Option<u32> {
     match code {
         11 => Some(11025),
         22 => Some(22050),
@@ -52,14 +52,14 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
     let file_size = fa.remain() as u64;
 
     fa.element_begin("TwinVQ");
-    let mut magic_consume: int32u = 0;
+    let mut magic_consume: Int32u = 0;
     fa.get_c4(&mut magic_consume, "magic");
     fa.skip_hexa(8, "version");
-    let mut subchunks_size: int32u = 0;
+    let mut subchunks_size: Int32u = 0;
     fa.get_b4(&mut subchunks_size, "subchunks_size");
 
-    let mut channel_mode: Option<int32u> = None;
-    let mut bitrate_kbps: Option<int32u> = None;
+    let mut channel_mode: Option<Int32u> = None;
+    let mut bitrate_kbps: Option<Int32u> = None;
     let mut samplerate: Option<u32> = None;
 
     // Walk chunks until DATA (or buffer exhausted). DATA terminates the
@@ -68,8 +68,8 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
         if fa.remain() < 8 {
             break;
         }
-        let mut id: int32u = 0;
-        let mut size: int32u = 0;
+        let mut id: Int32u = 0;
+        let mut size: Int32u = 0;
         fa.get_c4(&mut id, "id");
         fa.get_b4(&mut size, "size");
 
@@ -83,9 +83,9 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
         }
 
         if id == CHUNK_COMM && size_usize >= 16 {
-            let mut cm: int32u = 0;
-            let mut br: int32u = 0;
-            let mut sr: int32u = 0;
+            let mut cm: Int32u = 0;
+            let mut br: Int32u = 0;
+            let mut sr: Int32u = 0;
             fa.get_b4(&mut cm, "channel_mode");
             fa.get_b4(&mut br, "bitrate");
             fa.get_b4(&mut sr, "samplerate");

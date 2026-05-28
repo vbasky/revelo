@@ -15,7 +15,7 @@
 //!   ... padding to `Size`
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int8u};
+use zenlib::{Int16u, Int8u};
 
 const MAGIC_EA3: [u8; 3] = *b"EA3";
 
@@ -102,16 +102,16 @@ pub fn parse_open_mg(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("OpenMG");
     fa.skip_hexa(3, "Code");
     fa.skip_b1("Flags");
-    let mut size: int16u = 0;
+    let mut size: Int16u = 0;
     fa.get_b2(&mut size, "Size");
     fa.skip_hexa(26, "Unknown");
-    let mut codec_id: int8u = 0;
+    let mut codec_id: Int8u = 0;
     fa.get_b1(&mut codec_id, "CodecID");
 
     let mut joint_stereo: u8 = 0;
     let mut sr_code: u8 = 0;
     let mut ch_code: u8 = 0;
-    let mut frame_size_raw: int16u = 0;
+    let mut frame_size_raw: Int16u = 0;
     if codec_id <= 1 {
         fa.bs_begin();
         fa.skip_s1(7, "Unknown");

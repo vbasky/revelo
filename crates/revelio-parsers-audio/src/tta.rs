@@ -13,7 +13,7 @@
 //!   uint32  CRC32
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u};
+use zenlib::{Int16u, Int32u};
 
 const MAGIC_TTA1: [u8; 4] = *b"TTA1";
 const HEADER_LEN: usize = 22;
@@ -31,17 +31,17 @@ pub fn parse_tta(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.element_begin("TTA");
-    let mut signature: int32u = 0;
+    let mut signature: Int32u = 0;
     fa.get_c4(&mut signature, "Signature");
-    let mut audio_format: int16u = 0;
+    let mut audio_format: Int16u = 0;
     fa.get_l2(&mut audio_format, "AudioFormat");
-    let mut channels: int16u = 0;
+    let mut channels: Int16u = 0;
     fa.get_l2(&mut channels, "NumChannels");
-    let mut bits_per_sample: int16u = 0;
+    let mut bits_per_sample: Int16u = 0;
     fa.get_l2(&mut bits_per_sample, "BitsPerSample");
-    let mut sample_rate: int32u = 0;
+    let mut sample_rate: Int32u = 0;
     fa.get_l4(&mut sample_rate, "SampleRate");
-    let mut samples: int32u = 0;
+    let mut samples: Int32u = 0;
     fa.get_l4(&mut samples, "DataLength");
     fa.skip_l4("CRC32");
     fa.element_end();

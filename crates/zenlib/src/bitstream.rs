@@ -3,10 +3,10 @@
 //! Behavior matches the C++ header line-for-line: same field set, same
 //! underrun semantics (read past end zeros remaining state and returns 0),
 //! same bookmark/peek mechanics, same Byte_Align that consumes the partial
-//! byte. The C++ holds a `const int8u*` that gets advanced; here we keep
+//! byte. The C++ holds a `const Int8u*` that gets advanced; here we keep
 //! the slice and track an offset index — equivalent state, no `unsafe`.
 
-use crate::types::{int8u, int16u, int32u, int64u};
+use crate::types::{Int8u, Int16u, Int32u, Int64u};
 
 const MASK: [u32; 33] = [
     0x0000_0000,
@@ -74,7 +74,7 @@ impl<'a> BitStream<'a> {
         self.bookmark = None;
     }
 
-    pub fn Get(&mut self, how_many: usize) -> int32u {
+    pub fn Get(&mut self, how_many: usize) -> Int32u {
         let to_return: usize;
         if how_many == 0 || how_many > 32 {
             return 0;
@@ -123,26 +123,26 @@ impl<'a> BitStream<'a> {
         self.Get(1) != 0
     }
 
-    pub fn Get1(&mut self, how_many: usize) -> int8u {
-        self.Get(how_many) as int8u
+    pub fn Get1(&mut self, how_many: usize) -> Int8u {
+        self.Get(how_many) as Int8u
     }
 
-    pub fn Get2(&mut self, how_many: usize) -> int16u {
-        self.Get(how_many) as int16u
+    pub fn Get2(&mut self, how_many: usize) -> Int16u {
+        self.Get(how_many) as Int16u
     }
 
-    pub fn Get4(&mut self, how_many: usize) -> int32u {
+    pub fn Get4(&mut self, how_many: usize) -> Int32u {
         self.Get(how_many)
     }
 
-    pub fn Get8(&mut self, how_many: usize) -> int64u {
+    pub fn Get8(&mut self, how_many: usize) -> Int64u {
         if how_many > 64 {
             return 0;
         }
         let how_many1 = if how_many > 32 { how_many - 32 } else { 0 };
         let how_many2 = how_many - how_many1;
-        let value1 = self.Get(how_many1) as int64u;
-        let value2 = self.Get(how_many2) as int64u;
+        let value1 = self.Get(how_many1) as Int64u;
+        let value2 = self.Get(how_many2) as Int64u;
         if self.buffer_under_run {
             return 0;
         }
@@ -204,7 +204,7 @@ impl<'a> BitStream<'a> {
         self.Skip(how_many2);
     }
 
-    pub fn Peek(&mut self, how_many: usize) -> int32u {
+    pub fn Peek(&mut self, how_many: usize) -> Int32u {
         self.BookMarkPos(true);
         let v = self.Get(how_many);
         self.BookMarkPos(false);
@@ -212,11 +212,11 @@ impl<'a> BitStream<'a> {
     }
 
     pub fn PeekB(&mut self) -> bool { self.Peek(1) != 0 }
-    pub fn Peek1(&mut self, how_many: usize) -> int8u { self.Peek(how_many) as int8u }
-    pub fn Peek2(&mut self, how_many: usize) -> int16u { self.Peek(how_many) as int16u }
-    pub fn Peek3(&mut self, how_many: usize) -> int32u { self.Peek(how_many) }
-    pub fn Peek4(&mut self, how_many: usize) -> int32u { self.Peek(how_many) }
-    pub fn Peek8(&mut self, how_many: usize) -> int64u { self.Peek(how_many) as int64u }
+    pub fn Peek1(&mut self, how_many: usize) -> Int8u { self.Peek(how_many) as Int8u }
+    pub fn Peek2(&mut self, how_many: usize) -> Int16u { self.Peek(how_many) as Int16u }
+    pub fn Peek3(&mut self, how_many: usize) -> Int32u { self.Peek(how_many) }
+    pub fn Peek4(&mut self, how_many: usize) -> Int32u { self.Peek(how_many) }
+    pub fn Peek8(&mut self, how_many: usize) -> Int64u { self.Peek(how_many) as Int64u }
 
     pub fn BookMarkPos(&mut self, set: bool) {
         if set {
@@ -236,8 +236,8 @@ impl<'a> BitStream<'a> {
         }
     }
 
-    pub fn Remain(&self) -> int32u {
-        (self.buffer_size + self.last_byte_size) as int32u
+    pub fn Remain(&self) -> Int32u {
+        (self.buffer_size + self.last_byte_size) as Int32u
     }
 
     pub fn Byte_Align(&mut self) {

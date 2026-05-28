@@ -21,7 +21,7 @@
 //!   0x20  L4  Video_Size
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int32u, int8u};
+use zenlib::{Int32u, Int8u};
 
 const DPG_HEADER_SIZE: usize = 36;
 
@@ -38,30 +38,30 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
     // The reference C++ enforces that bytes 0x10..0x14 are exactly zero;
     // matching that gate keeps us from misidentifying buffers that just
     // happen to start with "DPG<digit>".
-    if int32u::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]) != 0 {
+    if Int32u::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]) != 0 {
         return false;
     }
 
     let version_digit = header[3] - b'0';
 
     fa.element_begin("DPG");
-    let mut _signature: int32u = 0;
+    let mut _signature: Int32u = 0;
     fa.get_c4(&mut _signature, "Signature");
-    let mut frame_count: int32u = 0;
+    let mut frame_count: Int32u = 0;
     fa.get_l4(&mut frame_count, "Frame count");
-    let mut frame_rate_fp: int32u = 0;
+    let mut frame_rate_fp: Int32u = 0;
     fa.get_l4(&mut frame_rate_fp, "Frame rate");
-    let mut sampling_rate: int32u = 0;
+    let mut sampling_rate: Int32u = 0;
     fa.get_l4(&mut sampling_rate, "Sampling rate");
-    let mut _zero: int32u = 0;
+    let mut _zero: Int32u = 0;
     fa.get_l4(&mut _zero, "0x00000000");
-    let mut audio_offset: int32u = 0;
+    let mut audio_offset: Int32u = 0;
     fa.get_l4(&mut audio_offset, "Audio Offset");
-    let mut audio_size: int32u = 0;
+    let mut audio_size: Int32u = 0;
     fa.get_l4(&mut audio_size, "Audio Size");
-    let mut video_offset: int32u = 0;
+    let mut video_offset: Int32u = 0;
     fa.get_l4(&mut video_offset, "Video Offset");
-    let mut video_size: int32u = 0;
+    let mut video_size: Int32u = 0;
     fa.get_l4(&mut video_size, "Video Size");
     fa.element_end();
 
@@ -134,9 +134,9 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
     }
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    // Reference the int8u import explicitly so a future header byte read
+    // Reference the Int8u import explicitly so a future header byte read
     // (e.g. inspecting the DPG4 GOP table) keeps the use statement honest.
-    let _: int8u = 0;
+    let _: Int8u = 0;
 
     true
 }

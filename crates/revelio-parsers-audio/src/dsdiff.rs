@@ -21,46 +21,46 @@
 //!   Chunk bodies are padded to even byte boundary (1-byte pad if size is odd).
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int16u, int32u, int64u, int8u};
+use zenlib::{Int16u, Int32u, Int64u, Int8u};
 
-const FOURCC_FRM8: int32u = u32::from_be_bytes(*b"FRM8");
-const FOURCC_DSD_FORMTYPE: int32u = u32::from_be_bytes(*b"DSD ");
-const FOURCC_FVER: int32u = u32::from_be_bytes(*b"FVER");
-const FOURCC_PROP: int32u = u32::from_be_bytes(*b"PROP");
-const FOURCC_SND: int32u = u32::from_be_bytes(*b"SND ");
-const FOURCC_FS: int32u = u32::from_be_bytes(*b"FS  ");
-const FOURCC_CHNL: int32u = u32::from_be_bytes(*b"CHNL");
-const FOURCC_CMPR: int32u = u32::from_be_bytes(*b"CMPR");
-const FOURCC_DSD_DATA: int32u = u32::from_be_bytes(*b"DSD ");
-const FOURCC_DST_DATA: int32u = u32::from_be_bytes(*b"DST ");
+const FOURCC_FRM8: Int32u = u32::from_be_bytes(*b"FRM8");
+const FOURCC_DSD_FORMTYPE: Int32u = u32::from_be_bytes(*b"DSD ");
+const FOURCC_FVER: Int32u = u32::from_be_bytes(*b"FVER");
+const FOURCC_PROP: Int32u = u32::from_be_bytes(*b"PROP");
+const FOURCC_SND: Int32u = u32::from_be_bytes(*b"SND ");
+const FOURCC_FS: Int32u = u32::from_be_bytes(*b"FS  ");
+const FOURCC_CHNL: Int32u = u32::from_be_bytes(*b"CHNL");
+const FOURCC_CMPR: Int32u = u32::from_be_bytes(*b"CMPR");
+const FOURCC_DSD_DATA: Int32u = u32::from_be_bytes(*b"DSD ");
+const FOURCC_DST_DATA: Int32u = u32::from_be_bytes(*b"DST ");
 
-const CMPR_DSD: int32u = u32::from_be_bytes(*b"DSD ");
-const CMPR_DST: int32u = u32::from_be_bytes(*b"DST ");
+const CMPR_DSD: Int32u = u32::from_be_bytes(*b"DSD ");
+const CMPR_DST: Int32u = u32::from_be_bytes(*b"DST ");
 
 #[derive(Debug, Default)]
 struct DsdiffInfo {
-    sample_rate: int32u,
-    num_channels: int16u,
+    sample_rate: Int32u,
+    num_channels: Int16u,
     format: Option<&'static str>,
-    audio_stream_size: int64u,
+    audio_stream_size: Int64u,
 }
 
 pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 16 {
         return false;
     }
-    let mut magic: int32u = 0;
+    let mut magic: Int32u = 0;
     fa.peek_b4(&mut magic);
     if magic != FOURCC_FRM8 {
         return false;
     }
 
     fa.element_begin("FRM8");
-    let mut frm8_id: int32u = 0;
+    let mut frm8_id: Int32u = 0;
     fa.get_c4(&mut frm8_id, "ID");
-    let mut form_size: int64u = 0;
+    let mut form_size: Int64u = 0;
     fa.get_b8(&mut form_size, "Size");
-    let mut form_type: int32u = 0;
+    let mut form_type: Int32u = 0;
     fa.get_c4(&mut form_type, "FormType");
 
     if form_type != FOURCC_DSD_FORMTYPE {
@@ -93,9 +93,9 @@ pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
 /// shape, different semantics on a few IDs.
 fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
     while fa.remain() >= 12 {
-        let mut chunk_id: int32u = 0;
+        let mut chunk_id: Int32u = 0;
         fa.get_c4(&mut chunk_id, "ChunkID");
-        let mut chunk_size: int64u = 0;
+        let mut chunk_size: Int64u = 0;
         fa.get_b8(&mut chunk_size, "ChunkSize");
 
         // Guard against malformed sizes that exceed the buffer.
@@ -113,7 +113,7 @@ fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
                     fa.element_begin("PROP");
                     // PROP starts with the 4-byte propType ("SND ").
                     if fa.remain() >= 4 {
-                        let mut prop_type: int32u = 0;
+                        let mut prop_type: Int32u = 0;
                         fa.get_c4(&mut prop_type, "propType");
                         if prop_type == FOURCC_SND {
                             // Recurse into sub-chunks until the PROP body ends.
@@ -131,13 +131,13 @@ fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
                 }
                 FOURCC_DSD_DATA => {
                     fa.element_begin("DSD");
-                    info.audio_stream_size = body_len as int64u;
+                    info.audio_stream_size = body_len as Int64u;
                     fa.skip_hexa(body_len, "DSDsoundData");
                     fa.element_end();
                 }
                 FOURCC_DST_DATA => {
                     fa.element_begin("DST");
-                    info.audio_stream_size = body_len as int64u;
+                    info.audio_stream_size = body_len as Int64u;
                     fa.skip_hexa(body_len, "DSTsoundData");
                     fa.element_end();
                 }
@@ -158,16 +158,16 @@ fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
 
         // Per-spec 1-byte pad when chunk size is odd.
         if chunk_size % 2 == 1 && fa.remain() >= 1 {
-            let mut _pad: int8u = 0;
+            let mut _pad: Int8u = 0;
             fa.get_b1(&mut _pad, "pad");
         }
     }
 }
 
 fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usize) {
-    let mut sub_id: int32u = 0;
+    let mut sub_id: Int32u = 0;
     fa.get_c4(&mut sub_id, "ChunkID");
-    let mut sub_size: int64u = 0;
+    let mut sub_size: Int64u = 0;
     fa.get_b8(&mut sub_size, "ChunkSize");
 
     let max_body = sub_end.saturating_sub(fa.element_offset());
@@ -178,7 +178,7 @@ fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usi
     match sub_id {
         FOURCC_FS => {
             if body_len >= 4 {
-                let mut sr: int32u = 0;
+                let mut sr: Int32u = 0;
                 fa.get_b4(&mut sr, "sampleRate");
                 info.sample_rate = sr;
                 if body_len > 4 {
@@ -190,7 +190,7 @@ fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usi
         }
         FOURCC_CHNL => {
             if body_len >= 2 {
-                let mut num_channels: int16u = 0;
+                let mut num_channels: Int16u = 0;
                 fa.get_b2(&mut num_channels, "numChannels");
                 info.num_channels = num_channels;
                 // chID list follows (4 bytes each). We don't need them
@@ -205,9 +205,9 @@ fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usi
         }
         FOURCC_CMPR => {
             if body_len >= 5 {
-                let mut compression_type: int32u = 0;
+                let mut compression_type: Int32u = 0;
                 fa.get_b4(&mut compression_type, "compressionType");
-                let mut name_count: int8u = 0;
+                let mut name_count: Int8u = 0;
                 fa.get_b1(&mut name_count, "Count");
                 let name_take = (name_count as usize).min(body_len.saturating_sub(5));
                 if name_take > 0 {
@@ -238,7 +238,7 @@ fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usi
 
     // Pad if odd-sized sub-chunk.
     if sub_size % 2 == 1 && fa.element_offset() < sub_end {
-        let mut _pad: int8u = 0;
+        let mut _pad: Int8u = 0;
         fa.get_b1(&mut _pad, "pad");
     }
 }

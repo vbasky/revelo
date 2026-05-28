@@ -23,7 +23,7 @@
 //!   bit-packed: QUAL(6) KFGSHIFT(5) PF(2) reserved(3)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
 pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
     // Need at least signature(1) + "theora"(6) + version(3) = 10 bytes
@@ -54,7 +54,7 @@ pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
     }
     fa.skip_hexa(6, "Signature");
 
-    let mut version: int32u = 0;
+    let mut version: Int32u = 0;
     fa.get_b3(&mut version, "Version");
 
     if (version & 0x030200) == 0x030200 {
@@ -62,27 +62,27 @@ pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
         fa.skip_b2("FMBW");
         fa.skip_b2("FMBH");
 
-        let mut picw: int32u = 0;
-        let mut pich: int32u = 0;
+        let mut picw: Int32u = 0;
+        let mut pich: Int32u = 0;
         fa.get_b3(&mut picw, "PICW");
         fa.get_b3(&mut pich, "PICH");
 
         fa.skip_b1("PICX");
         fa.skip_b1("PICY");
 
-        let mut frn: int32u = 0;
-        let mut frd: int32u = 0;
+        let mut frn: Int32u = 0;
+        let mut frd: Int32u = 0;
         fa.get_b4(&mut frn, "FRN");
         fa.get_b4(&mut frd, "FRD");
 
-        let mut parn: int32u = 0;
-        let mut pard: int32u = 0;
+        let mut parn: Int32u = 0;
+        let mut pard: Int32u = 0;
         fa.get_b3(&mut parn, "PARN");
         fa.get_b3(&mut pard, "PARD");
 
         fa.skip_b1("CS"); // color space: 0=4:2:0, 2=4:2:2, 3=4:4:4
 
-        let mut nombr: int32u = 0;
+        let mut nombr: Int32u = 0;
         fa.get_b3(&mut nombr, "NOMBR"); // nominal bitrate
 
         fa.bs_begin();

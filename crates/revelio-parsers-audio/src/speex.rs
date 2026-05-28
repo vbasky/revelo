@@ -24,7 +24,7 @@
 //!    4 bytes LE: reserved2
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::int32u;
+use zenlib::Int32u;
 
 const SPEEX_MAGIC: &[u8; 8] = b"Speex   ";
 const IDENTIFICATION_MIN_SIZE: usize = 80;
@@ -45,7 +45,7 @@ pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
     let version_bytes = fa.read_raw(20).to_vec();
     let speex_version = parse_nul_terminated_utf8(&version_bytes);
 
-    let mut speex_version_id: int32u = 0;
+    let mut speex_version_id: Int32u = 0;
     fa.get_l4(&mut speex_version_id, "Speex_version_id");
 
     if speex_version_id != 1 {
@@ -54,18 +54,18 @@ pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
         return true;
     }
 
-    let mut header_size: int32u = 0;
-    let mut rate: int32u = 0;
-    let mut _mode: int32u = 0;
-    let mut _mode_bs_ver: int32u = 0;
-    let mut nb_channels: int32u = 0;
-    let mut bitrate: int32u = 0;
-    let mut _frame_size: int32u = 0;
-    let mut vbr: int32u = 0;
-    let mut _frames_per_packet: int32u = 0;
-    let mut _extra_headers: int32u = 0;
-    let mut _reserved1: int32u = 0;
-    let mut _reserved2: int32u = 0;
+    let mut header_size: Int32u = 0;
+    let mut rate: Int32u = 0;
+    let mut _mode: Int32u = 0;
+    let mut _mode_bs_ver: Int32u = 0;
+    let mut nb_channels: Int32u = 0;
+    let mut bitrate: Int32u = 0;
+    let mut _frame_size: Int32u = 0;
+    let mut vbr: Int32u = 0;
+    let mut _frames_per_packet: Int32u = 0;
+    let mut _extra_headers: Int32u = 0;
+    let mut _reserved1: Int32u = 0;
+    let mut _reserved2: Int32u = 0;
 
     fa.get_l4(&mut header_size, "header_size");
     fa.get_l4(&mut rate, "rate");

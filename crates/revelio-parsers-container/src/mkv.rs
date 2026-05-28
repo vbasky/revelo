@@ -1401,12 +1401,12 @@ fn read_uint(fa: &mut FileAnalyze, size: usize) -> u64 {
 fn read_float(fa: &mut FileAnalyze, size: usize) -> f64 {
     match size {
         4 => {
-            let mut v: zenlib::float32 = 0.0;
+            let mut v: zenlib::Float32 = 0.0;
             fa.get_bf4(&mut v, "f32");
             v as f64
         }
         8 => {
-            let mut v: zenlib::float64 = 0.0;
+            let mut v: zenlib::Float64 = 0.0;
             fa.get_bf8(&mut v, "f64");
             v
         }

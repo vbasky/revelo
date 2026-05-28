@@ -21,110 +21,110 @@
 //!   Encoded_Application and Format_Profile="Apple audio with iTunes info"
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int32u, int64u};
+use zenlib::{Int32u, Int64u};
 
-const BOX_FTYP: int32u = u32::from_be_bytes(*b"ftyp");
-const BOX_MOOV: int32u = u32::from_be_bytes(*b"moov");
-const BOX_TRAK: int32u = u32::from_be_bytes(*b"trak");
-const BOX_MDIA: int32u = u32::from_be_bytes(*b"mdia");
-const BOX_MDHD: int32u = u32::from_be_bytes(*b"mdhd");
-const BOX_HDLR: int32u = u32::from_be_bytes(*b"hdlr");
-const BOX_MINF: int32u = u32::from_be_bytes(*b"minf");
-const BOX_STBL: int32u = u32::from_be_bytes(*b"stbl");
-const BOX_STSD: int32u = u32::from_be_bytes(*b"stsd");
-const BOX_STSZ: int32u = u32::from_be_bytes(*b"stsz");
-const BOX_STTS: int32u = u32::from_be_bytes(*b"stts");
-const BOX_MVHD: int32u = u32::from_be_bytes(*b"mvhd");
-const BOX_EDTS: int32u = u32::from_be_bytes(*b"edts");
-const BOX_ELST: int32u = u32::from_be_bytes(*b"elst");
-const BOX_UDTA: int32u = u32::from_be_bytes(*b"udta");
-const BOX_META: int32u = u32::from_be_bytes(*b"meta");
+const BOX_FTYP: Int32u = u32::from_be_bytes(*b"ftyp");
+const BOX_MOOV: Int32u = u32::from_be_bytes(*b"moov");
+const BOX_TRAK: Int32u = u32::from_be_bytes(*b"trak");
+const BOX_MDIA: Int32u = u32::from_be_bytes(*b"mdia");
+const BOX_MDHD: Int32u = u32::from_be_bytes(*b"mdhd");
+const BOX_HDLR: Int32u = u32::from_be_bytes(*b"hdlr");
+const BOX_MINF: Int32u = u32::from_be_bytes(*b"minf");
+const BOX_STBL: Int32u = u32::from_be_bytes(*b"stbl");
+const BOX_STSD: Int32u = u32::from_be_bytes(*b"stsd");
+const BOX_STSZ: Int32u = u32::from_be_bytes(*b"stsz");
+const BOX_STTS: Int32u = u32::from_be_bytes(*b"stts");
+const BOX_MVHD: Int32u = u32::from_be_bytes(*b"mvhd");
+const BOX_EDTS: Int32u = u32::from_be_bytes(*b"edts");
+const BOX_ELST: Int32u = u32::from_be_bytes(*b"elst");
+const BOX_UDTA: Int32u = u32::from_be_bytes(*b"udta");
+const BOX_META: Int32u = u32::from_be_bytes(*b"meta");
 #[allow(dead_code)]
-const BOX_CHPL: int32u = u32::from_be_bytes(*b"chpl"); // Nero chapter list
+const BOX_CHPL: Int32u = u32::from_be_bytes(*b"chpl"); // Nero chapter list
 #[allow(dead_code)]
-const BOX_NERO: int32u = u32::from_be_bytes(*b"Nero"); // Nero metadata
+const BOX_NERO: Int32u = u32::from_be_bytes(*b"Nero"); // Nero metadata
 #[allow(dead_code)]
-const BOX_COVR: int32u = u32::from_be_bytes(*b"covr"); // iTunes cover art
+const BOX_COVR: Int32u = u32::from_be_bytes(*b"covr"); // iTunes cover art
 #[allow(dead_code)]
-const BOX_THMB: int32u = u32::from_be_bytes(*b"thmb"); // 3GP thumbnail
-const BOX_ILST: int32u = u32::from_be_bytes(*b"ilst");
-const BOX_DATA: int32u = u32::from_be_bytes(*b"data");
-const BOX_KEYS: int32u = u32::from_be_bytes(*b"keys");
-const BOX_MDAT: int32u = u32::from_be_bytes(*b"mdat");
-const BOX_TKHD: int32u = u32::from_be_bytes(*b"tkhd");
-const BOX_STCO: int32u = u32::from_be_bytes(*b"stco"); // 32-bit chunk offsets
-const BOX_CO64: int32u = u32::from_be_bytes(*b"co64"); // 64-bit chunk offsets
+const BOX_THMB: Int32u = u32::from_be_bytes(*b"thmb"); // 3GP thumbnail
+const BOX_ILST: Int32u = u32::from_be_bytes(*b"ilst");
+const BOX_DATA: Int32u = u32::from_be_bytes(*b"data");
+const BOX_KEYS: Int32u = u32::from_be_bytes(*b"keys");
+const BOX_MDAT: Int32u = u32::from_be_bytes(*b"mdat");
+const BOX_TKHD: Int32u = u32::from_be_bytes(*b"tkhd");
+const BOX_STCO: Int32u = u32::from_be_bytes(*b"stco"); // 32-bit chunk offsets
+const BOX_CO64: Int32u = u32::from_be_bytes(*b"co64"); // 64-bit chunk offsets
 
 /// iTunes-style `©too` (tool/encoder) metadata key.
-const ITUNES_KEY_TOOL: int32u = 0xA9_74_6F_6F;
+const ITUNES_KEY_TOOL: Int32u = 0xA9_74_6F_6F;
 /// iTunes-style `©cmt` (Comment) metadata key.
-const ITUNES_KEY_COMMENT: int32u = 0xA9_63_6D_74;
+const ITUNES_KEY_COMMENT: Int32u = 0xA9_63_6D_74;
 /// iTunes-style `©nam` (Title/Name) metadata key.
-const ITUNES_KEY_TITLE: int32u = 0xA9_6E_61_6D;
+const ITUNES_KEY_TITLE: Int32u = 0xA9_6E_61_6D;
 /// iTunes-style `©ART` (Artist) metadata key.
-const ITUNES_KEY_ARTIST: int32u = 0xA9_41_52_54;
+const ITUNES_KEY_ARTIST: Int32u = 0xA9_41_52_54;
 /// iTunes-style `©alb` (Album) metadata key.
-const ITUNES_KEY_ALBUM: int32u = 0xA9_61_6C_62;
+const ITUNES_KEY_ALBUM: Int32u = 0xA9_61_6C_62;
 /// iTunes-style `©day` (Release Date) metadata key.
-const ITUNES_KEY_DATE: int32u = 0xA9_64_61_79;
+const ITUNES_KEY_DATE: Int32u = 0xA9_64_61_79;
 /// iTunes-style `©gen` (Genre) metadata key.
-const ITUNES_KEY_GENRE: int32u = 0xA9_67_65_6E;
+const ITUNES_KEY_GENRE: Int32u = 0xA9_67_65_6E;
 /// iTunes-style `©wrt` (Composer/Writer) metadata key.
-const ITUNES_KEY_WRITER: int32u = 0xA9_77_72_74;
+const ITUNES_KEY_WRITER: Int32u = 0xA9_77_72_74;
 /// iTunes-style `©grp` (Grouping) metadata key.
-const ITUNES_KEY_GROUPING: int32u = 0xA9_67_72_70;
+const ITUNES_KEY_GROUPING: Int32u = 0xA9_67_72_70;
 /// iTunes-style `trkn` (Track Number) metadata key.
-const ITUNES_KEY_TRACK: int32u = 0x74_72_6B_6E;
+const ITUNES_KEY_TRACK: Int32u = 0x74_72_6B_6E;
 /// iTunes-style `disk` (Disc Number) metadata key.
-const ITUNES_KEY_DISK: int32u = 0x64_69_73_6B;
+const ITUNES_KEY_DISK: Int32u = 0x64_69_73_6B;
 /// iTunes-style `cpil` (Compilation) metadata key.
-const ITUNES_KEY_COMPILATION: int32u = 0x63_70_69_6C;
+const ITUNES_KEY_COMPILATION: Int32u = 0x63_70_69_6C;
 /// iTunes-style `pgap` (Gapless Playback) metadata key.
-const ITUNES_KEY_GAPLESS: int32u = 0x70_67_61_70;
+const ITUNES_KEY_GAPLESS: Int32u = 0x70_67_61_70;
 /// iTunes-style `©lyr` (Lyrics) metadata key.
-const ITUNES_KEY_LYRICS: int32u = 0xA9_6C_79_72;
+const ITUNES_KEY_LYRICS: Int32u = 0xA9_6C_79_72;
 /// iTunes-style `tvsh` (TV Show Name) metadata key.
-const ITUNES_KEY_TV_SHOW: int32u = 0x74_76_73_68;
+const ITUNES_KEY_TV_SHOW: Int32u = 0x74_76_73_68;
 /// iTunes-style `tven` (TV Episode ID) metadata key.
-const ITUNES_KEY_TV_EPISODE: int32u = 0x74_76_65_6E;
+const ITUNES_KEY_TV_EPISODE: Int32u = 0x74_76_65_6E;
 /// iTunes-style `tvsn` (TV Season) metadata key.
-const ITUNES_KEY_TV_SEASON: int32u = 0x74_76_73_6E;
+const ITUNES_KEY_TV_SEASON: Int32u = 0x74_76_73_6E;
 /// iTunes-style `tves` (TV Episode Number) metadata key.
-const ITUNES_KEY_TV_EPISODE_NUM: int32u = 0x74_76_65_73;
+const ITUNES_KEY_TV_EPISODE_NUM: Int32u = 0x74_76_65_73;
 /// iTunes-style `hdvd` (HD Video) metadata key.
-const ITUNES_KEY_HD_VIDEO: int32u = 0x68_64_76_64;
+const ITUNES_KEY_HD_VIDEO: Int32u = 0x68_64_76_64;
 /// iTunes-style `stik` (Media Type) metadata key.
-const ITUNES_KEY_MEDIA_TYPE: int32u = 0x73_74_69_6B;
+const ITUNES_KEY_MEDIA_TYPE: Int32u = 0x73_74_69_6B;
 /// iTunes-style `rtng` (Content Rating) metadata key.
-const ITUNES_KEY_RATING: int32u = 0x72_74_6E_67;
+const ITUNES_KEY_RATING: Int32u = 0x72_74_6E_67;
 /// iTunes-style `©pub` (Publisher) metadata key.
-const ITUNES_KEY_PUBLISHER: int32u = 0xA9_70_75_62;
+const ITUNES_KEY_PUBLISHER: Int32u = 0xA9_70_75_62;
 /// iTunes-style `©enc` (Encoded By) metadata key.
-const ITUNES_KEY_ENCODED_BY: int32u = 0xA9_65_6E_63;
+const ITUNES_KEY_ENCODED_BY: Int32u = 0xA9_65_6E_63;
 
-const HANDLER_SOUN: int32u = u32::from_be_bytes(*b"soun");
-const HANDLER_VIDE: int32u = u32::from_be_bytes(*b"vide");
-const HANDLER_HINT: int32u = u32::from_be_bytes(*b"hint");
-const HANDLER_META: int32u = u32::from_be_bytes(*b"meta");
-const HANDLER_TEXT: int32u = u32::from_be_bytes(*b"text");
-const HANDLER_SUBT: int32u = u32::from_be_bytes(*b"subt");
-const HANDLER_SBTL: int32u = u32::from_be_bytes(*b"sbtl");
-const SAMPLE_ENTRY_RTP: int32u = u32::from_be_bytes(*b"rtp ");
-const SAMPLE_ENTRY_MEBX: int32u = u32::from_be_bytes(*b"mebx");
+const HANDLER_SOUN: Int32u = u32::from_be_bytes(*b"soun");
+const HANDLER_VIDE: Int32u = u32::from_be_bytes(*b"vide");
+const HANDLER_HINT: Int32u = u32::from_be_bytes(*b"hint");
+const HANDLER_META: Int32u = u32::from_be_bytes(*b"meta");
+const HANDLER_TEXT: Int32u = u32::from_be_bytes(*b"text");
+const HANDLER_SUBT: Int32u = u32::from_be_bytes(*b"subt");
+const HANDLER_SBTL: Int32u = u32::from_be_bytes(*b"sbtl");
+const SAMPLE_ENTRY_RTP: Int32u = u32::from_be_bytes(*b"rtp ");
+const SAMPLE_ENTRY_MEBX: Int32u = u32::from_be_bytes(*b"mebx");
 
-const SAMPLE_ENTRY_MP4A: int32u = u32::from_be_bytes(*b"mp4a");
-const SAMPLE_ENTRY_AVC1: int32u = u32::from_be_bytes(*b"avc1");
-const SAMPLE_ENTRY_AVC3: int32u = u32::from_be_bytes(*b"avc3");
-const SAMPLE_ENTRY_HVC1: int32u = u32::from_be_bytes(*b"hvc1");
-const SAMPLE_ENTRY_HEV1: int32u = u32::from_be_bytes(*b"hev1");
-const SAMPLE_ENTRY_MP4V: int32u = u32::from_be_bytes(*b"mp4v");
-const BOX_ESDS: int32u = u32::from_be_bytes(*b"esds");
-const BOX_AVCC: int32u = u32::from_be_bytes(*b"avcC");
-const BOX_HVCC: int32u = u32::from_be_bytes(*b"hvcC");
-const BOX_COLR: int32u = u32::from_be_bytes(*b"colr");
-const BOX_DVCC: int32u = u32::from_be_bytes(*b"dvcC");
-const BOX_DVVC: int32u = u32::from_be_bytes(*b"dvvC");
-const BOX_PASP: int32u = u32::from_be_bytes(*b"pasp");
+const SAMPLE_ENTRY_MP4A: Int32u = u32::from_be_bytes(*b"mp4a");
+const SAMPLE_ENTRY_AVC1: Int32u = u32::from_be_bytes(*b"avc1");
+const SAMPLE_ENTRY_AVC3: Int32u = u32::from_be_bytes(*b"avc3");
+const SAMPLE_ENTRY_HVC1: Int32u = u32::from_be_bytes(*b"hvc1");
+const SAMPLE_ENTRY_HEV1: Int32u = u32::from_be_bytes(*b"hev1");
+const SAMPLE_ENTRY_MP4V: Int32u = u32::from_be_bytes(*b"mp4v");
+const BOX_ESDS: Int32u = u32::from_be_bytes(*b"esds");
+const BOX_AVCC: Int32u = u32::from_be_bytes(*b"avcC");
+const BOX_HVCC: Int32u = u32::from_be_bytes(*b"hvcC");
+const BOX_COLR: Int32u = u32::from_be_bytes(*b"colr");
+const BOX_DVCC: Int32u = u32::from_be_bytes(*b"dvcC");
+const BOX_DVVC: Int32u = u32::from_be_bytes(*b"dvvC");
+const BOX_PASP: Int32u = u32::from_be_bytes(*b"pasp");
 
 #[derive(Debug, Default)]
 struct MovieInfo {
@@ -135,7 +135,7 @@ struct MovieInfo {
     modification_time: Option<u64>,
     /// iTunes-style metadata items from udta > meta > ilst. Keyed by
     /// the 4-byte item type code (e.g. `©too` = 0xA9_74_6F_6F).
-    itunes_metadata: Vec<(int32u, String)>,
+    itunes_metadata: Vec<(Int32u, String)>,
     /// QuickTime `mdta` keys box payload — reverse-DNS strings indexed
     /// from 1 by ilst items. Populated when udta > meta uses the
     /// `mdta` handler (iPhone/iPad recordings).
@@ -147,7 +147,7 @@ struct MovieInfo {
 
 #[derive(Debug, Default)]
 struct TrackInfo {
-    handler: int32u,
+    handler: Int32u,
     /// Optional human-readable track name from the hdlr box's trailing
     /// name field. Decoded from both ISO BMFF C-string and QuickTime
     /// Pascal-string forms. Used as the per-track `Title` field.
@@ -416,18 +416,18 @@ fn walk_boxes(
     fa: &mut FileAnalyze,
     region_size: usize,
     depth: usize,
-    visit: &mut dyn FnMut(&mut FileAnalyze, int32u, usize, usize, usize),
+    visit: &mut dyn FnMut(&mut FileAnalyze, Int32u, usize, usize, usize),
 ) {
     let region_end = fa.element_offset() + region_size;
     while fa.element_offset() + 8 <= region_end && fa.remain() >= 8 {
         let start = fa.element_offset();
-        let mut size32: int32u = 0;
+        let mut size32: Int32u = 0;
         fa.get_b4(&mut size32, "Size");
-        let mut box_type: int32u = 0;
+        let mut box_type: Int32u = 0;
         fa.get_c4(&mut box_type, "Type");
 
         let total_size: usize = if size32 == 1 {
-            let mut size64: int64u = 0;
+            let mut size64: Int64u = 0;
             fa.get_b8(&mut size64, "Size64");
             size64 as usize
         } else if size32 == 0 {
@@ -464,7 +464,7 @@ fn walk_boxes(
     }
 }
 
-fn box_type_name(t: int32u) -> String {
+fn box_type_name(t: Int32u) -> String {
     let bytes = t.to_be_bytes();
     if bytes.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
         String::from_utf8_lossy(&bytes).into_owned()
@@ -480,15 +480,15 @@ fn parse_ftyp(fa: &mut FileAnalyze, box_size: usize) -> Vec<String> {
         fa.skip_hexa(body_size, "ftyp");
         return brands;
     }
-    let mut major: int32u = 0;
+    let mut major: Int32u = 0;
     fa.get_c4(&mut major, "major_brand");
     brands.push(four_cc_str(major));
-    let mut minor: int32u = 0;
+    let mut minor: Int32u = 0;
     fa.get_b4(&mut minor, "minor_version");
     let remain = body_size - 8;
     let count = remain / 4;
     for _ in 0..count {
-        let mut b: int32u = 0;
+        let mut b: Int32u = 0;
         fa.get_c4(&mut b, "compatible_brand");
         brands.push(four_cc_str(b));
     }
@@ -499,14 +499,14 @@ fn parse_ftyp(fa: &mut FileAnalyze, box_size: usize) -> Vec<String> {
     brands
 }
 
-fn four_cc_str(v: int32u) -> String {
+fn four_cc_str(v: Int32u) -> String {
     let bytes = v.to_be_bytes();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn handle_inner(
     fa: &mut FileAnalyze,
-    box_type: int32u,
+    box_type: Int32u,
     box_size: usize,
     tracks: &mut Vec<TrackInfo>,
     movie: &mut MovieInfo,
@@ -655,28 +655,28 @@ fn parse_tkhd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         return;
     }
     let start = fa.element_offset();
-    let mut version_flags: int32u = 0;
+    let mut version_flags: Int32u = 0;
     fa.get_b4(&mut version_flags, "version_flags");
     let version = (version_flags >> 24) as u8;
     let flags = version_flags & 0x00FF_FFFF;
     track.track_enabled = Some((flags & 0x1) != 0);
 
     if version == 1 {
-        let mut ct: zenlib::int64u = 0;
+        let mut ct: zenlib::Int64u = 0;
         fa.get_b8(&mut ct, "creation_time");
-        let mut mt: zenlib::int64u = 0;
+        let mut mt: zenlib::Int64u = 0;
         fa.get_b8(&mut mt, "modification_time");
         track.creation_time = Some(ct);
         track.modification_time = Some(mt);
     } else {
-        let mut ct: int32u = 0;
+        let mut ct: Int32u = 0;
         fa.get_b4(&mut ct, "creation_time");
-        let mut mt: int32u = 0;
+        let mut mt: Int32u = 0;
         fa.get_b4(&mut mt, "modification_time");
         track.creation_time = Some(ct as u64);
         track.modification_time = Some(mt as u64);
     }
-    let mut tid: int32u = 0;
+    let mut tid: Int32u = 0;
     fa.get_b4(&mut tid, "track_ID");
     track.track_id = Some(tid);
     fa.skip_hexa(4, "reserved");
@@ -687,7 +687,7 @@ fn parse_tkhd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     }
     fa.skip_hexa(8, "reserved");
     fa.skip_hexa(2, "layer");
-    let mut alt_group: zenlib::int16u = 0;
+    let mut alt_group: zenlib::Int16u = 0;
     fa.get_b2(&mut alt_group, "alternate_group");
     track.alternate_group = Some(alt_group);
     fa.skip_hexa(2, "volume");
@@ -696,9 +696,9 @@ fn parse_tkhd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     // We only need (a, b) = matrix[0], matrix[1] for rotation in the
     // top-left 2x2; identity = (1, 0). 90° CW = (0, 1); 180° = (-1, 0);
     // 270° CW = (0, -1).
-    let mut a: int32u = 0;
+    let mut a: Int32u = 0;
     fa.get_b4(&mut a, "matrix_a");
-    let mut b: int32u = 0;
+    let mut b: Int32u = 0;
     fa.get_b4(&mut b, "matrix_b");
     fa.skip_hexa(28, "matrix_rest"); // 7 remaining matrix entries
     let a_i = a as i32;
@@ -735,33 +735,33 @@ fn parse_mvhd(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
         return;
     }
     let start = fa.element_offset();
-    let mut version_flags: int32u = 0;
+    let mut version_flags: Int32u = 0;
     fa.get_b4(&mut version_flags, "version_flags");
     let version = (version_flags >> 24) as u8;
     if version == 1 {
-        let mut ct: zenlib::int64u = 0;
+        let mut ct: zenlib::Int64u = 0;
         fa.get_b8(&mut ct, "creation_time");
-        let mut mt: zenlib::int64u = 0;
+        let mut mt: zenlib::Int64u = 0;
         fa.get_b8(&mut mt, "modification_time");
         movie.creation_time = Some(ct);
         movie.modification_time = Some(mt);
-        let mut ts: int32u = 0;
+        let mut ts: Int32u = 0;
         fa.get_b4(&mut ts, "timescale");
         movie.timescale = ts;
-        let mut dur: zenlib::int64u = 0;
+        let mut dur: zenlib::Int64u = 0;
         fa.get_b8(&mut dur, "duration");
         movie.duration = dur;
     } else {
-        let mut ct: int32u = 0;
+        let mut ct: Int32u = 0;
         fa.get_b4(&mut ct, "creation_time");
-        let mut mt: int32u = 0;
+        let mut mt: Int32u = 0;
         fa.get_b4(&mut mt, "modification_time");
         movie.creation_time = Some(ct as u64);
         movie.modification_time = Some(mt as u64);
-        let mut ts: int32u = 0;
+        let mut ts: Int32u = 0;
         fa.get_b4(&mut ts, "timescale");
         movie.timescale = ts;
-        let mut dur: int32u = 0;
+        let mut dur: Int32u = 0;
         fa.get_b4(&mut dur, "duration");
         movie.duration = dur as u64;
     }
@@ -780,9 +780,9 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
     let end = fa.element_offset() + inner;
     while fa.element_offset() + 8 <= end {
         let item_start = fa.element_offset();
-        let mut item_size: int32u = 0;
+        let mut item_size: Int32u = 0;
         fa.get_b4(&mut item_size, "item_size");
-        let mut item_type: int32u = 0;
+        let mut item_type: Int32u = 0;
         fa.get_c4(&mut item_type, "item_type");
         let item_total = item_size as usize;
         if item_total < 8 || item_start + item_total > end {
@@ -793,9 +793,9 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
 
         // Inside each item is a `data` box (and maybe other helpers).
         while fa.element_offset() + 8 <= body_end {
-            let mut sub_size: int32u = 0;
+            let mut sub_size: Int32u = 0;
             fa.get_b4(&mut sub_size, "sub_size");
-            let mut sub_type: int32u = 0;
+            let mut sub_type: Int32u = 0;
             fa.get_c4(&mut sub_type, "sub_type");
             let sub_total = sub_size as usize;
             if sub_total < 8 || sub_total > (body_end - fa.element_offset() + 8) {
@@ -804,7 +804,7 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
             let sub_body = sub_total - 8;
             if sub_type == BOX_DATA && sub_body >= 8 {
                 // data box: 4 bytes type_indicator, 4 bytes locale, then payload.
-                let mut type_indicator: int32u = 0;
+                let mut type_indicator: Int32u = 0;
                 fa.get_b4(&mut type_indicator, "type_indicator");
                 fa.skip_hexa(4, "locale");
                 let payload_size = sub_body - 8;
@@ -875,13 +875,13 @@ fn parse_keys(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
     let start = fa.element_offset();
     let end = start + inner;
     fa.skip_hexa(4, "version_flags");
-    let mut entry_count: int32u = 0;
+    let mut entry_count: Int32u = 0;
     fa.get_b4(&mut entry_count, "entry_count");
     for _ in 0..entry_count {
         if fa.element_offset() + 8 > end {
             break;
         }
-        let mut entry_size: int32u = 0;
+        let mut entry_size: Int32u = 0;
         fa.get_b4(&mut entry_size, "key_size");
         fa.skip_hexa(4, "key_namespace");
         let total = entry_size as usize;
@@ -907,28 +907,28 @@ fn parse_elst(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         return;
     }
     let start = fa.element_offset();
-    let mut version_flags: int32u = 0;
+    let mut version_flags: Int32u = 0;
     fa.get_b4(&mut version_flags, "version_flags");
     let version = (version_flags >> 24) as u8;
-    let mut entry_count: int32u = 0;
+    let mut entry_count: Int32u = 0;
     fa.get_b4(&mut entry_count, "entry_count");
 
     if entry_count > 0 {
         let segment_duration: u64;
         let media_time: i64;
         if version == 1 {
-            let mut sd: zenlib::int64u = 0;
+            let mut sd: zenlib::Int64u = 0;
             fa.get_b8(&mut sd, "segment_duration");
             segment_duration = sd;
-            let mut mt: zenlib::int64u = 0;
+            let mut mt: zenlib::Int64u = 0;
             fa.get_b8(&mut mt, "media_time");
             media_time = mt as i64;
             fa.skip_hexa(4, "media_rate");
         } else {
-            let mut sd: int32u = 0;
+            let mut sd: Int32u = 0;
             fa.get_b4(&mut sd, "segment_duration");
             segment_duration = sd as u64;
-            let mut mt: int32u = 0;
+            let mut mt: Int32u = 0;
             fa.get_b4(&mut mt, "media_time");
             media_time = mt as i32 as i64;
             fa.skip_hexa(4, "media_rate");
@@ -955,29 +955,29 @@ fn parse_mdhd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         return;
     }
     let start = fa.element_offset();
-    let mut version_flags: int32u = 0;
+    let mut version_flags: Int32u = 0;
     fa.get_b4(&mut version_flags, "version_flags");
     let version = (version_flags >> 24) as u8;
 
     if version == 1 {
-        let mut _created: int64u = 0;
+        let mut _created: Int64u = 0;
         fa.get_b8(&mut _created, "creation_time");
-        let mut _modified: int64u = 0;
+        let mut _modified: Int64u = 0;
         fa.get_b8(&mut _modified, "modification_time");
-        let mut ts: int32u = 0;
+        let mut ts: Int32u = 0;
         fa.get_b4(&mut ts, "timescale");
-        let mut dur: int64u = 0;
+        let mut dur: Int64u = 0;
         fa.get_b8(&mut dur, "duration");
         track.timescale = ts;
         track.duration_units = dur;
     } else {
-        let mut _created: int32u = 0;
+        let mut _created: Int32u = 0;
         fa.get_b4(&mut _created, "creation_time");
-        let mut _modified: int32u = 0;
+        let mut _modified: Int32u = 0;
         fa.get_b4(&mut _modified, "modification_time");
-        let mut ts: int32u = 0;
+        let mut ts: Int32u = 0;
         fa.get_b4(&mut ts, "timescale");
-        let mut dur: int32u = 0;
+        let mut dur: Int32u = 0;
         fa.get_b4(&mut dur, "duration");
         track.timescale = ts;
         track.duration_units = dur as u64;
@@ -985,7 +985,7 @@ fn parse_mdhd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
 
     // 16-bit packed ISO 639-2 language: 1 padding bit + 3×5-bit chars,
     // each char = (letter - 0x60). "eng" → 0x15C7.
-    let mut lang_raw: zenlib::int16u = 0;
+    let mut lang_raw: zenlib::Int16u = 0;
     fa.get_b2(&mut lang_raw, "language");
     let c0 = ((lang_raw >> 10) & 0x1F) as u8;
     let c1 = ((lang_raw >> 5) & 0x1F) as u8;
@@ -1011,7 +1011,7 @@ fn parse_hdlr(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     let start = fa.element_offset();
     fa.skip_hexa(4, "version_flags");
     fa.skip_hexa(4, "pre_defined");
-    let mut handler: int32u = 0;
+    let mut handler: Int32u = 0;
     fa.get_c4(&mut handler, "handler_type");
     fa.skip_hexa(12, "reserved");
     // Trailing name: ISO BMFF uses a null-terminated UTF-8 C-string;
@@ -1097,15 +1097,15 @@ fn parse_stsd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     }
     let start = fa.element_offset();
     fa.skip_hexa(4, "version_flags");
-    let mut entry_count: int32u = 0;
+    let mut entry_count: Int32u = 0;
     fa.get_b4(&mut entry_count, "entry_count");
 
     // Walk the first sample entry only (sufficient for single-codec tracks).
     if entry_count > 0 && fa.remain() >= 8 {
         let entry_start = fa.element_offset();
-        let mut entry_size: int32u = 0;
+        let mut entry_size: Int32u = 0;
         fa.get_b4(&mut entry_size, "entry_size");
-        let mut entry_type: int32u = 0;
+        let mut entry_type: Int32u = 0;
         fa.get_c4(&mut entry_type, "entry_type");
         let entry_total = entry_size as usize;
 
@@ -1168,19 +1168,19 @@ fn parse_mp4a_entry(fa: &mut FileAnalyze, entry_total: usize, track: &mut TrackI
     let start_remain = entry_total - 8;
     fa.skip_hexa(6, "reserved");
     fa.skip_hexa(2, "data_reference_index");
-    let mut version: zenlib::int16u = 0;
+    let mut version: zenlib::Int16u = 0;
     fa.get_b2(&mut version, "version");
     fa.skip_hexa(2, "revision");
     fa.skip_hexa(4, "vendor");
-    let mut channel_count_u16: zenlib::int16u = 0;
+    let mut channel_count_u16: zenlib::Int16u = 0;
     fa.get_b2(&mut channel_count_u16, "channel_count");
     let channel_count = channel_count_u16 as u32;
-    let mut sample_size: zenlib::int16u = 0;
+    let mut sample_size: zenlib::Int16u = 0;
     fa.get_b2(&mut sample_size, "sample_size");
     let _ = sample_size;
     fa.skip_hexa(2, "pre_defined_or_compression_id");
     fa.skip_hexa(2, "packet_size");
-    let mut sr_fixed: int32u = 0;
+    let mut sr_fixed: Int32u = 0;
     fa.get_b4(&mut sr_fixed, "sample_rate_16.16");
     let sample_rate = (sr_fixed >> 16) as u32;
 
@@ -1380,9 +1380,9 @@ fn parse_visual_entry(
     fa.skip_hexa(6, "reserved");
     fa.skip_hexa(2, "data_reference_index");
     fa.skip_hexa(16, "pre_defined_reserved");
-    let mut width: zenlib::int16u = 0;
+    let mut width: zenlib::Int16u = 0;
     fa.get_b2(&mut width, "width");
-    let mut height: zenlib::int16u = 0;
+    let mut height: zenlib::Int16u = 0;
     fa.get_b2(&mut height, "height");
     fa.skip_hexa(4, "horizresolution");
     fa.skip_hexa(4, "vertresolution");
@@ -1402,9 +1402,9 @@ fn parse_visual_entry(
     // Others (hvcC, pasp, colr) would need bit-decoders we don't have yet.
     let mut remaining = start_remain.saturating_sub(HEADER_FIXED);
     while remaining >= 8 {
-        let mut sub_size: int32u = 0;
+        let mut sub_size: Int32u = 0;
         fa.get_b4(&mut sub_size, "ext_size");
-        let mut sub_type: int32u = 0;
+        let mut sub_type: Int32u = 0;
         fa.get_c4(&mut sub_type, "ext_type");
         let sub_total = sub_size as usize;
         if sub_total < 8 || sub_total > remaining {
@@ -1439,16 +1439,16 @@ fn parse_colr(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "colr_short");
         return;
     }
-    let mut color_type: int32u = 0;
+    let mut color_type: Int32u = 0;
     fa.get_c4(&mut color_type, "color_type");
     let is_nclx = color_type == u32::from_be_bytes(*b"nclx");
     let is_nclc = color_type == u32::from_be_bytes(*b"nclc");
     if (is_nclx || is_nclc) && body_size >= 4 + 6 {
-        let mut prim: zenlib::int16u = 0;
+        let mut prim: zenlib::Int16u = 0;
         fa.get_b2(&mut prim, "primaries");
-        let mut trc: zenlib::int16u = 0;
+        let mut trc: zenlib::Int16u = 0;
         fa.get_b2(&mut trc, "transfer");
-        let mut mat: zenlib::int16u = 0;
+        let mut mat: zenlib::Int16u = 0;
         fa.get_b2(&mut mat, "matrix");
         track.color_primaries_idc = Some(prim);
         track.color_transfer_idc = Some(trc);
@@ -1474,9 +1474,9 @@ fn parse_pasp(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "pasp_short");
         return;
     }
-    let mut h: int32u = 0;
+    let mut h: Int32u = 0;
     fa.get_b4(&mut h, "h_spacing");
-    let mut v: int32u = 0;
+    let mut v: Int32u = 0;
     fa.get_b4(&mut v, "v_spacing");
     track.pasp_h = Some(h);
     track.pasp_v = Some(v);
@@ -1846,7 +1846,7 @@ fn parse_es_descriptor(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo)
     }
     let start = fa.element_offset();
     fa.skip_hexa(2, "ES_ID");
-    let mut flags: zenlib::int8u = 0;
+    let mut flags: zenlib::Int8u = 0;
     fa.get_b1(&mut flags, "flags");
     let stream_dep = (flags & 0x80) != 0;
     let url_flag = (flags & 0x40) != 0;
@@ -1878,14 +1878,14 @@ fn parse_decoder_config(fa: &mut FileAnalyze, size: usize, track: &mut TrackInfo
         return;
     }
     let start = fa.element_offset();
-    let mut oti: zenlib::int8u = 0;
+    let mut oti: zenlib::Int8u = 0;
     fa.get_b1(&mut oti, "objectTypeIndication");
     track.object_type_indication = Some(oti);
     fa.skip_hexa(1, "streamType_upStream");
     fa.skip_hexa(3, "bufferSizeDB");
-    let mut max_br: int32u = 0;
+    let mut max_br: Int32u = 0;
     fa.get_b4(&mut max_br, "maxBitrate");
-    let mut avg_br: int32u = 0;
+    let mut avg_br: Int32u = 0;
     fa.get_b4(&mut avg_br, "avgBitrate");
     if avg_br > 0 {
         track.avg_bitrate_bps = Some(avg_br);
@@ -1925,9 +1925,9 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     }
     let start = fa.element_offset();
     fa.skip_hexa(4, "version_flags");
-    let mut sample_size: int32u = 0;
+    let mut sample_size: Int32u = 0;
     fa.get_b4(&mut sample_size, "sample_size");
-    let mut sample_count: int32u = 0;
+    let mut sample_count: Int32u = 0;
     fa.get_b4(&mut sample_count, "sample_count");
     track.sample_count = Some(sample_count);
 
@@ -1945,7 +1945,7 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
         let mut total: u64 = 0;
         let mut last_entry: u32 = 0;
         for idx in 0..entries {
-            let mut entry: int32u = 0;
+            let mut entry: Int32u = 0;
             fa.get_b4(&mut entry, "sample_size_entry");
             if idx == 0 {
                 track.first_sample_size = Some(entry);
@@ -1977,17 +1977,17 @@ fn parse_stco(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo, is_c
     }
     let start = fa.element_offset();
     fa.skip_hexa(4, "version_flags");
-    let mut entry_count: int32u = 0;
+    let mut entry_count: Int32u = 0;
     fa.get_b4(&mut entry_count, "entry_count");
     if entry_count > 0 {
         let offset = if is_co64 {
-            let mut v: int64u = 0;
+            let mut v: Int64u = 0;
             fa.get_b8(&mut v, "chunk_offset");
             v
         } else {
-            let mut v: int32u = 0;
+            let mut v: Int32u = 0;
             fa.get_b4(&mut v, "chunk_offset");
-            v as int64u
+            v as Int64u
         };
         track.first_chunk_offset = Some(offset);
     }
@@ -2009,7 +2009,7 @@ fn parse_stts(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     }
     let start = fa.element_offset();
     fa.skip_hexa(4, "version_flags");
-    let mut entry_count: int32u = 0;
+    let mut entry_count: Int32u = 0;
     fa.get_b4(&mut entry_count, "entry_count");
     let table_bytes = (entry_count as usize) * 8;
     let available = body_size.saturating_sub(fa.element_offset() - start);
@@ -2021,9 +2021,9 @@ fn parse_stts(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     let mut total_samples: u64 = 0;
     let mut total_duration: u64 = 0;
     for _ in 0..entries {
-        let mut sc: int32u = 0;
+        let mut sc: Int32u = 0;
         fa.get_b4(&mut sc, "sample_count");
-        let mut sd: int32u = 0;
+        let mut sd: Int32u = 0;
         fa.get_b4(&mut sd, "sample_delta");
         all.push((sc, sd));
         if sd > 0 {

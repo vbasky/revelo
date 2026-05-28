@@ -17,7 +17,7 @@
 //!   ChunkSize bytes payload
 //!
 //! Audio Description chunk ("desc"), payload 32 bytes:
-//!   8 bytes BE float64: SampleRate
+//!   8 bytes BE Float64: SampleRate
 //!   4 bytes FourCC:     FormatID
 //!   4 bytes BE u32:     FormatFlags
 //!   4 bytes BE u32:     BytesPerPacket
@@ -150,7 +150,7 @@ fn fill_audio(fa: &mut FileAnalyze, d: &AudioDesc) {
     }
 
     if d.sample_rate > 0.0 {
-        // SampleRate is float64 but values are typically integral (44100, 48000…).
+        // SampleRate is Float64 but values are typically integral (44100, 48000…).
         let sr = d.sample_rate;
         let sr_str = if (sr - sr.round()).abs() < 1e-6 {
             (sr.round() as u64).to_string()

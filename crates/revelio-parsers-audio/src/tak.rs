@@ -24,7 +24,7 @@
 //!   3 bytes LE: crc
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int32u, int8u};
+use zenlib::{Int32u, Int8u};
 
 const MAGIC_TBAK: [u8; 4] = *b"tBaK";
 
@@ -54,7 +54,7 @@ pub fn parse_tak(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.element_begin("TAK");
-    let mut signature: int32u = 0;
+    let mut signature: Int32u = 0;
     fa.get_c4(&mut signature, "Signature");
 
     let mut streaminfo: Option<StreamInfo> = None;
@@ -63,9 +63,9 @@ pub fn parse_tak(fa: &mut FileAnalyze) -> bool {
         if fa.remain() < 4 {
             break;
         }
-        let mut block_type: int8u = 0;
+        let mut block_type: Int8u = 0;
         fa.get_l1(&mut block_type, "Block Type");
-        let mut block_length: int32u = 0;
+        let mut block_length: Int32u = 0;
         fa.get_l3(&mut block_length, "Block Length");
         let block_len = block_length as usize;
 
@@ -114,20 +114,20 @@ fn parse_streaminfo(fa: &mut FileAnalyze, block_len: usize) -> Option<StreamInfo
     }
     fa.skip_l1("unknown");
     fa.bs_begin();
-    let mut num_samples_lo: int8u = 0;
-    let mut framesizecode: int8u = 0;
+    let mut num_samples_lo: Int8u = 0;
+    let mut framesizecode: Int8u = 0;
     fa.get_s1(2, &mut num_samples_lo, "num_samples (lo)");
     fa.get_s1(3, &mut framesizecode, "framesizecode");
     fa.skip_s1(2, "unknown");
     fa.bs_end();
-    let mut num_samples_hi: int32u = 0;
+    let mut num_samples_hi: Int32u = 0;
     fa.get_l4(&mut num_samples_hi, "num_samples (hi)");
-    let mut samplerate_packed: int32u = 0;
+    let mut samplerate_packed: Int32u = 0;
     fa.get_l3(&mut samplerate_packed, "samplerate");
     fa.bs_begin();
     fa.skip_s1(4, "unknown");
-    let mut channels_bit: int8u = 0;
-    let mut samplesize_idx: int8u = 0;
+    let mut channels_bit: Int8u = 0;
+    let mut samplesize_idx: Int8u = 0;
     fa.get_s1(1, &mut channels_bit, "channels");
     fa.get_s1(2, &mut samplesize_idx, "samplesize");
     fa.skip_s1(1, "unknown");

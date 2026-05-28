@@ -67,7 +67,7 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
         map_encoding(encoding).unwrap_or(("PCM", "", 0, true));
 
     // Prefer file-size-derived data_size when available (matches C++:
-    // File_Size!=(int64u)-1 ⇒ data_size = File_Size - data_start).
+    // File_Size!=(Int64u)-1 ⇒ data_size = File_Size - data_start).
     let effective_data_size: u64 = if (file_size as u64) >= data_offset as u64 {
         (file_size as u64) - (data_offset as u64)
     } else if data_size != 0 && data_size != 0xFFFF_FFFF {

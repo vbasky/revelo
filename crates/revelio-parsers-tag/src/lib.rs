@@ -5,9 +5,7 @@
 //! These parse embedded metadata within media files. Each parser
 //! returns `Option<u32>` (tag size), `bool`, or nothing for VorbisComment.
 
-#![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
 
 pub mod tags;
 

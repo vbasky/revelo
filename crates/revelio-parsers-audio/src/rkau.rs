@@ -14,7 +14,7 @@
 //!   uint8   flags              // bit0 joint_stereo, bit1 streaming, bit2 vrq_lossy
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{int32u, int8u};
+use zenlib::{Int32u, Int8u};
 
 const MAGIC_RKA: [u8; 3] = *b"RKA";
 const HEADER_LEN: usize = 15;
@@ -38,17 +38,17 @@ pub fn parse_rkau(fa: &mut FileAnalyze) -> bool {
         version_bytes[0] = b[0];
     }
     fa.skip_l1("Version");
-    let mut source_bytes: int32u = 0;
+    let mut source_bytes: Int32u = 0;
     fa.get_l4(&mut source_bytes, "SourceBytes");
-    let mut sample_rate: int32u = 0;
+    let mut sample_rate: Int32u = 0;
     fa.get_l4(&mut sample_rate, "SampleRate");
-    let mut channels: int8u = 0;
+    let mut channels: Int8u = 0;
     fa.get_l1(&mut channels, "Channels");
-    let mut bits_per_sample: int8u = 0;
+    let mut bits_per_sample: Int8u = 0;
     fa.get_l1(&mut bits_per_sample, "BitsPerSample");
-    let mut quality: int8u = 0;
+    let mut quality: Int8u = 0;
     fa.get_l1(&mut quality, "Quality");
-    let mut flags: int8u = 0;
+    let mut flags: Int8u = 0;
     fa.get_l1(&mut flags, "Flags");
     fa.element_end();
 
