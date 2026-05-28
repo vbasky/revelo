@@ -116,6 +116,8 @@ const BOX_ESDS: int32u = u32::from_be_bytes(*b"esds");
 const BOX_AVCC: int32u = u32::from_be_bytes(*b"avcC");
 const BOX_HVCC: int32u = u32::from_be_bytes(*b"hvcC");
 const BOX_COLR: int32u = u32::from_be_bytes(*b"colr");
+const BOX_DVCC: int32u = u32::from_be_bytes(*b"dvcC");
+const BOX_DVVC: int32u = u32::from_be_bytes(*b"dvvC");
 const BOX_PASP: int32u = u32::from_be_bytes(*b"pasp");
 
 #[derive(Debug, Default)]
@@ -228,6 +230,13 @@ struct TrackInfo {
     /// tkhd matrix-derived rotation, in degrees (clockwise, 0/90/180/270).
     /// None when matrix is identity (no rotation).
     rotation_deg: Option<u32>,
+    /// Dolby Vision fields from dvcC/dvvC.
+    dovi_profile: Option<u8>,
+    dovi_level: Option<u8>,
+    dovi_bl_present: bool,
+    dovi_bl_compat_id: Option<u8>,
+    dovi_rpu_present: bool,
+    dovi_el_present: bool,
     /// HEVC fixed-header fields from hvcC.
     hevc_profile_idc: Option<u8>,
     /// general_tier_flag — true = High tier, false = Main tier.
@@ -1303,6 +1312,8 @@ fn parse_visual_entry(
             BOX_HVCC => parse_hvcc(fa, body, track),
             BOX_COLR => parse_colr(fa, body, track),
             BOX_PASP => parse_pasp(fa, body, track),
+            BOX_DVCC => parse_dvcc(fa, body, track),
+            BOX_DVVC => parse_dvcc(fa, body, track),
             _ => fa.Skip_Hexa(body, "visual_ext"),
         }
         remaining -= sub_total;
@@ -1371,7 +1382,37 @@ fn parse_pasp(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     }
 }
 
-/// Parse avcC (AVCDecoderConfigurationRecord). Layout:
+/// Parse dvcC / dvvC (Dolby Vision Configuration Box).
+fn parse_dvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
+    if body_size < 4 {
+        fa.Skip_Hexa(body_size, "dvcc_short");
+        return;
+    }
+    let body = fa.read_raw(body_size).to_vec();
+    // dvcC layout:
+    //   byte 0: dv_version_major
+    //   byte 1: dv_version_minor
+    //   byte 2: dv_profile << 1 | dv_bl_signal_compatibility_id
+    //   byte 3: 4 bits reserved, 4 bits dv_level
+    let dv_profile = (body[2] >> 1) & 0x7F;
+    let dv_bl_present = (body[2] & 0x01) != 0;
+    let dv_level = body[3] & 0x0F;
+    let dv_rpu_present = if body_size > 4 { (body[4] & 0x80) != 0 } else { false };
+    let dv_el_present = if body_size > 4 { (body[4] & 0x40) != 0 } else { false };
+
+    track.dovi_profile = Some(dv_profile);
+    track.dovi_level = Some(dv_level);
+    track.dovi_bl_present = dv_bl_present;
+    track.dovi_rpu_present = dv_rpu_present;
+    track.dovi_el_present = dv_el_present;
+
+    // BL compatibility ID in bits 5-2 of byte 4
+    if body_size > 4 {
+        track.dovi_bl_compat_id = Some((body[4] >> 2) & 0x0F);
+    }
+}
+
+/// Parse avcC (AVCDecoderConfigurationRecord). Layout:/// Parse avcC (AVCDecoderConfigurationRecord). Layout:
 ///   1 byte configurationVersion
 ///   1 byte AVCProfileIndication
 ///   1 byte profile_compatibility

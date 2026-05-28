@@ -51,7 +51,9 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
             Some(p) => i + p,
             None => break,
         };
-        let name = std::str::from_utf8(&buf[i..name_end]).unwrap_or("").to_owned();
+        let name = std::str::from_utf8(&buf[i..name_end])
+            .unwrap_or("")
+            .to_owned();
         let after_name = name_end + 1;
         if after_name >= buf.len() {
             break;
@@ -91,7 +93,8 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
                 height = y_max.wrapping_sub(y_min).wrapping_add(1);
             }
             ("pixelAspectRatio", "float") if size == 4 => {
-                pixel_aspect_ratio = Some(f32::from_le_bytes([value[0], value[1], value[2], value[3]]));
+                pixel_aspect_ratio =
+                    Some(f32::from_le_bytes([value[0], value[1], value[2], value[3]]));
             }
             ("framesPerSecond", "rational") if size == 8 => {
                 let n = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
@@ -110,7 +113,13 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
 
     fa.Stream_Prepare(StreamKind::General);
     fa.Fill(StreamKind::General, 0, "Format", "EXR", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version.to_string(), false);
+    fa.Fill(
+        StreamKind::General,
+        0,
+        "Format_Version",
+        version.to_string(),
+        false,
+    );
     fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
     if let Some(c) = comments {
         fa.Fill(StreamKind::General, 0, "Comment", c, false);
@@ -118,7 +127,13 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
 
     fa.Stream_Prepare(StreamKind::Image);
     fa.Fill(StreamKind::Image, 0, "Format", "EXR", false);
-    fa.Fill(StreamKind::Image, 0, "Format_Version", version.to_string(), false);
+    fa.Fill(
+        StreamKind::Image,
+        0,
+        "Format_Version",
+        version.to_string(),
+        false,
+    );
     fa.Fill(
         StreamKind::Image,
         0,
@@ -137,17 +152,38 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     }
     if width > 0 && height > 0 {
         let dar = width as f64 / height as f64;
-        fa.Fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.Fill(
+            StreamKind::Image,
+            0,
+            "DisplayAspectRatio",
+            format!("{:.3}", dar),
+            false,
+        );
     }
     if let Some(par) = pixel_aspect_ratio {
-        fa.Fill(StreamKind::Image, 0, "PixelAspectRatio", format!("{:.3}", par), false);
+        fa.Fill(
+            StreamKind::Image,
+            0,
+            "PixelAspectRatio",
+            format!("{:.3}", par),
+            false,
+        );
     }
     if let Some(fr) = frame_rate {
-        fa.Fill(StreamKind::Image, 0, "FrameRate", format!("{:.3}", fr), false);
+        fa.Fill(
+            StreamKind::Image,
+            0,
+            "FrameRate",
+            format!("{:.3}", fr),
+            false,
+        );
     }
     // EXR compression codes 0-4 are lossless; 5+ are lossy.
     if let Some(_) = compression {
-        let lossless = matches!(compression, Some("raw") | Some("RLZ") | Some("ZIPS") | Some("ZIP") | Some("PIZ"));
+        let lossless = matches!(
+            compression,
+            Some("raw") | Some("RLZ") | Some("ZIPS") | Some("ZIP") | Some("PIZ")
+        );
         fa.Fill(
             StreamKind::Image,
             0,
@@ -157,7 +193,13 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         );
     }
     let file_size = fa.Remain();
-    fa.Fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
+    fa.Fill(
+        StreamKind::Image,
+        0,
+        "StreamSize",
+        file_size.to_string(),
+        false,
+    );
     fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
     true
 }
@@ -212,7 +254,10 @@ mod tests {
         let buf = build_minimal_exr(320, 240, 3); // ZIP
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_exr(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| {
+            fa.Retrieve(StreamKind::Image, 0, k)
+                .map(|z| z.as_str().to_owned())
+        };
         assert_eq!(i("Format").as_deref(), Some("EXR"));
         assert_eq!(i("Format_Version").as_deref(), Some("2"));
         assert_eq!(i("Width").as_deref(), Some("320"));

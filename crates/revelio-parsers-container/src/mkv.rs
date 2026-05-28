@@ -918,6 +918,11 @@ fn fill_streams(
                 }
 
                 // For AVC tracks with CodecPrivate, parse avcC to get profile/level
+                if track.codec_id.as_deref() == Some("V_DOLBYVISION/AVC") {
+                    fa.Fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
+                    fa.Fill(StreamKind::Video, pos, "HDR_Format_Compatibility", "AVC", false);
+                }
+
                 if track.codec_id.as_deref() == Some("V_MPEG4/ISO/AVC") {
                     if let Some(ref private) = track.codec_private {
                         if private.len() >= 4 && private[0] == 1 {
@@ -981,6 +986,20 @@ fn fill_streams(
                 }
 
                 // For HEVC tracks with CodecPrivate, parse hvcC to get profile/tier/level
+                // Dolby Vision tracks with HEVC base layer
+                if track.codec_id.as_deref() == Some("V_DOLBYVISION/HEVC") || track.codec_id.as_deref() == Some("V_DOLBYVISION") {
+                    fa.Fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
+                    fa.Fill(StreamKind::Video, pos, "HDR_Format_Compatibility", "HDR10", false);
+                    // If we have CodecPrivate with hvcC, also parse HEVC details
+                    if let Some(ref private) = track.codec_private {
+                        if let Some(info) = revelio_parsers_video::parse_hevc_sps(private) {
+                            fa.Fill(StreamKind::Video, pos, "Width", info.width.to_string(), false);
+                            fa.Fill(StreamKind::Video, pos, "Height", info.height.to_string(), false);
+                            fa.Fill(StreamKind::Video, pos, "BitDepth", info.bit_depth.to_string(), false);
+                        }
+                    }
+                }
+
                 if track.codec_id.as_deref() == Some("V_MPEGH/ISO/HEVC") {
                     if let Some(ref private) = track.codec_private {
                         if private.len() >= 23 && private[0] == 1 {
@@ -1283,6 +1302,9 @@ fn mkv_codec_to_format(codec_id: &str) -> Option<&'static str> {
         "V_MPEGH/ISO/HEVC" => Some("HEVC"),
         "V_VP9" => Some("VP9"),
         "V_AV1" => Some("AV1"),
+        "V_DOLBYVISION" => Some("Dolby Vision"),
+        "V_DOLBYVISION/AVC" => Some("Dolby Vision"),
+        "V_DOLBYVISION/HEVC" => Some("Dolby Vision"),
         _ => None,
     }
 }

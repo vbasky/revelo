@@ -60,9 +60,9 @@ pub fn to_text(streams: &StreamCollection, path: &str) -> String {
 fn display_fields(kind: StreamKind) -> &'static [&'static str] {
     match kind {
         StreamKind::General => &[
-            "CompleteName", "Format", "Format_Profile", "CodecID",
-            "FileSize", "Duration", "OverallBitRate_Mode", "OverallBitRate",
-            "FrameRate", "Encoded_Library", "Encoded_Application",
+            "CompleteName", "Format", "Format_Version", "CodecID",
+            "FileSize", "Duration", "OverallBitRate",
+            "FrameRate", "Encoded_Application", "Encoded_Library",
             "Encoded_Date", "Tagged_Date", "Comment",
         ],
         StreamKind::Video => &[
@@ -72,8 +72,7 @@ fn display_fields(kind: StreamKind) -> &'static [&'static str] {
             "CodecID", "Duration", "BitRate", "Width", "Height",
             "DisplayAspectRatio", "FrameRate_Mode", "FrameRate",
             "ColorSpace", "ChromaSubsampling", "BitDepth", "ScanType",
-            "StreamSize", "Title", "Language", "Encoded_Library",
-            "Encoded_Date", "Tagged_Date",
+            "StreamSize", "Title", "Language", "Default", "Forced",
             "colour_range", "colour_primaries", "transfer_characteristics",
             "matrix_coefficients", "CodecConfigurationBox",
         ],
@@ -81,9 +80,9 @@ fn display_fields(kind: StreamKind) -> &'static [&'static str] {
             "ID", "Format", "Format_Info", "Format_Version", "Format_Profile",
             "Format_Settings_Mode", "CodecID", "Duration", "Source_Duration",
             "BitRate_Mode", "BitRate", "BitRate_Maximum",
-            "Channels", "ChannelLayout", "SamplingRate", "FrameRate",
-            "Compression_Mode", "StreamSize", "Source_StreamSize",
-            "Title", "Language", "Default", "Encoded_Library",
+            "Channels", "ChannelLayout", "SamplingRate", "BitDepth", "FrameRate",
+            "Compression_Mode", "Delay", "StreamSize", "Source_StreamSize",
+            "Title", "Language", "Default", "Forced", "Encoded_Library",
             "Encoded_Date", "Tagged_Date",
         ],
         StreamKind::Other => &[
@@ -150,7 +149,9 @@ fn render(
             Some(("Format", fmt))
         }
         "Format_Info" => Some(("Format/Info", s.get("Format_Info")?.as_str().to_owned())),
-        "Format_Version" => Some(("Format version", s.get("Format_Version")?.as_str().to_owned())),
+        "Format_Version" => {
+            Some(("Format version", format!("Version {}", s.get("Format_Version")?.as_str())))
+        }
 
         "Format_Profile" => {
             let prof = s.get("Format_Profile")?.as_str().to_owned();
@@ -229,8 +230,8 @@ fn render(
             Some(("Maximum bit rate", human_bitrate(bps)))
         }
 
-        "Width" => Some(("Width", format!("{} pixels", s.get("Width")?.as_str()))),
-        "Height" => Some(("Height", format!("{} pixels", s.get("Height")?.as_str()))),
+        "Width" => Some(("Width", format!("{} pixels", thousands_space(s.get("Width")?.as_str())))),
+        "Height" => Some(("Height", format!("{} pixels", thousands_space(s.get("Height")?.as_str())))),
         "DisplayAspectRatio" => {
             Some(("Display aspect ratio", display_aspect(s.get("DisplayAspectRatio")?.as_str())))
         }
@@ -272,11 +273,14 @@ fn render(
             Some(("Compression mode", s.get("Compression_Mode")?.as_str().to_owned()))
         }
 
+        "ID" => Some(("ID", s.get("ID")?.as_str().to_owned())),
         "Type" => Some(("Type", s.get("Type")?.as_str().to_owned())),
         "FrameCount" => Some(("Frame count", s.get("FrameCount")?.as_str().to_owned())),
         "Title" => Some(("Title", s.get("Title")?.as_str().to_owned())),
         "Language" => Some(("Language", language_name(s.get("Language")?.as_str()))),
         "Default" => Some(("Default", s.get("Default")?.as_str().to_owned())),
+        "Forced" => Some(("Forced", s.get("Forced")?.as_str().to_owned())),
+        "Delay" => Some(("Delay relative to video", delay_ms(s.get("Delay")?.as_str()))),
 
         "Encoded_Library" => {
             Some(("Writing library", s.get("Encoded_Library")?.as_str().to_owned()))
@@ -354,8 +358,12 @@ fn trim3(v: f64) -> String {
 }
 
 /// ms → "1 h 2 min" / "3 min 29 s" / "29 s" / "95 ms".
+/// Also handles float seconds (e.g. "4050.208" from some parsers).
 fn human_duration(raw: &str) -> String {
-    let ms: i64 = match raw.parse() {
+    let total_ms = raw
+        .parse::<i64>()
+        .or_else(|_| raw.parse::<f64>().map(|secs| (secs * 1000.0).round() as i64));
+    let ms: i64 = match total_ms {
         Ok(v) => v,
         Err(_) => return raw.to_owned(),
     };
@@ -373,6 +381,15 @@ fn human_duration(raw: &str) -> String {
     } else {
         format!("{rem_ms} ms")
     }
+}
+
+/// Delay value as ms → "7 ms" / "0 ms". Handles float seconds too.
+fn delay_ms(raw: &str) -> String {
+    let ms = raw
+        .parse::<i64>()
+        .or_else(|_| raw.parse::<f64>().map(|secs| (secs * 1000.0).round() as i64))
+        .unwrap_or(0);
+    format!("{ms} ms")
 }
 
 /// bps → "734 kb/s" / "1.50 Mb/s" (~3 sig figs).
@@ -397,6 +414,21 @@ fn human_sampling_rate(hz: u64) -> String {
         let trimmed = s.trim_end_matches('0').trim_end_matches('.');
         format!("{trimmed} kHz")
     }
+}
+
+/// Format integer string with space as thousands separator: "1920" → "1 920".
+fn thousands_space(raw: &str) -> String {
+    let mut s = String::new();
+    let chars: Vec<char> = raw.chars().collect();
+    let mut count = 0;
+    for c in chars.iter().rev() {
+        if count > 0 && count % 3 == 0 {
+            s.push(' ');
+        }
+        s.push(*c);
+        count += 1;
+    }
+    s.chars().rev().collect()
 }
 
 /// Common display-aspect decimals → ratio strings. Falls back to the
