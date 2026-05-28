@@ -27,4 +27,12 @@ pub use pgs::parse_pgs;
 pub mod sub_rip;
 pub use sub_rip::parse_sub_rip;
 pub mod ttml;
+pub mod teletext;
+pub mod scc;
+pub mod timed_text;
+
 pub use ttml::parse_ttml;
+pub use teletext::parse_teletext;
+pub use scc::parse_scc;
+pub use timed_text::parse_timed_text;
+

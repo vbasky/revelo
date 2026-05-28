@@ -1524,7 +1524,7 @@ fn parse_hvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     // Try to extract encoder string from SEI NALs
     if !sei_nalus.is_empty() {
         if let Some(enc) = revelio_parsers_video::extract_encoder_from_sei_nalus(&sei_nalus) {
-            track.hevc_encoder = Some(enc);
+            track.hevc_encoder = Some(enc.library);
         }
     }
 }

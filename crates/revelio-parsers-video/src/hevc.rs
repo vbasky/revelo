@@ -1,4 +1,5 @@
 use revelio_core::{FileAnalyze, StreamKind};
+use crate::avc::{EncoderInfo, parse_x264_style_encoder};
 
 #[derive(Debug)]
 pub struct HevcInfo {
@@ -21,6 +22,9 @@ pub struct HevcInfo {
     pub video_full_range: Option<bool>,
     /// Extracted from user_data_unregistered SEI message (payload_type 5).
     pub encoder_string: Option<String>,
+    pub encoder_name: Option<String>,
+    pub encoder_version: Option<String>,
+    pub encoder_settings: Option<String>,
 }
 
 const ANNEX_B_START_CODE: [u8; 3] = [0x00, 0x00, 0x01];
@@ -85,6 +89,18 @@ fn read_ue(buffer: &[u8], offset: &mut usize) -> Option<u32> {
         *offset += 1;
     }
     Some(value + (1u32 << leading_zeros) - 1)
+}
+
+fn read_bits64(buffer: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
+    if n > 64 || *offset + n > buffer.len() * 8 { return None; }
+    let mut value = 0u64;
+    for _ in 0..n {
+        let byte = *offset / 8;
+        let bit = 7 - (*offset % 8);
+        value = (value << 1) | ((buffer[byte] >> bit) & 1) as u64;
+        *offset += 1;
+    }
+    Some(value)
 }
 
 fn read_bits(buffer: &[u8], offset: &mut usize, n: usize) -> Option<u32> {
@@ -312,20 +328,17 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
 
 /// Extract encoder string from HEVC SEI user_data_unregistered message.
 /// Similar to AVC but with 2-byte NAL header.
-fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<String> {
+fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
     let clean = remove_epb(nal_unit);
     if clean.len() < 2 {
         return None;
     }
     let mut off = 0usize;
-    // Skip HEVC NAL header (2 bytes)
     read_bits(&clean, &mut off, 16)?;
 
-    // Parse SEI messages (same payload structure as AVC)
     loop {
         if off >= clean.len() * 8 { break; }
 
-        // Read payload_type (variable length, 0xFF terminated)
         let mut payload_type = 0u32;
         loop {
             let byte = read_bits(&clean, &mut off, 8)?;
@@ -334,7 +347,6 @@ fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<String> {
             if off >= clean.len() * 8 { return None; }
         }
 
-        // Read payload_size (variable length, 0xFF terminated)
         let mut payload_size = 0u32;
         loop {
             let byte = read_bits(&clean, &mut off, 8)?;
@@ -344,33 +356,45 @@ fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<String> {
         }
 
         if payload_type == 5 {
-            // user_data_unregistered: 16-byte UUID + string
-            let uuid_len = 16 * 8; // 16 bytes
-            if off + uuid_len > payload_size as usize * 8 {
+            let payload_bits = payload_size as usize * 8;
+            if off + payload_bits > clean.len() * 8 {
                 return None;
             }
-            skip_bits(&mut off, uuid_len);
+            let uuid_hi = read_bits64(&clean, &mut off, 64)?;
+            skip_bits(&mut off, 64);
 
+            let string_bytes = payload_size.saturating_sub(16);
+            if string_bytes == 0 {
+                if payload_bits > 128 { skip_bits(&mut off, payload_bits - 128); }
+                continue;
+            }
             let str_start = off / 8;
-            let remaining_bits = payload_size as usize * 8 - uuid_len;
-            let str_end = str_start + remaining_bits / 8;
+            let str_end = str_start + string_bytes as usize;
             if str_end > clean.len() {
                 return None;
             }
             let str_bytes = &clean[str_start..str_end];
-            // Find null terminator
             let null_pos = str_bytes.iter().position(|&b| b == 0).unwrap_or(str_bytes.len());
             let s = std::str::from_utf8(&str_bytes[..null_pos]).ok()?;
             if !s.is_empty() {
-                return Some(s.to_owned());
+                let info = match uuid_hi {
+                    0x2CA2DE09B51747DB => {
+                        let info = parse_x264_style_encoder(s);
+                        EncoderInfo { name: Some("x265".to_owned()), version: info.name.clone(), ..info }
+                    }
+                    0x427FCC9BB8924821 => {
+                        let info = parse_x264_style_encoder(s);
+                        EncoderInfo { name: Some("Ateme".to_owned()), ..info }
+                    }
+                    _ => parse_x264_style_encoder(s),
+                };
+                return Some(info);
             }
-            skip_bits(&mut off, remaining_bits);
+            skip_bits(&mut off, payload_bits - 128);
         } else {
-            // Skip payload data for other SEI types
             skip_bits(&mut off, payload_size as usize * 8);
         }
 
-        // Check for rbsp_trailing_bits
         if off >= clean.len() * 8 {
             break;
         }
@@ -379,8 +403,7 @@ fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<String> {
     None
 }
 
-/// Extract encoder string from a list of SEI NAL units in hvcC.
-pub fn extract_encoder_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<String> {
+pub fn extract_encoder_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<EncoderInfo> {
     for nal in sei_nalus {
         if let Some(enc) = extract_encoder_from_hevc_sei(nal) {
             return Some(enc);
@@ -698,6 +721,9 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
         matrix_coefficients,
         video_full_range,
         encoder_string: None,
+        encoder_name: None,
+        encoder_version: None,
+        encoder_settings: None,
     })
 }
 

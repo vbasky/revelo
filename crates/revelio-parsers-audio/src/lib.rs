@@ -37,6 +37,10 @@ pub mod tak;
 pub mod tta;
 pub mod twin_vq;
 pub mod wvpk;
+pub mod opus;
+pub mod vorbis;
+pub mod usac;
+
 
 pub use aac_adts::parse_aac_adts;
 pub use ac3::parse_ac3;
@@ -71,3 +75,7 @@ pub use tak::parse_tak;
 pub use tta::parse_tta;
 pub use twin_vq::parse_twin_vq;
 pub use wvpk::parse_wvpk;
+pub use opus::parse_opus;
+pub use vorbis::parse_vorbis;
+pub use usac::parse_usac;
+

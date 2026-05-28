@@ -1,8 +1,21 @@
-use revelio_core::{StreamCollection, StreamKind};
+//! Human-readable `Text` output — the default `mediainfo` format.
+//!
+//! Unlike XML/JSON (which emit raw internal field names + values), the
+//! Text format uses MediaInfo's friendly labels ("Codec ID", "Bit rate",
+//! "Frame rate") and humanised values ("5.26 MiB", "1 min 0 s",
+//! "734 kb/s", "640 pixels"). Field selection is curated per stream kind
+//! — only the display fields appear, in MediaInfo's order.
+//!
+//! This is a pragmatic transliteration of `File__Analyze::Inform`: the
+//! common standalone + a handful of combined fields are matched; a few
+//! fully-computed oracle fields (Bits/(Pixel*Frame), exact DAR ratio
+//! reduction) are approximated or omitted.
 
-const FIELD_COLUMN_WIDTH: usize = 42;
+use revelio_core::{Stream, StreamCollection, StreamKind};
 
-pub fn to_text(streams: &StreamCollection) -> String {
+const FIELD_COLUMN_WIDTH: usize = 41;
+
+pub fn to_text(streams: &StreamCollection, path: &str) -> String {
     let mut out = String::new();
     let kinds = [
         StreamKind::General,
@@ -14,18 +27,20 @@ pub fn to_text(streams: &StreamCollection) -> String {
         StreamKind::Menu,
     ];
 
-    let mut first_kind = true;
+    // File size is needed to render Stream size percentages.
+    let file_size: Option<u64> = streams
+        .stream(StreamKind::General, 0)
+        .and_then(|s| s.get("FileSize"))
+        .and_then(|z| z.as_str().parse().ok());
+
+    let mut first = true;
     for kind in kinds {
         let count = streams.Count_Get(kind);
-        if count == 0 {
-            continue;
-        }
-        if !first_kind {
-            out.push('\n');
-        }
-        first_kind = false;
-
         for pos in 0..count {
+            if !first {
+                out.push('\n');
+            }
+            first = false;
             if count > 1 {
                 out.push_str(&format!("{} #{}\n", kind.name(), pos + 1));
             } else {
@@ -33,172 +48,393 @@ pub fn to_text(streams: &StreamCollection) -> String {
                 out.push('\n');
             }
             if let Some(stream) = streams.stream(kind, pos) {
-                emit_text_stream_fields(&mut out, kind, stream);
+                emit_section(&mut out, kind, stream, path, file_size);
             }
         }
     }
-    out.push('\n');
     out
 }
 
-fn emit_text_stream_fields(
-    out: &mut String,
-    kind: StreamKind,
-    stream: &revelio_core::Stream,
-) {
-    let canonical = canonical_field_order(kind);
-    let extras = extra_field_order(kind);
-    let mut emitted: std::collections::HashSet<&str> = std::collections::HashSet::new();
-
-    for field in canonical {
-        if let Some(z) = stream.get(field) {
-            emit_text_field(out, field, z.as_str());
-            emitted.insert(*field);
-        }
-    }
-
-    let extras_set: std::collections::HashSet<&'static str> = extras.iter().copied().collect();
-    for (k, v) in stream.iter() {
-        if !emitted.contains(k) && !extras_set.contains(k) {
-            emit_text_field(out, k, v.as_str());
-        }
-    }
-
-    for field in extras {
-        if let Some(z) = stream.get(field) {
-            emit_text_field(out, field, z.as_str());
-        }
-    }
-    for (k, v) in stream.extras_iter() {
-        emit_text_field(out, k, v.as_str());
+/// Per-kind ordered list of internal field names to display. Fields not
+/// listed are hidden from Text output (they remain in XML/JSON).
+fn display_fields(kind: StreamKind) -> &'static [&'static str] {
+    match kind {
+        StreamKind::General => &[
+            "CompleteName", "Format", "Format_Profile", "CodecID",
+            "FileSize", "Duration", "OverallBitRate_Mode", "OverallBitRate",
+            "FrameRate", "Encoded_Library", "Encoded_Application",
+            "Encoded_Date", "Tagged_Date", "Comment",
+        ],
+        StreamKind::Video => &[
+            "ID", "Format", "Format_Info", "Format_Profile",
+            "Format_Settings_CABAC", "Format_Settings_RefFrames",
+            "Format_Settings_GOP", "Format_Settings_SliceCount",
+            "CodecID", "Duration", "BitRate", "Width", "Height",
+            "DisplayAspectRatio", "FrameRate_Mode", "FrameRate",
+            "ColorSpace", "ChromaSubsampling", "BitDepth", "ScanType",
+            "StreamSize", "Title", "Language", "Encoded_Library",
+            "Encoded_Date", "Tagged_Date",
+            "colour_range", "colour_primaries", "transfer_characteristics",
+            "matrix_coefficients", "CodecConfigurationBox",
+        ],
+        StreamKind::Audio => &[
+            "ID", "Format", "Format_Info", "Format_Version", "Format_Profile",
+            "Format_Settings_Mode", "CodecID", "Duration", "Source_Duration",
+            "BitRate_Mode", "BitRate", "BitRate_Maximum",
+            "Channels", "ChannelLayout", "SamplingRate", "FrameRate",
+            "Compression_Mode", "StreamSize", "Source_StreamSize",
+            "Title", "Language", "Default", "Encoded_Library",
+            "Encoded_Date", "Tagged_Date",
+        ],
+        StreamKind::Other => &[
+            "ID", "Type", "Format", "CodecID", "Duration", "Source_Duration",
+            "BitRate_Mode", "FrameCount", "StreamSize", "Source_StreamSize",
+            "Title", "Language", "Default", "Encoded_Date", "Tagged_Date",
+        ],
+        StreamKind::Image => &[
+            "ID", "Type", "Format", "Format_Profile", "Width", "Height",
+            "ColorSpace", "ChromaSubsampling", "BitDepth", "Compression_Mode",
+            "StreamSize",
+        ],
+        _ => &[],
     }
 }
 
-fn emit_text_field(out: &mut String, name: &str, raw_value: &str) {
-    let value = render_field_value(name, raw_value);
-    let padding = FIELD_COLUMN_WIDTH.saturating_sub(name.len());
-    out.push_str(name);
-    for _ in 0..padding {
+fn emit_section(
+    out: &mut String,
+    kind: StreamKind,
+    stream: &Stream,
+    path: &str,
+    file_size: Option<u64>,
+) {
+    for &field in display_fields(kind) {
+        let Some((label, value)) = render(kind, field, stream, path, file_size) else {
+            continue;
+        };
+        emit_line(out, label, &value);
+    }
+}
+
+fn emit_line(out: &mut String, label: &str, value: &str) {
+    out.push_str(label);
+    let pad = FIELD_COLUMN_WIDTH.saturating_sub(label.chars().count());
+    for _ in 0..pad {
         out.push(' ');
     }
-    out.push_str(" : ");
-    out.push_str(&value);
+    out.push_str(": ");
+    out.push_str(value);
     out.push('\n');
 }
 
-fn render_field_value(name: &str, raw: &str) -> String {
-    if is_duration_field(name) {
-        if let Ok(ms) = raw.parse::<i64>() {
-            return format_milliseconds_as_duration(ms);
+/// Map an internal field to (display label, rendered value). Returns None
+/// when the field is absent or should be suppressed.
+fn render(
+    kind: StreamKind,
+    field: &str,
+    s: &Stream,
+    path: &str,
+    file_size: Option<u64>,
+) -> Option<(&'static str, String)> {
+    match field {
+        "CompleteName" => Some(("Complete name", path.to_owned())),
+
+        "Format" => {
+            let fmt = s.get("Format")?.as_str().to_owned();
+            // Audio folds Format_AdditionalFeatures into the Format line
+            // ("AAC" + "LC" → "AAC LC").
+            if kind == StreamKind::Audio {
+                if let Some(feat) = s.get("Format_AdditionalFeatures") {
+                    return Some(("Format", format!("{fmt} {}", feat.as_str())));
+                }
+            }
+            Some(("Format", fmt))
+        }
+        "Format_Info" => Some(("Format/Info", s.get("Format_Info")?.as_str().to_owned())),
+        "Format_Version" => Some(("Format version", s.get("Format_Version")?.as_str().to_owned())),
+
+        "Format_Profile" => {
+            let prof = s.get("Format_Profile")?.as_str().to_owned();
+            // Video combines profile + level: "Constrained Baseline@L3".
+            if kind == StreamKind::Video {
+                if let Some(level) = s.get("Format_Level") {
+                    return Some(("Format profile", format!("{prof}@L{}", level.as_str())));
+                }
+            }
+            Some(("Format profile", prof))
+        }
+        "Format_Settings_Mode" => {
+            Some(("Format settings", s.get("Format_Settings_Mode")?.as_str().to_owned()))
+        }
+        "Format_Settings_CABAC" => {
+            Some(("Format settings, CABAC", s.get("Format_Settings_CABAC")?.as_str().to_owned()))
+        }
+        "Format_Settings_RefFrames" => {
+            let n = s.get("Format_Settings_RefFrames")?.as_str().to_owned();
+            Some(("Format settings, Reference frames", format!("{n} frames")))
+        }
+        "Format_Settings_GOP" => {
+            Some(("Format settings, GOP", s.get("Format_Settings_GOP")?.as_str().to_owned()))
+        }
+        "Format_Settings_SliceCount" => {
+            let n = s.get("Format_Settings_SliceCount")?.as_str().to_owned();
+            Some(("Format settings, Slice count", format!("{n} slices per frame")))
+        }
+
+        "CodecID" => {
+            let id = s.get("CodecID")?.as_str().to_owned();
+            // General folds CodecID_Compatible: "mp42 (mp42/avc1)".
+            if kind == StreamKind::General {
+                if let Some(compat) = s.get("CodecID_Compatible") {
+                    return Some(("Codec ID", format!("{id} ({})", compat.as_str())));
+                }
+            }
+            Some(("Codec ID", id))
+        }
+        "CodecConfigurationBox" => {
+            Some(("Codec configuration box", s.get("CodecConfigurationBox")?.as_str().to_owned()))
+        }
+
+        "FileSize" => {
+            let bytes: u64 = s.get("FileSize")?.as_str().parse().ok()?;
+            Some(("File size", human_size(bytes)))
+        }
+        "StreamSize" => {
+            let bytes: u64 = s.get("StreamSize")?.as_str().parse().ok()?;
+            Some(("Stream size", human_size_with_pct(bytes, file_size)))
+        }
+        "Source_StreamSize" => {
+            let bytes: u64 = s.get("Source_StreamSize")?.as_str().parse().ok()?;
+            Some(("Source stream size", human_size_with_pct(bytes, file_size)))
+        }
+
+        "Duration" => Some(("Duration", human_duration(s.get("Duration")?.as_str()))),
+        "Source_Duration" => {
+            Some(("Source duration", human_duration(s.get("Source_Duration")?.as_str())))
+        }
+
+        "OverallBitRate" => {
+            let bps: u64 = s.get("OverallBitRate")?.as_str().parse().ok()?;
+            Some(("Overall bit rate", human_bitrate(bps)))
+        }
+        "OverallBitRate_Mode" => {
+            Some(("Overall bit rate mode", mode_word(s.get("OverallBitRate_Mode")?.as_str())))
+        }
+        "BitRate" => {
+            let bps: u64 = s.get("BitRate")?.as_str().parse().ok()?;
+            Some(("Bit rate", human_bitrate(bps)))
+        }
+        "BitRate_Mode" => Some(("Bit rate mode", mode_word(s.get("BitRate_Mode")?.as_str()))),
+        "BitRate_Maximum" => {
+            let bps: u64 = s.get("BitRate_Maximum")?.as_str().parse().ok()?;
+            Some(("Maximum bit rate", human_bitrate(bps)))
+        }
+
+        "Width" => Some(("Width", format!("{} pixels", s.get("Width")?.as_str()))),
+        "Height" => Some(("Height", format!("{} pixels", s.get("Height")?.as_str()))),
+        "DisplayAspectRatio" => {
+            Some(("Display aspect ratio", display_aspect(s.get("DisplayAspectRatio")?.as_str())))
+        }
+
+        "FrameRate_Mode" => Some(("Frame rate mode", mode_word(s.get("FrameRate_Mode")?.as_str()))),
+        "FrameRate" => {
+            let fps = s.get("FrameRate")?.as_str().to_owned();
+            // Audio appends samples-per-frame: "21.533 FPS (1024 SPF)".
+            if kind == StreamKind::Audio {
+                if let Some(spf) = s.get("SamplesPerFrame") {
+                    return Some(("Frame rate", format!("{fps} FPS ({} SPF)", spf.as_str())));
+                }
+            }
+            Some(("Frame rate", format!("{fps} FPS")))
+        }
+
+        "ColorSpace" => Some(("Color space", s.get("ColorSpace")?.as_str().to_owned())),
+        "ChromaSubsampling" => {
+            let cs = s.get("ChromaSubsampling")?.as_str().to_owned();
+            if let Some(posn) = s.get("ChromaSubsampling_Position") {
+                return Some(("Chroma subsampling", format!("{cs} ({})", posn.as_str())));
+            }
+            Some(("Chroma subsampling", cs))
+        }
+        "BitDepth" => Some(("Bit depth", format!("{} bits", s.get("BitDepth")?.as_str()))),
+        "ScanType" => Some(("Scan type", s.get("ScanType")?.as_str().to_owned())),
+
+        "Channels" => {
+            let n = s.get("Channels")?.as_str().to_owned();
+            let unit = if n == "1" { "channel" } else { "channels" };
+            Some(("Channel(s)", format!("{n} {unit}")))
+        }
+        "ChannelLayout" => Some(("Channel layout", s.get("ChannelLayout")?.as_str().to_owned())),
+        "SamplingRate" => {
+            let hz: u64 = s.get("SamplingRate")?.as_str().parse().ok()?;
+            Some(("Sampling rate", human_sampling_rate(hz)))
+        }
+        "Compression_Mode" => {
+            Some(("Compression mode", s.get("Compression_Mode")?.as_str().to_owned()))
+        }
+
+        "Type" => Some(("Type", s.get("Type")?.as_str().to_owned())),
+        "FrameCount" => Some(("Frame count", s.get("FrameCount")?.as_str().to_owned())),
+        "Title" => Some(("Title", s.get("Title")?.as_str().to_owned())),
+        "Language" => Some(("Language", language_name(s.get("Language")?.as_str()))),
+        "Default" => Some(("Default", s.get("Default")?.as_str().to_owned())),
+
+        "Encoded_Library" => {
+            Some(("Writing library", s.get("Encoded_Library")?.as_str().to_owned()))
+        }
+        "Encoded_Application" => {
+            Some(("Writing application", s.get("Encoded_Application")?.as_str().to_owned()))
+        }
+        "Encoded_Date" => Some(("Encoded date", s.get("Encoded_Date")?.as_str().to_owned())),
+        "Tagged_Date" => Some(("Tagged date", s.get("Tagged_Date")?.as_str().to_owned())),
+        "Comment" => Some(("comment", s.get("Comment")?.as_str().to_owned())),
+
+        "colour_range" => Some(("Color range", s.get("colour_range")?.as_str().to_owned())),
+        "colour_primaries" => {
+            Some(("Color primaries", s.get("colour_primaries")?.as_str().to_owned()))
+        }
+        "transfer_characteristics" => Some((
+            "Transfer characteristics",
+            s.get("transfer_characteristics")?.as_str().to_owned(),
+        )),
+        "matrix_coefficients" => {
+            Some(("Matrix coefficients", s.get("matrix_coefficients")?.as_str().to_owned()))
+        }
+
+        _ => None,
+    }
+}
+
+/// CFR/CBR → "Constant", VFR/VBR → "Variable". Pass through anything else.
+fn mode_word(raw: &str) -> String {
+    match raw {
+        "CFR" | "CBR" => "Constant".to_owned(),
+        "VFR" | "VBR" => "Variable".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+/// Byte count → MediaInfo's "X.XX MiB" / "XXX KiB" form (~3 sig figs).
+fn human_size(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+    let b = bytes as f64;
+    if b >= GIB {
+        format!("{} GiB", trim3(b / GIB))
+    } else if b >= MIB {
+        format!("{} MiB", trim3(b / MIB))
+    } else if b >= KIB {
+        format!("{} KiB", trim3(b / KIB))
+    } else {
+        format!("{bytes} Bytes")
+    }
+}
+
+fn human_size_with_pct(bytes: u64, file_size: Option<u64>) -> String {
+    let base = human_size(bytes);
+    if let Some(fs) = file_size {
+        if fs > 0 {
+            let pct = (bytes as f64 * 100.0 / fs as f64).round() as u64;
+            return format!("{base} ({pct}%)");
         }
     }
-    raw.to_owned()
+    base
 }
 
-fn is_duration_field(name: &str) -> bool {
-    name == "Duration"
-        || name.ends_with("_Duration")
-        || name.ends_with("/Duration")
-        || name == "Source_Duration_LastFrame"
-}
-
-fn format_milliseconds_as_duration(ms: i64) -> String {
-    let negative = ms < 0;
-    let abs = ms.unsigned_abs();
-    let whole = abs / 1000;
-    let frac = abs % 1000;
-    let body = format!("{whole} s {frac} ms");
-    if negative {
-        format!("-{body}")
+/// Round to ~3 significant figures, dropping trailing ".0".
+fn trim3(v: f64) -> String {
+    let s = if v >= 100.0 {
+        format!("{:.0}", v)
+    } else if v >= 10.0 {
+        format!("{:.1}", v)
     } else {
-        body
+        format!("{:.2}", v)
+    };
+    s
+}
+
+/// ms → "1 h 2 min" / "3 min 29 s" / "29 s" / "95 ms".
+fn human_duration(raw: &str) -> String {
+    let ms: i64 = match raw.parse() {
+        Ok(v) => v,
+        Err(_) => return raw.to_owned(),
+    };
+    let total_s = ms / 1000;
+    let h = total_s / 3600;
+    let min = (total_s % 3600) / 60;
+    let s = total_s % 60;
+    let rem_ms = ms % 1000;
+    if h > 0 {
+        format!("{h} h {min} min")
+    } else if min > 0 {
+        format!("{min} min {s} s")
+    } else if s > 0 {
+        format!("{s} s")
+    } else {
+        format!("{rem_ms} ms")
     }
 }
 
-fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
-    match kind {
-        StreamKind::General => &[
-            "Count", "StreamCount", "StreamKind", "StreamKind_String",
-            "StreamKindID", "StreamKindPos", "UniqueID",
-            "VideoCount", "AudioCount", "TextCount", "OtherCount",
-            "ImageCount", "MenuCount",
-            "CompleteName", "FolderName", "FileNameExtension", "FileName", "FileExtension",
-            "Format", "Format_String", "Format_Info", "Format_Url",
-            "Format_Commercial", "Format_Commercial_IfAny",
-            "Format_Version", "Format_Profile", "Format_Level", "Format_Compression",
-            "Format_Settings", "InternetMediaType",
-            "CodecID", "CodecID_String", "CodecID_Info", "CodecID_Hint",
-            "CodecID_Url", "CodecID_Compatible",
-            "FileSize", "Duration",
-            "OverallBitRate_Mode", "OverallBitRate_Mode_String", "OverallBitRate",
-            "StreamSize", "HeaderSize", "DataSize", "FooterSize", "IsStreamable",
-            "File_Modified_Date", "File_Modified_Date_Local",
-            "Encoded_Date", "Tagged_Date",
-            "Encoded_Application", "Encoded_Application_Name",
-        ],
-        StreamKind::Audio => &[
-            "Count", "StreamCount", "StreamKind", "StreamKind_String",
-            "StreamKindID", "StreamKindPos", "StreamOrder",
-            "ID", "UniqueID",
-            "Format", "Format_String", "Format_Info", "Format_Url",
-            "Format_Commercial", "Format_Commercial_IfAny",
-            "Format_Version", "Format_Profile", "Format_Level", "Format_Compression",
-            "Format_Settings", "Format_Settings_Mode", "Format_Settings_ModeExtension",
-            "Format_Settings_Endianness", "Format_Settings_Sign", "Format_Settings_SBR",
-            "Format_AdditionalFeatures",
-            "CodecID", "CodecID_String", "CodecID_Info", "CodecID_Hint", "CodecID_Url",
-            "Duration", "Source_Duration", "Source_Duration_LastFrame",
-            "BitRate_Mode", "BitRate_Mode_String",
-            "BitRate", "BitRate_Minimum", "BitRate_Nominal", "BitRate_Maximum",
-            "Channels", "Channels_String", "ChannelPositions", "ChannelLayout",
-            "SamplesPerFrame",
-            "SamplingRate", "SamplingRate_String", "SamplingCount",
-            "FrameRate", "FrameCount", "Source_FrameCount",
-            "BitDepth", "BitDepth_String",
-            "Compression_Mode",
-            "StreamSize", "StreamSize_String", "Source_StreamSize",
-            "Delay", "Delay_Source",
-            "Encoded_Library", "Encoded_Library_String",
-            "Title", "Language",
-            "Default", "Forced", "AlternateGroup", "ServiceKind",
-        ],
-        StreamKind::Image => &[
-            "Count", "StreamCount", "StreamKind", "StreamKindID", "StreamKindPos",
-            "ID", "Type",
-            "Format", "Format_Profile", "Format_Version", "Format_Compression",
-            "Format_Settings_Packing", "Format_Settings_Endianness",
-            "Width", "Height", "PixelAspectRatio", "DisplayAspectRatio",
-            "ColorSpace", "ChromaSubsampling", "BitDepth",
-            "Compression_Mode", "StreamSize",
-        ],
-        StreamKind::Video => &[
-            "Count", "StreamCount", "StreamKind", "StreamKindID", "StreamKindPos",
-            "StreamOrder", "ID",
-            "Format", "Format_Profile", "Format_Settings", "CodecID",
-            "Duration",
-            "BitRate_Mode", "BitRate",
-            "Width", "Height", "DisplayAspectRatio",
-            "FrameRate_Mode", "FrameRate", "FrameCount",
-            "ColorSpace", "ChromaSubsampling", "BitDepth",
-            "ScanType", "StreamSize",
-        ],
-        _ => &[],
+/// bps → "734 kb/s" / "1.50 Mb/s" (~3 sig figs).
+fn human_bitrate(bps: u64) -> String {
+    let kb = bps as f64 / 1000.0;
+    if kb >= 1000.0 {
+        format!("{} Mb/s", trim3(kb / 1000.0))
+    } else {
+        format!("{} kb/s", trim3(kb))
     }
 }
 
-fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
-    match kind {
-        StreamKind::General => &["ErrorDetectionType"],
-        StreamKind::Audio => &[
-            "MD5_Unencoded", "bsid", "dialnorm", "dsurmod", "acmod", "lfeon",
-            "dialnorm_Average", "dialnorm_Minimum",
-            "Source_Delay", "Source_Delay_Source",
-        ],
-        StreamKind::Image => &[
-            "FrameRate", "DPI", "Density_X", "Density_Y", "Density_Unit", "Density_String",
-        ],
-        _ => &[],
+/// Hz → "48.0 kHz" / "22.05 kHz".
+fn human_sampling_rate(hz: u64) -> String {
+    let khz = hz as f64 / 1000.0;
+    // MediaInfo keeps up to 3 significant figures but preserves the
+    // ".05" of 22050 → "22.05 kHz", and shows "48.0 kHz" for 48000.
+    if (khz.fract() * 100.0).round() % 100.0 == 0.0 {
+        format!("{:.1} kHz", khz)
+    } else {
+        let s = format!("{:.3}", khz);
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        format!("{trimmed} kHz")
     }
+}
+
+/// Common display-aspect decimals → ratio strings. Falls back to the
+/// raw decimal when unrecognised.
+fn display_aspect(raw: &str) -> String {
+    match raw {
+        "1.778" => "16:9".to_owned(),
+        "1.333" => "4:3".to_owned(),
+        "1.600" => "16:10".to_owned(),
+        "2.350" | "2.35" => "2.35:1".to_owned(),
+        "2.400" | "2.40" => "2.40:1".to_owned(),
+        "1.850" => "1.85:1".to_owned(),
+        "0.562" => "9:16".to_owned(),
+        "0.750" => "3:4".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+/// ISO 639-1/639-2 code → English language name. Subset covering the
+/// common cases; unknown codes pass through unchanged.
+fn language_name(code: &str) -> String {
+    match code {
+        "en" | "eng" => "English",
+        "es" | "spa" => "Spanish",
+        "fr" | "fre" | "fra" => "French",
+        "de" | "ger" | "deu" => "German",
+        "it" | "ita" => "Italian",
+        "ja" | "jpn" => "Japanese",
+        "ko" | "kor" => "Korean",
+        "zh" | "chi" | "zho" => "Chinese",
+        "ru" | "rus" => "Russian",
+        "pt" | "por" => "Portuguese",
+        "nl" | "dut" | "nld" => "Dutch",
+        "ar" | "ara" => "Arabic",
+        "hi" | "hin" => "Hindi",
+        other => return other.to_owned(),
+    }
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -206,60 +442,61 @@ mod tests {
     use super::*;
     use zenlib::Ztring;
 
-    #[test]
-    fn text_emits_stream_kind_headers() {
+    fn stream_with(kind: StreamKind, fields: &[(&str, &str)]) -> StreamCollection {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", Ztring::from("Wave"), false);
-        c.Fill(StreamKind::Audio, 0, "Format", Ztring::from("PCM"), false);
-        let text = to_text(&c);
-        assert!(text.contains("General\n"));
-        assert!(text.contains("Audio\n"));
+        for (k, v) in fields {
+            c.Fill(kind, 0, k, Ztring::from(*v), false);
+        }
+        c
     }
 
     #[test]
-    fn text_multiple_streams_same_kind_has_numbered_header() {
-        let mut c = StreamCollection::new();
-        c.Fill(StreamKind::Audio, 0, "Format", Ztring::from("AAC"), false);
-        c.Fill(StreamKind::Audio, 1, "Format", Ztring::from("AC3"), false);
-        let text = to_text(&c);
-        assert!(text.contains("Audio #1\n"));
-        assert!(text.contains("Audio #2\n"));
+    fn general_uses_friendly_labels_and_humanized_values() {
+        let c = stream_with(
+            StreamKind::General,
+            &[("Format", "MPEG-4"), ("FileSize", "5510872"), ("Duration", "60095"), ("OverallBitRate", "733621")],
+        );
+        let t = to_text(&c, "/tmp/x.mp4");
+        assert!(t.contains("Complete name"), "{t}");
+        assert!(t.contains("File size") && t.contains("5.26 MiB"), "{t}");
+        assert!(t.contains("Duration") && t.contains("1 min 0 s"), "{t}");
+        assert!(t.contains("Overall bit rate") && t.contains("734 kb/s"), "{t}");
+        // raw internal name must NOT appear
+        assert!(!t.contains("OverallBitRate "), "{t}");
     }
 
     #[test]
-    fn text_field_padded_to_column_42() {
-        let mut c = StreamCollection::new();
-        c.Fill(StreamKind::Audio, 0, "Format", Ztring::from("PCM"), false);
-        c.Fill(StreamKind::Audio, 0, "BitDepth", Ztring::from("16"), false);
-        let text = to_text(&c);
-        let expected = format!("Format{:>1$} : PCM", "", 42 - "Format".len());
-        assert!(text.contains(&expected), "expected {:?} in {:?}", expected, text);
+    fn video_combines_profile_level_and_humanizes() {
+        let c = stream_with(
+            StreamKind::Video,
+            &[("Format", "AVC"), ("Format_Profile", "Constrained Baseline"), ("Format_Level", "3"),
+              ("Width", "640"), ("Height", "360"), ("FrameRate_Mode", "CFR"), ("BitDepth", "8")],
+        );
+        let t = to_text(&c, "/tmp/x.mp4");
+        assert!(t.contains("Constrained Baseline@L3"), "{t}");
+        assert!(t.contains("640 pixels"), "{t}");
+        assert!(t.contains("Frame rate mode") && t.contains("Constant"), "{t}");
+        assert!(t.contains("8 bits"), "{t}");
     }
 
     #[test]
-    fn text_duration_formatted_as_s_ms() {
-        let mut c = StreamCollection::new();
-        c.Fill(StreamKind::Audio, 0, "Duration", Ztring::from("1492"), false);
-        let text = to_text(&c);
-        assert!(text.contains("1 s 492 ms"));
+    fn audio_merges_additional_features_and_channels() {
+        let c = stream_with(
+            StreamKind::Audio,
+            &[("Format", "AAC"), ("Format_AdditionalFeatures", "LC"), ("Channels", "2"),
+              ("SamplingRate", "22050"), ("BitRate_Mode", "CBR")],
+        );
+        let t = to_text(&c, "/tmp/x.mp4");
+        assert!(t.contains("AAC LC"), "{t}");
+        assert!(t.contains("2 channels"), "{t}");
+        assert!(t.contains("22.05 kHz"), "{t}");
+        assert!(t.contains("Bit rate mode") && t.contains("Constant"), "{t}");
     }
 
     #[test]
-    fn text_empty_collection_produces_minimal_output() {
-        let c = StreamCollection::new();
-        let text = to_text(&c);
-        assert!(!text.contains("General\n"));
-    }
-
-    #[test]
-    fn text_blanks_between_kinds() {
-        let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", Ztring::from("MP4"), false);
-        c.Fill(StreamKind::Video, 0, "Format", Ztring::from("AVC"), false);
-        let text = to_text(&c);
-        let general_pos = text.find("General").unwrap();
-        let video_pos = text.find("Video").unwrap();
-        let segment = &text[general_pos..video_pos];
-        assert!(segment.ends_with("\n\n"));
+    fn language_code_expands_to_name() {
+        let c = stream_with(StreamKind::Audio, &[("Format", "AAC"), ("Language", "en")]);
+        let t = to_text(&c, "/tmp/x.mp4");
+        assert!(t.contains("Language") && t.contains("English"), "{t}");
     }
 }

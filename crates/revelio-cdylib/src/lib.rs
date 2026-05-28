@@ -39,7 +39,7 @@ pub unsafe extern "C" fn MediaInfo_Open(
         Err(_) => return 0,
     };
 
-    let parsers: [fn(&mut FileAnalyze) -> bool; 114] = build_parser_table();
+    let parsers: [fn(&mut FileAnalyze) -> bool; 124] = build_parser_table();
     for parser in parsers {
         let mut fa = FileAnalyze::new(&bytes);
         if parser(&mut fa) {
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn MediaInfo_Inform(
         Some(s) => s,
         None => return std::ptr::null_mut(),
     };
-    let text = to_text(streams);
+    let text = to_text(streams, "");
     match CString::new(text) {
         Ok(c) => c.into_raw(),
         Err(_) => std::ptr::null_mut(),
@@ -175,7 +175,7 @@ fn c_int_to_stream_kind(val: c_int) -> Option<StreamKind> {
     }
 }
 
-fn build_parser_table() -> [fn(&mut FileAnalyze) -> bool; 114] {
+fn build_parser_table() -> [fn(&mut FileAnalyze) -> bool; 124] {
     use revelio_parsers_audio::*;
     use revelio_parsers_container::*;
     use revelio_parsers_image::*;
@@ -200,5 +200,8 @@ fn build_parser_table() -> [fn(&mut FileAnalyze) -> bool; 114] {
         parse_twin_vq, parse_extended_module, parse_dat, parse_rkau, parse_aptx100, parse_open_mg,
         parse_midi, parse_module, parse_impulse_tracker, parse_scream_tracker3, parse_mp3,
         parse_tga, parse_gain_map, parse_rle, parse_adpcm, parse_eia608, parse_eia708, parse_vbi,
+        parse_vvc, parse_prores, parse_vc3, parse_dolby_vision,
+        parse_opus, parse_vorbis, parse_usac,
+        parse_teletext, parse_scc, parse_timed_text,
     ]
 }

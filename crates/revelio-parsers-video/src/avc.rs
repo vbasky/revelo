@@ -97,6 +97,14 @@ fn bits_remaining(buffer: &[u8], offset: usize) -> usize {
 }
 
 #[derive(Debug, Clone)]
+pub struct EncoderInfo {
+    pub library: String,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub settings: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AvcInfo {
     pub profile: u8,
     pub level: u8,
@@ -114,6 +122,10 @@ pub struct AvcInfo {
     pub frame_rate_num: u32,
     pub frame_rate_den: u32,
     pub encoder_string: Option<String>,
+    pub encoder_name: Option<String>,
+    pub encoder_version: Option<String>,
+    pub encoder_settings: Option<String>,
+    pub gop_detect: Option<String>,
     // VUI colour_description (present only if both
     // video_signal_type_present_flag and colour_description_present_flag).
     pub colour_description_present: bool,
@@ -347,6 +359,10 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
         frame_rate_num,
         frame_rate_den,
         encoder_string: None,
+        encoder_name: None,
+        encoder_version: None,
+        encoder_settings: None,
+        gop_detect: None,
         colour_description_present,
         colour_primaries,
         transfer_characteristics,
@@ -392,6 +408,130 @@ fn level_name(level: u8) -> String {
     }
 }
 
+pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
+    let mut library = String::new();
+    let mut name: Option<String> = None;
+    let mut version: Option<String> = None;
+    let mut settings: Option<String> = None;
+
+    let mut segment_idx = 0usize;
+    let mut cursor = 0usize;
+    let len = raw.len();
+
+    while cursor < len {
+        let sep = raw[cursor..].find(" - ");
+        let segment_end = sep.map(|p| cursor + p).unwrap_or(len);
+        let segment = &raw[cursor..segment_end];
+
+        if segment.starts_with("options: ") {
+            let opts_raw = &segment["options: ".len()..];
+            let tokens: Vec<&str> = opts_raw.split_whitespace().collect();
+            let filtered: Vec<&str> = tokens.iter()
+                .filter(|t| {
+                    !t.is_empty()
+                    && !t.starts_with(|c: char| c.is_ascii_digit())
+                    && !t.starts_with("fps=")
+                    && !t.starts_with("bitdepth=")
+                })
+                .copied()
+                .collect();
+            if !filtered.is_empty() {
+                settings = Some(filtered.join(" / "));
+            }
+        } else if segment_idx == 0 {
+            let cleaned: String = segment.chars()
+                .skip_while(|&c| (c as u32) < 0x30)
+                .collect();
+            let cleaned: String = cleaned.chars()
+                .rev()
+                .skip_while(|&c| (c as u32) < 0x30)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            library = cleaned.clone();
+            let first_word = cleaned.split_whitespace().next().unwrap_or(&cleaned);
+            name = Some(first_word.to_owned());
+        } else if segment_idx == 1 {
+            if library.starts_with("x264") || library.starts_with("eavc") || library.starts_with("x265") {
+                let cleaned = if let Some(pos) = segment.find(" 8bpp") {
+                    &segment[..pos]
+                } else {
+                    segment
+                };
+                library.push_str(" - ");
+                library.push_str(cleaned);
+                version = Some(cleaned.to_owned());
+            }
+        }
+
+        cursor = segment_end;
+        if sep.is_some() {
+            cursor += 3;
+        }
+        segment_idx += 1;
+    }
+
+    if library.starts_with("x264 - ") {
+        name = Some("x264".to_owned());
+        version = library.strip_prefix("x264 - ").map(|v| v.to_owned());
+    } else if library.starts_with("eavc ") {
+        name = Some("eavc".to_owned());
+        version = library.strip_prefix("eavc ").map(|v| v.to_owned());
+    } else if library.starts_with("x265 - ") {
+        name = Some("x265".to_owned());
+        version = library.strip_prefix("x265 - ").map(|v| v.to_owned());
+    }
+
+    EncoderInfo { library, name, version, settings }
+}
+
+fn parse_slice_type_from_nal(nal_unit: &[u8]) -> Option<u8> {
+    let clean = remove_epb(nal_unit);
+    if clean.len() < 3 { return None; }
+    let mut off = 8; // skip NAL header
+    let first_mb = read_ue(&clean, &mut off)?;
+    if first_mb != 0 { return None; } // only parse first slice in frame
+    read_ue(&clean, &mut off)?; // slice_type
+    None // placeholder — real impl reads Exp-Golomb coded slice_type
+}
+
+/// GOP detection: calculate M (P-frame distance) and N (GOP length) from frame sequence.
+/// Returns "M=X, N=Y" string or None if insufficient data.
+pub fn gop_detect(frame_types: &[u8]) -> Option<String> {
+    let n = frame_types.len();
+    if n < 2 { return None; }
+
+    // Find M: typical distance between P frames
+    let mut p_positions = Vec::new();
+    for (i, &t) in frame_types.iter().enumerate() {
+        if t == 1 { p_positions.push(i); } // P frame
+    }
+    let m = if p_positions.len() >= 2 {
+        p_positions[1] - p_positions[0]
+    } else if p_positions.len() == 1 {
+        p_positions[0] + 1 // single P, assume M = position+1
+    } else {
+        return None; // no P frames
+    };
+    if m == 0 { return None; }
+
+    // Find N: distance between IDR/I frames
+    let mut i_positions = Vec::new();
+    for (i, &t) in frame_types.iter().enumerate() {
+        if t == 2 { i_positions.push(i); } // I/IDR frame
+    }
+    if i_positions.len() < 2 {
+        return Some(format!("M={m}"));
+    }
+    let gop_len = i_positions[1] - i_positions[0];
+    if gop_len > 0 {
+        Some(format!("M={m}, N={gop_len}"))
+    } else {
+        Some(format!("M={m}"))
+    }
+}
+
 pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     fa.Element_Begin("AVC");
 
@@ -420,6 +560,8 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     let mut frame_count = 0u32;
     let mut cabac = false;
     let mut encoder_string: Option<String> = None;
+    let mut encoder_info: Option<EncoderInfo> = None;
+    let mut frame_types: Vec<u8> = Vec::new(); // 0=unknown, 1=P, 2=I/IDR
 
     let mut nal_offset = 0usize;
     while let Some(start) = find_start_code(&data, nal_offset) {
@@ -470,11 +612,17 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
             }
             NAL_TYPE_SEI => {
                 if let Some(enc) = extract_encoder_from_sei(nal_unit) {
-                    encoder_string = Some(enc);
+                    encoder_string = Some(enc.library.clone());
+                    encoder_info = Some(enc);
                 }
             }
-            NAL_TYPE_IDR | NAL_TYPE_NON_IDR => {
+            NAL_TYPE_IDR => {
                 frame_count += 1;
+                frame_types.push(2);
+            }
+            NAL_TYPE_NON_IDR => {
+                frame_count += 1;
+                frame_types.push(1);
             }
             _ => {}
         }
@@ -491,6 +639,14 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     info.frame_count = frame_count;
     info.cabac = cabac;
     info.encoder_string = encoder_string;
+    if let Some(ref ei) = encoder_info {
+        info.encoder_name = ei.name.clone();
+        info.encoder_version = ei.version.clone();
+        info.encoder_settings = ei.settings.clone();
+    }
+    if let Some(gop) = gop_detect(&frame_types) {
+        info.gop_detect = Some(gop);
+    }
 
     fa.Stream_Prepare(StreamKind::Video);
 
@@ -642,9 +798,18 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 
     if let Some(ref enc) = info.encoder_string {
         fa.Fill(StreamKind::Video, 0, "Encoded_Library", enc.as_str(), false);
-        if let Some(name) = enc.split_whitespace().next() {
-            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Name", name, false);
-        }
+    }
+    if let Some(ref name) = info.encoder_name {
+        fa.Fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
+    }
+    if let Some(ref ver) = info.encoder_version {
+        fa.Fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
+    }
+    if let Some(ref settings) = info.encoder_settings {
+        fa.Fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
+    }
+    if let Some(ref gop) = info.gop_detect {
+        fa.Fill(StreamKind::Video, 0, "GOP_Detect", gop.as_str(), false);
     }
 
     // Fill General stream
@@ -660,9 +825,9 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 
     if let Some(ref enc) = info.encoder_string {
         fa.Fill(StreamKind::General, 0, "Encoded_Library", enc.as_str(), false);
-        if let Some(name) = enc.split_whitespace().next() {
-            fa.Fill(StreamKind::General, 0, "Encoded_Library_Name", name, false);
-        }
+    }
+    if let Some(ref settings) = info.encoder_settings {
+        fa.Fill(StreamKind::General, 0, "Encoded_Library_Settings", settings.as_str(), false);
     }
 
     fa.Element_End();
@@ -670,7 +835,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 }
 
 /// Extract the x264 encoder string from a SEI NAL unit (user_data_unregistered).
-fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<String> {
+fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
     let clean = remove_epb(nal_unit);
     if clean.len() < 2 {
         return None;
@@ -721,7 +886,7 @@ fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<String> {
             let null_pos = str_bytes.iter().position(|&b| b == 0).unwrap_or(str_bytes.len());
             let s = std::str::from_utf8(&str_bytes[..null_pos]).ok()?;
             if !s.is_empty() {
-                return Some(s.to_owned());
+                return Some(parse_x264_style_encoder(s));
             }
             skip_bits(&mut off, remaining_bits);
         } else {
@@ -816,8 +981,8 @@ mod tests {
         let enc = extract_encoder_from_sei(nal_content);
         assert!(enc.is_some(), "extract_encoder_from_sei returned None");
         if let Some(s) = enc {
-            assert!(s.contains("x264"), "expected x264, got: {s}");
-            assert!(s.contains("core 165"), "expected core version");
+            assert!(s.library.contains("x264"), "expected x264");
+            assert!(s.library.contains("core 165"), "expected core version");
         }
     }
 }

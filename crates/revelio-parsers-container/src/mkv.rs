@@ -1070,7 +1070,7 @@ fn fill_streams(
                                 if !sei_nalus.is_empty() {
                                     let refs: Vec<&[u8]> = sei_nalus.iter().map(|v| v.as_slice()).collect();
                                     if let Some(encoder) = revelio_parsers_video::extract_encoder_from_sei_nalus(&refs) {
-                                        fa.Fill(StreamKind::Video, pos, "Encoded_Library", encoder, false);
+                                        fa.Fill(StreamKind::Video, pos, "Encoded_Library", encoder.library.as_str(), false);
                                     }
                                 }
                             }

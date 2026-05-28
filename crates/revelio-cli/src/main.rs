@@ -10,7 +10,7 @@ use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, p
     parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts,
     parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker,
     parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau,
-    parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk};
+    parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk, parse_opus, parse_vorbis, parse_usac};
 use revelio_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv,
     parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv,
     parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf,
@@ -23,9 +23,9 @@ use revelio_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bp
     parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
 use revelio_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle,
     parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs,
-    parse_sub_rip, parse_ttml};
+    parse_sub_rip, parse_ttml, parse_teletext, parse_scc, parse_timed_text};
 use revelio_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9,
-    parse_y4m, parse_vc1, parse_mpeg2};
+    parse_y4m, parse_vc1, parse_mpeg2, parse_vvc, parse_prores, parse_vc3, parse_dolby_vision};
 
 fn main() -> process::ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -49,7 +49,7 @@ fn main() -> process::ExitCode {
         Err(e) => { eprintln!("{path}: {e}"); return process::ExitCode::from(1); }
     };
 
-    let parsers: [fn(&mut FileAnalyze) -> bool; 114] = [
+    let parsers: [fn(&mut FileAnalyze) -> bool; 124] = [
         parse_wav, parse_avi, parse_cdxa, parse_amv, parse_webp, parse_aiff, parse_flac,
         parse_dsdiff, parse_caf, parse_mp4, parse_mkv, parse_ogg, parse_mpeg_ts, parse_mpeg_ps,
         parse_swf, parse_skm, parse_dpg, parse_hds_f4m, parse_hls, parse_dash_mpd, parse_dcp_am,
@@ -67,6 +67,9 @@ fn main() -> process::ExitCode {
         parse_twin_vq, parse_extended_module, parse_dat, parse_rkau, parse_aptx100, parse_open_mg,
         parse_midi, parse_module, parse_impulse_tracker, parse_scream_tracker3, parse_mp3,
         parse_tga, parse_gain_map, parse_rle, parse_adpcm, parse_eia608, parse_eia708, parse_vbi,
+        parse_vvc, parse_prores, parse_vc3, parse_dolby_vision,
+        parse_opus, parse_vorbis, parse_usac,
+        parse_teletext, parse_scc, parse_timed_text,
     ];
 
     let metadata = fs::metadata(path).ok();
@@ -95,7 +98,7 @@ fn main() -> process::ExitCode {
             let output = if json_mode {
                 to_json(fa.streams(), path)
             } else if text_mode {
-                to_text(fa.streams())
+                to_text(fa.streams(), path)
             } else {
                 to_xml(fa.streams(), path, env!("CARGO_PKG_VERSION"))
             };
