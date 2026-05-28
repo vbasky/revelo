@@ -58,6 +58,8 @@ struct ElementaryStream {
     /// Registration descriptor format identifier (4 ASCII bytes packed
     /// big-endian, e.g. 'HDMV' = 0x48444D56).
     format_identifier: u32,
+    language: Option<String>,
+    ac3_descriptor: bool,
     /// AAC payload params extracted from first ADTS frame inside PES,
     /// when stream_type indicates AAC (0x0F/0x11/0x1C).
     aac: Option<AacInfo>,
@@ -633,15 +635,42 @@ fn parse_pmt(section: &[u8], prog: &mut Program) {
             break;
         }
         let es_fid = scan_registration(&section[desc_start..desc_end]);
+        let (es_lang, es_ac3) = scan_descriptors(&section[desc_start..desc_end]);
         prog.streams.push(ElementaryStream {
             pid: es_pid,
             stream_type,
             format_identifier: es_fid,
+            language: es_lang,
+            ac3_descriptor: es_ac3,
             aac: None,
             avc_encoder: None,
         });
         i = desc_end;
     }
+}
+
+fn scan_descriptors(desc_block: &[u8]) -> (Option<String>, bool) {
+    let mut lang = None;
+    let mut ac3 = false;
+    let mut i = 0;
+    while i + 2 <= desc_block.len() {
+        let tag = desc_block[i];
+        let len = desc_block[i + 1] as usize;
+        let payload_end = i + 2 + len;
+        if payload_end > desc_block.len() { break; }
+        let data = &desc_block[i + 2..payload_end];
+        match tag {
+            0x0A if len >= 4 => {
+                if let Ok(s) = std::str::from_utf8(&data[0..3]) {
+                    lang = Some(s.to_string());
+                }
+            }
+            0x6A | 0x7A => { ac3 = true; }
+            _ => {}
+        }
+        i = payload_end;
+    }
+    (lang, ac3)
 }
 
 fn scan_registration(desc_block: &[u8]) -> u32 {

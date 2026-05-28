@@ -766,8 +766,20 @@ fn fill_streams(
                 // For MKV, Delay defaults to 0.000s and Delay_Source is
                 // "Container" — oracle emits these for every audio
                 // track even when no explicit CodecDelay element is
-                // present.
-                fa.Fill(StreamKind::Audio, pos, "Delay", "0.000", false);
+                // present. For Opus, use the pre-skip from CodecPrivate
+                // (samples at 48 kHz → delay_secs = preskip / 48000).
+                let delay_secs = if track.codec_id.as_deref() == Some("A_OPUS") {
+                    track.codec_private.as_ref()
+                        .filter(|p| p.len() >= 12 && &p[0..8] == b"OpusHead")
+                        .map(|p| {
+                            let preskip = u16::from_le_bytes([p[10], p[11]]);
+                            preskip as f64 / 48000.0
+                        })
+                        .unwrap_or(0.0)
+                } else {
+                    0.0
+                };
+                fa.Fill(StreamKind::Audio, pos, "Delay", format!("{:.3}", delay_secs), false);
                 fa.Fill(StreamKind::Audio, pos, "Delay_Source", "Container", false);
                 // MKV oracle emits Audio.Duration with 9 fractional
                 // digits (the file's float precision). Store the
@@ -863,6 +875,10 @@ fn fill_streams(
                         fa.Fill(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar), false);
                     }
                 }
+                // Container-level Duration → Video.
+                if let Some(s) = duration_seconds {
+                    fa.Fill(StreamKind::Video, pos, "Duration", format!("{:.9}", s), false);
+                }
                 // FrameRate from DefaultDuration. 1 frame per ns →
                 // frame_rate = 1e9 / default_duration_ns. CFR when
                 // DefaultDuration is set (MKV doesn't expose per-frame
@@ -917,6 +933,35 @@ fn fill_streams(
                     }
                 }
 
+                // For VP9, try to parse CodecPrivate for profile, level, bit depth.
+                if track.codec_id.as_deref() == Some("V_VP9") {
+                    if let Some(ref private) = track.codec_private {
+                        if private.len() >= 4 {
+                            let profile = private[1];
+                            let level = private[2];
+                            let config_byte = private[3];
+                            let bit_depth = (config_byte >> 4) & 0x0F;
+                            let chroma_subsampling = (config_byte >> 1) & 0x07;
+                            let video_full_range = config_byte & 1;
+                            
+                            fa.Fill(StreamKind::Video, pos, "Format_Profile", profile.to_string(), false);
+                            fa.Fill(StreamKind::Video, pos, "Format_Level", format!("{:.1}", level as f64 / 10.0), false);
+                            if track.video_bit_depth.is_none() {
+                                fa.Fill(StreamKind::Video, pos, "BitDepth", bit_depth.to_string(), true);
+                            }
+                            let chroma = match chroma_subsampling {
+                                1 => "4:2:0",
+                                2 => "4:2:2",
+                                3 => "4:4:0",
+                                _ => "4:2:0",
+                            };
+                            fa.Fill(StreamKind::Video, pos, "ChromaSubsampling", chroma, false);
+                            let range = if video_full_range != 0 { "Full" } else { "Limited" };
+                            fa.Fill(StreamKind::Video, pos, "colour_range", range, false);
+                        }
+                    }
+                }
+                
                 // For AVC tracks with CodecPrivate, parse avcC to get profile/level
                 if track.codec_id.as_deref() == Some("V_DOLBYVISION/AVC") {
                     fa.Fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
@@ -1157,9 +1202,8 @@ fn fill_streams(
                     if video_default { "Yes" } else { "No" },
                     false,
                 );
-                if let Some(f) = track.flag_forced {
-                    fa.Fill(StreamKind::Video, pos, "Forced", if f { "Yes" } else { "No" }, false);
-                }
+                let forced = track.flag_forced.unwrap_or(false);
+                fa.Fill(StreamKind::Video, pos, "Forced", if forced { "Yes" } else { "No" }, false);
                 video_count += 1;
             }
             _ => {}

@@ -187,9 +187,7 @@ pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
     fa.Stream_Prepare(StreamKind::Video);
     fa.Fill(StreamKind::Video, 0, "Format", "VP9", false);
 
-    if has_sync_code_color_refresh != 0 && (has_sync_code_color_refresh >> 1) != 0 {
-        fa.Fill(StreamKind::Video, 0, "Format_Profile", profile.to_string(), false);
-    }
+    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile.to_string(), false);
 
     fa.Fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
 

@@ -17,6 +17,7 @@ pub mod vvc;
 pub mod prores;
 pub mod vc3;
 pub mod dolby_vision;
+pub mod ffv1;
 pub mod h263;
 pub mod mpeg4v;
 
@@ -33,3 +34,6 @@ pub use vvc::{parse_vvc, VvcInfo};
 pub use prores::{parse_prores, ProResInfo};
 pub use vc3::parse_vc3;
 pub use dolby_vision::parse_dolby_vision;
+pub use ffv1::parse_ffv1;
+pub use h263::parse_h263;
+pub use mpeg4v::parse_mpeg4v;

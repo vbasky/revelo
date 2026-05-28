@@ -48,7 +48,13 @@ fn parse_obu_header(data: &[u8]) -> Option<(u8, bool, bool, usize)> {
     let obu_type = (byte >> 3) & 0xF;
     let obu_extension_flag = ((byte >> 2) & 1) != 0;
     let obu_has_size_field = ((byte >> 1) & 1) != 0;
-    let _obu_reserved_1bit = byte & 1;
+    // obu_reserved_1bit "shall be equal to 0" (AV1 §5.3.2). Enforcing it
+    // rejects byte patterns that merely happen to look like an OBU header,
+    // e.g. AC-3's 0x0B77 sync word (0x0B decodes as a seq-header OBU but
+    // with the reserved bit set).
+    if byte & 1 != 0 {
+        return None;
+    }
     
     let mut pos = 1usize;
     
@@ -308,7 +314,21 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         fa.Element_End();
         return false;
     }
-    
+
+    // Anchor recognition at the stream start: a low-overhead AV1 bitstream
+    // begins with a temporal delimiter (then a sequence header), and a raw
+    // sequence-header stream begins with the sequence header itself. If the
+    // very first OBU is neither — or isn't a valid OBU at all — this isn't
+    // AV1. Without this anchor the scan below would hunt arbitrary offsets
+    // and false-positive on unrelated byte streams.
+    match parse_obu_header(&data) {
+        Some((t, _, _, _)) if t == OBU_TEMPORAL_DELIMITER || t == OBU_SEQUENCE_HEADER => {}
+        _ => {
+            fa.Element_End();
+            return false;
+        }
+    }
+
     // Look for sequence header OBU
     let mut pos = 0usize;
     let mut seq_header_info = None;
