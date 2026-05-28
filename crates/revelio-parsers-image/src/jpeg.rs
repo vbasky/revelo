@@ -932,7 +932,9 @@ fn fill_streams(
     let image_size = file_size.saturating_sub(overhead);
     fa.Fill(StreamKind::Image, 0, "StreamSize", image_size.to_string(), false);
     if let Some(c) = comment {
-        fa.Fill(StreamKind::Image, 0, "Comment", c, false);
+        // The COM-segment comment lands on the General stream (last field),
+        // not the Image stream — matching the oracle's placement.
+        fa.Fill(StreamKind::General, 0, "Comment", c, false);
     }
 
     // EXIF thumbnail → second Image stream (oracle labels it Type=Thumbnail,

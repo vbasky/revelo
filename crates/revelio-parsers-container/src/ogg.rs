@@ -349,9 +349,8 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                     }
                 }
                 fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
-                // Vorbis comment vendor → Encoded_Library (container-level
-                // muxer string). Oracle also propagates it to the General
-                // stream. The "encoder=..." comment, when present, fills
+                // Vorbis comment vendor → Audio.Encoded_Library (the muxer
+                // string). The "encoder=..." comment, when present, fills
                 // Encoded_Application (codec-level encoder identification).
                 if let Some(v) = &stream.vendor {
                     fa.Fill(StreamKind::Audio, pos, "Encoded_Library", v.clone(), false);
@@ -382,12 +381,9 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                 break;
             }
         }
-        for stream in streams {
-            if let Some(v) = &stream.vendor {
-                fa.Fill(StreamKind::General, 0, "Encoded_Library", v.clone(), false);
-                break;
-            }
-        }
+        // The vendor string stays on the Audio track only — the oracle does
+        // NOT mirror it to General.Encoded_Library (verified for both
+        // audio-only and Theora+Vorbis Ogg).
     }
     if video_count > 0 {
         fa.Fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
