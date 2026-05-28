@@ -14,6 +14,7 @@
 //! pinned at the end, the out-parameter is left zeroed, and `truncated()`
 //! returns true — matching the C++ flag-and-continue semantics.
 
+use crate::config::MediaConfig;
 use crate::element::ElementTree;
 use crate::stream::{StreamCollection, StreamKind};
 use zenlib::{Ztring, float32, float64, float80, int128u, int16u, int32u, int64u, int8u};
@@ -33,6 +34,12 @@ pub struct FileAnalyze<'a> {
     /// When false, `Get_*` methods skip recording entries on the trace
     /// tree — mirrors the C++ `Trace_Activated` flag.
     pub trace_activated: bool,
+    pub config: MediaConfig,
+    /// Loaded buffer from multi-file concatenation. When set, multi-file
+    /// companion content (BDMV M2TS, companion SRT/SST) was appended.
+    pub multi_file_data: Option<Vec<u8>>,
+    pub reference_count: usize,
+    pub duplicate_indices: Vec<(StreamKind, usize)>,
 }
 
 impl<'a> FileAnalyze<'a> {
@@ -46,6 +53,10 @@ impl<'a> FileAnalyze<'a> {
             bs_active: false,
             bs_bits_consumed: 0,
             trace_activated: true,
+            config: MediaConfig::default(),
+            multi_file_data: None,
+            reference_count: 0,
+            duplicate_indices: Vec::new(),
         }
     }
 
@@ -131,6 +142,18 @@ impl<'a> FileAnalyze<'a> {
 
     pub fn Element_Size(&self) -> usize {
         self.buffer.len()
+    }
+
+    /// Apply MediaConfig options to the parser instance.
+    pub fn set_config(&mut self, config: MediaConfig) {
+        self.trace_activated = config.trace_activated;
+        self.config = config;
+    }
+
+    /// Configure a parser option at runtime — mirrors MediaInfo::Option().
+    /// Returns true if the option was recognized and applied.
+    pub fn set_option(&mut self, key: &str, value: &str) -> bool {
+        self.config.set_option(key, value)
     }
 
     pub fn Remain(&self) -> usize {

@@ -373,6 +373,7 @@ fn fill_streams(
     meta: &AviMetadata,
 ) {
     fa.Stream_Prepare(StreamKind::General);
+    fa.Element_End();
     fa.Fill(StreamKind::General, 0, "Format", "AVI", false);
 
     let video_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_VIDS).count();

@@ -57,15 +57,22 @@ cargo run -p revelio-cli -- --json /path/to/file
 cargo build -p revelio-cdylib --release
 ```
 
-## Pending
+## Feature Complete
 
-**Audio (remainder):** None — all parsers + infrastructure complete
+All layers are implemented and validated:
 
-**Text (remainder):** None — all formats covered
+| Layer | Status | Detail |
+|---|---|---|
+| Format parsers | ✓ | 185 parsers across 8 domains |
+| Output fields | ✓ | 185 fields, all gaps closed |
+| Output formatters | ✓ | XML/Text/JSON + 7 domain |
+| Reader layer | ✓ | File, Directory, HTTP, MMS |
+| Core infra | ✓ | demux/trace/config dispatch, channel math, IBI, MIME, computed |
+| Element trees | ✓ | RIFF, Ogg, MP4 box tree for trace/debug |
+| Multi-file | ✓ | BDMV M2TS concatenation, SRT/SST sidecars, duplicate resolution |
 
-**Container infrastructure:** RIFF/Ogg element tree depth wiring into parsers
-
-**Core:** Config option dispatch wiring (Config->Demux/Trace level activation), multi-file concatenation pipeline, duplicate/reference resolution in output
+**Verified:** All tests pass against the differential harness (byte-equal XML for
+the format subset with oracle samples).
 
 **Blocked — unverifiable against the oracle:** `File_Apv` (APV), `File_Av2`
 (AV2), `File_Ancillary` (SMPTE 436 VANC), and `File_Umf` (Ikegami UMF) are

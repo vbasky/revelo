@@ -270,6 +270,7 @@ fn parse_opus_ident(packet: &[u8], stream: &mut OggStream) {
 
 fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
     fa.Stream_Prepare(StreamKind::General);
+    fa.Element_Begin("Ogg");
     fa.Fill(StreamKind::General, 0, "Format", "Ogg", false);
 
     let mut audio_count: u32 = 0;

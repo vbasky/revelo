@@ -5,6 +5,9 @@ use std::process;
 use std::time::UNIX_EPOCH;
 
 use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
+use revelio_core::multi_file::MultiFileLoader;
+use revelio_core::multi_file::find_duplicate_streams;
+use revelio_core::computed_fields::fill_computed_fields;
 use revelio_export::{to_xml, to_text, to_json};
 use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr,
     parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts,
@@ -37,15 +40,35 @@ fn main() -> process::ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
     let mut xml_mode = false;
     let mut json_mode = false;
+    let mut demux_level = String::from("frame");
+    let mut trace_level = String::from("0");
+    let mut multi_file = false;
 
     args.retain(|a| {
         if a == "--xml" { xml_mode = true; false }
         else if a == "--json" { json_mode = true; false }
+        else if a.starts_with("--demux=") { demux_level = a[8..].to_string(); false }
+        else if a.starts_with("--trace=") { trace_level = a[8..].to_string(); false }
+        else if a == "--multi-file" { multi_file = true; false }
         else { true }
     });
 
     if args.is_empty() {
-        eprintln!("Usage: revelio [--xml|--json] <file-path>");
+        eprintln!(r#"    ✦
+     \
+      \
+       |  revelio — media metadata extractor
+       |
+      ╱ ╲
+     ✦   ✦
+  Usage: revelio [--xml|--json] <file-path>
+  Options:
+    --xml         XML output
+    --json        JSON output
+    --multi-file  scan companion files (BDMV M2TS, sidecar subtitles)
+    --demux=N     demux level: frame (default), container, elementary
+    --trace=N     trace verbosity (0-9)
+"#);
         return process::ExitCode::from(2);
     }
 
@@ -83,8 +106,35 @@ fn main() -> process::ExitCode {
 
     let metadata = fs::metadata(path).ok();
     let mut parsed = false;
+
+    // Multi-file: scan for companion files (BDMV M2TS, SRT/SST sidecars)
+    let mut extra_data: Option<Vec<u8>> = None;
+    if multi_file {
+        let mut loader = MultiFileLoader::new();
+        loader.scan_references(std::path::Path::new(path), &Default::default());
+        if let Some((data, _count)) = loader.load_all() {
+            extra_data = Some(data);
+        }
+    }
+
+    // Prepare parse buffer: primary file + optional companion data
+    let parse_buf: Vec<u8> = if let Some(ref extra) = extra_data {
+        let mut combined = bytes.clone();
+        combined.extend_from_slice(extra);
+        combined
+    } else {
+        bytes.clone()
+    };
+
     for parser in parsers {
-        let mut fa = FileAnalyze::new(&bytes);
+        let mut fa = FileAnalyze::new(&parse_buf);
+        // Apply config from CLI options
+        fa.set_option("demux", &demux_level);
+        fa.set_option("trace_level", &trace_level);
+        fa.set_option("multi_file", if multi_file { "1" } else { "0" });
+        if let Some(ref _extra) = extra_data {
+            fa.reference_count = 1;
+        }
         if parser(&mut fa) {
             parsed = true;
             // Fill the derived General-stream fields (FileSize,
@@ -103,6 +153,8 @@ fn main() -> process::ExitCode {
                 local_offset_secs: local_offset_seconds(),
             };
             fill_file_level_fields(&mut fa, &info);
+            fill_computed_fields(fa.streams_mut());
+            fa.duplicate_indices = find_duplicate_streams(fa.streams());
 
             let output = if json_mode {
                 to_json(fa.streams(), path, env!("CARGO_PKG_VERSION"))
