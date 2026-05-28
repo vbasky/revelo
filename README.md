@@ -25,6 +25,8 @@ C++ `mediainfo` CLI.
 
 Complete format catalog with spec references: **[docs/formats.md](docs/formats.md)**
 
+Complete field coverage with sources: **[docs/field_coverage.md](docs/field_coverage.md)**
+
 ### Deep codec analysis
 
 - **AV1:** Profile-derived bit depth (0=8-bit, 1=10-bit, 2=12-bit) and chroma subsampling (0-1=4:2:0, 2=4:2:2). OBU sequence header parsing for frame dimensions, level from operating point. Container support via avcC-style config in MP4/WebM.
