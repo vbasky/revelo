@@ -48,64 +48,11 @@ Complete format catalog with spec references: **[docs/formats.md](docs/formats.m
 - JSON (MediaInfo-compatible `{media:{@ref, track:[...]}}` structure)
 - EBUCore, MPEG-7, PBCore, NISO, FIMS, Graph, reVTMD (7 domain formatters)
 
-## Output Parity
-
-Field-level coverage per stream kind. Tracks gaps between revelio output and
-MediaInfoLib's `mediainfo` CLI (both XML and text). Percentages are rough
-estimates — each kind has ~60-120 possible fields and the set varies by format.
-
-| Kind | Fields | Coverage | Known Gaps |
-|------|--------|----------|-------------|
-| General | ~80 | 87% | `Encoded_Library_Name`, `Encoded_Library_Version`, `Encoded_Library_Settings` (not populated in all parser paths) |
-| Video | ~70 | 78% | `Encoded_Library`/`_Name`/`_Version`/`_Settings` missing from text display and AVC-in-MP4 path; `Bits_Pixel_Frame`, `FrameRate_Mode_Original`, `BufferSize`, `BitRate_Maximum` (Video) never filled |
-| Audio | ~60 | 85% | `Compression_Ratio`, `ReplayGain_*` never filled; `BufferSize` never filled |
-| Text | ~30 | 90% | Minor — most subtitle field coverage complete |
-| Image | ~25 | 85% | ICC profile parse → `ICC_*` fields exposed in XML but not in text display |
-| Other/Menu | ~25 | 70% | Chapter names/durations, timecode metadata not exposed in text display |
-
-### Field gaps by priority
-
-**Parser never fills the field:**
-- `Bits_Pixel_Frame` — computed from bitrate/width/height/framerate
-- `Compression_Ratio` — computed from stream size / uncompressed size
-- `FrameRate_Mode_Original` — original frame rate mode before CFR override
-- `BufferSize` — audio codec buffer size (from esds/mp4a)
-- `ReplayGain_Gain` / `ReplayGain_Peak` — from audio tag parsers
-- `BitRate_Maximum` / `BitRate_Minimum` / `OverallBitRate_Maximum` — from container hints
-
-**Parser fills but text display_fields omits:**
-- `Format_Profile` (General) — "Base media / Version 2" label
-- `Encoded_Library` (Video) — "Writing library" label
-- `Encoded_Date` (Video) — "Encoded date"
-- `Tagged_Date` (Video) — "Tagged date"
-- `Format_Settings` (combined, Video) — "CABAC / 5 Ref Frames" summary
-
-**Parser fills only partially:**
-- `Encoded_Library_Name`/`_Version`/`_Settings` for HEVC — `extract_encoder_from_sei_nalus` returns all three but only `.library` is stored
-- AVC-in-MP4 `Encoded_Library` — x264 SEI extracted only in Annex-B path, not in `avcC` path
-
-**Numeric precision (off by ≤1 unit):**
-- ~~SamplingCount off by 16 (1465280 vs 1465296)~~ — **fixed** with rounded mvhd→ms conversion
-- ~~FrameCount off by 1 (1430 vs 1431)~~ — **fixed** with round-to-nearest frame count
-- ~~Duration off by −1 ms (30.526 vs 30.527)~~ — **fixed** with round-to-nearest mvhd→ms conversion
-- ~~Audio BitRate off by 5 bps (160000 vs 160005)~~ — **fixed** with general_duration_ms-based derivation
-- ~~Audio BitRate_Mode VBR→CBR~~ — **fixed** with avg/max bitrate comparison
-- ~~Audio StreamSize off by 427 B (610133 vs 610560)~~ — **fixed** by not trimming first sample size
-- ~~SamplingRate precision (12812241 vs 12812244 in 44100 Hz files)~~ — **fixed** with rounded duration×rate
-
-~~Strikethrough~~ = fixed in current code.
-
-**Text renderers missing:**
-- `Bits_Pixel_Frame` — "Bits/(Pixel*Frame)" label, humanised to 3 decimal places
-- `Compression_Ratio` — "Compression ratio" label, percentage string
-- `Format_Settings` (combined) — joins CABAC/RefFrames/GOP into a single line
-- `BufferSize` — "Buffer size" label
-
 ### C ABI + Reader + Core
 
 - `revelio-cdylib`: `MediaInfo_New/Open/Close/Inform/Get/Count_Get/Option` entry points
 - `revelio-reader`: File, Directory, HTTP, MMS reader layer
-- `revelio-core`: SMPTE timecode parser (DF/NDF, ms conversion), demux/event framework (4-level bitmask, ContentType enum, DemuxState), trace system (Tree/CSV/XML/MicroXml renderers), channel splitting (SMPTE ST 337 AES3 deinterleaving), channel grouping (mono→stereo interleaving), IBI seek table builder, MIME type mapping (40+ container+codec entries), field/interlacement tracker (TFF/BFF/Progressive/PsF), reference file tracker (multi-file BDMV/SMPTE packages)
+- `revelio-core`: SMPTE timecode parser (DF/NDF, ms conversion), demux/event framework (4-level bitmask, ContentType enum, DemuxState), trace system (Tree/CSV/XML/MicroXml renderers), channel splitting (SMPTE ST 337 AES3 deinterleaving), channel grouping (mono→stereo interleaving), IBI seek table builder, MIME type mapping (40+ container+codec entries), field/interlacement tracker (TFF/BFF/Progressive/PsF), reference file tracker (multi-file BDMV/SMPTE packages), computed_fields (post-parse Bits_Pixel_Frame, Compression_Ratio, FrameRate_Mode_Original, BitRate ranges, Format_Profile), replay_gain (LAME Gaia + ID3v2 RVA2/TXXX extraction)
 - `revelio-export`: 10 output formatters total
 
 ## Building
