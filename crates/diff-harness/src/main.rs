@@ -2,9 +2,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitCode};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
-use revelio_core::{FileAnalyze, StreamKind};
+use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
 use revelio_export::to_xml;
 use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr, parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker, parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau, parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk};
 use revelio_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf, parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm, parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv, parse_xdcam_clip};
@@ -247,145 +247,25 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ));
     }
 
-    fill_file_level_fields(&mut fa, path, &metadata);
+    // Shared with the CLI via revelio-core — single source of truth for
+    // the derived General-stream fields.
+    let modified_unix_secs = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    let info = FileLevelInfo {
+        file_size: metadata.len(),
+        extension: Path::new(path).extension().and_then(|s| s.to_str()),
+        modified_unix_secs,
+        local_offset_secs: local_offset_seconds(),
+    };
+    fill_file_level_fields(&mut fa, &info);
 
     // Library version pulled from the oracle's banner output so the
     // diff isolates real semantic differences, not version-string noise.
     let library_version = detect_library_version().unwrap_or_else(|| "0.0.0".into());
     Ok(to_xml(fa.streams(), path, &library_version))
-}
-
-/// Fill fields that aren't derivable from the parsed bytes alone —
-/// they come from the path / fstat / cross-stream arithmetic. In the
-/// C++ side these are filled by `MediaInfo_Internal` (the wrapper that
-/// drives the parser). For now the harness plays that role.
-fn fill_file_level_fields(fa: &mut FileAnalyze, path: &str, metadata: &fs::Metadata) {
-    let file_size = metadata.len();
-    fa.Fill(StreamKind::General, 0, "FileSize", file_size.to_string(), false);
-
-    if let Some(ext) = Path::new(path).extension().and_then(|s| s.to_str()) {
-        fa.Fill(StreamKind::General, 0, "FileExtension", ext.to_owned(), false);
-    }
-
-    let audio_stream_size: Option<u64> = fa
-        .Retrieve(StreamKind::Audio, 0, "StreamSize")
-        .and_then(|z| z.as_str().parse().ok());
-    // Prefer General.Duration when a parser pre-filled it (always
-    // integer ms). Falling back to Audio.Duration works for parsers
-    // that only emit there in int-ms form. Audio.Duration as a float
-    // string (e.g. MKV's "1.500000000") would parse as None here,
-    // which is fine — the parser also fills General.Duration in that
-    // case.
-    let duration_ms: Option<u64> = fa
-        .Retrieve(StreamKind::General, 0, "Duration")
-        .and_then(|z| z.as_str().parse().ok())
-        .or_else(|| {
-            fa.Retrieve(StreamKind::Audio, 0, "Duration")
-                .and_then(|z| z.as_str().parse().ok())
-        });
-
-    // General Duration is the same as the audio stream's duration when
-    // there is exactly one audio stream and no other streams.
-    if let Some(ms) = duration_ms {
-        fa.Fill(StreamKind::General, 0, "Duration", ms.to_string(), false);
-    }
-
-    // OverallBitRate = FileSize * 8 * 1000 / Duration_ms, rounded to
-    // nearest (the C++ side fills with AfterComma=0 which renders via
-    // `%.0f` — round-half-to-even). OverallBitRate_Mode mirrors Audio's
-    // BitRate_Mode only when that field is set — emitting a default
-    // mode for codecs whose oracle output omits the field (e.g. Opus
-    // in MKV) would produce spurious lines.
-    if let Some(ms) = duration_ms {
-        if ms > 0 {
-            let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-            // OverallBitRate_Mode propagation:
-            //   * audio-only file: mirror Audio.BitRate_Mode (matches
-            //     oracle for raw audio and audio-only containers).
-            //   * video present: emit "VBR" only when Video is VFR.
-            //     Audio-VBR alone in a CFR-video file doesn't qualify —
-            //     authored MP4s like big_buck_bunny have VBR AAC inside
-            //     CFR video and oracle omits OverallBitRate_Mode there.
-            let has_video = fa.Count_Get(StreamKind::Video) > 0;
-            let overall_mode = if !has_video {
-                fa.Retrieve(StreamKind::Audio, 0, "BitRate_Mode")
-                    .map(|z| z.as_str().to_owned())
-            } else {
-                let video_fr_mode = fa
-                    .Retrieve(StreamKind::Video, 0, "FrameRate_Mode")
-                    .map(|z| z.as_str().to_owned());
-                if video_fr_mode.as_deref() == Some("VFR") {
-                    Some("VBR".to_owned())
-                } else {
-                    None
-                }
-            };
-            if let Some(mode) = overall_mode {
-                fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
-            }
-            fa.Fill(
-                StreamKind::General,
-                0,
-                "OverallBitRate",
-                overall.to_string(),
-                false,
-            );
-        }
-    }
-
-    // General StreamSize = file overhead = FileSize - audio data -
-    // video data. Skip when total elementary-stream size ≥ file_size
-    // (Ogg/Vorbis reports bitrate-derived StreamSize larger than the
-    // file, in which case the oracle omits General.StreamSize).
-    let video_stream_size: u64 = fa
-        .Retrieve(StreamKind::Video, 0, "StreamSize")
-        .and_then(|z| z.as_str().parse().ok())
-        .unwrap_or(0);
-    if let Some(audio_size) = audio_stream_size {
-        let elementary = audio_size + video_stream_size;
-        if elementary < file_size {
-            let overhead = file_size - elementary;
-            fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), false);
-        }
-    } else if video_stream_size > 0 && video_stream_size < file_size {
-        let overhead = file_size - video_stream_size;
-        fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), false);
-    }
-
-    if let Ok(modified) = metadata.modified() {
-        if let Ok(d) = modified.duration_since(UNIX_EPOCH) {
-            let unix_secs = d.as_secs() as i64;
-            fa.Fill(
-                StreamKind::General,
-                0,
-                "File_Modified_Date",
-                format_utc(unix_secs),
-                false,
-            );
-            fa.Fill(
-                StreamKind::General,
-                0,
-                "File_Modified_Date_Local",
-                format_local(modified),
-                false,
-            );
-        }
-    }
-}
-
-fn format_utc(unix_secs: i64) -> String {
-    let (y, m, d, hh, mm, ss) = civil_from_unix(unix_secs);
-    format!("{y:04}-{m:02}-{d:02} {hh:02}:{mm:02}:{ss:02} UTC")
-}
-
-fn format_local(t: SystemTime) -> String {
-    let secs = match t.duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
-        Err(e) => -(e.duration().as_secs() as i64),
-    };
-    let local_offset = local_offset_seconds();
-    let (y, m, d, hh, mm, ss) = civil_from_unix(secs + local_offset);
-    format!("{y:04}-{m:02}-{d:02} {hh:02}:{mm:02}:{ss:02}")
 }
 
 /// Detect the local timezone offset in seconds via shelling out to
@@ -404,29 +284,6 @@ fn local_offset_seconds() -> i64 {
     let hh: i64 = s[1..3].parse().unwrap_or(0);
     let mm: i64 = s[3..5].parse().unwrap_or(0);
     sign * (hh * 3600 + mm * 60)
-}
-
-/// Convert a unix timestamp to (year, month, day, hour, min, sec) using
-/// Howard Hinnant's `days_from_civil` algorithm — proleptic Gregorian,
-/// matches `chrono`'s behavior to the second within representable range.
-fn civil_from_unix(unix_secs: i64) -> (i32, u8, u8, u8, u8, u8) {
-    let days = unix_secs.div_euclid(86400);
-    let rem = unix_secs.rem_euclid(86400);
-    let hh = (rem / 3600) as u8;
-    let mm = ((rem % 3600) / 60) as u8;
-    let ss = (rem % 60) as u8;
-
-    let z = days + 719_468;
-    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
-    let doe = (z - era * 146_097) as u32;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u8;
-    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u8;
-    let year = if m <= 2 { y + 1 } else { y } as i32;
-    (year, m, d, hh, mm, ss)
 }
 
 fn detect_library_version() -> Option<String> {

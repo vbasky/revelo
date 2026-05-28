@@ -1,8 +1,10 @@
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process;
+use std::time::UNIX_EPOCH;
 
-use revelio_core::FileAnalyze;
+use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
 use revelio_export::{to_xml, to_text, to_json};
 use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr,
     parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts,
@@ -67,11 +69,29 @@ fn main() -> process::ExitCode {
         parse_tga, parse_gain_map, parse_rle, parse_adpcm, parse_eia608, parse_eia708, parse_vbi,
     ];
 
+    let metadata = fs::metadata(path).ok();
     let mut parsed = false;
     for parser in parsers {
         let mut fa = FileAnalyze::new(&bytes);
         if parser(&mut fa) {
             parsed = true;
+            // Fill the derived General-stream fields (FileSize,
+            // OverallBitRate, Duration, FileExtension, dates, container
+            // StreamSize overhead) that aren't readable from the media
+            // bytes alone — shared with the diff harness via core.
+            let modified_unix_secs = metadata
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64);
+            let info = FileLevelInfo {
+                file_size: metadata.as_ref().map(|m| m.len()).unwrap_or(bytes.len() as u64),
+                extension: Path::new(path).extension().and_then(|s| s.to_str()),
+                modified_unix_secs,
+                local_offset_secs: local_offset_seconds(),
+            };
+            fill_file_level_fields(&mut fa, &info);
+
             let output = if json_mode {
                 to_json(fa.streams(), path)
             } else if text_mode {
@@ -90,4 +110,21 @@ fn main() -> process::ExitCode {
     }
 
     process::ExitCode::SUCCESS
+}
+
+/// Local timezone offset in seconds east of UTC, via `date +%z`
+/// (e.g. "+1000" → 36000). Used for the `_Local` date variant.
+fn local_offset_seconds() -> i64 {
+    let Ok(out) = process::Command::new("date").arg("+%z").output() else {
+        return 0;
+    };
+    let s = String::from_utf8_lossy(&out.stdout);
+    let s = s.trim();
+    if s.len() < 5 {
+        return 0;
+    }
+    let sign = if s.starts_with('-') { -1 } else { 1 };
+    let hh: i64 = s[1..3].parse().unwrap_or(0);
+    let mm: i64 = s[3..5].parse().unwrap_or(0);
+    sign * (hh * 3600 + mm * 60)
 }
