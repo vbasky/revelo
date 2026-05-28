@@ -143,11 +143,10 @@ fn render(
             let fmt = s.get("Format")?.as_str().to_owned();
             // Audio folds Format_AdditionalFeatures into the Format line
             // ("AAC" + "LC" → "AAC LC").
-            if kind == StreamKind::Audio {
-                if let Some(feat) = s.get("Format_AdditionalFeatures") {
+            if kind == StreamKind::Audio
+                && let Some(feat) = s.get("Format_AdditionalFeatures") {
                     return Some(("Format", format!("{fmt} {}", feat.as_str())));
                 }
-            }
             Some(("Format", fmt))
         }
         "Format_Info" => Some(("Format/Info", s.get("Format_Info")?.as_str().to_owned())),
@@ -158,11 +157,10 @@ fn render(
         "Format_Profile" => {
             let prof = s.get("Format_Profile")?.as_str().to_owned();
             // Video combines profile + level: "Constrained Baseline@L3".
-            if kind == StreamKind::Video {
-                if let Some(level) = s.get("Format_Level") {
+            if kind == StreamKind::Video
+                && let Some(level) = s.get("Format_Level") {
                     return Some(("Format profile", format!("{prof}@L{}", level.as_str())));
                 }
-            }
             Some(("Format profile", prof))
         }
         "Format_Settings_Mode" => {
@@ -186,11 +184,10 @@ fn render(
         "CodecID" => {
             let id = s.get("CodecID")?.as_str().to_owned();
             // General folds CodecID_Compatible: "mp42 (mp42/avc1)".
-            if kind == StreamKind::General {
-                if let Some(compat) = s.get("CodecID_Compatible") {
+            if kind == StreamKind::General
+                && let Some(compat) = s.get("CodecID_Compatible") {
                     return Some(("Codec ID", format!("{id} ({})", compat.as_str())));
                 }
-            }
             Some(("Codec ID", id))
         }
         "CodecConfigurationBox" => {
@@ -242,11 +239,10 @@ fn render(
         "FrameRate" => {
             let fps = s.get("FrameRate")?.as_str().to_owned();
             // Audio appends samples-per-frame: "21.533 FPS (1024 SPF)".
-            if kind == StreamKind::Audio {
-                if let Some(spf) = s.get("SamplesPerFrame") {
+            if kind == StreamKind::Audio
+                && let Some(spf) = s.get("SamplesPerFrame") {
                     return Some(("Frame rate", format!("{fps} FPS ({} SPF)", spf.as_str())));
                 }
-            }
             Some(("Frame rate", format!("{fps} FPS")))
         }
 
@@ -354,25 +350,24 @@ fn human_size(bytes: u64) -> String {
 
 fn human_size_with_pct(bytes: u64, file_size: Option<u64>) -> String {
     let base = human_size(bytes);
-    if let Some(fs) = file_size {
-        if fs > 0 {
+    if let Some(fs) = file_size
+        && fs > 0 {
             let pct = (bytes as f64 * 100.0 / fs as f64).round() as u64;
             return format!("{base} ({pct}%)");
         }
-    }
     base
 }
 
 /// Round to ~3 significant figures, dropping trailing ".0".
 fn trim3(v: f64) -> String {
-    let s = if v >= 100.0 {
+    
+    if v >= 100.0 {
         format!("{:.0}", v)
     } else if v >= 10.0 {
         format!("{:.1}", v)
     } else {
         format!("{:.2}", v)
-    };
-    s
+    }
 }
 
 /// ms → "1 h 2 min" / "3 min 29 s" / "29 s" / "95 ms".

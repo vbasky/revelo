@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: aic/AIC fourcc.
 /// Fills: Dimensions.
 pub fn parse_aic(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
     if &buf[4..8] == b"aic " || &buf[0..4] == b"AIC " {

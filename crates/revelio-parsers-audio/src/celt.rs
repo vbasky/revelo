@@ -3,7 +3,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// CELT ultra-low-delay audio codec parser. Detects "CELT" magic in
 /// identification header or CELT frames.
 pub fn parse_celt(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 8 { return false; }
 

@@ -7,7 +7,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: mhm1/mha1 box in MP4.
 /// Fills: Audio scene config.
 pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 5 { return false; }
 

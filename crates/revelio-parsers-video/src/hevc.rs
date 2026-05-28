@@ -844,12 +844,12 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         return false;
     };
 
-    if h != ANNEX_B_START_CODE_LONG && &h[1..] != ANNEX_B_START_CODE {
+    if h != ANNEX_B_START_CODE_LONG && h[1..] != ANNEX_B_START_CODE {
         fa.element_end();
         return false;
     }
 
-    let data = if let Some(d) = fa.peek_raw(fa.remain() as usize) {
+    let data = if let Some(d) = fa.peek_raw(fa.remain()) {
         d.to_vec()
     } else {
         fa.element_end();

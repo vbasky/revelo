@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: FPS1 fourcc.
 /// Fills: Dimensions.
 pub fn parse_fraps(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
     if &buf[0..4] != b"FPS1" { return false; }

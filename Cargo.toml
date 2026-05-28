@@ -26,3 +26,6 @@ repository = "https://github.com/vbasky/revelio"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[workspace.dependencies]
+rayon = "1"

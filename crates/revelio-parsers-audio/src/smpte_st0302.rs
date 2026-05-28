@@ -3,7 +3,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// SMPTE ST 302 (AES3 in MPEG-TS). Detection: AES3 sync preamble 0xF872
 /// with 0x1E/0x1F/0x3E/0x3F subframe encoding.
 pub fn parse_smpte_st0302(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
     let sync = u16::from_be_bytes([buf[0], buf[1]]);

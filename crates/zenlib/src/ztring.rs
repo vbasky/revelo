@@ -213,7 +213,7 @@ impl std::fmt::Display for Ztring {
 }
 
 fn from_number_unsigned(mut value: u128, radix: u32) -> Ztring {
-    assert!(radix >= 2 && radix <= 36, "radix must be 2..=36");
+    assert!((2..=36).contains(&radix), "radix must be 2..=36");
     if value == 0 {
         return Ztring("0".to_owned());
     }
@@ -346,7 +346,10 @@ mod tests {
 
     #[test]
     fn float_formatting() {
-        assert_eq!(Ztring::From_Number_float64(3.14159, 2).as_str(), "3.14");
+        assert_eq!(
+            Ztring::From_Number_float64(std::f64::consts::PI, 2).as_str(),
+            "3.14"
+        );
         assert_eq!(Ztring::From_Number_float64(0.0, 3).as_str(), "0.000");
     }
 }

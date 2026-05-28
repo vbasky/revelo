@@ -5,7 +5,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: 0x00000280 header prefix.
 /// Fills: Compression ID (CID)→profile/bit_depth/chroma.
 pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,
         None => return false,
     };
@@ -20,7 +20,7 @@ pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let header_version = buf[4] as u8;
+    let header_version = buf[4];
     if header_version > 3 {
         return false;
     }
@@ -33,7 +33,7 @@ pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
 
     let height = if sst != 0 { active_lines * 2 } else { active_lines };
     let width = if compression_id >= 1270 {
-        let width_block = (samples_per_line as u32 + 15) / 16;
+        let width_block = (samples_per_line as u32).div_ceil(16);
         (width_block * 16) as u16
     } else {
         samples_per_line
@@ -42,7 +42,19 @@ pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
     // Derive profile/level/bit_depth from compression_id
     let (profile, level, bit_depth) = vc3_from_cid(compression_id);
 
-    fill_vc3_streams(fa, header_version, width, height, compression_id, sst, profile, level, bit_depth);
+    fill_vc3_streams(
+        fa,
+        Vc3Info {
+            version: header_version,
+            width,
+            height,
+            cid: compression_id,
+            sst,
+            profile,
+            level,
+            bit_depth,
+        },
+    );
     true
 }
 
@@ -69,17 +81,28 @@ fn vc3_from_cid(cid: u32) -> (&'static str, &'static str, u8) {
     (profile, level, bit_depth)
 }
 
-fn fill_vc3_streams(
-    fa: &mut FileAnalyze,
+struct Vc3Info {
     version: u8,
     width: u16,
     height: u16,
     cid: u32,
     sst: u16,
-    profile: &str,
-    level: &str,
+    profile: &'static str,
+    level: &'static str,
     bit_depth: u8,
-) {
+}
+
+fn fill_vc3_streams(fa: &mut FileAnalyze, info: Vc3Info) {
+    let Vc3Info {
+        version,
+        width,
+        height,
+        cid,
+        sst,
+        profile,
+        level,
+        bit_depth,
+    } = info;
     fa.stream_prepare(StreamKind::Video);
     fa.fill(StreamKind::Video, 0, "Format", "VC-3", false);
     fa.fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", version), false);

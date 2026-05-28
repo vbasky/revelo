@@ -37,6 +37,12 @@ pub mod reference {
     pub struct ReferenceTracker {
         pub files: Vec<ReferenceFile>,
     }
+    impl Default for ReferenceTracker {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl ReferenceTracker {
         pub fn new() -> Self {
             Self { files: Vec::new() }

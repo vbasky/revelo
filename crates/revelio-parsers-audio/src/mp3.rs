@@ -246,7 +246,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // LAME tag's nominal bitrate (1 byte at offset 20 from LAME magic,
     // which sits ~36 bytes after Xing/Info magic when all 4 flags set).
     // Also encoder delay+padding (3 bytes packed: 12 bits each).
-    let (xing_nominal_bitrate, xing_delay, xing_padding) = first_frame_owned
+    let (xing_nominal_bitrate, _xing_delay, _xing_padding) = first_frame_owned
         .as_ref()
         .map(|b| parse_xing_lame(b, first_header.version, first_header.channel_mode))
         .unwrap_or((None, None, None));
@@ -305,15 +305,15 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     fill_streams(
         fa,
         &audio_frame_header,
-        frame_count,
-        audio_bytes,
-        is_info_frame,
-        id3v2_size,
-        lame_version.as_deref(),
-        is_vbr,
-        xing_nominal_bitrate,
-        xing_delay,
-        xing_padding,
+        Mp3StreamInfo {
+            audio_frame_count: frame_count,
+            audio_bytes_consumed: audio_bytes,
+            had_info_frame: is_info_frame,
+            id3v2_size,
+            lame_version: lame_version.as_deref(),
+            is_vbr,
+            xing_nominal_kbps: xing_nominal_bitrate,
+        },
     );
     true
 }
@@ -468,27 +468,20 @@ fn parse_id3v2(fa: &mut FileAnalyze) -> (usize, Option<Id3Metadata>) {
         let body = &full[body_pos..body_pos + frame_size];
         let value = decode_text_frame(id.as_str(), body);
         match id.as_str() {
-            "COMM" | "COM" => {
-                if md.comment.is_none() { md.comment = value; }
-            }
-            "TIT2" | "TT2" => {
-                if md.title.is_none() { md.title = value; }
-            }
-            "TPE1" | "TP1" => {
-                if md.performer.is_none() { md.performer = value; }
-            }
-            "TALB" | "TAL" => {
-                if md.album.is_none() { md.album = value; }
-            }
-            "TRCK" | "TRK" => {
-                if md.track.is_none() { md.track = value; }
-            }
-            "TCON" | "TCO" => {
-                if md.genre.is_none() { md.genre = value; }
-            }
-            "TDRC" | "TYER" | "TYE" => {
-                if md.year.is_none() { md.year = value; }
-            }
+            "COMM" | "COM"
+                if md.comment.is_none() => { md.comment = value; }
+            "TIT2" | "TT2"
+                if md.title.is_none() => { md.title = value; }
+            "TPE1" | "TP1"
+                if md.performer.is_none() => { md.performer = value; }
+            "TALB" | "TAL"
+                if md.album.is_none() => { md.album = value; }
+            "TRCK" | "TRK"
+                if md.track.is_none() => { md.track = value; }
+            "TCON" | "TCO"
+                if md.genre.is_none() => { md.genre = value; }
+            "TDRC" | "TYER" | "TYE"
+                if md.year.is_none() => { md.year = value; }
             _ => {}
         }
         p = body_pos + frame_size;
@@ -620,19 +613,26 @@ fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64, boo
     (frame_count, consumed, is_vbr)
 }
 
-fn fill_streams(
-    fa: &mut FileAnalyze,
-    h: &FrameHeader,
+struct Mp3StreamInfo<'a> {
     audio_frame_count: u32,
     audio_bytes_consumed: u64,
     had_info_frame: bool,
     id3v2_size: usize,
-    lame_version: Option<&str>,
+    lame_version: Option<&'a str>,
     is_vbr: bool,
     xing_nominal_kbps: Option<u16>,
-    _xing_delay: Option<u32>,
-    _xing_padding: Option<u32>,
-) {
+}
+
+fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
+    let Mp3StreamInfo {
+        audio_frame_count,
+        audio_bytes_consumed,
+        had_info_frame,
+        id3v2_size,
+        lame_version,
+        is_vbr,
+        xing_nominal_kbps,
+    } = info;
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "MPEG Audio", false);
     if let Some(lv) = lame_version {

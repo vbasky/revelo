@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process;
 use std::time::UNIX_EPOCH;
+use rayon::prelude::*;
 
 use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
 use revelio_core::multi_file::MultiFileLoader;
@@ -30,22 +31,22 @@ fn main() -> process::ExitCode {
     });
 
     if args.is_empty() {
-        eprintln!(r#"    ✦
-     \
-      \
-       |  revelio — media metadata extractor
-       |
-      ╱ ╲
-     ✦   ✦
-  Usage: revelio [--xml|--json] <file-path>
-  Options:
-    --xml         XML output
-    --json        JSON output
-    --multi-file  scan companion files (BDMV M2TS, sidecar subtitles)
-    --demux=N     demux level: frame (default), container, elementary
-    --trace=N     trace verbosity (0-9)
-"#);
-        return process::ExitCode::from(2);
+        eprintln!(" 1111111
+11     11
+1       1
+1       1
+1       1
+ 1111111
+
+Usage: revelio [--xml|--json] <file-path>
+Options:
+  --xml         XML output
+  --json        JSON output
+  --multi-file  scan companion files (BDMV M2TS, sidecar subtitles)
+  --demux=N     demux level: frame (default), container, elementary
+  --trace=N     trace verbosity (0-9)
+");
+        return process::ExitCode::SUCCESS;
     }
 
     let path = &args[0];
@@ -78,16 +79,29 @@ fn main() -> process::ExitCode {
         bytes.clone()
     };
 
-    for parser in parsers {
+    // Phase 1: run all parsers in parallel. Each parser peeks at the
+    // shared buffer and returns bool. Once a match is found, we re-run
+    // that parser synchronously for full metadata extraction.
+    let winner: Option<fn(&mut FileAnalyze) -> bool> = {
+        let buf = &parse_buf;
+        parsers
+            .par_iter()
+            .find_any(|&&parser| {
+                let mut fa = FileAnalyze::new(buf);
+                parser(&mut fa)
+            })
+            .copied()
+    };
+
+    if let Some(ref winner) = winner {
         let mut fa = FileAnalyze::new(&parse_buf);
-        // Apply config from CLI options
         fa.set_option("demux", &demux_level);
         fa.set_option("trace_level", &trace_level);
         fa.set_option("multi_file", if multi_file { "1" } else { "0" });
         if let Some(ref _extra) = extra_data {
             fa.reference_count = 1;
         }
-        if parser(&mut fa) {
+        if winner(&mut fa) {
             parsed = true;
             // Fill the derived General-stream fields (FileSize,
             // OverallBitRate, Duration, FileExtension, dates, container
@@ -116,7 +130,6 @@ fn main() -> process::ExitCode {
                 to_text(fa.streams(), path)
             };
             println!("{output}");
-            break;
         }
     }
 

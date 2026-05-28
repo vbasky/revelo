@@ -121,7 +121,7 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
                 found = true;
             }
             _ => {
-                if start_code < 0xB0 || (start_code > 0xB7 && start_code != 0xB3 && (start_code < 0x20 || start_code > 0x2F)) {
+                if start_code < 0xB0 || (start_code > 0xB7 && start_code != 0xB3 && !(0x20..=0x2F).contains(&start_code)) {
                     break;
                 }
                 fa.skip_b4("start code");

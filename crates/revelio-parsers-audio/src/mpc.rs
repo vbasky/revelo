@@ -180,9 +180,9 @@ fn format_encoder_version(v: Int8u) -> String {
         return String::new();
     }
     let base = format!("{:.2}", (v as f32) / 100.0);
-    if v % 10 == 0 {
+    if v.is_multiple_of(10) {
         base
-    } else if v % 2 == 0 {
+    } else if v.is_multiple_of(2) {
         format!("{} Beta", base)
     } else {
         format!("{} Alpha", base)
@@ -211,10 +211,8 @@ mod tests {
         buf.extend_from_slice(&0u16.to_le_bytes()); // MaxLevel
 
         // Bit-packed 16 bits: profile(4) | link(2) | sfreq(2) | is(1) | ms(1) | maxband(6)
-        let packed1: u16 = ((profile as u16 & 0x0F) << 12)
-            | (0u16 << 10) // link = 0
-            | ((sample_freq_idx as u16 & 0x03) << 8)
-            | 0u16; // intensity/midside/maxband all 0
+        let packed1: u16 = ((profile as u16 & 0x0F) << 12) // link = 0
+            | ((sample_freq_idx as u16 & 0x03) << 8); // intensity/midside/maxband all 0
         buf.extend_from_slice(&packed1.to_be_bytes());
 
         buf.extend_from_slice(&0u16.to_le_bytes()); // TitlePeak

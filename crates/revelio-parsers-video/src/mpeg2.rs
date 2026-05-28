@@ -87,7 +87,7 @@ pub fn parse_mpeg2_sequence_header(data: &[u8]) -> Option<Mpeg2Info> {
     }
 
     let offset;
-    if data.len() >= 4 && &data[0..3] == &[0x00, 0x00, 0x01] {
+    if data.len() >= 4 && data[0..3] == [0x00, 0x00, 0x01] {
         if data[3] != 0xB3 {
             return None;
         }
@@ -152,7 +152,7 @@ fn parse_extensions(data: &[u8], info: &mut Mpeg2Info) {
     let mut pos = 0;
     
     while pos + 4 < data.len() {
-        if &data[pos..pos + 4] == &[0x00, 0x00, 0x01, 0xB5] {
+        if data[pos..pos + 4] == [0x00, 0x00, 0x01, 0xB5] {
             if pos + 5 >= data.len() {
                 break;
             }
@@ -160,16 +160,14 @@ fn parse_extensions(data: &[u8], info: &mut Mpeg2Info) {
             let ext_id = (data[pos + 4] >> 4) & 0x0F;
             
             match ext_id {
-                1 => {
-                    if pos + 6 < data.len() {
+                1
+                    if pos + 6 < data.len() => {
                         parse_sequence_display_extension(&data[pos + 4..], info);
                     }
-                }
-                2 => {
-                    if pos + 6 < data.len() {
+                2
+                    if pos + 6 < data.len() => {
                         parse_sequence_scalable_extension(&data[pos + 4..], info);
                     }
-                }
                 _ => {}
             }
             
@@ -274,11 +272,10 @@ pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
         fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
     }
     
-    if let Some(level) = info.level {
-        if let Some(level_str) = level.as_str() {
+    if let Some(level) = info.level
+        && let Some(level_str) = level.as_str() {
             fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
         }
-    }
     
     if info.width > 0 {
         fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);

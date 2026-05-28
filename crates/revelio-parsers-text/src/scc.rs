@@ -5,7 +5,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: `Scenarist_SCC V1.0`.
 /// Fills: Format.
 pub fn parse_scc(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,
         None => return false,
     };

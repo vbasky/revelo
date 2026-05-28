@@ -5,7 +5,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: Identification header packet type 1 + `vorbis` magic.
 /// Fills: Channels, sample rate, bitrates, floor type, VorbisComment.
 pub fn parse_vorbis(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,
         None => return false,
     };
@@ -29,7 +29,7 @@ pub fn parse_vorbis(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let channels = buf[11] as u8;
+    let channels = buf[11];
     let sample_rate = u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]);
     let bitrate_max = i32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]);
     let bitrate_nominal = i32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]);

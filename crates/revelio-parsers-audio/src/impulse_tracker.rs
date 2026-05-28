@@ -177,6 +177,7 @@ fn trim_local_string(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // fixture builder mirrors the binary header layout
     fn make_it(
         song_name: &[u8; 26],
         ord_num: u16,

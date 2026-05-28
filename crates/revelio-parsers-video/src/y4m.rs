@@ -78,13 +78,11 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
         match bytes[0] {
             b'A' => {
                 let val = &param[1..];
-                if let Some(colon) = val.find(':') {
-                    if let (Ok(x), Ok(y)) = (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>()) {
-                        if x > 0.0 && y > 0.0 {
+                if let Some(colon) = val.find(':')
+                    && let (Ok(x), Ok(y)) = (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>())
+                        && x > 0.0 && y > 0.0 {
                             fa.fill(StreamKind::Video, 0, "PixelAspectRatio", format!("{:.3}", x / y), false);
                         }
-                    }
-                }
             }
             b'C' => {
                 // Color space — the token is e.g. "C420" or "C420jpeg".
@@ -103,14 +101,12 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
             }
             b'F' => {
                 let val = &param[1..];
-                if let Some(colon) = val.find(':') {
-                    if let (Ok(n), Ok(d)) = (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>()) {
-                        if n > 0.0 && d > 0.0 {
+                if let Some(colon) = val.find(':')
+                    && let (Ok(n), Ok(d)) = (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>())
+                        && n > 0.0 && d > 0.0 {
                             frame_rate = n / d;
                             fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
                         }
-                    }
-                }
             }
             b'H' => {
                 if let Ok(h) = param[1..].parse::<u64>() {
@@ -118,8 +114,8 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
                     fa.fill(StreamKind::Video, 0, "Height", h.to_string(), false);
                 }
             }
-            b'I' => {
-                if param.len() == 2 {
+            b'I'
+                if param.len() == 2 => {
                     match bytes[1] {
                         b'p' => fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false),
                         b't' => {
@@ -134,7 +130,6 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
                         _ => {}
                     }
                 }
-            }
             b'W' => {
                 if let Ok(w) = param[1..].parse::<u64>() {
                     width = w;

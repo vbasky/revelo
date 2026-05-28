@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn get_bf4_reads_be_float32() {
-        let v = 3.14159_f32;
+        let v = std::f32::consts::PI;
         let buf = v.to_be_bytes();
         let mut fa = FileAnalyze::new(&buf);
         let mut out: Float32 = 0.0;

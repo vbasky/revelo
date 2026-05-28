@@ -123,8 +123,8 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
                         }
                     }
                     // Skip translated_keyword
-                    if pos < rest.len() {
-                        if let Some(n) = rest[pos..].iter().position(|&b| b == 0) {
+                    if pos < rest.len()
+                        && let Some(n) = rest[pos..].iter().position(|&b| b == 0) {
                             pos += n + 1;
                             let val = String::from_utf8_lossy(&rest[pos..]).into_owned();
                             match key.as_str() {
@@ -138,7 +138,6 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
                                 _ => {}
                             }
                         }
-                    }
                 }
             }
             // zTXt is compressed text, skip for now
@@ -155,26 +154,26 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     fill_streams(
         fa,
         file_size,
-        width,
-        height,
-        bit_depth,
-        color_type,
-        overhead,
-        idat_total,
-        encoded_application,
-        title,
-        author,
-        description,
-        copyright,
-        creation_time,
-        comment,
+        PngMeta {
+            width,
+            height,
+            bit_depth,
+            color_type,
+            overhead,
+            idat_total,
+            encoded_application,
+            title,
+            author,
+            description,
+            copyright,
+            creation_time,
+            comment,
+        },
     );
     true
 }
 
-fn fill_streams(
-    fa: &mut FileAnalyze,
-    file_size: usize,
+struct PngMeta {
     width: Int32u,
     height: Int32u,
     bit_depth: u8,
@@ -188,7 +187,24 @@ fn fill_streams(
     copyright: Option<String>,
     creation_time: Option<String>,
     comment: Option<String>,
-) {
+}
+
+fn fill_streams(fa: &mut FileAnalyze, file_size: usize, meta: PngMeta) {
+    let PngMeta {
+        width,
+        height,
+        bit_depth,
+        color_type,
+        overhead,
+        idat_total,
+        encoded_application,
+        title,
+        author,
+        description,
+        copyright,
+        creation_time,
+        comment,
+    } = meta;
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "PNG", false);
     fa.fill(StreamKind::General, 0, "ImageCount", "1", false);

@@ -126,11 +126,10 @@ fn push_field(out: &mut String, name: &str, raw_value: &str) {
 /// fields are stored as integer milliseconds but emitted as decimal
 /// seconds with 3 fraction digits.
 pub(crate) fn render_field_value(name: &str, raw: &str) -> String {
-    if is_duration_field(name) {
-        if let Ok(ms) = raw.parse::<i64>() {
+    if is_duration_field(name)
+        && let Ok(ms) = raw.parse::<i64>() {
             return format_milliseconds_as_seconds(ms);
         }
-    }
     raw.to_owned()
 }
 

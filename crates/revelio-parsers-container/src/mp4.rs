@@ -92,7 +92,7 @@ const ITUNES_KEY_TV_SEASON: Int32u = 0x74_76_73_6E;
 /// iTunes-style `tves` (TV Episode Number) metadata key.
 const ITUNES_KEY_TV_EPISODE_NUM: Int32u = 0x74_76_65_73;
 /// iTunes-style `hdvd` (HD Video) metadata key.
-const ITUNES_KEY_HD_VIDEO: Int32u = 0x68_64_76_64;
+const ITUNES_KEY_HD_VIDEO: Int32u = 0x6864_7664;
 /// iTunes-style `stik` (Media Type) metadata key.
 const ITUNES_KEY_MEDIA_TYPE: Int32u = 0x73_74_69_6B;
 /// iTunes-style `rtng` (Content Rating) metadata key.

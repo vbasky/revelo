@@ -162,7 +162,7 @@ impl<'a> BitStream<'a> {
         if how_many > 64 {
             return 0;
         }
-        let how_many1 = if how_many > 32 { how_many - 32 } else { 0 };
+        let how_many1 = how_many.saturating_sub(32);
         let how_many2 = how_many - how_many1;
         let value1 = self.get(how_many1) as Int64u;
         let value2 = self.get(how_many2) as Int64u;
@@ -229,7 +229,7 @@ impl<'a> BitStream<'a> {
         if how_many > 64 {
             return;
         }
-        let how_many1 = if how_many > 32 { how_many - 32 } else { 0 };
+        let how_many1 = how_many.saturating_sub(32);
         let how_many2 = how_many - how_many1;
         self.skip(how_many1);
         self.skip(how_many2);

@@ -132,7 +132,7 @@ mod tests {
         buf.extend_from_slice(&sample_rate.to_le_bytes());
         let bytes_per_sec = sample_rate * (channels as u32) * (bits_per_sample as u32 / 8);
         buf.extend_from_slice(&bytes_per_sec.to_le_bytes());
-        let bytes_per_sample = (channels as u16) * (bits_per_sample / 8);
+        let bytes_per_sample = channels * (bits_per_sample / 8);
         buf.extend_from_slice(&bytes_per_sample.to_le_bytes());
         buf.extend_from_slice(&bits_per_sample.to_le_bytes());
         buf.extend_from_slice(&samples.to_le_bytes());

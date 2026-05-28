@@ -15,7 +15,7 @@ fn fill_archive(fa: &mut FileAnalyze, format: &str, extra: &[(&str, &str)]) {
 /// Detection: `PK\x03\x04` local file header.
 /// Fills: File count, compressed/uncompressed sizes.
 pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 4 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -43,7 +43,7 @@ pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
 /// Detection: `Rar!\x1A\x07\x00` magic.
 /// Fills: Version, file count.
 pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 7 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -61,7 +61,7 @@ pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
 /// Detection: `7z\xBC\xAF\x27\x1C` magic.
 /// Fills: Format.
 pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 6 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -80,7 +80,7 @@ pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
 /// Detection: `ustar\x00` at offset 257.
 /// Fills: File count.
 pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 512 { return true; } // partial, accept tentative
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -113,7 +113,7 @@ pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
 /// Detection: `\x1F\x8B` magic.
 /// Fills: Original name, compression.
 pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 2 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -135,7 +135,7 @@ pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
 /// Detection: `BZh` + version digit.
 /// Fills: Block size.
 pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 3 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -153,7 +153,7 @@ pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
 /// Detection: `CD001` at sector 16.
 /// Fills: Volume label.
 pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 0x8000 + 6 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -181,7 +181,7 @@ pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
 /// Detection: `\x7FELF` magic.
 /// Fills: Class, endianness, machine type.
 pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 16 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -216,7 +216,7 @@ pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
 /// Detection: FEEDFACE/BEBAFECA magic.
 /// Fills: Architecture, file type.
 pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 4 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -246,7 +246,7 @@ pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
 /// Detection: `MZ` + `PE` at offset at 0x3C.
 /// Fills: Architecture, subsystem.
 pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 2 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -276,7 +276,7 @@ pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
 /// Detection: `**ACE**` magic.
 /// Fills: Format.
 pub fn parse_ace(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 7 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

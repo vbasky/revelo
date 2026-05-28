@@ -46,6 +46,18 @@ use zenlib::{Int128u, Int16u, Int32u};
 const MAGIC_MAC_SPACE: u32 = u32::from_be_bytes(*b"MAC ");
 const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
 
+/// Decoded APE stream header fields, shared by the legacy and modern parsers.
+#[derive(Default)]
+struct ApeHeader {
+    compression_level: Int16u,
+    channels: Int16u,
+    resolution: Int16u,
+    sample_rate: Int32u,
+    total_frames: Int32u,
+    final_frame_samples: Int32u,
+    samples_per_frame: Int32u,
+}
+
 /// Parse Monkey's Audio (APE) lossless stream.
 ///
 /// Detection: `MAC 3.97` magic.
@@ -69,133 +81,78 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
     let mut version: Int16u = 0;
     fa.get_l2(&mut version, "Version");
 
-    let mut sample_rate: Int32u = 0;
-    let mut total_frames: Int32u = 0;
-    let mut final_frame_samples: Int32u = 0;
-    let mut samples_per_frame: Int32u = 0;
-    let mut compression_level: Int16u = 0;
-    let mut channels: Int16u = 0;
-    let mut resolution: Int16u = 0;
-
-    if version < 3980 {
-        if !parse_legacy_header(
-            fa,
-            version,
-            &mut compression_level,
-            &mut channels,
-            &mut resolution,
-            &mut sample_rate,
-            &mut total_frames,
-            &mut final_frame_samples,
-            &mut samples_per_frame,
-        ) {
-            fa.element_end();
-            return false;
-        }
-    } else if !parse_modern_header(
-        fa,
-        &mut compression_level,
-        &mut channels,
-        &mut resolution,
-        &mut sample_rate,
-        &mut total_frames,
-        &mut final_frame_samples,
-        &mut samples_per_frame,
-    ) {
-        fa.element_end();
-        return false;
-    }
-
+    let header = if version < 3980 {
+        parse_legacy_header(fa, version)
+    } else {
+        parse_modern_header(fa)
+    };
     fa.element_end();
+    let Some(h) = header else {
+        return false;
+    };
 
-    if total_frames == 0 || sample_rate == 0 || channels == 0 || resolution == 0 {
+    if h.total_frames == 0 || h.sample_rate == 0 || h.channels == 0 || h.resolution == 0 {
         return false;
     }
     let samples: u64 =
-        (total_frames as u64 - 1) * (samples_per_frame as u64) + (final_frame_samples as u64);
+        (h.total_frames as u64 - 1) * (h.samples_per_frame as u64) + (h.final_frame_samples as u64);
     if samples == 0 {
         return false;
     }
 
-    fill_streams(
-        fa,
-        identifier,
-        version,
-        compression_level,
-        channels,
-        resolution,
-        sample_rate,
-        samples,
-    );
+    fill_streams(fa, identifier, version, &h, samples);
     true
 }
 
-fn parse_legacy_header(
-    fa: &mut FileAnalyze,
-    version: Int16u,
-    compression_level: &mut Int16u,
-    channels: &mut Int16u,
-    resolution: &mut Int16u,
-    sample_rate: &mut Int32u,
-    total_frames: &mut Int32u,
-    final_frame_samples: &mut Int32u,
-    samples_per_frame: &mut Int32u,
-) -> bool {
+fn parse_legacy_header(fa: &mut FileAnalyze, version: Int16u) -> Option<ApeHeader> {
     // Legacy header is 26 bytes after Version (+ optional 44-byte RIFF + seek table).
     if fa.remain() < 32 {
-        return false;
+        return None;
     }
-    fa.get_l2(compression_level, "CompressionLevel");
+    let mut h = ApeHeader::default();
+    fa.get_l2(&mut h.compression_level, "CompressionLevel");
     let mut flags: Int16u = 0;
     fa.get_l2(&mut flags, "FormatFlags");
     let resolution8 = (flags & 0x0001) != 0;
     let resolution24 = (flags & 0x0008) != 0;
     let no_wav_header = (flags & 0x0020) != 0;
-    *resolution = if resolution8 {
+    h.resolution = if resolution8 {
         8
     } else if resolution24 {
         24
     } else {
         16
     };
-    fa.get_l2(channels, "Channels");
-    fa.get_l4(sample_rate, "SampleRate");
+    fa.get_l2(&mut h.channels, "Channels");
+    fa.get_l4(&mut h.sample_rate, "SampleRate");
     fa.skip_l4("WavHeaderDataBytes");
     fa.skip_l4("WavTerminatingBytes");
-    fa.get_l4(total_frames, "TotalFrames");
-    fa.get_l4(final_frame_samples, "FinalFrameSamples");
-    *samples_per_frame = ape_samples_per_frame(version, *compression_level);
+    fa.get_l4(&mut h.total_frames, "TotalFrames");
+    fa.get_l4(&mut h.final_frame_samples, "FinalFrameSamples");
+    h.samples_per_frame = ape_samples_per_frame(version, h.compression_level);
     fa.skip_l4("PeakLevel");
     let mut seek_elements: Int32u = 0;
     fa.get_l4(&mut seek_elements, "SeekElements");
     if !no_wav_header {
         if fa.remain() < 44 {
-            return false;
+            return None;
         }
         fa.skip_hexa(44, "RIFF header");
     }
     let seek_bytes = (seek_elements as usize) * 4;
     if fa.remain() < seek_bytes {
-        return false;
+        return None;
     }
     fa.skip_hexa(seek_bytes, "Seek table");
-    true
+    Some(h)
 }
 
-fn parse_modern_header(
-    fa: &mut FileAnalyze,
-    compression_level: &mut Int16u,
-    channels: &mut Int16u,
-    resolution: &mut Int16u,
-    sample_rate: &mut Int32u,
-    total_frames: &mut Int32u,
-    final_frame_samples: &mut Int32u,
-    samples_per_frame: &mut Int32u,
-) -> bool {
+fn parse_modern_header(fa: &mut FileAnalyze) -> Option<ApeHeader> {
     // Descriptor (46) + header (24) bytes after the version field.
     if fa.remain() < 70 {
-        return false;
+        return None;
     }
+    let mut h = ApeHeader::default();
     fa.skip_l2("Version_High");
     fa.skip_l4("DescriptorBytes");
     fa.skip_l4("HeaderBytes");
@@ -206,16 +163,16 @@ fn parse_modern_header(
     fa.skip_l4("WavTerminatingDataBytes");
     let mut _md5: Int128u = 0;
     fa.get_l16(&mut _md5, "FileMD5");
-    fa.get_l2(compression_level, "CompressionLevel");
+    fa.get_l2(&mut h.compression_level, "CompressionLevel");
     let mut _flags: Int16u = 0;
     fa.get_l2(&mut _flags, "FormatFlags");
-    fa.get_l4(samples_per_frame, "BlocksPerFrame");
-    fa.get_l4(final_frame_samples, "FinalFrameBlocks");
-    fa.get_l4(total_frames, "TotalFrames");
-    fa.get_l2(resolution, "BitsPerSample");
-    fa.get_l2(channels, "Channels");
-    fa.get_l4(sample_rate, "SampleRate");
-    true
+    fa.get_l4(&mut h.samples_per_frame, "BlocksPerFrame");
+    fa.get_l4(&mut h.final_frame_samples, "FinalFrameBlocks");
+    fa.get_l4(&mut h.total_frames, "TotalFrames");
+    fa.get_l2(&mut h.resolution, "BitsPerSample");
+    fa.get_l2(&mut h.channels, "Channels");
+    fa.get_l4(&mut h.sample_rate, "SampleRate");
+    Some(h)
 }
 
 fn ape_samples_per_frame(version: Int16u, compression_level: Int16u) -> Int32u {
@@ -245,12 +202,16 @@ fn fill_streams(
     fa: &mut FileAnalyze,
     identifier: Int32u,
     version: Int16u,
-    compression_level: Int16u,
-    channels: Int16u,
-    resolution: Int16u,
-    sample_rate: Int32u,
+    h: &ApeHeader,
     samples: u64,
 ) {
+    let &ApeHeader {
+        compression_level,
+        channels,
+        resolution,
+        sample_rate,
+        ..
+    } = h;
     let duration_ms: u64 = samples * 1000 / (sample_rate as u64);
     let uncompressed_size: u64 = samples * (channels as u64) * (resolution as u64 / 8);
     let version_str = format!("{:.3}", (version as f64) / 1000.0);
@@ -287,6 +248,7 @@ fn fill_streams(
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // fixture builder mirrors the binary header layout
     fn make_modern_ape(
         magic: &[u8; 4],
         version: u16,

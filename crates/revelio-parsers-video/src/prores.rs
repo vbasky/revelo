@@ -26,7 +26,7 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
         && magic != 0x6170636F && magic != 0x61703468 && magic != 0x70727266
     {
         // Check for ProRes in MOV container: skip to frame data
-        let raw = fa.peek_raw(fa.remain() as usize);
+        let raw = fa.peek_raw(fa.remain());
         let buf = match raw { Some(b) => b, None => return false };
         if buf.len() < 20 { return false; }
 
@@ -38,7 +38,7 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    let buf = match fa.peek_raw(fa.remain() as usize) { Some(b) => b, None => return false };
+    let buf = match fa.peek_raw(fa.remain()) { Some(b) => b, None => return false };
     if buf.len() < 20 { return false; }
 
     let _hdr_size = u16::from_be_bytes([buf[8], buf[9]]);

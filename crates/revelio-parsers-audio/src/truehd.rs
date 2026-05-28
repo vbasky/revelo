@@ -7,7 +7,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: Sync 0xF8726FBA (TrueHD) / 0xF8726FBB (AC-3+TrueHD).
 /// Fills: Channels, sample rate, bit depth, Lossless, VBR.
 pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
 
@@ -22,7 +22,7 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
 
     // Parse sampling rate from bits[12-15] of the sync word + following nibble
     if buf.len() >= 5 {
-        let sr_idx = ((buf[4] >> 4) & 0x0F) as u8;
+        let sr_idx = (buf[4] >> 4) & 0x0F ;
         let sr = match sr_idx {
             0 => 48000,
             1 => 96000,
@@ -35,7 +35,7 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
         fa.fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
 
         // Channel assignment from bits[3-0] of byte 4
-        let ch_code = (buf[4] & 0x0F) as u8;
+        let ch_code = buf[4] & 0x0F ;
         let channels = if ch_code <= 7 { ch_code + 1 } else { 2 };
         fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
 

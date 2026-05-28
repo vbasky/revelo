@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: CC_type_1 0x03 0x00.
 /// Fills: Format.
 pub fn parse_dtvcc_transport(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 2 { return false; }
     if buf[0] == 0x03 && buf[1] == 0x00 { // CC_type_1 in CTA-708

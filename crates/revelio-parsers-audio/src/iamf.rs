@@ -21,7 +21,7 @@ pub fn parse_iamf(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let head = match fa.peek_raw(fa.remain().min(MIN_HEADER_LEN)) {
-        Some(h) if h.len() >= 1 => h,
+        Some(h) if !h.is_empty() => h,
         _ => return false,
     };
     let b0 = head[0];

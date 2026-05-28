@@ -11,6 +11,12 @@ pub struct MultiFileLoader {
     pub tracker: ReferenceTracker,
 }
 
+impl Default for MultiFileLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MultiFileLoader {
     pub fn new() -> Self {
         MultiFileLoader {
@@ -48,13 +54,13 @@ impl MultiFileLoader {
 
         // BDMV structure: STREAM/ directory next to primary
         let stream_dir = parent.join("STREAM");
-        if stream_dir.is_dir() {
-            if let Ok(entries) = fs::read_dir(&stream_dir) {
+        if stream_dir.is_dir()
+            && let Ok(entries) = fs::read_dir(&stream_dir) {
                 for entry in entries.flatten() {
                     let p = entry.path();
                     if p == primary_path { continue; }
-                    if let Some(ext) = p.extension() {
-                        if ext == "m2ts" || ext == "mts" {
+                    if let Some(ext) = p.extension()
+                        && (ext == "m2ts" || ext == "mts") {
                             self.files.push(p.clone());
                             if let Ok(meta) = fs::metadata(&p) {
                                 self.total_bytes += meta.len();
@@ -65,10 +71,8 @@ impl MultiFileLoader {
                                 0x1011, // default video PID
                             );
                         }
-                    }
                 }
             }
-        }
     }
 
     /// Append all referenced files' content to the output buffer.

@@ -271,6 +271,7 @@ fn map_language(language: &str) -> String {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // fixture builder mirrors the binary header layout
     fn build_header(
         title: &str,
         language: &str,

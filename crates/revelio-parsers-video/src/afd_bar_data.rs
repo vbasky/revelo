@@ -2,7 +2,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Parse AFD/Bar data (SMPTE 2016-1).
 /// Fills: Format, active format descriptor.
 pub fn parse_afd_bar_data(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
     if &buf[0..4] == b"AFBd" || &buf[0..4] == b"BARD" {

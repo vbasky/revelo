@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn accepts_sync_ac40() {
         let mut buf = vec![0xAC, 0x40];
-        buf.extend(std::iter::repeat(0u8).take(64));
+        buf.extend(std::iter::repeat_n(0u8, 64));
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ac4(&mut fa));
     }
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn accepts_sync_ac41() {
         let mut buf = vec![0xAC, 0x41];
-        buf.extend(std::iter::repeat(0u8).take(64));
+        buf.extend(std::iter::repeat_n(0u8, 64));
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ac4(&mut fa));
     }

@@ -60,24 +60,19 @@ fn fill_bitrate_ranges(sc: &mut StreamCollection) {
     for kind in &[StreamKind::Audio, StreamKind::Video] {
         let n = sc.count_get(*kind);
         for i in 0..n {
-            if let Some(max_str) = field_val(sc, *kind, i, "BitRate_Maximum") {
-                if let Ok(v) = max_str.parse::<u64>() {
+            if let Some(max_str) = field_val(sc, *kind, i, "BitRate_Maximum")
+                && let Ok(v) = max_str.parse::<u64>() {
                     overall_max += v;
                 }
-            }
-            if let Some(br_str) = field_val(sc, *kind, i, "BitRate") {
-                if let Ok(v) = br_str.parse::<u64>() {
-                    if v < overall_min { overall_min = v; }
-                }
-            }
+            if let Some(br_str) = field_val(sc, *kind, i, "BitRate")
+                && let Ok(v) = br_str.parse::<u64>()
+                    && v < overall_min { overall_min = v; }
             // Fill BitRate_Minimum if empty
-            if field_val(sc, *kind, i, "BitRate_Minimum").is_none() {
-                if let Some(br_str) = field_val(sc, *kind, i, "BitRate") {
-                    if let Ok(v) = br_str.parse::<u64>() {
+            if field_val(sc, *kind, i, "BitRate_Minimum").is_none()
+                && let Some(br_str) = field_val(sc, *kind, i, "BitRate")
+                    && let Ok(v) = br_str.parse::<u64>() {
                         sc.fill(*kind, i, "BitRate_Minimum", Ztring::from(format!("{}", v / 2)), false);
                     }
-                }
-            }
         }
     }
     if overall_max > 0 && field_val(sc, StreamKind::General, 0, "OverallBitRate_Maximum").is_none() {

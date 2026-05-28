@@ -231,7 +231,7 @@ mod tests {
     fn parses_lossless_vp8l_320x240() {
         // VP8L: 0x2F + 14 bits width-1 + 14 bits height-1 + 1 bit alpha + 3 bits version
         // width=320 → 319, height=240 → 239, alpha=1, version=0
-        let bits: u32 = (320 - 1) | ((240u32 - 1) << 14) | (1 << 28) | (0 << 29);
+        let bits: u32 = (320 - 1) | ((240u32 - 1) << 14) | (1 << 28);
         let mut payload = vec![0x2F];
         payload.extend_from_slice(&bits.to_le_bytes());
         let buf = build_riff(b"WEBP", &[(b"VP8L", payload)]);

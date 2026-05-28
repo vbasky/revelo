@@ -178,7 +178,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         );
     }
     // EXR compression codes 0-4 are lossless; 5+ are lossy.
-    if let Some(_) = compression {
+    if compression.is_some() {
         let lossless = matches!(
             compression,
             Some("raw") | Some("RLZ") | Some("ZIPS") | Some("ZIP") | Some("PIZ")

@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+rayon.workspace = true
 revelio-core = { path = "../revelio-core" }
 revelio-parsers-archive = { path = "../revelio-parsers-archive" }
 revelio-parsers-audio = { path = "../revelio-parsers-audio" }

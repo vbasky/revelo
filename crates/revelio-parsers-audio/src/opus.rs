@@ -27,7 +27,7 @@ const OPUS_CHANNEL_LAYOUT: [&str; 8] = [
 /// Detection: OpusHead packet in Ogg/WebM, TOC byte.
 /// Fills: Channels, channel mapping family, preskip, sample rate.
 pub fn parse_opus(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,
         None => return false,
     };
@@ -46,11 +46,11 @@ pub fn parse_opus(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let version_id = buf[8] as u8;
-    let channel_count = buf[9] as u8;
+    let version_id = buf[8];
+    let channel_count = buf[9];
     let preskip = u16::from_le_bytes([buf[10], buf[11]]);
     let sample_rate = u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]);
-    let channel_map = buf[18] as u8;
+    let channel_map = buf[18];
 
     if channel_map > 1 {
         return false; // Vorbis or unsupported mapping

@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: esds AudioSpecificConfig in MP4.
 /// Fills: Profile, sampling rate, channels from DecoderConfigDescriptor.
 pub fn parse_aac(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 2 { return false; }
     if buf[0] != 0xFF || (buf[1] & 0xF0) != 0xF0 { return false; }

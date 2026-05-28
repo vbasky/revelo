@@ -3,7 +3,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Musepack SV8 parser. Detects "MPCK" magic (SV8 stream version marker).
 /// SV7 is handled by the existing mpc.rs parser.
 pub fn parse_mpc_sv8(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
 

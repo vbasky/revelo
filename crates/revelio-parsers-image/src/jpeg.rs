@@ -210,10 +210,12 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
         overhead,
         comment,
         &exif,
-        width,
-        height,
-        precision,
-        components,
+        JpegFrame {
+            width,
+            height,
+            precision,
+            components,
+        },
         &sampling,
     );
     true
@@ -226,31 +228,28 @@ fn parse_xmp(xmp_data: &[u8], out: &mut ExifData) {
     let xmp_str = String::from_utf8_lossy(xmp_data);
     
     // Extract dc:title
-    if let Some(start) = xmp_str.find("<dc:title>") {
-        if let Some(end) = xmp_str[start..].find("</dc:title>") {
+    if let Some(start) = xmp_str.find("<dc:title>")
+        && let Some(end) = xmp_str[start..].find("</dc:title>") {
             let title_section = &xmp_str[start..start+end+11];
-            if let Some(rdf_start) = title_section.find("<rdf:Alt>") {
-                if let Some(li_start) = title_section[rdf_start..].find("<rdf:li") {
+            if let Some(rdf_start) = title_section.find("<rdf:Alt>")
+                && let Some(li_start) = title_section[rdf_start..].find("<rdf:li") {
                     let after_li = &title_section[rdf_start+li_start..];
-                    if let Some(gt_pos) = after_li.find('>') {
-                        if let Some(li_end) = after_li[gt_pos..].find("</rdf:li>") {
+                    if let Some(gt_pos) = after_li.find('>')
+                        && let Some(li_end) = after_li[gt_pos..].find("</rdf:li>") {
                             let title = &after_li[gt_pos+1..gt_pos+li_end];
                             if out.description.is_none() {
                                 out.description = Some(title.to_string());
                             }
                         }
-                    }
                 }
-            }
         }
-    }
     
     // Extract dc:creator (artist)
-    if let Some(start) = xmp_str.find("<dc:creator>") {
-        if let Some(end) = xmp_str[start..].find("</dc:creator>") {
+    if let Some(start) = xmp_str.find("<dc:creator>")
+        && let Some(end) = xmp_str[start..].find("</dc:creator>") {
             let creator_section = &xmp_str[start..start+end+13];
-            if let Some(seq_start) = creator_section.find("<rdf:Seq>") {
-                if let Some(li_start) = creator_section[seq_start..].find("<rdf:li>") {
+            if let Some(seq_start) = creator_section.find("<rdf:Seq>")
+                && let Some(li_start) = creator_section[seq_start..].find("<rdf:li>") {
                     let after_li = &creator_section[seq_start+li_start+8..];
                     if let Some(li_end) = after_li.find("</rdf:li>") {
                         let creator = &after_li[..li_end];
@@ -260,9 +259,7 @@ fn parse_xmp(xmp_data: &[u8], out: &mut ExifData) {
                         }
                     }
                 }
-            }
         }
-    }
     
     // Extract xmp:CreateDate (similar to datetime_original)
     if let Some(start) = xmp_str.find("xmp:CreateDate=\"") {
@@ -324,11 +321,10 @@ fn parse_exif_tiff(tiff: &[u8], out: &mut ExifData) {
         walk_exif_ifd(tiff, off, little, &r16, &r32, out);
     }
     // IFD1 (thumbnail) starts at the next-IFD offset stored after IFD0.
-    if let Some(ifd1_off) = next_ifd_offset(tiff, ifd0_off, little, &r16, &r32) {
-        if ifd1_off != 0 {
+    if let Some(ifd1_off) = next_ifd_offset(tiff, ifd0_off, little, &r16, &r32)
+        && ifd1_off != 0 {
             walk_ifd1(tiff, ifd1_off as usize, little, &r16, &r32, out);
         }
-    }
 }
 
 fn next_ifd_offset(
@@ -529,18 +525,16 @@ fn walk_ifd1(
     // If IFD1 only carries the JPEG offset/length but no ImageWidth/Length,
     // parse the embedded JPEG's SOF for geometry. Common in compact-camera
     // thumbnails (e.g. Acer C01).
-    if out.thumbnail_width.is_none() {
-        if let (Some(off), Some(sz)) = (out.thumbnail_offset, out.thumbnail_size) {
+    if out.thumbnail_width.is_none()
+        && let (Some(off), Some(sz)) = (out.thumbnail_offset, out.thumbnail_size) {
             let lo = off as usize;
             let hi = (off + sz) as usize;
-            if hi <= tiff.len() {
-                if let Some((w, h)) = scan_jpeg_sof(&tiff[lo..hi]) {
+            if hi <= tiff.len()
+                && let Some((w, h)) = scan_jpeg_sof(&tiff[lo..hi]) {
                     out.thumbnail_width = Some(w as u32);
                     out.thumbnail_height = Some(h as u32);
                 }
-            }
         }
-    }
 }
 
 /// Scan a JPEG byte stream for the first SOF marker and return its
@@ -592,18 +586,28 @@ fn exif_datetime_to_oracle(s: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| s.to_string())
 }
 
+struct JpegFrame {
+    width: u16,
+    height: u16,
+    precision: u8,
+    components: u8,
+}
+
 fn fill_streams(
     fa: &mut FileAnalyze,
     file_size: usize,
     overhead: usize,
     comment: Option<String>,
     exif: &ExifData,
-    width: u16,
-    height: u16,
-    precision: u8,
-    components: u8,
+    frame: JpegFrame,
     sampling: &[(u8, u8)],
 ) {
+    let JpegFrame {
+        width,
+        height,
+        precision,
+        components,
+    } = frame;
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "JPEG", false);
     let has_thumbnail = exif.thumbnail_width.is_some() && exif.thumbnail_height.is_some();
@@ -616,19 +620,18 @@ fn fill_streams(
     let thumb_bytes = exif.thumbnail_size.unwrap_or(0) as usize;
     let general_overhead = overhead.saturating_sub(thumb_bytes);
     fa.fill(StreamKind::General, 0, "StreamSize", general_overhead.to_string(), true);
-    if let Some(d) = exif.description.as_deref() {
-        if !d.is_empty() {
+    if let Some(d) = exif.description.as_deref()
+        && !d.is_empty() {
             fa.fill(StreamKind::General, 0, "Description", d.to_string(), false);
         }
-    }
     if let Some(dt) = exif.datetime_original.as_deref() {
         fa.fill(StreamKind::General, 0, "Recorded_Date", exif_datetime_to_oracle(dt), false);
     }
     if let Some(dt) = exif.datetime.as_deref() {
         fa.fill(StreamKind::General, 0, "Mastered_Date", exif_datetime_to_oracle(dt), false);
     }
-    if let Some(m) = exif.make.as_deref() {
-        if !m.is_empty() {
+    if let Some(m) = exif.make.as_deref()
+        && !m.is_empty() {
             // Oracle normalizes common manufacturer-name suffixes (" Inc.",
             // " Corporation", " CO.,LTD") — strip the most common one so
             // "Acer Inc." matches the oracle's "Acer".
@@ -640,16 +643,14 @@ fn fill_streams(
                 .to_string();
             fa.fill(StreamKind::General, 0, "Encoded_Hardware_CompanyName", normalized, false);
         }
-    }
-    if let Some(m) = exif.model.as_deref() {
-        if !m.is_empty() {
+    if let Some(m) = exif.model.as_deref()
+        && !m.is_empty() {
             fa.fill(StreamKind::General, 0, "Encoded_Hardware_Model", m.to_string(), false);
         }
-    }
     // Exif sub-IFD extras (oracle wraps these in <extra>...</extra>).
     // Emit in oracle's display order so the diff matches sequentially.
-    if let Some((n, d)) = exif.exposure_time {
-        if d > 0 {
+    if let Some((n, d)) = exif.exposure_time
+        && d > 0 {
             let secs = n as f64 / d as f64;
             fa.fill_extra(StreamKind::General, 0, "ShutterSpeed_Time", format!("{secs:.6}"), false);
             // String form: "1/N s" if numerator is 1 and denominator > 0.
@@ -657,13 +658,11 @@ fn fill_streams(
                 fa.fill_extra(StreamKind::General, 0, "ShutterSpeed_Time_String", format!("1/{d} s"), false);
             }
         }
-    }
-    if let Some((n, d)) = exif.f_number {
-        if d > 0 {
+    if let Some((n, d)) = exif.f_number
+        && d > 0 {
             let v = n as f64 / d as f64;
             fa.fill_extra(StreamKind::General, 0, "IrisFNumber", format!("{v:.1}"), false);
         }
-    }
     if let Some(prog) = exif.exposure_program {
         let s = match prog {
             0 => "Not Defined",
@@ -715,8 +714,8 @@ fn fill_streams(
             fa.fill_extra(StreamKind::General, 0, "Flash", s, false);
         }
     }
-    if let Some((n, d)) = exif.focal_length {
-        if d > 0 {
+    if let Some((n, d)) = exif.focal_length
+        && d > 0 {
             let mm = n as f64 / d as f64;
             // Oracle drops decimals when the value is an integer mm.
             let int_mm = mm.round() as u32;
@@ -728,7 +727,6 @@ fn fill_streams(
                 fa.fill_extra(StreamKind::General, 0, "LensZoomActualFocalLength_String", format!("{mm:.1} mm"), false);
             }
         }
-    }
     if let Some(v) = exif.flashpix_version {
         let s = String::from_utf8_lossy(&v);
         if s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) {
@@ -757,14 +755,13 @@ fn fill_streams(
     if let Some(ref lens) = exif.lens_model {
         fa.fill_extra(StreamKind::General, 0, "LensModel", lens.clone(), false);
     }
-    if let Some((n, d)) = exif.exposure_bias {
-        if d > 0 {
+    if let Some((n, d)) = exif.exposure_bias
+        && d > 0 {
             let ev = n as f64 / d as f64;
             let sign = if ev >= 0.0 { "+" } else { "" };
             fa.fill_extra(StreamKind::General, 0, "ExposureBias", format!("{sign}{ev:.2}"), false);
             fa.fill_extra(StreamKind::General, 0, "ExposureBias_String", format!("{sign}{ev:.2} EV"), false);
         }
-    }
     if let Some(mode) = exif.metering_mode {
         let s = match mode {
             0 => "Unknown",
@@ -840,12 +837,11 @@ fn fill_streams(
             fa.fill_extra(StreamKind::General, 0, "ExposureMode", s, false);
         }
     }
-    if let Some((n, d)) = exif.digital_zoom_ratio {
-        if d > 0 {
+    if let Some((n, d)) = exif.digital_zoom_ratio
+        && d > 0 {
             let ratio = n as f64 / d as f64;
             fa.fill_extra(StreamKind::General, 0, "DigitalZoomRatio", format!("{ratio:.2}"), false);
         }
-    }
     if let Some(scene) = exif.scene_capture_type {
         let s = match scene {
             0 => "Standard",

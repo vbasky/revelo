@@ -15,7 +15,7 @@ fn fill_tags(fa: &mut FileAnalyze, tags: &[TagEntry]) {
 // ---------- ID3v1 ----------
 
 pub fn parse_id3v1(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 128 {
         return None;
     }
@@ -169,7 +169,7 @@ fn id3v1_genre(idx: u8) -> &'static str {
 // ---------- ID3v2 ----------
 
 pub fn parse_id3v2(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 10 {
         return None;
     }
@@ -304,7 +304,7 @@ fn read_utf16(data: &[u8], big_endian: bool) -> String {
 // ---------- APE tag ----------
 
 pub fn parse_ape_tag(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 32 {
         return None;
     }
@@ -452,7 +452,7 @@ pub fn parse_vorbis_comment(fa: &mut FileAnalyze, offset: &mut usize, buf: &[u8]
 // ---------- Lyrics3 ----------
 
 pub fn parse_lyrics3(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 20 {
         return None;
     }
@@ -555,7 +555,7 @@ mod tests {
 /// Parse a TIFF/EXIF IFD from raw bytes at the given byte offset.
 /// Returns the list of tag entries and the offset to the next IFD.
 pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 8 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -668,7 +668,7 @@ fn read_tiff_u32(data: &[u8], off: usize, bo: &str) -> u32 {
 // ---------- XMP ----------
 
 pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
@@ -708,7 +708,7 @@ fn extract_xml_element(xml: &str, tag: &str) -> Option<String> {
     let rest = &xml[pos + open.len()..];
     let close = rest.find('>')?;
     let inner = rest[close + 1..].trim();
-    let end_tag = format!("</{}>", tag.split(':').last().unwrap_or(tag));
+    let end_tag = format!("</{}>", tag.split(':').next_back().unwrap_or(tag));
     let end = inner.find(&end_tag)?;
     Some(inner[..end].trim().to_string())
 }
@@ -716,7 +716,7 @@ fn extract_xml_element(xml: &str, tag: &str) -> Option<String> {
 // ---------- ICC profile ----------
 
 pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 128 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -764,7 +764,7 @@ fn read_icc_u32(data: &[u8], off: usize) -> u32 {
 // ---------- C2PA ----------
 
 pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 16 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -802,13 +802,13 @@ pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
 // ---------- IIM / IPTC ----------
 
 pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     if remain < 4 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
     // IIM starts with 0x1C marker
-    if !buf.windows(3).any(|w| w == &[0x1C, 0x00, 0x02]) { return false; }
+    if !buf.windows(3).any(|w| w == [0x1C, 0x00, 0x02]) { return false; }
 
     let mut tags: Vec<TagEntry> = Vec::new();
     let mut pos = 0;
@@ -847,7 +847,7 @@ pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
 // ---------- PropertyList (Apple plist) ----------
 
 pub fn parse_property_list(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     let text = std::str::from_utf8(&buf).unwrap_or("");
@@ -881,17 +881,14 @@ fn extract_plist_value(xml: &str, key: &str) -> Option<String> {
     let rest = &xml[pos + key_tag.len()..];
     let after_key = rest.trim_start();
 
-    if after_key.starts_with("<string>") {
-        let inner = &after_key[8..];
+    if let Some(inner) = after_key.strip_prefix("<string>") {
         let end = inner.find("</string>")?;
         Some(inner[..end].to_string())
-    } else if after_key.starts_with("<integer>") {
-        let inner = &after_key[9..];
+    } else if let Some(inner) = after_key.strip_prefix("<integer>") {
         let end = inner.find("</integer>")?;
         Some(inner[..end].to_string())
-    } else if after_key.starts_with("<array>") {
+    } else if let Some(inner) = after_key.strip_prefix("<array>") {
         // Collect array elements as comma-separated
-        let inner = &after_key[7..];
         let arr_end = inner.find("</array>")?;
         let arr = &inner[..arr_end];
         let mut items = Vec::new();
@@ -912,7 +909,7 @@ fn extract_plist_value(xml: &str, key: &str) -> Option<String> {
 // ---------- SphericalVideo ----------
 
 pub fn parse_spherical_video(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain() as usize;
+    let remain = fa.remain();
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     let text = std::str::from_utf8(&buf).unwrap_or("");

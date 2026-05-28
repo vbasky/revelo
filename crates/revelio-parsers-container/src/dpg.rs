@@ -145,6 +145,7 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // fixture builder mirrors the binary header layout
     fn make_dpg(
         version: u8,
         frame_count: u32,

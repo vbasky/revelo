@@ -133,7 +133,6 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     let mut streams: Vec<AviStream> = Vec::new();
     let mut isft: Option<String> = None;
     let mut meta = AviMetadata::default();
-    let mut movi_size: u64 = 0;
     // Per-stream-index payload byte counts harvested from movi chunk
     // fourccs (e.g. "00dc" → stream 0 video data, "01wb" → stream 1
     // audio). Used to fill Video.StreamSize when the strh/strf can't
@@ -195,7 +194,6 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
                 // sample chunks follow the convention "NNxx" where NN is
                 // the 2-digit stream index in ASCII (00, 01, ...) and xx
                 // is dc/db (video DC/DB), wb (audio WAVE), or tx (text).
-                movi_size = payload.len() as u64;
                 walk_riff_chunks(payload, payload.len(), &mut |fcc, _, p| {
                     let b = fcc.to_be_bytes();
                     if !(b[0].is_ascii_digit() && b[1].is_ascii_digit()) {
@@ -249,12 +247,13 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     fill_streams(
         fa,
         &header,
-        &streams,
+        &AviStreamData {
+            streams: &streams,
+            movi_sizes: &movi_sizes,
+            movi_chunk_counts: &movi_chunk_counts,
+        },
         isft.as_deref(),
         encoded_library.as_deref(),
-        movi_size,
-        &movi_sizes,
-        &movi_chunk_counts,
         total,
         &meta,
     );
@@ -364,18 +363,28 @@ fn parse_strf_audio(p: &[u8]) -> Option<AudioFormat> {
     })
 }
 
+/// Per-stream payload data harvested from the `movi` list. The three slices
+/// are parallel, indexed by stream number.
+struct AviStreamData<'a> {
+    streams: &'a [AviStream],
+    movi_sizes: &'a [u64],
+    movi_chunk_counts: &'a [u64],
+}
+
 fn fill_streams(
     fa: &mut FileAnalyze,
     header: &AviHeader,
-    streams: &[AviStream],
+    stream_data: &AviStreamData,
     isft: Option<&str>,
     encoded_library: Option<&str>,
-    _movi_size: u64,
-    movi_sizes: &[u64],
-    movi_chunk_counts: &[u64],
     file_size: usize,
     meta: &AviMetadata,
 ) {
+    let &AviStreamData {
+        streams,
+        movi_sizes,
+        movi_chunk_counts,
+    } = stream_data;
     fa.stream_prepare(StreamKind::General);
     fa.element_end();
     fa.fill(StreamKind::General, 0, "Format", "AVI", false);

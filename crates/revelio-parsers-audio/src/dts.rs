@@ -108,7 +108,7 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
     let _deficit = br.read(5);
     let crc_present = br.read(1) == 1;
     let num_pcm_sample_blocks = (br.read(7) as u16) + 1;
-    let primary_frame_byte_size = (br.read(14) as u32) + 1;
+    let primary_frame_byte_size = br.read(14) + 1;
     let amode = br.read(6) as u8;
     let sample_frequency = br.read(4) as u8;
     let bit_rate_idx = br.read(5) as u8;

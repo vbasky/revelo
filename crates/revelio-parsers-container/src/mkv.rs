@@ -197,10 +197,12 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
         fa,
         &movie,
         &tracks,
-        doc_type.as_deref().unwrap_or("matroska"),
-        doc_type_version,
-        seekhead_seen && seekhead_before_cluster,
-        crc32_at_level1,
+        &MkvContainerInfo {
+            doc_type: doc_type.as_deref().unwrap_or("matroska"),
+            doc_type_version,
+            is_streamable: seekhead_seen && seekhead_before_cluster,
+            crc32_at_level1,
+        },
         &tag_pairs,
         file_size,
     );
@@ -522,17 +524,28 @@ fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<St
     (is_cover, mime_type)
 }
 
+/// EBML header and segment-level flags describing the Matroska container.
+struct MkvContainerInfo<'a> {
+    doc_type: &'a str,
+    doc_type_version: u64,
+    is_streamable: bool,
+    crc32_at_level1: bool,
+}
+
 fn fill_streams(
     fa: &mut FileAnalyze,
     movie: &MovieInfo,
     tracks: &[TrackInfo],
-    doc_type: &str,
-    doc_type_version: u64,
-    is_streamable: bool,
-    crc32_at_level1: bool,
+    container: &MkvContainerInfo,
     tag_pairs: &[TagEntry],
     file_size: usize,
 ) {
+    let &MkvContainerInfo {
+        doc_type,
+        doc_type_version,
+        is_streamable,
+        crc32_at_level1,
+    } = container;
     fa.stream_prepare(StreamKind::General);
     if let Some(uuid) = movie.segment_uuid.as_ref() {
         if uuid.len() == 16 {
@@ -1000,42 +1013,8 @@ fn fill_streams(
                             }
                             fa.fill(StreamKind::Video, pos, "Format_Level", format!("{}.{:02}", level_idc / 10, level_idc % 10), false);
                             
-                            // Parse SPS for dimensions and colour info
-                            if private.len() >= 8 {
-                                let num_sps = (private[5] & 0x1F) as usize;
-                                let mut sps_offset = 6;
-                                for _ in 0..num_sps {
-                                    if sps_offset + 2 > private.len() { break; }
-                                    let sps_len = ((private[sps_offset] as usize) << 8) | (private[sps_offset + 1] as usize);
-                                    sps_offset += 2;
-                                    if sps_offset + sps_len > private.len() { break; }
-                                    let sps_data = &private[sps_offset..sps_offset + sps_len];
-                                    if let Some(sps_info) = revelio_parsers_video::parse_avc_sps(sps_data) {
-                                        if sps_info.width > 0 {
-                                            fa.fill(StreamKind::Video, pos, "Width", sps_info.width.to_string(), true);
-                                        }
-                                        if sps_info.height > 0 {
-                                            fa.fill(StreamKind::Video, pos, "Height", sps_info.height.to_string(), true);
-                                        }
-                                        if sps_info.colour_description_present {
-                                            if let Some(cp) = sps_info.colour_primaries.and_then(|v| cicp_primaries(v as u16)) {
-                                                fa.fill(StreamKind::Video, pos, "colour_primaries", cp, false);
-                                            }
-                                            if let Some(tc) = sps_info.transfer_characteristics.and_then(|v| cicp_transfer(v as u16)) {
-                                                fa.fill(StreamKind::Video, pos, "transfer_characteristics", tc, false);
-                                            }
-                                            if let Some(mc) = sps_info.matrix_coefficients.and_then(|v| cicp_matrix(v as u16)) {
-                                                fa.fill(StreamKind::Video, pos, "matrix_coefficients", mc, false);
-                                            }
-                                            if let Some(vfr) = sps_info.video_full_range {
-                                                fa.fill(StreamKind::Video, pos, "colour_range", if vfr { "Full" } else { "Limited" }, false);
-                                            }
-                                        }
-                                    }
-                                    let _ = sps_offset;
-                                    break; // Only parse first SPS
-                                }
-                            }
+                            // Parse the first SPS for dimensions and colour info.
+                            fill_avc_first_sps(fa, pos, private);
                         }
                     }
                 }
@@ -1276,6 +1255,53 @@ fn iso639_emit(code: &str) -> Option<&'static str> {
         "ara" => Some("ar"),
         "hin" => Some("hi"),
         _ => None,
+    }
+}
+
+/// Parse the first AVC SPS out of an avcC `codec_private` blob and fill the
+/// video dimensions and colour description. Only the first SPS is inspected.
+fn fill_avc_first_sps(fa: &mut FileAnalyze, pos: usize, private: &[u8]) {
+    if private.len() < 8 {
+        return;
+    }
+    let num_sps = (private[5] & 0x1F) as usize;
+    if num_sps == 0 {
+        return;
+    }
+    let sps_offset = 6;
+    if sps_offset + 2 > private.len() {
+        return;
+    }
+    let sps_len = ((private[sps_offset] as usize) << 8) | (private[sps_offset + 1] as usize);
+    let sps_offset = sps_offset + 2;
+    if sps_offset + sps_len > private.len() {
+        return;
+    }
+    let Some(sps_info) =
+        revelio_parsers_video::parse_avc_sps(&private[sps_offset..sps_offset + sps_len])
+    else {
+        return;
+    };
+    if sps_info.width > 0 {
+        fa.fill(StreamKind::Video, pos, "Width", sps_info.width.to_string(), true);
+    }
+    if sps_info.height > 0 {
+        fa.fill(StreamKind::Video, pos, "Height", sps_info.height.to_string(), true);
+    }
+    if !sps_info.colour_description_present {
+        return;
+    }
+    if let Some(cp) = sps_info.colour_primaries.and_then(|v| cicp_primaries(v as u16)) {
+        fa.fill(StreamKind::Video, pos, "colour_primaries", cp, false);
+    }
+    if let Some(tc) = sps_info.transfer_characteristics.and_then(|v| cicp_transfer(v as u16)) {
+        fa.fill(StreamKind::Video, pos, "transfer_characteristics", tc, false);
+    }
+    if let Some(mc) = sps_info.matrix_coefficients.and_then(|v| cicp_matrix(v as u16)) {
+        fa.fill(StreamKind::Video, pos, "matrix_coefficients", mc, false);
+    }
+    if let Some(vfr) = sps_info.video_full_range {
+        fa.fill(StreamKind::Video, pos, "colour_range", if vfr { "Full" } else { "Limited" }, false);
     }
 }
 

@@ -81,7 +81,7 @@ pub fn parse_vc1_sequence_header(data: &[u8]) -> Option<Vc1Info> {
     let mut offset = 0;
     
     // Check for start code prefix
-    if data.len() >= 4 && &data[0..3] == &[0x00, 0x00, 0x01] {
+    if data.len() >= 4 && data[0..3] == [0x00, 0x00, 0x01] {
         offset = 4;
     }
     
@@ -200,11 +200,10 @@ pub fn fill_vc1_streams(fa: &mut FileAnalyze, info: &Vc1Info) {
         fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
     }
     
-    if let Some(level) = info.level {
-        if let Some(level_str) = level.as_str() {
+    if let Some(level) = info.level
+        && let Some(level_str) = level.as_str() {
             fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
         }
-    }
     
     if info.width > 0 {
         fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
@@ -269,7 +268,7 @@ mod tests {
         assert!(info.is_some());
         let info = info.unwrap();
         assert_eq!(info.profile, Some(Vc1Profile::Simple));
-        assert_eq!(info.interlace, false);
+        assert!(!info.interlace);
     }
 
     #[test]

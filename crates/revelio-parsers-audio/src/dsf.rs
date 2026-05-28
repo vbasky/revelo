@@ -95,13 +95,12 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
 
     // Try to read the data chunk header (at offset 80) for StreamSize.
     let mut audio_stream_size: u64 = 0;
-    if let Some(full) = fa.peek_raw(fa.remain().min(92)) {
-        if full.len() >= 92 && &full[80..84] == b"data" {
+    if let Some(full) = fa.peek_raw(fa.remain().min(92))
+        && full.len() >= 92 && &full[80..84] == b"data" {
             let data_chunk_size = data_helpers::le_u64(&full[84..92]);
             // data chunk_size includes the 12-byte chunk header per spec.
             audio_stream_size = data_chunk_size.saturating_sub(12);
         }
-    }
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "DSF", false);

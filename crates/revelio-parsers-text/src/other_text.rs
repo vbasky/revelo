@@ -80,9 +80,9 @@ fn detect(lines: &[&str], line0: &str, line1: &str, line2: &str) -> Option<Match
     let is_script_info = line0 == "[Script Info]";
 
     if is_script_info
-        && (lines.iter().any(|l| *l == "ScriptType: v4.00")
-            || lines.iter().any(|l| *l == "Script Type: V4.00"))
-        && lines.iter().any(|l| *l == "[V4 Styles]")
+        && (lines.contains(&"ScriptType: v4.00")
+            || lines.contains(&"Script Type: V4.00"))
+        && lines.contains(&"[V4 Styles]")
     {
         return Some(Match {
             format: "SSA",
@@ -91,9 +91,9 @@ fn detect(lines: &[&str], line0: &str, line1: &str, line2: &str) -> Option<Match
         });
     }
     if is_script_info
-        && (lines.iter().any(|l| *l == "ScriptType: v4.00+")
-            || lines.iter().any(|l| *l == "Script Type: V4.00+"))
-        && lines.iter().any(|l| *l == "[V4+ Styles]")
+        && (lines.contains(&"ScriptType: v4.00+")
+            || lines.contains(&"Script Type: V4.00+"))
+        && lines.contains(&"[V4+ Styles]")
     {
         return Some(Match {
             format: "ASS",
@@ -144,7 +144,7 @@ fn detect(lines: &[&str], line0: &str, line1: &str, line2: &str) -> Option<Match
 
     if line0.starts_with('*')
         && line0.len() > 1
-        && lines.iter().any(|l| *l == "** Caption Number 1")
+        && lines.contains(&"** Caption Number 1")
     {
         return Some(Match { format: "Cheeta", format_info: None, codec: "Cheeta" });
     }

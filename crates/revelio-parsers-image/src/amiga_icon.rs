@@ -91,7 +91,7 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
         off += 20;
         if img_width > 0 && img_height > 0 && img_depth > 0 && img_depth <= 8 {
             let plane_data_size =
-                (((img_width as u64 + 15) / 16) * 2) * img_height as u64 * img_depth as u64;
+                ((img_width as u64).div_ceil(16) * 2) * img_height as u64 * img_depth as u64;
             if plane_data_size <= (full.len() - off) as u64 {
                 off += plane_data_size as usize;
             }
@@ -108,7 +108,7 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
         off += 20;
         if img_width > 0 && img_height > 0 && img_depth > 0 && img_depth <= 8 {
             let plane_data_size =
-                (((img_width as u64 + 15) / 16) * 2) * img_height as u64 * img_depth as u64;
+                ((img_width as u64).div_ceil(16) * 2) * img_height as u64 * img_depth as u64;
             if plane_data_size <= (full.len() - off) as u64 {
                 off += plane_data_size as usize;
             }
@@ -138,8 +138,8 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
                 }
                 let length = u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]) as usize;
                 off += 4;
-                if new_icon.is_none() && length >= 5 && full.len() - off >= 4 {
-                    if &full[off..off + 4] == b"IM1=" {
+                if new_icon.is_none() && length >= 5 && full.len() - off >= 4
+                    && &full[off..off + 4] == b"IM1=" {
                         if length >= 9
                             && full.len() - off >= 9
                             && full[off + 5] >= 0x21
@@ -152,7 +152,6 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
                             new_icon = Some((0, 0));
                         }
                     }
-                }
                 if length > full.len() - off {
                     break;
                 }
@@ -254,8 +253,8 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
         fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
     }
 
-    if let Some((w, h, d)) = classic {
-        if gadget_render != 0 && w > 0 && h > 0 {
+    if let Some((w, h, d)) = classic
+        && gadget_render != 0 && w > 0 && h > 0 {
             let pos = fa.stream_prepare(StreamKind::Image);
             fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
             fa.fill(StreamKind::Image, pos, "Format_Profile", "Classic", false);
@@ -264,10 +263,9 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
             fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
             fa.fill(StreamKind::Image, pos, "BitDepth", d.to_string(), false);
         }
-    }
 
-    if let Some((w, h)) = new_icon {
-        if w > 0 && h > 0 {
+    if let Some((w, h)) = new_icon
+        && w > 0 && h > 0 {
             let pos = fa.stream_prepare(StreamKind::Image);
             fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
             fa.fill(StreamKind::Image, pos, "Format_Profile", "NewIcon", false);
@@ -275,7 +273,6 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
             fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
             fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
         }
-    }
 
     if let Some((w, h, depth, fmt)) = glow {
         let pos = fa.stream_prepare(StreamKind::Image);
@@ -343,7 +340,7 @@ mod tests {
         buf[start + 4..start + 6].copy_from_slice(&w.to_be_bytes());
         buf[start + 6..start + 8].copy_from_slice(&h.to_be_bytes());
         buf[start + 8..start + 10].copy_from_slice(&depth.to_be_bytes());
-        let plane_data_size = (((w as usize + 15) / 16) * 2) * h as usize * depth as usize;
+        let plane_data_size = ((w as usize).div_ceil(16) * 2) * h as usize * depth as usize;
         buf.resize(buf.len() + plane_data_size, 0);
     }
 

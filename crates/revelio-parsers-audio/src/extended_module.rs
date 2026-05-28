@@ -129,6 +129,7 @@ fn trim_local_string(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // fixture builder mirrors the binary header layout
     fn make_xm(
         module: &[u8; 20],
         tracker: &[u8; 20],

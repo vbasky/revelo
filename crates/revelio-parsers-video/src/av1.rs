@@ -326,7 +326,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
 pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("AV1");
     
-    let data = if let Some(d) = fa.peek_raw(fa.remain() as usize) {
+    let data = if let Some(d) = fa.peek_raw(fa.remain()) {
         d.to_vec()
     } else {
         fa.element_end();
@@ -508,8 +508,8 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
     if config.len() > header_size {
         let obus = &config[header_size..];
         // Look for sequence header OBU (type 1)
-        if let Some((obu_type, _, _, obu_size)) = parse_obu_header(obus) {
-            if obu_type == OBU_SEQUENCE_HEADER {
+        if let Some((obu_type, _, _, obu_size)) = parse_obu_header(obus)
+            && obu_type == OBU_SEQUENCE_HEADER {
                 let header_len = if obus.len() > 1 && ((obus[1] >> 1) & 1) != 0 {
                     // Has size field - calculate header length
                     let mut hlen = 1;
@@ -534,14 +534,13 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
                     }
                 }
             }
-        }
     }
     
     // Fallback: return partial info from config record
     Some(Av1Info {
         profile,
-        level: level as u8,
-        tier: tier as u8,
+        level,
+        tier,
         bit_depth: bit_depth as u8,
         chroma_subsampling: "4:2:0",
         monochrome: false,

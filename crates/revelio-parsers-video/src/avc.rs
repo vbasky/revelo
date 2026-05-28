@@ -424,8 +424,7 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
         let segment_end = sep.map(|p| cursor + p).unwrap_or(len);
         let segment = &raw[cursor..segment_end];
 
-        if segment.starts_with("options: ") {
-            let opts_raw = &segment["options: ".len()..];
+        if let Some(opts_raw) = segment.strip_prefix("options: ") {
             let tokens: Vec<&str> = opts_raw.split_whitespace().collect();
             // Drop the encoder's fps=/bitdepth= tokens (the oracle omits
             // them). Do NOT drop digit-leading tokens — "8x8dct=1" is a
@@ -455,8 +454,8 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
             library = cleaned.clone();
             let first_word = cleaned.split_whitespace().next().unwrap_or(&cleaned);
             name = Some(first_word.to_owned());
-        } else if segment_idx == 1 {
-            if library.starts_with("x264") || library.starts_with("eavc") || library.starts_with("x265") {
+        } else if segment_idx == 1
+            && (library.starts_with("x264") || library.starts_with("eavc") || library.starts_with("x265")) {
                 let cleaned = if let Some(pos) = segment.find(" 8bpp") {
                     &segment[..pos]
                 } else {
@@ -466,7 +465,6 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
                 library.push_str(cleaned);
                 version = Some(cleaned.to_owned());
             }
-        }
 
         cursor = segment_end;
         if sep.is_some() {
@@ -551,12 +549,12 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     };
 
     // Check for Annex B start code
-    if h != ANNEX_B_START_CODE_LONG && &h[1..] != ANNEX_B_START_CODE {
+    if h != ANNEX_B_START_CODE_LONG && h[1..] != ANNEX_B_START_CODE {
         fa.element_end();
         return false;
     }
 
-    let data = if let Some(d) = fa.peek_raw(fa.remain() as usize) {
+    let data = if let Some(d) = fa.peek_raw(fa.remain()) {
         d.to_vec()
     } else {
         fa.element_end();
@@ -713,7 +711,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 
     let chroma_str = match info.chroma_format {
         0 => "YUV",
-        1 | 2 | 3 => "YUV",
+        1..=3 => "YUV",
         _ => "YUV",
     };
     fa.fill(StreamKind::Video, 0, "ColorSpace", chroma_str, false);

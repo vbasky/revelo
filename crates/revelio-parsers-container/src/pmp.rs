@@ -152,6 +152,7 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)] // fixture builder mirrors the binary header layout
     fn make_pmp_v1(
         video_format: u32,
         nb_frames: u32,

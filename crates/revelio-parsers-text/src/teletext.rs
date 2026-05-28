@@ -5,7 +5,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: Clock run-in 0x55 0x55 + framing code 0x27.
 /// Fills: Format, page info.
 pub fn parse_teletext(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,
         None => return false,
     };

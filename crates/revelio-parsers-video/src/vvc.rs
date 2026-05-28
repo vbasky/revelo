@@ -36,7 +36,7 @@ pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let data = match fa.peek_raw(fa.remain() as usize) {
+    let data = match fa.peek_raw(fa.remain()) {
         Some(d) => d.to_vec(),
         None => return false,
     };
@@ -73,12 +73,11 @@ pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
         let nal_type = header >> 3;
         let nuh_layer_id = ((header & 0x07) << 3) | ((nal_unit.get(1).copied().unwrap_or(0) >> 5) & 0x07);
 
-        if nal_type == NAL_SPS && nuh_layer_id == 0 {
-            if let Some(info) = parse_sps(nal_unit) {
+        if nal_type == NAL_SPS && nuh_layer_id == 0
+            && let Some(info) = parse_sps(nal_unit) {
                 sps_info = Some(info);
                 break;
             }
-        }
 
         nal_offset = nal_end;
     }

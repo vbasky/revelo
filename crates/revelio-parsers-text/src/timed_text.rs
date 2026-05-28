@@ -5,7 +5,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: 16-bit BE length + UTF-8/UTF-16 text.
 /// Fills: Format.
 pub fn parse_timed_text(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,
         None => return false,
     };

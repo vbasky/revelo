@@ -6,9 +6,9 @@ impl SmpteTimeCode {
     pub fn parse(value: &str, fps: u8) -> Option<Self> {
         let df = value.contains(';');
         if df {
-            let mut parts = value.splitn(2, ';');
-            let time_part = parts.next()?;
-            let frames_str = parts.next()?;
+            let (time_part, frames_str) = value.split_once(';')?;
+            
+            
             let hms: Vec<&str> = time_part.split(':').collect();
             if hms.len() != 3 { return None; }
             Some(SmpteTimeCode { hours: hms[0].parse().ok()?, minutes: hms[1].parse().ok()?,
