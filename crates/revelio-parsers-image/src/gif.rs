@@ -5,6 +5,10 @@
 
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse GIF image.
+///
+/// Detection: `GIF87a`/`GIF89a` magic.
+/// Fills: Dimensions, frame count, animation, colour table size.
 pub fn parse_gif(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(10);
     let Some(h) = head else { return false };

@@ -830,6 +830,11 @@ fn level_name(level: u8) -> String {
     if s.ends_with(".0") { s[..s.len() - 2].to_owned() } else { s }
 }
 
+/// Parse HEVC/H.265 (MPEG-H Part 2) elementary stream.
+///
+/// Detection: Annex B start codes. NAL types VPS(32)/SPS(33)/SEI(39/40).
+/// Fills: Profile/level, HDR10 mastering display + MaxCLL/MaxFALL from SEI,
+///        x265 encoder string, tier flag.
 pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("HEVC");
 

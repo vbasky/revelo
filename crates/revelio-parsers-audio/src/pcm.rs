@@ -2,6 +2,10 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 /// Generic raw PCM audio descriptor. Detects WAVEFORMATEX structure
 /// (0xFFFE magic or reasonable PCM format tag) and fills basic PCM fields.
+/// Parse raw PCM audio descriptor.
+///
+/// Detection: WAVEFORMATEX format_tag 0x0001/0xFFFE.
+/// Fills: Channels, sample rate, bit depth, endianness.
 pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

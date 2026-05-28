@@ -4,6 +4,10 @@
 
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse MPEG-4 Visual (DivX/Xvid) elementary stream.
+///
+/// Detection: Visual Object Sequence start 0x000001B0.
+/// Fills: Profile, dimensions, VOL header.
 pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
     let mut found = false;
 

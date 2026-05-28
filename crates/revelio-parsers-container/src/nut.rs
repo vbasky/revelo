@@ -17,6 +17,10 @@ use zenlib::Int8u;
 const NUT_HEADER_SIZE: usize = 25;
 const NUT_FILE_ID: &[u8; 24] = b"nut/multimedia container";
 
+/// Parse NUT container.
+///
+/// Detection: `nut/multimedia container\0` magic.
+/// Fills: Stream headers, timebase, codec info.
 pub fn parse_nut(fa: &mut FileAnalyze) -> bool {
     // peek_raw(min(N, Remain)) shields tiny buffers from a panic; we still
     // require the full 25-byte header to accept.

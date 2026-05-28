@@ -31,6 +31,10 @@ struct WebpInfo {
     version: Option<u8>,
 }
 
+/// Parse WebP image.
+///
+/// Detection: RIFF + `WEBP` + VP8/VP8L/VP8X chunks.
+/// Fills: Dimensions, lossy/lossless, alpha, animation, ICC/XMP/EXIF.
 pub fn parse_webp(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(12);
     let Some(h) = head else { return false };

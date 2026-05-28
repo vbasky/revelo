@@ -45,6 +45,10 @@ fn detect_signature(buf: &[u8]) -> Option<Signature> {
     }
 }
 
+/// Parse Adobe Shockwave Flash container.
+///
+/// Detection: `FWS`/`CWS`/`ZWS` magic.
+/// Fills: Dimensions, frame rate, version.
 pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
     let sig = {
         let peek = match fa.peek_raw(fa.remain().min(HEADER_LEN)) {

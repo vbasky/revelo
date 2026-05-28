@@ -22,6 +22,8 @@ const MAGIC_DVDVIDEO: &[u8; 8] = b"DVDVIDEO";
 const TYPE_VMG: &[u8; 4] = b"-VMG";
 const TYPE_VTS: &[u8; 4] = b"-VTS";
 
+/// Parse DVD-Video IFO.
+/// Fills: Chapter info, audio/subtitle streams.
 pub fn parse_dvdv(fa: &mut FileAnalyze) -> bool {
     // WHY peek_raw with min(): peek_raw fails outright when the requested
     // length exceeds Remain(); clamping lets the magic test still run on

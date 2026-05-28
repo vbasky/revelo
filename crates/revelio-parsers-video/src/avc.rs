@@ -536,6 +536,11 @@ pub fn gop_detect(frame_types: &[u8]) -> Option<String> {
     }
 }
 
+/// Parse AVC/H.264 (MPEG-4 Part 10) elementary stream.
+///
+/// Detection: Annex B start codes (0x000001). NAL type 7 = SPS.
+/// Fills: Profile/level, frame dimensions, colour primaries/transfer/matrix from VUI,
+///        x264/x265 encoder string from SEI, GOP structure (M/N).
 pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("AVC");
 

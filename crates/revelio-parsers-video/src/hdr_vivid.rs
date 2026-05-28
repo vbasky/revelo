@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse Chinese HDR Vivid metadata.
+///
+/// Detection: HDRV/HVIV magic.
+/// Fills: HDR metadata fields.
 pub fn parse_hdr_vivid(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

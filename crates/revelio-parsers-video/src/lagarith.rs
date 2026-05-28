@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse Lagarith lossless video codec.
+///
+/// Detection: LAGS fourcc.
+/// Fills: Dimensions, bit depth.
 pub fn parse_lagarith(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

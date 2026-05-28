@@ -23,6 +23,10 @@ struct Match {
     codec: &'static str,
 }
 
+/// Parse generic text/subtitle track.
+///
+/// Detection: Various unidentified text.
+/// Fills: Format.
 pub fn parse_other_text(fa: &mut FileAnalyze) -> bool {
     // C++ requires Buffer_Size>=0x200 before attempting detection; mirror
     // that to avoid false positives on tiny fragments.

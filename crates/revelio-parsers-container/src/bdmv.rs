@@ -31,6 +31,10 @@ const TYPE_MPLS: u32 = u32::from_be_bytes(*b"MPLS");
 // C++ implementation.
 const TYPE_CLPI: u32 = u32::from_be_bytes(*b"HDMV");
 
+/// Parse Blu-ray Disc (BDMV) structure.
+///
+/// Detection: MPLS playlist or M2TS clip files.
+/// Fills: Playlist duration, clip count, stream info.
 pub fn parse_bdmv(fa: &mut FileAnalyze) -> bool {
     let header = match fa.peek_raw(fa.remain().min(HEADER_SIZE)) {
         Some(b) if b.len() >= HEADER_SIZE => b,

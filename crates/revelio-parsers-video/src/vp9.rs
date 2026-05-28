@@ -15,6 +15,10 @@ const VP9_CHROMA_SUBSAMPLING_OOB: [u8; 4] = [3, 3, 2, 0];
 
 const VP9_COLOR_RANGE: [&str; 2] = ["Limited", "Full"];
 
+/// Parse VP9 elementary stream.
+///
+/// Detection: Frame marker + profile bits.
+/// Fills: Profile, bit_depth, chroma_subsampling, color_space from vpcC.
 pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 6 {
         return false;

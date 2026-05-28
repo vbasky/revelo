@@ -1,5 +1,9 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse VC-3/DNxHD (SMPTE ST 2019) intermediate codec.
+///
+/// Detection: 0x00000280 header prefix.
+/// Fills: Compression ID (CID)→profile/bit_depth/chroma.
 pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,

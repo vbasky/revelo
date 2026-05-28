@@ -1,5 +1,9 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse Scenarist Closed Caption file.
+///
+/// Detection: `Scenarist_SCC V1.0`.
+/// Fills: Format.
 pub fn parse_scc(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,

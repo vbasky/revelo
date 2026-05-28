@@ -37,6 +37,10 @@ const WVPK_SAMPLING_RATE: [u32; 16] = [
     32000, 44100, 48000, 64000, 88200, 96000, 192000, 0,
 ];
 
+/// Parse WavPack hybrid lossless stream.
+///
+/// Detection: `wvpk` magic.
+/// Fills: Channels, sample rate, bit depth, compression mode.
 pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
     let n = fa.remain().min(BLOCK_HEADER_SIZE);
     if n < BLOCK_HEADER_SIZE {

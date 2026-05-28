@@ -106,6 +106,10 @@ struct AviStream {
     audio: Option<AudioFormat>,
 }
 
+/// Parse AVI (Audio Video Interleave) container.
+///
+/// Detection: `RIFF` + `AVI ` fourcc.
+/// Fills: Container metadata, video BITMAPINFOHEADER, audio WAVEFORMATEX, ISFT software.
 pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(12);
     let Some(h) = head else { return false };

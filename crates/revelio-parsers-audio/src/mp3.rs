@@ -192,6 +192,10 @@ fn looks_like_info_frame(frame_bytes: &[u8], version: u8, channel_mode: u8) -> b
     magic == b"Xing" || magic == b"Info" || magic == b"VBRI"
 }
 
+/// Parse MPEG-1/2 Audio Layer III elementary stream.
+///
+/// Detection: Frame sync 0xFFF, layer=3.
+/// Fills: Xing/VBRI VBR/CBR, LAME encoder tag, bitrate, channels, sample rate.
 pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // Sync must be either at byte 0 OR immediately after an ID3v2
     // header. Scanning for sync further into the file produces false

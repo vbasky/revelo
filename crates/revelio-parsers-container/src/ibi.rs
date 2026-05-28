@@ -12,6 +12,8 @@ const EBML_HEADER_BYTES: [u8; 4] = [0x1A, 0x45, 0xDF, 0xA3];
 const DOC_TYPE: u64 = 0x4282;
 const IBI_DOC_TYPE: &str = "MediaInfo Index";
 
+/// Parse Index of Binary Information file.
+/// Fills: Seek table metadata.
 pub fn parse_ibi(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(4);
     let Some(h) = head else { return false };

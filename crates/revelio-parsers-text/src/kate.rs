@@ -32,6 +32,10 @@ use zenlib::{Int8u, Int16u, Int32u};
 const KATE_MAGIC: &[u8; 8] = b"\x80kate\x00\x00\x00";
 const IDENTIFICATION_MIN_SIZE: usize = 64;
 
+/// Parse OggKate overlay codec.
+///
+/// Detection: `kate\0\0\0\x80` magic.
+/// Fills: Format.
 pub fn parse_kate(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(fa.remain().min(8));
     let Some(h) = head else { return false };

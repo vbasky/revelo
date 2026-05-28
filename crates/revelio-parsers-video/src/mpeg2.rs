@@ -309,6 +309,10 @@ pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
     fa.fill(StreamKind::Video, 0, "ScanType", if info.progressive { "Progressive" } else { "Interlaced" }, false);
 }
 
+/// Parse MPEG-2 Video (H.262) elementary stream.
+///
+/// Detection: Sequence header start code 0x000001B3.
+/// Fills: Profile/level, dimensions, aspect ratio, frame rate code.
 pub fn parse_mpeg2(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(4);
     let Some(h) = head else { return false };

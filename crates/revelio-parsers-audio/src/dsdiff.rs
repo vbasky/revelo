@@ -45,6 +45,10 @@ struct DsdiffInfo {
     audio_stream_size: Int64u,
 }
 
+/// Parse DSD Interchange File Format.
+///
+/// Detection: `FRM8` + DSD header.
+/// Fills: Channels, sample rate, DSD properties.
 pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 16 {
         return false;

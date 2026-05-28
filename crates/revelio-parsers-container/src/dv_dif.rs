@@ -24,6 +24,10 @@ const BLOCK_SIZE: usize = 80;
 const REQUIRED_BLOCKS: usize = 8;
 const REQUIRED_BYTES: usize = BLOCK_SIZE * REQUIRED_BLOCKS;
 
+/// Parse DV-DIF (Sony DV/DVCAM/DVCPRO tape format).
+///
+/// Detection: DIF block header.
+/// Fills: Format, frame size, audio config.
 pub fn parse_dv_dif(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain().min(REQUIRED_BYTES)) {
         Some(b) if b.len() >= REQUIRED_BYTES => b,

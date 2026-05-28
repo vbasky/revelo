@@ -19,6 +19,8 @@ const NS_DCP_INTEROP: &str = "http://www.digicine.com/PROTO-ASDCP-PKL-20040311#"
 const NS_DCP_SMPTE: &str = "http://www.smpte-ra.org/schemas/429-8/2007/PKL";
 const NS_IMF_2016: &str = "http://www.smpte-ra.org/schemas/2067-2/2016/PKL";
 
+/// Parse DCP Packing List.
+/// Fills: Format.
 pub fn parse_dcp_pkl(fa: &mut FileAnalyze) -> bool {
     let file_size = fa.remain();
     let window = SCAN_WINDOW.min(file_size);

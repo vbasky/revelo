@@ -67,6 +67,10 @@ fn crc_ccit_xmodem(bytes: &[u8]) -> u16 {
     crc
 }
 
+/// Parse ARIB STD-B24/B37 Japanese ISDB captions.
+///
+/// Detection: ARIB data group header.
+/// Fills: Format.
 pub fn parse_arib_std_b24_b37(fa: &mut FileAnalyze) -> bool {
     let peek_len = fa.remain().min(PEEK_LIMIT);
     if peek_len < HEADER_LEN + CRC_LEN {

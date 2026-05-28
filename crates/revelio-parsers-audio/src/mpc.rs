@@ -58,6 +58,10 @@ const MPC_PROFILE: [&str; 16] = [
     "Above BrainDead (q=10)",
 ];
 
+/// Parse Musepack audio (SV7/SV8).
+///
+/// Detection: `MP+` (SV7) / `MPCK` (SV8) magic.
+/// Fills: Profile, quality, sample rate, channels.
 pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(fa.remain().min(4));
     let Some(h) = head else { return false };

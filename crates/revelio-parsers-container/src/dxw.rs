@@ -13,6 +13,8 @@ const SCAN_WINDOW: usize = 1024;
 
 const NS_DXW: &str = "urn:digimetrics-xml-wrapper";
 
+/// Parse DXW container.
+/// Fills: Format.
 pub fn parse_dxw(fa: &mut FileAnalyze) -> bool {
     let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {

@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse PDF document.
+///
+/// Detection: `%PDF-` magic.
+/// Fills: Format.
 pub fn parse_pdf(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

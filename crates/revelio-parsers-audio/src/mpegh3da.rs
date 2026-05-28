@@ -2,6 +2,10 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 /// MPEG-H 3D Audio parser. Detects mhm1/mha1 box in MP4 or raw
 /// AudioSpecificConfig with audioObjectType 30 for MPEG-H.
+/// Parse MPEG-H 3D Audio.
+///
+/// Detection: mhm1/mha1 box in MP4.
+/// Fills: Audio scene config.
 pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

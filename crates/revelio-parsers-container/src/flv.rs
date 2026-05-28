@@ -23,6 +23,10 @@ const FLV_VERSION: u8 = 0x01;
 const TYPE_FLAG_AUDIO: u8 = 0x01;
 const TYPE_FLAG_VIDEO: u8 = 0x04;
 
+/// Parse Adobe Flash Video container.
+///
+/// Detection: `FLV\x01` magic.
+/// Fills: Audio/video tag types, AMF metadata.
 pub fn parse_flv(fa: &mut FileAnalyze) -> bool {
     // Peek the smaller of the available bytes vs the fixed header size so
     // truncated inputs are rejected before any cursor movement, letting

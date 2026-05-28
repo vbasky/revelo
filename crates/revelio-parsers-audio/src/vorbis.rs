@@ -1,5 +1,9 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse Vorbis audio codec.
+///
+/// Detection: Identification header packet type 1 + `vorbis` magic.
+/// Fills: Channels, sample rate, bitrates, floor type, VorbisComment.
 pub fn parse_vorbis(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,

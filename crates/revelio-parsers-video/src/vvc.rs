@@ -26,6 +26,10 @@ pub struct VvcInfo {
     pub frame_only_constraint_flag: u8,
 }
 
+/// Parse VVC/H.266 (Versatile Video Coding) elementary stream.
+///
+/// Detection: Annex B SPS NAL type 15.
+/// Fills: Profile, level, frame dimensions, chroma format, bit depth.
 pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(5);
     if head.is_none() || !is_nal_start(head.unwrap()) {

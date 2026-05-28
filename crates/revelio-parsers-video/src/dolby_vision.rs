@@ -1,5 +1,9 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse Dolby Vision HDR metadata.
+///
+/// Detection: dvcC/dvvC boxes in MP4, codec ID in MKV, standalone XML.
+/// Fills: Profile (5/7/8.1), level, BL compatibility, HDR format fields.
 pub fn parse_dolby_vision(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,

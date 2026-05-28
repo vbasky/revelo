@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse HuffYUV lossless video codec.
+///
+/// Detection: HFYU fourcc.
+/// Fills: Bit depth, colourplane count.
 pub fn parse_huffyuv(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

@@ -45,6 +45,10 @@ fn map_encoding(enc: u32) -> Option<(&'static str, &'static str, u16, bool)> {
     }
 }
 
+/// Parse Sun/NeXT AU audio format.
+///
+/// Detection: `.snd` magic 0x2E736E64.
+/// Fills: Encoding, channels, sample rate.
 pub fn parse_au(fa: &mut FileAnalyze) -> bool {
     let file_size = fa.remain();
     let head = fa.peek_raw(fa.remain().min(24));

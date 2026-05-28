@@ -40,6 +40,10 @@ struct AudioDesc {
     bits_per_channel: u32,
 }
 
+/// Parse Core Audio Format (Apple).
+///
+/// Detection: `caff` magic.
+/// Fills: Format, channels, sample rate, codec descriptor.
 pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(fa.remain().min(8));
     let Some(h) = head else { return false };

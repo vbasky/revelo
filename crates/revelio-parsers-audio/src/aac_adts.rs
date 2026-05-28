@@ -21,6 +21,10 @@ const SAMPLE_RATE_TABLE: [u32; 13] = [
     96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
 ];
 
+/// Parse AAC (Advanced Audio Coding) ADTS stream.
+///
+/// Detection: Sync word 0xFFF (12 bits).
+/// Fills: Profile (LC/HE-AAC/HE-AACv2), sampling rate, channels.
 pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(7);
     let Some(h) = head else { return false };

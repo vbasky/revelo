@@ -65,6 +65,10 @@ struct Ifd {
     is_thumbnail: bool,
 }
 
+/// Parse TIFF image.
+///
+/// Detection: `II`/`MM` byte order + magic 42.
+/// Fills: Dimensions, compression, photometric, EXIF IFD, GPS, ICC.
 pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(8);
     let Some(h) = head else { return false };

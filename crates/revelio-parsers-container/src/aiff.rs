@@ -94,6 +94,10 @@ fn map_aifc_compression(fourcc: Int32u) -> AifcCodec {
     }
 }
 
+/// Parse AIFF/AIFC audio container.
+///
+/// Detection: `FORM` + `AIFF`/`AIFC` form type.
+/// Fills: COMM chunk (channels, sample rate, bit depth), SSND data size.
 pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
     let mut magic: Int32u = 0;
     fa.peek_b4(&mut magic);

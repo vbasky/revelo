@@ -13,6 +13,8 @@ const PTX_MAGIC: [u8; 17] = [
     0x31,
 ];
 
+/// Parse PTX container.
+/// Fills: Format.
 pub fn parse_ptx(fa: &mut FileAnalyze) -> bool {
     let want = fa.remain().min(17);
     if want < 17 {

@@ -43,6 +43,8 @@ fn pmp_audio_format(audio_format: Int32u) -> &'static str {
     }
 }
 
+/// Parse PMP container.
+/// Fills: Format.
 pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
     let peek_len = fa.remain().min(PMP_V1_HEADER_SIZE);
     let header = match fa.peek_raw(peek_len) {

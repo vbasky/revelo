@@ -41,6 +41,10 @@ struct StreamInfo {
     samples: u64,
 }
 
+/// Parse TAK (Tom's lossless Audio Kompressor).
+///
+/// Detection: `tBaK` magic.
+/// Fills: Channels, sample rate, bit depth, encoder version.
 pub fn parse_tak(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 4 {
         return false;

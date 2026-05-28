@@ -46,6 +46,10 @@ use zenlib::{Int128u, Int16u, Int32u};
 const MAGIC_MAC_SPACE: u32 = u32::from_be_bytes(*b"MAC ");
 const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
 
+/// Parse Monkey's Audio (APE) lossless stream.
+///
+/// Detection: `MAC 3.97` magic.
+/// Fills: Compression level, channels, sample rate, bit depth, APE tag.
 pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 8 {
         return false;

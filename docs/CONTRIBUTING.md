@@ -7,7 +7,7 @@ the engine works.
 
 ## Architecture
 
-```
+```bash
 Cargo workspace root
 ├─ crates/zenlib              C++-style integer types + bitstream helpers
 ├─ crates/revelio-core        The parser engine (FileAnalyze, streams, config)
@@ -41,7 +41,7 @@ Cargo workspace root
 ### Key types
 
 | Type | Purpose |
-|---|---|
+| --- | --- |
 | `FileAnalyze` | Byte buffer + stream collection + element trace tree |
 | `StreamCollection` | BTreeMap of `StreamKind` → Vec of `Stream` |
 | `Stream` | One stream's fields (BTreeMap of String → Ztring) |
@@ -151,6 +151,7 @@ All public parser API methods use **snake_case**:
 ### Types
 
 Type aliases from `zenlib::types` (used in declarations):
+
 - `Int8u` = `u8`, `Int32u` = `u32`, `Int64u` = `u64`
 - `Float32` = `f32`, `Float64` = `f64`
 
@@ -182,7 +183,7 @@ Common field names by stream kind:
 ## Glossary
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | **Annex B** | Byte-stream format for AVC/HEVC with `0x000001` start codes |
 | **NAL unit** | Network Abstraction Layer — a coded slice/picture in AVC/HEVC/VVC |
 | **SPS / PPS / VPS** | Sequence/Picture/Video Parameter Set — codec configuration |

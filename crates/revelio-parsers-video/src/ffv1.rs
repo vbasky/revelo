@@ -2,6 +2,10 @@
 
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse FFV1 lossless video codec.
+///
+/// Detection: `FFV1` magic.
+/// Fills: Version, coder type, colours, chroma planes.
 pub fn parse_ffv1(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 4 {
         return false;

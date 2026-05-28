@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse CTA-708 DTVCC transport stream.
+///
+/// Detection: CC_type_1 0x03 0x00.
+/// Fills: Format.
 pub fn parse_dtvcc_transport(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

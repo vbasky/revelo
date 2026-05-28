@@ -51,6 +51,10 @@ const DSF_CHANNEL_LAYOUT: [&str; 8] = [
     "L R C Ls Rs LFE",
 ];
 
+/// Parse DSD Stream File.
+///
+/// Detection: `DSD ` magic.
+/// Fills: Channels, sample rate, DSD type.
 pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     // Need at least DSD chunk (28) + fmt chunk header (12) + fmt payload (40)
     // = 80 bytes to read fmt fields meaningfully.

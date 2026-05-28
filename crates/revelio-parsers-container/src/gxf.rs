@@ -38,6 +38,10 @@ fn is_packet_header(buf: &[u8]) -> bool {
         && buf[15] == TRAILER_E2
 }
 
+/// Parse SMPTE 360M GXF container.
+///
+/// Detection: GXF KLV structure.
+/// Fills: Material metadata, timecode, stream descriptors.
 pub fn parse_gxf(fa: &mut FileAnalyze) -> bool {
     // Peek up to 64 KiB — enough to validate the first packet's coherence
     // (a map packet is typically a few hundred bytes) without slurping

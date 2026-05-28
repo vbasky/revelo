@@ -2,6 +2,10 @@
 
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse H.263 video codec.
+///
+/// Detection: Picture start code 0x000080 bits.
+/// Fills: Source format, custom picture dimensions.
 pub fn parse_h263(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 4 {
         return false;

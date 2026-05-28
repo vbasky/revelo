@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse Session Description Protocol.
+///
+/// Detection: `v=0` + `m=` lines.
+/// Fills: Format, session info.
 pub fn parse_sdp(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

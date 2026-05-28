@@ -1,5 +1,9 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse USAC/xHE-AAC (MPEG-D) stream.
+///
+/// Detection: ADTS 0xFFF with extended AudioObjectType 42.
+/// Fills: Profile, sample rate, channels.
 pub fn parse_usac(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,

@@ -12,6 +12,10 @@ pub struct ProResInfo {
     pub creator_id: u32,
 }
 
+/// Parse Apple ProRes intermediate codec.
+///
+/// Detection: Frame header magic (icpf/apcn/apcs/etc.).
+/// Fills: Profile (422 Proxy→4444 XQ), creator, dimensions, chroma, colour primaries.
 pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(8);
     let Some(data) = head else { return false };

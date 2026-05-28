@@ -22,6 +22,10 @@ const OPUS_CHANNEL_LAYOUT: [&str; 8] = [
     "L R C SL SR BL BR LFE",
 ];
 
+/// Parse Opus audio codec (RFC 6716).
+///
+/// Detection: OpusHead packet in Ogg/WebM, TOC byte.
+/// Fills: Channels, channel mapping family, preskip, sample rate.
 pub fn parse_opus(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,

@@ -35,6 +35,10 @@ fn iab_frame_rate(code: u8) -> Option<f64> {
     }
 }
 
+/// Parse Immersive Audio Bitstream (ATSC 3.0).
+///
+/// Detection: iab_frame sync.
+/// Fills: Format, frame config.
 pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
     // Need at least the fixed-size pieces of the preamble + IAFrame headers
     // plus 1 byte of Version. PreambleLength is read up front, so the peek

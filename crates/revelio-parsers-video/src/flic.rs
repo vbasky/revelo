@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse Autodesk Animator FLIC codec.
+///
+/// Detection: 0xAF11/0xAF12 magic.
+/// Fills: Dimensions, frame count.
 pub fn parse_flic(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

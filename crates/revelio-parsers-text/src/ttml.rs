@@ -15,6 +15,10 @@ use revelio_core::{FileAnalyze, StreamKind};
 const TTML_NAMESPACE: &str = "http://www.w3.org/ns/ttml";
 const SCAN_WINDOW: usize = 1024;
 
+/// Parse TTML timed text subtitle.
+///
+/// Detection: `<tt>` XML root.
+/// Fills: Format, namespace.
 pub fn parse_ttml(fa: &mut FileAnalyze) -> bool {
     let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {

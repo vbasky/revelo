@@ -104,6 +104,10 @@ const RANGE: u64 = 0x55B9;
 const TRANSFER_CHARACTERISTICS: u64 = 0x55BA;
 const PRIMARIES: u64 = 0x55BB;
 
+/// Parse Matroska / WebM container (EBML).
+///
+/// Detection: EBML header + DocType = `matroska`/`webm`.
+/// Fills: Info/Tracks/Chapters/Tags, CodecPrivate for AVC/HEVC/AV1/Opus.
 pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
     // Detect EBML header by leading 4 bytes.
     let head = fa.peek_raw(4);

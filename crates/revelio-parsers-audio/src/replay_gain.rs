@@ -5,20 +5,38 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// ref: http://wiki.hydrogenaud.io/index.php?title=LAME
 pub fn extract_replay_gain(fa: &mut FileAnalyze, data: &[u8]) {
     let pos = fa.count_get(StreamKind::Audio);
-    if pos == 0 { return; }
+    if pos == 0 {
+        return;
+    }
     let idx = pos - 1;
-    if data.len() < 20 { return; }
+    if data.len() < 20 {
+        return;
+    }
     // Track replay gain is at the start of the Gaia block (first 20 bytes)
     let gain = i16::from_le_bytes([data[0], data[1]]) as f64 * 0.01;
     let peak_bits = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
     let peak = f32::from_bits(peak_bits);
-    fa.fill(StreamKind::Audio, idx, "ReplayGain_Gain", format!("{:.2} dB", gain), false);
-    fa.fill(StreamKind::Audio, idx, "ReplayGain_Peak", format!("{:.6}", peak), false);
+    fa.fill(
+        StreamKind::Audio,
+        idx,
+        "ReplayGain_Gain",
+        format!("{:.2} dB", gain),
+        false,
+    );
+    fa.fill(
+        StreamKind::Audio,
+        idx,
+        "ReplayGain_Peak",
+        format!("{:.6}", peak),
+        false,
+    );
 }
 
 pub fn fill_id3_replay_gain(fa: &mut FileAnalyze, tags: &[(String, String)]) {
     let pos = fa.count_get(StreamKind::Audio);
-    if pos == 0 { return; }
+    if pos == 0 {
+        return;
+    }
     let idx = pos - 1;
     for (key, val) in tags {
         let field = match key.to_uppercase().as_str() {
@@ -32,9 +50,10 @@ pub fn fill_id3_replay_gain(fa: &mut FileAnalyze, tags: &[(String, String)]) {
     }
 }
 
-#[cfg(test)] mod tests {
-    use super::*;
-    #[test] fn test_smoke() {
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_smoke() {
         assert_eq!(2 + 2, 4);
     }
 }

@@ -90,6 +90,10 @@ const DTS_CHANNEL_LAYOUT: [&str; 16] = [
 
 const DTS_RESOLUTION: [u8; 4] = [16, 20, 24, 24];
 
+/// Parse DTS (Digital Theater Systems) elementary stream.
+///
+/// Detection: Sync 0x7FFE8001.
+/// Fills: Channels, sample rate, bit rate, LFE, profile.
 pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(16);
     let Some(h) = head else { return false };

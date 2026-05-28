@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse AVS3 Chinese UHD video codec.
+///
+/// Detection: Annex B 0x000001B0 NAL.
+/// Fills: Profile, dimensions, bit depth.
 pub fn parse_avs3(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

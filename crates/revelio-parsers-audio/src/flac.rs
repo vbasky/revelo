@@ -51,6 +51,10 @@ struct StreamInfo {
     md5: Int128u,
 }
 
+/// Parse FLAC (Free Lossless Audio Codec) stream.
+///
+/// Detection: `fLaC` marker.
+/// Fills: STREAMINFO (channels, rate, depth, total samples), VorbisComment, MD5.
 pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
     if fa.remain() < 4 {
         return false;

@@ -50,7 +50,7 @@ cargo clippy -- -D warnings    # Treat warnings as errors
 
 ## File structure
 
-```
+```bash
 crates/revelio-core/src/
 ├── file_analyze.rs    Parser byte-reader engine (get_b4, fill, remain, …)
 ├── stream.rs          Stream kind, stream fields, stream collection

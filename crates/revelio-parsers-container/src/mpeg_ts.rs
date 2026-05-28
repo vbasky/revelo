@@ -84,6 +84,10 @@ struct Program {
     streams: Vec<ElementaryStream>,
 }
 
+/// Parse MPEG Transport Stream (ITU-T H.222.0).
+///
+/// Detection: sync byte 0x47 every 188 bytes. PAT→PMT→stream descriptors.
+/// Fills: Program names, language codes, format from stream_type + registration.
 pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain()) {
         Some(b) => b,

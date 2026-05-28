@@ -22,6 +22,8 @@ const NS_IMF_2016: &str = "http://www.smpte-ra.org/schemas/2067-3/2016";
 // `IsSmpteSt2067_3` explicitly accepts it.
 const NS_IMF_XXXX: &str = "http://www.smpte-ra.org/schemas/2067-3/XXXX";
 
+/// Parse DCP Composition Playlist.
+/// Fills: Format.
 pub fn parse_dcp_cpl(fa: &mut FileAnalyze) -> bool {
     let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {

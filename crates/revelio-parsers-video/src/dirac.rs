@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse BBC Dirac wavelet video codec.
+///
+/// Detection: BBCD magic.
+/// Fills: Dimensions, chroma format, frame rate.
 pub fn parse_dirac(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

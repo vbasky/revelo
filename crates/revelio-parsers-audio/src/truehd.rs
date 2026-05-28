@@ -2,6 +2,10 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 /// TrueHD (MLP) parser. Detects the sync code 0xF8726FBA for
 /// TrueHD or 0xF8726FBB for AC-3 core + TrueHD substream.
+/// Parse Dolby TrueHD / MLP lossless audio.
+///
+/// Detection: Sync 0xF8726FBA (TrueHD) / 0xF8726FBB (AC-3+TrueHD).
+/// Fills: Channels, sample rate, bit depth, Lossless, VBR.
 pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

@@ -10,6 +10,10 @@ fn fill_archive(fa: &mut FileAnalyze, format: &str, extra: &[(&str, &str)]) {
 
 // ---------- ZIP ----------
 
+/// Parse ZIP archive.
+///
+/// Detection: `PK\x03\x04` local file header.
+/// Fills: File count, compressed/uncompressed sizes.
 pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 4 { return false; }
@@ -34,6 +38,10 @@ pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
 
 // ---------- RAR ----------
 
+/// Parse RAR archive.
+///
+/// Detection: `Rar!\x1A\x07\x00` magic.
+/// Fills: Version, file count.
 pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 7 { return false; }
@@ -48,6 +56,10 @@ pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
 
 // ---------- 7-Zip ----------
 
+/// Parse 7-Zip archive.
+///
+/// Detection: `7z\xBC\xAF\x27\x1C` magic.
+/// Fills: Format.
 pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 6 { return false; }
@@ -63,6 +75,10 @@ pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
 
 // ---------- TAR ----------
 
+/// Parse TAR archive.
+///
+/// Detection: `ustar\x00` at offset 257.
+/// Fills: File count.
 pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 512 { return true; } // partial, accept tentative
@@ -92,6 +108,10 @@ pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
 
 // ---------- GZIP ----------
 
+/// Parse GZip compressed file.
+///
+/// Detection: `\x1F\x8B` magic.
+/// Fills: Original name, compression.
 pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 2 { return false; }
@@ -110,6 +130,10 @@ pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
 
 // ---------- BZIP2 ----------
 
+/// Parse BZip2 compressed file.
+///
+/// Detection: `BZh` + version digit.
+/// Fills: Block size.
 pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 3 { return false; }
@@ -124,6 +148,10 @@ pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
 
 // ---------- ISO 9660 ----------
 
+/// Parse ISO 9660 CD-ROM filesystem.
+///
+/// Detection: `CD001` at sector 16.
+/// Fills: Volume label.
 pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 0x8000 + 6 { return false; }
@@ -148,6 +176,10 @@ pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
 
 // ---------- ELF ----------
 
+/// Parse ELF executable.
+///
+/// Detection: `\x7FELF` magic.
+/// Fills: Class, endianness, machine type.
 pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 16 { return false; }
@@ -179,6 +211,10 @@ pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
 
 // ---------- Mach-O ----------
 
+/// Parse Mach-O executable.
+///
+/// Detection: FEEDFACE/BEBAFECA magic.
+/// Fills: Architecture, file type.
 pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 4 { return false; }
@@ -205,6 +241,10 @@ pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
 
 // ---------- MZ / PE EXE ----------
 
+/// Parse MZ/PE Windows executable.
+///
+/// Detection: `MZ` + `PE` at offset at 0x3C.
+/// Fills: Architecture, subsystem.
 pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 2 { return false; }
@@ -231,6 +271,10 @@ pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
 
 // ---------- ACE ----------
 
+/// Parse ACE compressed archive.
+///
+/// Detection: `**ACE**` magic.
+/// Fills: Format.
 pub fn parse_ace(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain() as usize;
     if remain < 7 { return false; }

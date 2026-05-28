@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse PlayStation 2 audio streams.
+///
+/// Detection: PS2 ADPCM header.
+/// Fills: Channels, sample rate.
 pub fn parse_ps2_audio(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

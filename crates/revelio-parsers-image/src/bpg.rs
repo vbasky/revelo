@@ -148,23 +148,24 @@ mod tests {
         } else if v < (1 << 14) {
             vec![0x80 | ((v >> 8) as u8 & 0x3F), v as u8]
         } else if v < (1 << 21) {
-            vec![
-                0xC0 | ((v >> 16) as u8 & 0x1F),
-                (v >> 8) as u8,
-                v as u8,
-            ]
+            vec![0xC0 | ((v >> 16) as u8 & 0x1F), (v >> 8) as u8, v as u8]
         } else {
             // Larger values not used in tests.
             unimplemented!()
         }
     }
 
-    fn build_bpg(pixel_format: u8, alpha: bool, bit_depth: u8, color_space: u8, w: u32, h: u32) -> Vec<u8> {
+    fn build_bpg(
+        pixel_format: u8,
+        alpha: bool,
+        bit_depth: u8,
+        color_space: u8,
+        w: u32,
+        h: u32,
+    ) -> Vec<u8> {
         let mut buf = vec![0x42, 0x50, 0x47, 0xFB];
-        let b4 = ((pixel_format & 0x7) << 5)
-            | ((alpha as u8) << 4)
-            | ((bit_depth - 8) & 0x0F);
-        let b5 = ((color_space & 0x0F) << 4);
+        let b4 = ((pixel_format & 0x7) << 5) | ((alpha as u8) << 4) | ((bit_depth - 8) & 0x0F);
+        let b5 = (color_space & 0x0F) << 4;
         buf.push(b4);
         buf.push(b5);
         buf.extend(vsi_encode(w as u64));
@@ -183,7 +184,10 @@ mod tests {
         let buf = build_bpg(1, false, 8, 0, 1920, 1080);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bpg(&mut fa));
-        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| {
+            fa.retrieve(StreamKind::Image, 0, k)
+                .map(|z| z.as_str().to_owned())
+        };
         assert_eq!(i("Format").as_deref(), Some("BPG"));
         assert_eq!(i("Width").as_deref(), Some("1920"));
         assert_eq!(i("Height").as_deref(), Some("1080"));
@@ -198,7 +202,10 @@ mod tests {
         let buf = build_bpg(0, false, 10, 1, 64, 64); // grayscale 10-bit RGB
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bpg(&mut fa));
-        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| {
+            fa.retrieve(StreamKind::Image, 0, k)
+                .map(|z| z.as_str().to_owned())
+        };
         assert_eq!(i("Width").as_deref(), Some("64"));
         assert_eq!(i("Height").as_deref(), Some("64"));
         assert_eq!(i("BitDepth").as_deref(), Some("10"));

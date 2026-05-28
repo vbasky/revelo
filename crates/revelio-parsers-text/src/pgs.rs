@@ -39,6 +39,10 @@ fn is_valid_segment_type(t: u8) -> bool {
     )
 }
 
+/// Parse PGS (Blu-ray Presentation Graphic Stream) subtitle.
+///
+/// Detection: PG segment descriptor 0x16.
+/// Fills: Format.
 pub fn parse_pgs(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(fa.remain().min(13));
     let Some(h) = head else { return false };

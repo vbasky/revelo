@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse Canopus HQ/HQX intermediate codec.
+///
+/// Detection: CHQX/CHQH/CHQS/CHQL fourcc.
+/// Fills: Profile, dimensions, chroma format.
 pub fn parse_canopus(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

@@ -225,6 +225,10 @@ pub fn fill_vc1_streams(fa: &mut FileAnalyze, info: &Vc1Info) {
     fa.fill(StreamKind::Video, 0, "ScanType", if info.interlace { "Interlaced" } else { "Progressive" }, false);
 }
 
+/// Parse VC-1 (SMPTE 421M) elementary stream.
+///
+/// Detection: Sequence header 0x0000010F or advanced entry point 0x0000010E.
+/// Fills: Profile, level, dimensions, chroma format.
 pub fn parse_vc1(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(4);
     let Some(h) = head else { return false };

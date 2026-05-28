@@ -1,5 +1,9 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
+/// Parse 3GPP/MOV Timed Text track.
+///
+/// Detection: 16-bit BE length + UTF-8/UTF-16 text.
+/// Fills: Format.
 pub fn parse_timed_text(fa: &mut FileAnalyze) -> bool {
     let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
@@ -51,7 +55,7 @@ mod tests {
 
     #[test]
     fn timed_text_rejects_binary() {
-        let mut buf = vec![0xFF, 0xFE, 0x00, 0x00];
+        let buf = vec![0xFF, 0xFE, 0x00, 0x00];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_timed_text(&mut fa));
     }

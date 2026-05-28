@@ -33,6 +33,8 @@ const MAGIC: &str = "#EXTM3U";
 const MAX_SIZE: usize = 1024 * 1024;
 const MIN_SIZE: usize = 10;
 
+/// Parse Apple HLS m3u8 playlist.
+/// Fills: Format, stream variants.
 pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
     let size = fa.remain();
     if size < MIN_SIZE || size > MAX_SIZE {

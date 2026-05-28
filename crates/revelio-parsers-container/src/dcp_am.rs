@@ -23,6 +23,8 @@ const INTEROP_NAMESPACE: &str = "http://www.digicine.com/PROTO-ASDCP-AM-20040311
 const SMPTE_NAMESPACE: &str = "http://www.smpte-ra.org/schemas/429-9/2007/AM";
 const SCAN_WINDOW: usize = 1024;
 
+/// Parse DCP Asset Map.
+/// Fills: Format.
 pub fn parse_dcp_am(fa: &mut FileAnalyze) -> bool {
     let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {

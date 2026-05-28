@@ -1,4 +1,8 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse MPEG-4 General Audio container.
+///
+/// Detection: `MGA` magic.
+/// Fills: Format.
 pub fn parse_mga(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

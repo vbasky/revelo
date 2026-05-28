@@ -140,6 +140,10 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
     None
 }
 
+/// Parse SMPTE Material eXchange Format container.
+///
+/// Detection: KLV structure + operational pattern.
+/// Fills: Partition pack, preface, identification, timecode.
 pub fn parse_mxf(fa: &mut FileAnalyze) -> bool {
     let want = fa.remain().min(SCAN_WINDOW);
     if want < 16 {

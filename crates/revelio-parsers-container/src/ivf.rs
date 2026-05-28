@@ -23,6 +23,10 @@ use zenlib::{Int16u, Int32u};
 
 const FOURCC_DKIF: Int32u = u32::from_be_bytes(*b"DKIF");
 
+/// Parse IVF container (VP8/VP9/AV1 elementary streams).
+///
+/// Detection: `DKIF` magic.
+/// Fills: Codec fourcc, frame dimensions, frame rate from timebase.
 pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
     // Peek the signature so non-IVF buffers leave the cursor untouched
     // for sibling parsers to try.

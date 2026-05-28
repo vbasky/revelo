@@ -1,4 +1,6 @@
 use revelio_core::{FileAnalyze, StreamKind};
+/// Parse AFD/Bar data (SMPTE 2016-1).
+/// Fills: Format, active format descriptor.
 pub fn parse_afd_bar_data(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
