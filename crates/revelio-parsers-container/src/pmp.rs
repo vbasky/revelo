@@ -115,13 +115,7 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
         let _ = time_base_num;
         if time_base_den > 0 {
             let frame_rate = (time_base_den as f64) / 100.0;
-            fa.fill(
-                StreamKind::Video,
-                0,
-                "FrameRate",
-                format!("{:.3}", frame_rate),
-                false,
-            );
+            fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
         }
         fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
@@ -134,13 +128,7 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
             fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
         }
         if sample_rate > 0 {
-            fa.fill(
-                StreamKind::Audio,
-                0,
-                "SamplingRate",
-                sample_rate.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
         }
         fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
     }
@@ -189,18 +177,9 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pmp(&mut fa));
 
-        let g = |k: &str| {
-            fa.retrieve(StreamKind::General, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
-        let v = |k: &str| {
-            fa.retrieve(StreamKind::Video, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
-        let a = |k: &str| {
-            fa.retrieve(StreamKind::Audio, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("PMP"));
         assert_eq!(g("VideoCount").as_deref(), Some("1"));
@@ -223,15 +202,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pmp(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("MPEG-4 Visual")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::Audio, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("MPEG Audio")
         );
         // 2997 / 100 = 29.97

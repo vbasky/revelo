@@ -24,7 +24,7 @@
 //!   256 bytes:      Pattern order table
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u};
 
 const MAGIC: &[u8; 17] = b"Extended Module: ";
 const HEADER_MIN_BYTES: usize = 336;
@@ -85,12 +85,7 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
 
     // Version string mirrors C++: "<major>.<minor/10><minor%10>" so
     // version 1.04 prints as "1.04" (not "1.4").
-    let version_str = format!(
-        "{}.{}{}",
-        version_major,
-        version_minor / 10,
-        version_minor % 10
-    );
+    let version_str = format!("{}.{}{}", version_major, version_minor / 10, version_minor % 10);
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "Extended Module", false);
@@ -149,15 +144,15 @@ mod tests {
         buf.push(version_minor);
         buf.push(version_major);
         buf.extend_from_slice(&276u32.to_le_bytes()); // header size
-        buf.extend_from_slice(&16u16.to_le_bytes());  // song length
-        buf.extend_from_slice(&0u16.to_le_bytes());   // restart position
+        buf.extend_from_slice(&16u16.to_le_bytes()); // song length
+        buf.extend_from_slice(&0u16.to_le_bytes()); // restart position
         buf.extend_from_slice(&channels.to_le_bytes());
         buf.extend_from_slice(&patterns.to_le_bytes());
         buf.extend_from_slice(&instruments.to_le_bytes());
-        buf.extend_from_slice(&0u16.to_le_bytes());   // flags
+        buf.extend_from_slice(&0u16.to_le_bytes()); // flags
         buf.extend_from_slice(&tempo.to_le_bytes());
         buf.extend_from_slice(&bpm.to_le_bytes());
-        buf.extend_from_slice(&[0u8; 256]);           // pattern order table
+        buf.extend_from_slice(&[0u8; 256]); // pattern order table
         buf
     }
 
@@ -215,11 +210,7 @@ mod tests {
     #[test]
     fn version_string_zero_pads_minor() {
         // minor=4 → "04", minor=23 → "23".
-        let buf = make_xm(
-            b"                    ",
-            b"                    ",
-            23, 2, 4, 8, 4, 6, 120,
-        );
+        let buf = make_xm(b"                    ", b"                    ", 23, 2, 4, 8, 4, 6, 120);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_extended_module(&mut fa));
         let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());

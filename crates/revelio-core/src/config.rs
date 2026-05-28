@@ -71,9 +71,18 @@ impl MediaConfig {
 
     pub fn set_option(&mut self, key: &str, value: &str) -> bool {
         match key.to_lowercase().as_str() {
-            "demux" => { self.set_demux(value); true }
-            "trace_level" => { self.set_trace_level(value); true }
-            "trace_format" => { self.set_trace_format(value); true }
+            "demux" => {
+                self.set_demux(value);
+                true
+            }
+            "trace_level" => {
+                self.set_trace_level(value);
+                true
+            }
+            "trace_format" => {
+                self.set_trace_format(value);
+                true
+            }
             "trace_time_section_only_first" => {
                 self.trace_time_section_only_first = value == "1";
                 true
@@ -104,32 +113,38 @@ impl MediaConfig {
     }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_default_config() {
+    #[test]
+    fn test_default_config() {
         let cfg = MediaConfig::default();
         assert_eq!(cfg.demux_level, DemuxLevel::FRAME);
         assert!(!cfg.trace_activated);
         assert!(!cfg.multi_file.enabled);
     }
-    #[test] fn test_demux_container() {
+    #[test]
+    fn test_demux_container() {
         let mut cfg = MediaConfig::default();
         cfg.set_demux("container");
         assert!(cfg.demux_active(DemuxLevel::CONTAINER));
         assert!(!cfg.demux_active(DemuxLevel::ELEMENTARY));
     }
-    #[test] fn test_demux_all() {
+    #[test]
+    fn test_demux_all() {
         let mut cfg = MediaConfig::default();
         cfg.set_demux("all");
         assert!(cfg.demux_active(DemuxLevel::FRAME));
         assert!(cfg.demux_active(DemuxLevel::ELEMENTARY));
     }
-    #[test] fn test_trace_format() {
+    #[test]
+    fn test_trace_format() {
         let mut cfg = MediaConfig::default();
         cfg.set_trace_format("csv");
         assert!(matches!(cfg.trace_format, TraceFormat::Csv));
     }
-    #[test] fn test_set_option_unknown() {
+    #[test]
+    fn test_set_option_unknown() {
         let mut cfg = MediaConfig::default();
         assert!(!cfg.set_option("nope", "value"));
     }

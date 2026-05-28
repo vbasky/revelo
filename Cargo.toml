@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/diff-harness",
+    "crates/revelio-diff",
     "crates/revelio-cli",
     "crates/revelio-core",
     "crates/revelio-export",
@@ -22,6 +22,21 @@ members = [
 edition = "2024"
 license = "BSD-2-Clause"
 repository = "https://github.com/vbasky/revelio"
+
+[workspace.lints.rust]
+unreachable_pub = "warn"
+unused_import_braces = "warn"
+unused_extern_crates = "warn"
+
+[workspace.lints.rustdoc]
+invalid_html_tags = "allow"
+broken_intra_doc_links = "allow"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+doc_markdown = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
 
 [profile.release]
 lto = "thin"

@@ -10,6 +10,9 @@ description = "C ABI shim exposing MediaInfo_* entry points"
 name = "revelio_cdylib"
 crate-type = ["cdylib"]
 
+[lints]
+workspace = true
+
 [dependencies]
 revelio-dispatcher = { path = "../revelio-dispatcher" }
 revelio-core = { path = "../revelio-core" }

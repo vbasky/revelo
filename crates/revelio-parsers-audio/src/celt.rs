@@ -5,11 +5,15 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_celt(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 8 { return false; }
+    if buf.len() < 8 {
+        return false;
+    }
 
     // CELT identification header starts with "CELT" + version
     let magic = std::str::from_utf8(&buf[0..4]).unwrap_or("");
-    if magic != "CELT" { return false; }
+    if magic != "CELT" {
+        return false;
+    }
 
     let pos = fa.stream_prepare(StreamKind::Audio);
     fa.fill(StreamKind::Audio, pos, "Format", "CELT", false);

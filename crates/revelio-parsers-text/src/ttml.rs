@@ -80,15 +80,11 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_ttml(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("TTML")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::Text, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("TTML")
         );
     }

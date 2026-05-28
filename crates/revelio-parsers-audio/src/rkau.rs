@@ -14,7 +14,7 @@
 //!   uint8   flags              // bit0 joint_stereo, bit1 streaming, bit2 vrq_lossy
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int32u, Int8u};
+use zenlib::{Int8u, Int32u};
 
 const MAGIC_RKA: [u8; 3] = *b"RKA";
 const HEADER_LEN: usize = 15;
@@ -56,8 +56,7 @@ pub fn parse_rkau(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     // Mirror the C++ duration formula: (source_bytes * 1000 / 4) / sample_rate.
-    let duration_ms: u64 =
-        ((source_bytes as u64) * 1000 / 4) / sample_rate as u64;
+    let duration_ms: u64 = ((source_bytes as u64) * 1000 / 4) / sample_rate as u64;
     if duration_ms == 0 {
         return false;
     }
@@ -151,11 +150,15 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_rkau(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Compression_Mode")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("Lossy")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::Audio, 0, "Format_Version").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Format_Version")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("1.02")
         );
     }

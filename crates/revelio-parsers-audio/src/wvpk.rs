@@ -33,8 +33,8 @@ const BLOCK_HEADER_SIZE: usize = 32;
 const WVPK_RESOLUTION: [u16; 4] = [8, 16, 24, 32];
 
 const WVPK_SAMPLING_RATE: [u32; 16] = [
-    6000, 8000, 9600, 11025, 12000, 16000, 22050, 24000,
-    32000, 44100, 48000, 64000, 88200, 96000, 192000, 0,
+    6000, 8000, 9600, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000,
+    192000, 0,
 ];
 
 /// Parse WavPack hybrid lossless stream.
@@ -124,11 +124,7 @@ pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
     fa.fill(StreamKind::Audio, 0, "Codec_Settings", compression_mode, false);
     fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
     // For DSD (dsf=1) the effective audio rate is 8× the index value.
-    let effective_rate: u64 = if dsf {
-        (sample_rate as u64) * 8
-    } else {
-        sample_rate as u64
-    };
+    let effective_rate: u64 = if dsf { (sample_rate as u64) * 8 } else { sample_rate as u64 };
     fa.fill(StreamKind::Audio, 0, "SamplingRate", effective_rate.to_string(), false);
     if !dsf {
         fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);

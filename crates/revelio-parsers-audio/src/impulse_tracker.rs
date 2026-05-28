@@ -36,7 +36,7 @@
 //!  PatNum*4:        Patterns offsets
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int8u};
+use zenlib::{Int8u, Int16u};
 
 const MAGIC: &[u8; 4] = b"IMPM";
 const FIXED_HEADER_BYTES: usize = 192;
@@ -126,12 +126,8 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
     // Version strings mirror C++: minor is split as minor/16 . minor%16
     // (the high nibble is the decimal tens digit, low nibble the ones),
     // so a stored byte of 0x32 prints as "3.2".
-    let format_version = format!(
-        "Version {}.{}{}",
-        version_major,
-        version_minor / 16,
-        version_minor % 16
-    );
+    let format_version =
+        format!("Version {}.{}{}", version_major, version_minor / 16, version_minor % 16);
     let encoded_app = format!(
         "Impulse Tracker {}.{}{}",
         sw_version_major,
@@ -151,13 +147,7 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::Audio);
     fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "Channels",
-        if stereo { "2" } else { "1" },
-        false,
-    );
+    fa.fill(StreamKind::Audio, 0, "Channels", if stereo { "2" } else { "1" }, false);
 
     let _ = initial_speed;
 
@@ -192,10 +182,10 @@ mod tests {
         tempo: u8,
     ) -> Vec<u8> {
         let mut buf = Vec::new();
-        buf.extend_from_slice(MAGIC);            // 4
-        buf.extend_from_slice(song_name);        // 26
-        buf.push(0);                             // unknown
-        buf.push(0);                             // unknown
+        buf.extend_from_slice(MAGIC); // 4
+        buf.extend_from_slice(song_name); // 26
+        buf.push(0); // unknown
+        buf.push(0); // unknown
         buf.extend_from_slice(&ord_num.to_le_bytes());
         buf.extend_from_slice(&ins_num.to_le_bytes());
         buf.extend_from_slice(&smp_num.to_le_bytes());
@@ -206,17 +196,21 @@ mod tests {
         buf.push(ver_major);
         buf.extend_from_slice(&flags.to_le_bytes());
         buf.extend_from_slice(&0u16.to_le_bytes()); // special
-        buf.push(128);                           // global volume
-        buf.push(48);                            // mix volume
-        buf.push(6);                             // initial speed
-        buf.push(tempo);                         // initial tempo
-        buf.push(128);                           // panning separation
-        buf.push(0);                             // 0
+        buf.push(128); // global volume
+        buf.push(48); // mix volume
+        buf.push(6); // initial speed
+        buf.push(tempo); // initial tempo
+        buf.push(128); // panning separation
+        buf.push(0); // 0
         buf.extend_from_slice(&0u16.to_le_bytes()); // message length
         buf.extend_from_slice(&0u32.to_le_bytes()); // message offset
-        buf.push(0); buf.push(0); buf.push(0); buf.push(0); buf.push(0); // 5 unknowns
-        buf.extend_from_slice(&[0u8; 64]);       // Chnl Pan
-        buf.extend_from_slice(&[0u8; 64]);       // Chnl Vol
+        buf.push(0);
+        buf.push(0);
+        buf.push(0);
+        buf.push(0);
+        buf.push(0); // 5 unknowns
+        buf.extend_from_slice(&[0u8; 64]); // Chnl Pan
+        buf.extend_from_slice(&[0u8; 64]); // Chnl Vol
         // Variable tables.
         buf.extend_from_slice(&vec![0u8; ord_num as usize]);
         buf.extend_from_slice(&vec![0u8; (ins_num as usize) * 4]);
@@ -246,15 +240,14 @@ mod tests {
         let mut song = [b' '; 26];
         song[..9].copy_from_slice(b"My IT Sng");
         let buf = make_it(
-            &song,
-            4,    // ord_num
-            2,    // ins_num
-            3,    // smp_num
-            1,    // pat_num
-            0x32, // sw minor: "3.2" → split as 3/16=0, 50%16=2 → "0.02" — see below
-            2,    // sw major
-            0x14, // ver minor → 1/16=0, 20%16=4 → "0.04"
-            2,    // ver major
+            &song, 4,      // ord_num
+            2,      // ins_num
+            3,      // smp_num
+            1,      // pat_num
+            0x32,   // sw minor: "3.2" → split as 3/16=0, 50%16=2 → "0.02" — see below
+            2,      // sw major
+            0x14,   // ver minor → 1/16=0, 20%16=4 → "0.04"
+            2,      // ver major
             0x0001, // Stereo
             125,    // tempo
         );
@@ -281,10 +274,7 @@ mod tests {
     fn mono_when_stereo_flag_clear() {
         let song = [0u8; 26];
         let buf = make_it(
-            &song,
-            0, 0, 0, 0,
-            0, 1, 0, 1,
-            0x0000, // Stereo bit clear → mono
+            &song, 0, 0, 0, 0, 0, 1, 0, 1, 0x0000, // Stereo bit clear → mono
             120,
         );
         let mut fa = FileAnalyze::new(&buf);

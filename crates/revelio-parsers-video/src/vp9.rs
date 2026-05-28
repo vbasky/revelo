@@ -204,8 +204,20 @@ pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
 
     if colorspace > 0 && has_sync_code_color_refresh != 0 {
         let chroma_idx = VP9_CHROMA_SUBSAMPLING_OOB[subsampling.min(3) as usize];
-        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", VP9_CHROMA_SUBSAMPLING[chroma_idx as usize], false);
-        fa.fill(StreamKind::Video, 0, "colour_range", VP9_COLOR_RANGE[(yuv_range_flag as usize) & 1], false);
+        fa.fill(
+            StreamKind::Video,
+            0,
+            "ChromaSubsampling",
+            VP9_CHROMA_SUBSAMPLING[chroma_idx as usize],
+            false,
+        );
+        fa.fill(
+            StreamKind::Video,
+            0,
+            "colour_range",
+            VP9_COLOR_RANGE[(yuv_range_flag as usize) & 1],
+            false,
+        );
     }
 
     fa.stream_prepare(StreamKind::General);
@@ -257,8 +269,20 @@ pub fn parse_vp9_codec_config(fa: &mut FileAnalyze) -> bool {
     fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
 
     let oob_idx = VP9_CHROMA_SUBSAMPLING_OOB[(chroma_subsampling.min(3)) as usize];
-    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", VP9_CHROMA_SUBSAMPLING[oob_idx as usize], false);
-    fa.fill(StreamKind::Video, 0, "colour_range", VP9_COLOR_RANGE[(video_full_range_flag as usize) & 1], false);
+    fa.fill(
+        StreamKind::Video,
+        0,
+        "ChromaSubsampling",
+        VP9_CHROMA_SUBSAMPLING[oob_idx as usize],
+        false,
+    );
+    fa.fill(
+        StreamKind::Video,
+        0,
+        "colour_range",
+        VP9_COLOR_RANGE[(video_full_range_flag as usize) & 1],
+        false,
+    );
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "VP9", false);
@@ -333,10 +357,7 @@ mod tests {
         let buf = make_vp9_iframe(0, 8, 1920, 1080);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp9(&mut fa));
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
-            Some("VP9")
-        );
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("VP9"));
     }
 
     #[test]
@@ -344,14 +365,8 @@ mod tests {
         let buf = make_vp9_iframe(0, 8, 3840, 2160);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp9(&mut fa));
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
-            Some("3840")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
-            Some("2160")
-        );
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("3840"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("2160"));
     }
 
     #[test]

@@ -62,10 +62,7 @@ fn is_dv_sync(buf: &[u8]) -> bool {
     ];
     for (i, (sct, dbn)) in PATTERN.iter().enumerate() {
         let off = i * BLOCK_SIZE;
-        if (buf[off] & 0xE0) != *sct
-            || (buf[off + 1] & 0xF0) != 0x00
-            || buf[off + 2] != *dbn
-        {
+        if (buf[off] & 0xE0) != *sct || (buf[off + 1] & 0xF0) != 0x00 || buf[off + 2] != *dbn {
             return false;
         }
     }

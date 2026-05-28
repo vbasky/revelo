@@ -22,24 +22,42 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
 
     // Look for icpf (ProRes standard) or apch/apcn/apcs/apco/ap4h (Apple ProRes variants)
     let magic = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
-    if magic != 0x69637066 && magic != 0x6170636E && magic != 0x61706373
-        && magic != 0x6170636F && magic != 0x61703468 && magic != 0x70727266
+    if magic != 0x69637066
+        && magic != 0x6170636E
+        && magic != 0x61706373
+        && magic != 0x6170636F
+        && magic != 0x61703468
+        && magic != 0x70727266
     {
         // Check for ProRes in MOV container: skip to frame data
         let raw = fa.peek_raw(fa.remain());
-        let buf = match raw { Some(b) => b, None => return false };
-        if buf.len() < 20 { return false; }
+        let buf = match raw {
+            Some(b) => b,
+            None => return false,
+        };
+        if buf.len() < 20 {
+            return false;
+        }
 
         let frame_magic = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
-        if frame_magic != 0x69637066 && frame_magic != 0x6170636E && frame_magic != 0x61706373
-            && frame_magic != 0x6170636F && frame_magic != 0x61703468 && frame_magic != 0x70727266
+        if frame_magic != 0x69637066
+            && frame_magic != 0x6170636E
+            && frame_magic != 0x61706373
+            && frame_magic != 0x6170636F
+            && frame_magic != 0x61703468
+            && frame_magic != 0x70727266
         {
             return false;
         }
     }
 
-    let buf = match fa.peek_raw(fa.remain()) { Some(b) => b, None => return false };
-    if buf.len() < 20 { return false; }
+    let buf = match fa.peek_raw(fa.remain()) {
+        Some(b) => b,
+        None => return false,
+    };
+    if buf.len() < 20 {
+        return false;
+    }
 
     let _hdr_size = u16::from_be_bytes([buf[8], buf[9]]);
     let version = u16::from_be_bytes([buf[10], buf[11]]);
@@ -47,7 +65,9 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
     let frame_width = u16::from_be_bytes([buf[16], buf[17]]);
     let frame_height = u16::from_be_bytes([buf[18], buf[19]]);
 
-    if buf.len() < 21 { return false; }
+    if buf.len() < 21 {
+        return false;
+    }
 
     let chrominance_factor = (buf[20] >> 6) & 3;
     let frame_type = (buf[20] >> 4) & 3;
@@ -142,35 +162,61 @@ mod tests {
     fn prores_icpf_header() {
         let mut buf = vec![0u8; 128];
         // size (BE)
-        buf[0] = 0; buf[1] = 0; buf[2] = 0; buf[3] = 128;
+        buf[0] = 0;
+        buf[1] = 0;
+        buf[2] = 0;
+        buf[3] = 128;
         // icpf magic
-        buf[4] = 0x69; buf[5] = 0x63; buf[6] = 0x70; buf[7] = 0x66;
+        buf[4] = 0x69;
+        buf[5] = 0x63;
+        buf[6] = 0x70;
+        buf[7] = 0x66;
         // hdrSize
-        buf[8] = 0; buf[9] = 148;
+        buf[8] = 0;
+        buf[9] = 148;
         // version
-        buf[10] = 0; buf[11] = 0;
+        buf[10] = 0;
+        buf[11] = 0;
         // creatorID
-        buf[12] = 0x61; buf[13] = 0x70; buf[14] = 0x6C; buf[15] = 0x30;
+        buf[12] = 0x61;
+        buf[13] = 0x70;
+        buf[14] = 0x6C;
+        buf[15] = 0x30;
         // width, height
-        buf[16] = 0x07; buf[17] = 0x80; // 1920
-        buf[18] = 0x04; buf[19] = 0x38; // 1080
+        buf[16] = 0x07;
+        buf[17] = 0x80; // 1920
+        buf[18] = 0x04;
+        buf[19] = 0x38; // 1080
         // chrominance + frame_type bits
         buf[20] = 0x82; // chrominance=2(422), frame_type=0
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_prores(&mut fa));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()), Some("ProRes".into()));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str().to_owned()), Some("4:2:2".into()));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()),
+            Some("ProRes".into())
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str().to_owned()),
+            Some("4:2:2".into())
+        );
     }
 
     #[test]
     fn prores_picks_up_apcn_variant() {
         let mut buf = vec![0u8; 128];
-        buf[4] = 0x61; buf[5] = 0x70; buf[6] = 0x63; buf[7] = 0x6E; // apcn
-        buf[8] = 0; buf[9] = 20;
-        buf[10] = 0; buf[11] = 1;
-        buf[16] = 0x07; buf[17] = 0x80;
-        buf[18] = 0x04; buf[19] = 0x38;
+        buf[4] = 0x61;
+        buf[5] = 0x70;
+        buf[6] = 0x63;
+        buf[7] = 0x6E; // apcn
+        buf[8] = 0;
+        buf[9] = 20;
+        buf[10] = 0;
+        buf[11] = 1;
+        buf[16] = 0x07;
+        buf[17] = 0x80;
+        buf[18] = 0x04;
+        buf[19] = 0x38;
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_prores(&mut fa));

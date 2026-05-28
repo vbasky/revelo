@@ -24,7 +24,7 @@
 //!   3 bytes LE: crc
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int32u, Int8u};
+use zenlib::{Int8u, Int32u};
 
 const MAGIC_TBAK: [u8; 4] = *b"tBaK";
 
@@ -147,12 +147,7 @@ fn parse_streaminfo(fa: &mut FileAnalyze, block_len: usize) -> Option<StreamInfo
     let channels = if channels_bit != 0 { 2 } else { 1 };
     let bit_depth = TAK_SAMPLESIZE[(samplesize_idx & 0x3) as usize];
 
-    Some(StreamInfo {
-        sample_rate,
-        channels,
-        bit_depth,
-        samples,
-    })
+    Some(StreamInfo { sample_rate, channels, bit_depth, samples })
 }
 
 fn fill_streams(fa: &mut FileAnalyze, info: &StreamInfo, audio_stream_size: u64) {
@@ -218,10 +213,21 @@ mod tests {
         block
     }
 
-    fn make_tak(sample_rate: u32, channels: u8, samplesize_idx: u8, samples: u64, audio_size: usize) -> Vec<u8> {
+    fn make_tak(
+        sample_rate: u32,
+        channels: u8,
+        samplesize_idx: u8,
+        samples: u64,
+        audio_size: usize,
+    ) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(b"tBaK");
-        buf.extend_from_slice(&make_streaminfo_block(sample_rate, channels, samplesize_idx, samples));
+        buf.extend_from_slice(&make_streaminfo_block(
+            sample_rate,
+            channels,
+            samplesize_idx,
+            samples,
+        ));
         // ENDOFMETADATA (block_type=0, length=0).
         buf.push(BLOCK_ENDOFMETADATA);
         buf.extend_from_slice(&[0, 0, 0]);

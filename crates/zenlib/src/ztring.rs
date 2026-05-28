@@ -6,7 +6,10 @@
 //! `From_*` / `To_*` conversions still convert from/to other encodings; only
 //! the internal storage is unified.
 
-use crate::types::{Int8u, Int16u, Int32u, Int64u, Int128u, Int8s, Int16s, Int32s, Int64s, Int128s, Float32, Float64};
+use crate::types::{
+    Float32, Float64, Int8s, Int8u, Int16s, Int16u, Int32s, Int32u, Int64s, Int64u, Int128s,
+    Int128u,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ztring(pub String);
@@ -64,18 +67,14 @@ impl Ztring {
     }
 
     pub fn From_UTF16LE(bytes: &[u8]) -> Self {
-        let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        let units: Vec<u16> =
+            bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         Ztring(String::from_utf16_lossy(&units))
     }
 
     pub fn From_UTF16BE(bytes: &[u8]) -> Self {
-        let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_be_bytes([c[0], c[1]]))
-            .collect();
+        let units: Vec<u16> =
+            bytes.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
         Ztring(String::from_utf16_lossy(&units))
     }
 
@@ -204,7 +203,11 @@ impl From<String> for Ztring {
     }
 }
 
-impl AsRef<str> for Ztring { fn as_ref(&self) -> &str { &self.0 } }
+impl AsRef<str> for Ztring {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 impl std::fmt::Display for Ztring {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -260,10 +263,10 @@ where
 }
 
 mod num_from_radix {
-    pub trait FromRadix: Sized {
+    pub(super) trait FromRadix: Sized {
         fn from_radix(s: &str, radix: u32) -> Option<Self>;
     }
-    pub trait FromRadixSigned: Sized {
+    pub(super) trait FromRadixSigned: Sized {
         fn from_radix_signed(s: &str, radix: u32) -> Option<Self>;
     }
     macro_rules! impl_unsigned {
@@ -346,10 +349,7 @@ mod tests {
 
     #[test]
     fn float_formatting() {
-        assert_eq!(
-            Ztring::From_Number_float64(std::f64::consts::PI, 2).as_str(),
-            "3.14"
-        );
+        assert_eq!(Ztring::From_Number_float64(std::f64::consts::PI, 2).as_str(), "3.14");
         assert_eq!(Ztring::From_Number_float64(0.0, 3).as_str(), "0.000");
     }
 }

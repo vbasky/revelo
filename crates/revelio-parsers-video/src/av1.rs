@@ -27,7 +27,7 @@ const OBU_PADDING: u8 = 15;
 pub struct Av1Info {
     pub profile: u8,
     pub level: u8,
-    pub tier: u8,  // 0 = Main, 1 = High
+    pub tier: u8, // 0 = Main, 1 = High
     pub bit_depth: u8,
     pub chroma_subsampling: &'static str,
     pub monochrome: bool,
@@ -45,13 +45,13 @@ fn parse_obu_header(data: &[u8]) -> Option<(u8, bool, bool, usize)> {
     if data.is_empty() {
         return None;
     }
-    
+
     let byte = data[0];
     let obu_forbidden_bit = (byte >> 7) & 1;
     if obu_forbidden_bit != 0 {
         return None; // Invalid OBU
     }
-    
+
     let obu_type = (byte >> 3) & 0xF;
     let obu_extension_flag = ((byte >> 2) & 1) != 0;
     let obu_has_size_field = ((byte >> 1) & 1) != 0;
@@ -62,9 +62,9 @@ fn parse_obu_header(data: &[u8]) -> Option<(u8, bool, bool, usize)> {
     if byte & 1 != 0 {
         return None;
     }
-    
+
     let mut pos = 1usize;
-    
+
     if obu_extension_flag {
         // Skip temporal_id and spatial_id
         if pos >= data.len() {
@@ -72,7 +72,7 @@ fn parse_obu_header(data: &[u8]) -> Option<(u8, bool, bool, usize)> {
         }
         pos += 1;
     }
-    
+
     let obu_size = if obu_has_size_field {
         // LEB128 encoded size
         let mut size: usize = 0;
@@ -94,7 +94,7 @@ fn parse_obu_header(data: &[u8]) -> Option<(u8, bool, bool, usize)> {
         // Size is rest of data (until next OBU or EOF)
         data.len() - pos
     };
-    
+
     Some((obu_type, obu_extension_flag, obu_has_size_field, obu_size))
 }
 
@@ -136,7 +136,7 @@ fn read_ue(data: &[u8], offset: &mut usize) -> Option<u64> {
     }
     // Skip the leading 1
     *offset += 1;
-    
+
     // Read 'leading_zeros' bits
     let mut value = 0u64;
     for _ in 0..leading_zeros {
@@ -148,7 +148,7 @@ fn read_ue(data: &[u8], offset: &mut usize) -> Option<u64> {
         value = (value << 1) | (((data[byte_idx] >> bit_idx) & 1) as u64);
         *offset += 1;
     }
-    
+
     Some(value + (1u64 << leading_zeros) - 1)
 }
 
@@ -159,7 +159,7 @@ fn read_bits(data: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
     if *offset + n > data.len() * 8 {
         return None;
     }
-    
+
     let mut value = 0u64;
     for i in 0..n {
         let byte_idx = (*offset + i) / 8;
@@ -175,16 +175,16 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
     if data.len() < 4 {
         return None;
     }
-    
+
     let mut offset = 0usize;
-    
+
     // seq_profile (3 bits)
     let profile = read_bits(data, &mut offset, 3)? as u8;
     // still_picture (1 bit)
     read_bits(data, &mut offset, 1)?;
     // reduced_still_picture_header (1 bit)
     let reduced_header = read_bits(data, &mut offset, 1)?;
-    
+
     if reduced_header != 0 {
         // Reduced header - simplified parsing
         // timing_info_present_flag is 0
@@ -196,7 +196,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         let level = read_bits(data, &mut offset, 5)? as u8;
         // seq_tier[0] is implied 0 (Main tier)
         let tier = 0u8;
-        
+
         // frame_width_bits_minus_1 (4 bits)
         let width_bits = read_bits(data, &mut offset, 4)? + 1;
         // frame_height_bits_minus_1 (4 bits)
@@ -205,7 +205,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         let width = read_bits(data, &mut offset, width_bits as usize)? as u32 + 1;
         // max_frame_height_minus_1 (n+1 bits)
         let height = read_bits(data, &mut offset, height_bits as usize)? as u32 + 1;
-        
+
         // frame_id_numbers_present_flag is 0
         // use_128x128_superblock (1 bit)
         read_bits(data, &mut offset, 1)?;
@@ -213,7 +213,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         read_bits(data, &mut offset, 1)?;
         // enable_intra_edge_filter (1 bit)
         read_bits(data, &mut offset, 1)?;
-        
+
         return Some(Av1Info {
             profile,
             level,
@@ -230,18 +230,18 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
             height,
         });
     }
-    
+
     // Full sequence header parsing
     // timing_info_present_flag (1 bit)
     let timing_present = read_bits(data, &mut offset, 1)?;
-    
+
     if timing_present != 0 {
         // Skip timing_info (configurable in full parser)
         // For now, we don't need timing info for MediaInfo fields
         // Skip: num_units_in_display_tick, time_scale, equal_picture_interval, num_ticks_per_picture_minus_1
         return None; // Complex path not fully implemented yet
     }
-    
+
     // decoder_model_info_present_flag is implied 0 if timing not present
     // initial_display_delay_present_flag (1 bit)
     let initial_display_delay_present = read_bits(data, &mut offset, 1)?;
@@ -249,7 +249,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         // initial_display_delay_minus_1 (4 bits)
         read_bits(data, &mut offset, 4)?;
     }
-    
+
     // operating_points_cnt_minus_1 (5 bits)
     let op_cnt = read_bits(data, &mut offset, 5)?;
     for _ in 0..=op_cnt {
@@ -260,7 +260,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         // if seq_level_idx[i] > 7: seq_tier[i] (1 bit)
         // Simplified: assume level <= 7
     }
-    
+
     // Skip to frame size and other info
     // This is a simplified implementation
     // frame_width_bits_minus_1 (4 bits)
@@ -271,7 +271,7 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
     let width = read_bits(data, &mut offset, width_bits as usize)? as u32 + 1;
     // max_frame_height_minus_1 (n+1 bits)
     let height = read_bits(data, &mut offset, height_bits as usize)? as u32 + 1;
-    
+
     // frame_id_numbers_present_flag (1 bit)
     let frame_id_present = read_bits(data, &mut offset, 1)?;
     if frame_id_present != 0 {
@@ -280,17 +280,17 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         // additional_frame_id_length_minus_1 (1 bit)
         read_bits(data, &mut offset, 1)?;
     }
-    
+
     // use_128x128_superblock (1 bit)
     read_bits(data, &mut offset, 1)?;
     // enable_filter_intra (1 bit)
     read_bits(data, &mut offset, 1)?;
     // enable_intra_edge_filter (1 bit)
     read_bits(data, &mut offset, 1)?;
-    
+
     // Additional mode support - simplified
     // enable_interintra_compound, enable_masked_compound, etc.
-    
+
     // Derive bit depth from profile
     let bit_depth = match profile {
         0 => 8,  // Main: 8-bit
@@ -323,16 +323,18 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
 }
 
 /// Parse AV1 from raw OBU stream (Annex B or low-overhead format).
+/// Detection: OBU temporal delimiter + sequence header.
+/// Fills: Profile, level, frame dimensions, HDR metadata, bit depth, chroma subsampling.
 pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("AV1");
-    
+
     let data = if let Some(d) = fa.peek_raw(fa.remain()) {
         d.to_vec()
     } else {
         fa.element_end();
         return false;
     };
-    
+
     if data.len() < 2 {
         fa.element_end();
         return false;
@@ -355,14 +357,14 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     // Look for sequence header OBU
     let mut pos = 0usize;
     let mut seq_header_info = None;
-    
+
     while pos < data.len() {
         let header_result = parse_obu_header(&data[pos..]);
         let (obu_type, _ext_flag, _has_size, obu_size) = match header_result {
             Some(h) => h,
             None => break,
         };
-        
+
         // Calculate header size
         let header_size = if _has_size {
             // Need to calculate actual bytes consumed by header
@@ -382,7 +384,7 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         } else {
             1
         };
-        
+
         if obu_type == OBU_SEQUENCE_HEADER {
             let payload_start = pos + header_size;
             if payload_start + obu_size <= data.len() {
@@ -393,10 +395,10 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
                 }
             }
         }
-        
+
         pos += header_size + obu_size;
     }
-    
+
     let info = match seq_header_info {
         Some(i) => i,
         None => {
@@ -404,14 +406,14 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
             return false;
         }
     };
-    
+
     fa.stream_prepare(StreamKind::Video);
     fa.fill(StreamKind::Video, 0, "Format", "AV1", false);
     fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
     fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
     fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
     fa.fill(StreamKind::Video, 0, "ChromaSubsampling", info.chroma_subsampling, false);
-    
+
     let profile_name = match info.profile {
         0 => "Main",
         1 => "High",
@@ -419,15 +421,15 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         _ => "Unknown",
     };
     fa.fill(StreamKind::Video, 0, "Format_Profile", profile_name, false);
-    
+
     fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
     fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
-    
+
     // General stream
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "AV1", false);
     fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
-    
+
     fa.element_end();
     true
 }
@@ -438,7 +440,7 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
     if config.len() < 4 {
         return None;
     }
-    
+
     // AV1CodecConfigurationRecord:
     // marker (1 bit) = 1
     // version (7 bits) = 1
@@ -455,30 +457,26 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
     // initial_presentation_delay_present (1 bit)
     // initial_presentation_delay_minus_one (4 bits) - if present
     // configOBUs (variable)
-    
+
     let _offset = 0usize;
-    
+
     // First byte: marker (1) + version (7)
     let byte0 = config[0];
     let marker = (byte0 >> 7) & 1;
     let version = byte0 & 0x7F;
-    
+
     if marker != 1 || version != 1 {
         return None;
     }
-    
+
     // seq_profile (3 bits) from bits 7-5 of byte 1
     let profile = (config[1] >> 5) & 0x7;
     // seq_level_idx_0 (5 bits) from bits 4-0 of byte 1
     let level = config[1] & 0x1F;
-    
+
     // seq_tier_0 if level > 7
-    let tier = if level > 7 {
-        (config[2] >> 7) & 1
-    } else {
-        0
-    };
-    
+    let tier = if level > 7 { (config[2] >> 7) & 1 } else { 0 };
+
     // high_bitdepth, twelve_bit, monochrome, chroma_subsampling
     let mut pos = 2usize;
     let high_bitdepth = if level > 7 {
@@ -487,21 +485,17 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
     } else {
         (config[2] >> 7) & 1
     };
-    
+
     // For full parsing, we need to extract the sequence header from configOBUs
     // Skip to configOBUs and parse the sequence header OBU
     // Simplified: return basic info from config record
-    
+
     let bit_depth = if high_bitdepth != 0 {
-        if profile == 2 && config.len() > pos && ((config[pos] >> 5) & 1) != 0 {
-            12
-        } else {
-            10
-        }
+        if profile == 2 && config.len() > pos && ((config[pos] >> 5) & 1) != 0 { 12 } else { 10 }
     } else {
         8
     };
-    
+
     // Try to find and parse the sequence header OBU from configOBUs
     // The configOBUs start after the fixed header
     let header_size = if level > 7 { 4 } else { 3 };
@@ -509,33 +503,34 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
         let obus = &config[header_size..];
         // Look for sequence header OBU (type 1)
         if let Some((obu_type, _, _, obu_size)) = parse_obu_header(obus)
-            && obu_type == OBU_SEQUENCE_HEADER {
-                let header_len = if obus.len() > 1 && ((obus[1] >> 1) & 1) != 0 {
-                    // Has size field - calculate header length
-                    let mut hlen = 1;
-                    if ((obus[0] >> 2) & 1) != 0 {
-                        hlen += 1; // extension flag
-                    }
-                    // Skip LEB128 size
-                    let mut spos = hlen;
-                    while spos < obus.len() && (obus[spos] & 0x80) != 0 {
-                        spos += 1;
-                    }
-                    hlen = spos + 1;
-                    hlen
-                } else {
-                    1
-                };
-                
-                if header_len + obu_size <= obus.len() {
-                    let payload = &obus[header_len..header_len + obu_size];
-                    if let Some(info) = parse_av1_sequence_header(payload) {
-                        return Some(info);
-                    }
+            && obu_type == OBU_SEQUENCE_HEADER
+        {
+            let header_len = if obus.len() > 1 && ((obus[1] >> 1) & 1) != 0 {
+                // Has size field - calculate header length
+                let mut hlen = 1;
+                if ((obus[0] >> 2) & 1) != 0 {
+                    hlen += 1; // extension flag
+                }
+                // Skip LEB128 size
+                let mut spos = hlen;
+                while spos < obus.len() && (obus[spos] & 0x80) != 0 {
+                    spos += 1;
+                }
+                hlen = spos + 1;
+                hlen
+            } else {
+                1
+            };
+
+            if header_len + obu_size <= obus.len() {
+                let payload = &obus[header_len..header_len + obu_size];
+                if let Some(info) = parse_av1_sequence_header(payload) {
+                    return Some(info);
                 }
             }
+        }
     }
-    
+
     // Fallback: return partial info from config record
     Some(Av1Info {
         profile,

@@ -35,13 +35,7 @@ pub fn parse_gif(fa: &mut FileAnalyze) -> bool {
     fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
     if width > 0 && height > 0 {
         let dar = (width as f64) / (height as f64);
-        fa.fill(
-            StreamKind::Image,
-            0,
-            "DisplayAspectRatio",
-            format!("{:.3}", dar),
-            false,
-        );
+        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
     }
     fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
     true

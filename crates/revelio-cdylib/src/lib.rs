@@ -1,3 +1,10 @@
+//! C ABI shim — drop-in replacement for MediaInfoLib's `libmediainfo`.
+//!
+//! Function names and signatures match the upstream
+//! C API exactly so existing consumers can swap the shared library
+//! without source changes. Under the hood it delegates to revelio's
+//! [`detect`] + [`FileAnalyze`] pipeline.
+
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 
@@ -18,15 +25,14 @@ pub unsafe extern "C" fn MediaInfo_New() -> *mut c_void {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn MediaInfo_Delete(handle: *mut c_void) {
     if !handle.is_null() {
-        unsafe { drop(Box::from_raw(handle as *mut MediaInfoHandle)); }
+        unsafe {
+            drop(Box::from_raw(handle as *mut MediaInfoHandle));
+        }
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn MediaInfo_Open(
-    handle: *mut c_void,
-    filename: *const c_char,
-) -> c_int {
+pub unsafe extern "C" fn MediaInfo_Open(handle: *mut c_void, filename: *const c_char) -> c_int {
     if handle.is_null() || filename.is_null() {
         return 0;
     }
@@ -58,10 +64,7 @@ pub unsafe extern "C" fn MediaInfo_Close(handle: *mut c_void) {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn MediaInfo_Inform(
-    handle: *mut c_void,
-    _reserved: u32,
-) -> *mut c_char {
+pub unsafe extern "C" fn MediaInfo_Inform(handle: *mut c_void, _reserved: u32) -> *mut c_char {
     if handle.is_null() {
         return std::ptr::null_mut();
     }
@@ -124,15 +127,9 @@ pub unsafe extern "C" fn MediaInfo_Get(
         Some(s) => s,
         None => return std::ptr::null_mut(),
     };
-    let value = stream
-        .get(&param)
-        .map(|z| z.as_str().to_owned())
-        .or_else(|| {
-            stream
-                .extras_iter()
-                .find(|(k, _)| *k == param.as_ref())
-                .map(|(_, v)| v.as_str().to_owned())
-        });
+    let value = stream.get(&param).map(|z| z.as_str().to_owned()).or_else(|| {
+        stream.extras_iter().find(|(k, _)| *k == param.as_ref()).map(|(_, v)| v.as_str().to_owned())
+    });
     match value {
         Some(v) => CString::new(v).unwrap_or_default().into_raw(),
         None => std::ptr::null_mut(),
@@ -173,4 +170,3 @@ fn c_int_to_stream_kind(val: c_int) -> Option<StreamKind> {
         _ => None,
     }
 }
-

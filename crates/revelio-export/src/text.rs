@@ -60,41 +60,115 @@ pub fn to_text(streams: &StreamCollection, path: &str) -> String {
 fn display_fields(kind: StreamKind) -> &'static [&'static str] {
     match kind {
         StreamKind::General => &[
-            "CompleteName", "Format", "Format_Version", "CodecID",
-            "FileSize", "Duration", "OverallBitRate",
-            "FrameRate", "Encoded_Application", "Encoded_Library",
-            "Encoded_Date", "Tagged_Date", "Comment",
+            "CompleteName",
+            "Format",
+            "Format_Version",
+            "CodecID",
+            "FileSize",
+            "Duration",
+            "OverallBitRate",
+            "FrameRate",
+            "Encoded_Application",
+            "Encoded_Library",
+            "Encoded_Date",
+            "Tagged_Date",
+            "Comment",
         ],
         StreamKind::Video => &[
-            "ID", "Format", "Format_Info", "Format_Profile",
-            "Format_Settings_CABAC", "Format_Settings_RefFrames",
-            "Format_Settings_GOP", "Format_Settings_SliceCount",
-            "CodecID", "Duration", "BitRate", "Width", "Height",
-            "DisplayAspectRatio", "FrameRate_Mode", "FrameRate",
-            "ColorSpace", "ChromaSubsampling", "BitDepth", "ScanType",
-            "Bits_Pixel_Frame", "StreamSize", "Encoded_Library",
-            "Encoded_Library_Settings", "Title", "Language", "Default", "Forced",
-            "Encoded_Date", "Tagged_Date",
-            "colour_range", "colour_primaries", "transfer_characteristics",
-            "matrix_coefficients", "CodecConfigurationBox",
+            "ID",
+            "Format",
+            "Format_Info",
+            "Format_Profile",
+            "Format_Settings_CABAC",
+            "Format_Settings_RefFrames",
+            "Format_Settings_GOP",
+            "Format_Settings_SliceCount",
+            "CodecID",
+            "Duration",
+            "BitRate",
+            "Width",
+            "Height",
+            "DisplayAspectRatio",
+            "FrameRate_Mode",
+            "FrameRate",
+            "ColorSpace",
+            "ChromaSubsampling",
+            "BitDepth",
+            "ScanType",
+            "Bits_Pixel_Frame",
+            "StreamSize",
+            "Encoded_Library",
+            "Encoded_Library_Settings",
+            "Title",
+            "Language",
+            "Default",
+            "Forced",
+            "Encoded_Date",
+            "Tagged_Date",
+            "colour_range",
+            "colour_primaries",
+            "transfer_characteristics",
+            "matrix_coefficients",
+            "CodecConfigurationBox",
         ],
         StreamKind::Audio => &[
-            "ID", "Format", "Format_Info", "Format_Version", "Format_Profile",
-            "Format_Settings_Mode", "CodecID", "Duration", "Source_Duration",
-            "BitRate_Mode", "BitRate", "BitRate_Maximum",
-            "Channels", "ChannelLayout", "SamplingRate", "BitDepth", "FrameRate",
-            "Compression_Mode", "Delay", "StreamSize", "Source_StreamSize",
-            "Title", "Language", "Default", "Forced", "Encoded_Library",
-            "Encoded_Date", "Tagged_Date",
+            "ID",
+            "Format",
+            "Format_Info",
+            "Format_Version",
+            "Format_Profile",
+            "Format_Settings_Mode",
+            "CodecID",
+            "Duration",
+            "Source_Duration",
+            "BitRate_Mode",
+            "BitRate",
+            "BitRate_Maximum",
+            "Channels",
+            "ChannelLayout",
+            "SamplingRate",
+            "BitDepth",
+            "FrameRate",
+            "Compression_Mode",
+            "Delay",
+            "StreamSize",
+            "Source_StreamSize",
+            "Title",
+            "Language",
+            "Default",
+            "Forced",
+            "Encoded_Library",
+            "Encoded_Date",
+            "Tagged_Date",
         ],
         StreamKind::Other => &[
-            "ID", "Type", "Format", "CodecID", "Duration", "Source_Duration",
-            "BitRate_Mode", "FrameCount", "StreamSize", "Source_StreamSize",
-            "Title", "Language", "Default", "Encoded_Date", "Tagged_Date",
+            "ID",
+            "Type",
+            "Format",
+            "CodecID",
+            "Duration",
+            "Source_Duration",
+            "BitRate_Mode",
+            "FrameCount",
+            "StreamSize",
+            "Source_StreamSize",
+            "Title",
+            "Language",
+            "Default",
+            "Encoded_Date",
+            "Tagged_Date",
         ],
         StreamKind::Image => &[
-            "ID", "Type", "Format", "Format_Profile", "Width", "Height",
-            "ColorSpace", "ChromaSubsampling", "BitDepth", "Compression_Mode",
+            "ID",
+            "Type",
+            "Format",
+            "Format_Profile",
+            "Width",
+            "Height",
+            "ColorSpace",
+            "ChromaSubsampling",
+            "BitDepth",
+            "Compression_Mode",
             "StreamSize",
         ],
         _ => &[],
@@ -144,9 +218,10 @@ fn render(
             // Audio folds Format_AdditionalFeatures into the Format line
             // ("AAC" + "LC" → "AAC LC").
             if kind == StreamKind::Audio
-                && let Some(feat) = s.get("Format_AdditionalFeatures") {
-                    return Some(("Format", format!("{fmt} {}", feat.as_str())));
-                }
+                && let Some(feat) = s.get("Format_AdditionalFeatures")
+            {
+                return Some(("Format", format!("{fmt} {}", feat.as_str())));
+            }
             Some(("Format", fmt))
         }
         "Format_Info" => Some(("Format/Info", s.get("Format_Info")?.as_str().to_owned())),
@@ -158,9 +233,10 @@ fn render(
             let prof = s.get("Format_Profile")?.as_str().to_owned();
             // Video combines profile + level: "Constrained Baseline@L3".
             if kind == StreamKind::Video
-                && let Some(level) = s.get("Format_Level") {
-                    return Some(("Format profile", format!("{prof}@L{}", level.as_str())));
-                }
+                && let Some(level) = s.get("Format_Level")
+            {
+                return Some(("Format profile", format!("{prof}@L{}", level.as_str())));
+            }
             Some(("Format profile", prof))
         }
         "Format_Settings_Mode" => {
@@ -185,9 +261,10 @@ fn render(
             let id = s.get("CodecID")?.as_str().to_owned();
             // General folds CodecID_Compatible: "mp42 (mp42/avc1)".
             if kind == StreamKind::General
-                && let Some(compat) = s.get("CodecID_Compatible") {
-                    return Some(("Codec ID", format!("{id} ({})", compat.as_str())));
-                }
+                && let Some(compat) = s.get("CodecID_Compatible")
+            {
+                return Some(("Codec ID", format!("{id} ({})", compat.as_str())));
+            }
             Some(("Codec ID", id))
         }
         "CodecConfigurationBox" => {
@@ -230,7 +307,9 @@ fn render(
         }
 
         "Width" => Some(("Width", format!("{} pixels", thousands_space(s.get("Width")?.as_str())))),
-        "Height" => Some(("Height", format!("{} pixels", thousands_space(s.get("Height")?.as_str())))),
+        "Height" => {
+            Some(("Height", format!("{} pixels", thousands_space(s.get("Height")?.as_str()))))
+        }
         "DisplayAspectRatio" => {
             Some(("Display aspect ratio", display_aspect(s.get("DisplayAspectRatio")?.as_str())))
         }
@@ -240,9 +319,10 @@ fn render(
             let fps = s.get("FrameRate")?.as_str().to_owned();
             // Audio appends samples-per-frame: "21.533 FPS (1024 SPF)".
             if kind == StreamKind::Audio
-                && let Some(spf) = s.get("SamplesPerFrame") {
-                    return Some(("Frame rate", format!("{fps} FPS ({} SPF)", spf.as_str())));
-                }
+                && let Some(spf) = s.get("SamplesPerFrame")
+            {
+                return Some(("Frame rate", format!("{fps} FPS ({} SPF)", spf.as_str())));
+            }
             Some(("Frame rate", format!("{fps} FPS")))
         }
 
@@ -351,16 +431,16 @@ fn human_size(bytes: u64) -> String {
 fn human_size_with_pct(bytes: u64, file_size: Option<u64>) -> String {
     let base = human_size(bytes);
     if let Some(fs) = file_size
-        && fs > 0 {
-            let pct = (bytes as f64 * 100.0 / fs as f64).round() as u64;
-            return format!("{base} ({pct}%)");
-        }
+        && fs > 0
+    {
+        let pct = (bytes as f64 * 100.0 / fs as f64).round() as u64;
+        return format!("{base} ({pct}%)");
+    }
     base
 }
 
 /// Round to ~3 significant figures, dropping trailing ".0".
 fn trim3(v: f64) -> String {
-    
     if v >= 100.0 {
         format!("{:.0}", v)
     } else if v >= 10.0 {
@@ -499,7 +579,12 @@ mod tests {
     fn general_uses_friendly_labels_and_humanized_values() {
         let c = stream_with(
             StreamKind::General,
-            &[("Format", "MPEG-4"), ("FileSize", "5510872"), ("Duration", "60095"), ("OverallBitRate", "733621")],
+            &[
+                ("Format", "MPEG-4"),
+                ("FileSize", "5510872"),
+                ("Duration", "60095"),
+                ("OverallBitRate", "733621"),
+            ],
         );
         let t = to_text(&c, "/tmp/x.mp4");
         assert!(t.contains("Complete name"), "{t}");
@@ -514,8 +599,15 @@ mod tests {
     fn video_combines_profile_level_and_humanizes() {
         let c = stream_with(
             StreamKind::Video,
-            &[("Format", "AVC"), ("Format_Profile", "Constrained Baseline"), ("Format_Level", "3"),
-              ("Width", "640"), ("Height", "360"), ("FrameRate_Mode", "CFR"), ("BitDepth", "8")],
+            &[
+                ("Format", "AVC"),
+                ("Format_Profile", "Constrained Baseline"),
+                ("Format_Level", "3"),
+                ("Width", "640"),
+                ("Height", "360"),
+                ("FrameRate_Mode", "CFR"),
+                ("BitDepth", "8"),
+            ],
         );
         let t = to_text(&c, "/tmp/x.mp4");
         assert!(t.contains("Constrained Baseline@L3"), "{t}");
@@ -528,8 +620,13 @@ mod tests {
     fn audio_merges_additional_features_and_channels() {
         let c = stream_with(
             StreamKind::Audio,
-            &[("Format", "AAC"), ("Format_AdditionalFeatures", "LC"), ("Channels", "2"),
-              ("SamplingRate", "22050"), ("BitRate_Mode", "CBR")],
+            &[
+                ("Format", "AAC"),
+                ("Format_AdditionalFeatures", "LC"),
+                ("Channels", "2"),
+                ("SamplingRate", "22050"),
+                ("BitRate_Mode", "CBR"),
+            ],
         );
         let t = to_text(&c, "/tmp/x.mp4");
         assert!(t.contains("AAC LC"), "{t}");

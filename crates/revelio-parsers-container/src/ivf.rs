@@ -99,20 +99,8 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
         if frame_rate_den != 0 {
             let fr = frame_rate_num as f64 / frame_rate_den as f64;
             fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
-            fa.fill(
-                StreamKind::Video,
-                0,
-                "FrameRate_Num",
-                frame_rate_num.to_string(),
-                false,
-            );
-            fa.fill(
-                StreamKind::Video,
-                0,
-                "FrameRate_Den",
-                frame_rate_den.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::Video, 0, "FrameRate_Num", frame_rate_num.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "FrameRate_Den", frame_rate_den.to_string(), false);
         }
         if frame_count > 0 {
             fa.fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
@@ -140,7 +128,14 @@ fn video_format_from_fourcc(fcc: Int32u) -> &'static str {
 mod tests {
     use super::*;
 
-    fn make_ivf(fourcc: &[u8; 4], width: u16, height: u16, fr_num: u32, fr_den: u32, frame_count: u32) -> Vec<u8> {
+    fn make_ivf(
+        fourcc: &[u8; 4],
+        width: u16,
+        height: u16,
+        fr_num: u32,
+        fr_den: u32,
+        frame_count: u32,
+    ) -> Vec<u8> {
         let mut buf = Vec::with_capacity(32);
         buf.extend_from_slice(b"DKIF");
         buf.extend_from_slice(&0u16.to_le_bytes()); // version

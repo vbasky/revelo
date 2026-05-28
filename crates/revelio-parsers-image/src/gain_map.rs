@@ -135,25 +135,45 @@ pub fn parse_gain_map(fa: &mut FileAnalyze) -> bool {
     }
 
     for (idx, ch) in channels.iter().enumerate() {
-        let suffix = if is_multichannel {
-            format!("_Channel{}", idx + 1)
-        } else {
-            String::new()
-        };
+        let suffix = if is_multichannel { format!("_Channel{}", idx + 1) } else { String::new() };
         if let Some(v) = ch.gmin {
-            fa.fill(StreamKind::Image, 0, &format!("GainMapMin{}", suffix), format!("{:.6}", v), false);
+            fa.fill(
+                StreamKind::Image,
+                0,
+                &format!("GainMapMin{}", suffix),
+                format!("{:.6}", v),
+                false,
+            );
         }
         if let Some(v) = ch.gmax {
-            fa.fill(StreamKind::Image, 0, &format!("GainMapMax{}", suffix), format!("{:.6}", v), false);
+            fa.fill(
+                StreamKind::Image,
+                0,
+                &format!("GainMapMax{}", suffix),
+                format!("{:.6}", v),
+                false,
+            );
         }
         if let Some(v) = ch.gamma {
             fa.fill(StreamKind::Image, 0, &format!("Gamma{}", suffix), format!("{:.6}", v), false);
         }
         if let Some(v) = ch.base_off {
-            fa.fill(StreamKind::Image, 0, &format!("BaseOffset{}", suffix), format!("{:.6}", v), false);
+            fa.fill(
+                StreamKind::Image,
+                0,
+                &format!("BaseOffset{}", suffix),
+                format!("{:.6}", v),
+                false,
+            );
         }
         if let Some(v) = ch.alt_off {
-            fa.fill(StreamKind::Image, 0, &format!("AlternateOffset{}", suffix), format!("{:.6}", v), false);
+            fa.fill(
+                StreamKind::Image,
+                0,
+                &format!("AlternateOffset{}", suffix),
+                format!("{:.6}", v),
+                false,
+            );
         }
     }
     true

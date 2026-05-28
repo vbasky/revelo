@@ -152,7 +152,12 @@ mod tests {
     fn json_has_creating_library_header() {
         let c = StreamCollection::new();
         let j = to_json(&c, "/x", "26.05");
-        assert!(j.starts_with("{\n\"creatingLibrary\":{\"name\":\"MediaInfoLib\",\"version\":\"26.05\""), "{j}");
+        assert!(
+            j.starts_with(
+                "{\n\"creatingLibrary\":{\"name\":\"MediaInfoLib\",\"version\":\"26.05\""
+            ),
+            "{j}"
+        );
         assert!(j.contains("\"media\":{\"@ref\":\"/x\",\"track\":[]}\n}"), "{j}");
     }
 
@@ -163,7 +168,10 @@ mod tests {
         c.fill(StreamKind::General, 0, "FileSize", Ztring::from("100"), false);
         let j = to_json(&c, "/x", "1.0");
         // first field right after @type (comma, no newline); later fields on own lines
-        assert!(j.contains("{\"@type\":\"General\",\"Format\":\"MPEG-4\",\n\"FileSize\":\"100\"}"), "{j}");
+        assert!(
+            j.contains("{\"@type\":\"General\",\"Format\":\"MPEG-4\",\n\"FileSize\":\"100\"}"),
+            "{j}"
+        );
     }
 
     #[test]

@@ -209,12 +209,8 @@ pub fn parse_id3v2(fa: &mut FileAnalyze) -> Option<u32> {
         let frame_size = if version_major >= 4 {
             synch_safe_int(&buf[offset..offset + 4]) as usize
         } else {
-            u32::from_be_bytes([
-                buf[offset],
-                buf[offset + 1],
-                buf[offset + 2],
-                buf[offset + 3],
-            ]) as usize
+            u32::from_be_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]])
+                as usize
         };
         offset += 4;
         if version_major >= 3 {
@@ -254,9 +250,7 @@ fn parse_id3v2_frame(tags: &mut Vec<TagEntry>, id: &str, data: &[u8]) {
     let text = if encoding == 1 || encoding == 2 {
         read_utf16(&data[text_start..], encoding == 2)
     } else {
-        String::from_utf8_lossy(&data[text_start..])
-            .trim_end_matches('\0')
-            .to_string()
+        String::from_utf8_lossy(&data[text_start..]).trim_end_matches('\0').to_string()
     };
     if text.is_empty() {
         return;
@@ -285,11 +279,8 @@ fn read_utf16(data: &[u8], big_endian: bool) -> String {
     while i + 1 < data.len() {
         let b1 = data[i];
         let b2 = data[i + 1];
-        let cp = if big_endian {
-            u16::from_be_bytes([b1, b2])
-        } else {
-            u16::from_le_bytes([b1, b2])
-        };
+        let cp =
+            if big_endian { u16::from_be_bytes([b1, b2]) } else { u16::from_le_bytes([b1, b2]) };
         if cp == 0 {
             break;
         }
@@ -319,41 +310,27 @@ pub fn parse_ape_tag(fa: &mut FileAnalyze) -> Option<u32> {
     let item_count = u32::from_le_bytes([footer[12], footer[13], footer[14], footer[15]]) as usize;
     let flags = u32::from_le_bytes([footer[16], footer[17], footer[18], footer[19]]);
     let has_header = (flags & 0x80000000) != 0;
-    let tag_start = if has_header && footer_start >= 32 {
-        footer_start - 32
-    } else {
-        0
-    };
+    let tag_start = if has_header && footer_start >= 32 { footer_start - 32 } else { 0 };
     let tag_end = footer_start + 32;
     if tag_start >= tag_end || tag_end > buf.len() {
         return None;
     }
 
     let mut tags: Vec<TagEntry> = Vec::new();
-    let mut offset = if has_header {
-        tag_start + 32
-    } else {
-        tag_start
-    };
+    let mut offset = if has_header { tag_start + 32 } else { tag_start };
 
     for _ in 0..item_count.min(100) {
         if offset + 8 > tag_end {
             break;
         }
-        let value_size = u32::from_le_bytes([
-            buf[offset],
-            buf[offset + 1],
-            buf[offset + 2],
-            buf[offset + 3],
-        ]) as usize;
+        let value_size =
+            u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]])
+                as usize;
         offset += 8;
         if offset >= tag_end {
             break;
         }
-        let key_end = buf[offset..]
-            .iter()
-            .position(|&b| b == 0)
-            .unwrap_or(tag_end - offset);
+        let key_end = buf[offset..].iter().position(|&b| b == 0).unwrap_or(tag_end - offset);
         let key = String::from_utf8_lossy(&buf[offset..offset + key_end]).to_uppercase();
         offset += key_end + 1;
         if offset + value_size > tag_end {
@@ -388,22 +365,16 @@ pub fn parse_vorbis_comment_from_buf(buf: &[u8], offset: &mut usize) -> Vec<TagE
     if *offset + 4 > buf.len() {
         return tags;
     }
-    let vendor_len = u32::from_le_bytes([
-        buf[*offset],
-        buf[*offset + 1],
-        buf[*offset + 2],
-        buf[*offset + 3],
-    ]) as usize;
+    let vendor_len =
+        u32::from_le_bytes([buf[*offset], buf[*offset + 1], buf[*offset + 2], buf[*offset + 3]])
+            as usize;
     *offset += 4 + vendor_len;
     if *offset + 4 > buf.len() {
         return tags;
     }
-    let count = u32::from_le_bytes([
-        buf[*offset],
-        buf[*offset + 1],
-        buf[*offset + 2],
-        buf[*offset + 3],
-    ]) as usize;
+    let count =
+        u32::from_le_bytes([buf[*offset], buf[*offset + 1], buf[*offset + 2], buf[*offset + 3]])
+            as usize;
     *offset += 4;
 
     for _ in 0..count.min(200) {
@@ -472,17 +443,13 @@ pub fn parse_lyrics3(fa: &mut FileAnalyze) -> Option<u32> {
             end = offset;
             break;
         }
-        let size_str = std::str::from_utf8(&buf[offset + 3..offset + 8])
-            .ok()
-            .unwrap_or("0");
+        let size_str = std::str::from_utf8(&buf[offset + 3..offset + 8]).ok().unwrap_or("0");
         let size: usize = size_str.trim().parse().unwrap_or(0);
         offset += 8;
         if offset + size > buf.len() {
             break;
         }
-        let value = String::from_utf8_lossy(&buf[offset..offset + size])
-            .trim()
-            .to_string();
+        let value = String::from_utf8_lossy(&buf[offset..offset + size]).trim().to_string();
         if offset >= 11 {
             match &buf[offset - 8..offset - 5] {
                 b"EAL" => tags.push(("Album", value)),
@@ -556,12 +523,22 @@ mod tests {
 /// Returns the list of tag entries and the offset to the next IFD.
 pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain();
-    if remain < 8 { return false; }
+    if remain < 8 {
+        return false;
+    }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 8 { return false; }
+    if buf.len() < 8 {
+        return false;
+    }
 
-    let byte_order = if &buf[0..2] == b"II" { "LE" } else if &buf[0..2] == b"MM" { "BE" } else { return false; };
+    let byte_order = if &buf[0..2] == b"II" {
+        "LE"
+    } else if &buf[0..2] == b"MM" {
+        "BE"
+    } else {
+        return false;
+    };
 
     let ifd_offset = read_tiff_u32(&buf, 4, byte_order) as usize;
     let mut tags: Vec<TagEntry> = Vec::new();
@@ -571,11 +548,15 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
 }
 
 fn read_exif_ifd(data: &[u8], offset: usize, bo: &str, tags: &mut Vec<TagEntry>) {
-    if offset + 2 > data.len() { return; }
+    if offset + 2 > data.len() {
+        return;
+    }
     let count = read_tiff_u16(data, offset, bo) as usize;
     let mut pos = offset + 2;
     for _ in 0..count.min(100) {
-        if pos + 12 > data.len() { break; }
+        if pos + 12 > data.len() {
+            break;
+        }
         let tag_id = read_tiff_u16(data, pos, bo);
         let tag_type = read_tiff_u16(data, pos + 2, bo);
         let tag_count = read_tiff_u32(data, pos + 4, bo) as usize;
@@ -583,8 +564,12 @@ fn read_exif_ifd(data: &[u8], offset: usize, bo: &str, tags: &mut Vec<TagEntry>)
         pos += 8;
         let value: String;
         if tag_size <= 4 {
-            value = if tag_type == 2 { // ASCII
-                let end = data[pos..pos + tag_count.min(4)].iter().position(|&b| b == 0).unwrap_or(tag_count.min(4));
+            value = if tag_type == 2 {
+                // ASCII
+                let end = data[pos..pos + tag_count.min(4)]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count.min(4));
                 String::from_utf8_lossy(&data[pos..pos + end]).to_string()
             } else {
                 read_exif_number(data, pos, tag_type, bo).to_string()
@@ -593,9 +578,14 @@ fn read_exif_ifd(data: &[u8], offset: usize, bo: &str, tags: &mut Vec<TagEntry>)
         } else {
             let val_offset = read_tiff_u32(data, pos, bo) as usize;
             pos += 4;
-            if val_offset + tag_size > data.len() { continue; }
+            if val_offset + tag_size > data.len() {
+                continue;
+            }
             value = if tag_type == 2 {
-                let end = data[val_offset..val_offset + tag_count].iter().position(|&b| b == 0).unwrap_or(tag_count);
+                let end = data[val_offset..val_offset + tag_count]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count);
                 String::from_utf8_lossy(&data[val_offset..val_offset + end]).to_string()
             } else {
                 read_exif_number(data, val_offset, tag_type, bo).to_string()
@@ -641,15 +631,24 @@ fn exif_type_size(t: u16) -> usize {
 }
 
 fn read_exif_number(data: &[u8], off: usize, t: u16, bo: &str) -> i64 {
-    if off + 8 > data.len() { return 0; }
+    if off + 8 > data.len() {
+        return 0;
+    }
     match (t, bo) {
-        (3, "BE") => u16::from_be_bytes([data[off], data[off+1]]) as i64,
-        (3, "LE") => u16::from_le_bytes([data[off], data[off+1]]) as i64,
-        (4, "BE") => u32::from_be_bytes([data[off], data[off+1], data[off+2], data[off+3]]) as i64,
-        (4, "LE") => u32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]) as i64,
+        (3, "BE") => u16::from_be_bytes([data[off], data[off + 1]]) as i64,
+        (3, "LE") => u16::from_le_bytes([data[off], data[off + 1]]) as i64,
+        (4, "BE") => {
+            u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as i64
+        }
+        (4, "LE") => {
+            u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as i64
+        }
         (5, _) => {
-            let num = if bo == "BE" { i32::from_be_bytes([data[off], data[off+1], data[off+2], data[off+3]]) }
-                else { i32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]) };
+            let num = if bo == "BE" {
+                i32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+            } else {
+                i32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+            };
             num as i64
         }
         _ => 0,
@@ -657,12 +656,19 @@ fn read_exif_number(data: &[u8], off: usize, t: u16, bo: &str) -> i64 {
 }
 
 fn read_tiff_u16(data: &[u8], off: usize, bo: &str) -> u16 {
-    if bo == "BE" { u16::from_be_bytes([data[off], data[off+1]]) } else { u16::from_le_bytes([data[off], data[off+1]]) }
+    if bo == "BE" {
+        u16::from_be_bytes([data[off], data[off + 1]])
+    } else {
+        u16::from_le_bytes([data[off], data[off + 1]])
+    }
 }
 
 fn read_tiff_u32(data: &[u8], off: usize, bo: &str) -> u32 {
-    if bo == "BE" { u32::from_be_bytes([data[off], data[off+1], data[off+2], data[off+3]]) }
-    else { u32::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3]]) }
+    if bo == "BE" {
+        u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+    } else {
+        u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+    }
 }
 
 // ---------- XMP ----------
@@ -673,7 +679,9 @@ pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
     let Some(buf) = buf else { return false };
 
     let text = std::str::from_utf8(&buf).unwrap_or("");
-    if !text.contains("xmpmeta") || !text.contains("rdf:RDF") { return false; }
+    if !text.contains("xmpmeta") || !text.contains("rdf:RDF") {
+        return false;
+    }
 
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_xmp_fields(text, &mut tags);
@@ -683,16 +691,27 @@ pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
 
 fn extract_xmp_fields(xml: &str, tags: &mut Vec<TagEntry>) {
     let field_map = [
-        ("dc:title", "Title"), ("dc:creator", "Creator"), ("dc:subject", "Subject"),
-        ("dc:description", "Description"), ("dc:publisher", "Publisher"),
-        ("dc:date", "Encoded_Date"), ("dc:format", "Format"), ("dc:language", "Language"),
+        ("dc:title", "Title"),
+        ("dc:creator", "Creator"),
+        ("dc:subject", "Subject"),
+        ("dc:description", "Description"),
+        ("dc:publisher", "Publisher"),
+        ("dc:date", "Encoded_Date"),
+        ("dc:format", "Format"),
+        ("dc:language", "Language"),
         ("dc:rights", "Copyright"),
-        ("xmp:CreateDate", "Encoded_Date"), ("xmp:ModifyDate", "Encoded_Date"),
-        ("xmp:CreatorTool", "Encoded_Application"), ("xmp:Rating", "Rating"),
-        ("tiff:Make", "Make"), ("tiff:Model", "Model"),
-        ("tiff:ImageWidth", "Width"), ("tiff:ImageLength", "Height"),
-        ("exif:ExposureTime", "ExposureTime"), ("exif:FNumber", "FNumber"),
-        ("exif:ISOSpeedRatings", "ISOSpeed"), ("exif:FocalLength", "FocalLength"),
+        ("xmp:CreateDate", "Encoded_Date"),
+        ("xmp:ModifyDate", "Encoded_Date"),
+        ("xmp:CreatorTool", "Encoded_Application"),
+        ("xmp:Rating", "Rating"),
+        ("tiff:Make", "Make"),
+        ("tiff:Model", "Model"),
+        ("tiff:ImageWidth", "Width"),
+        ("tiff:ImageLength", "Height"),
+        ("exif:ExposureTime", "ExposureTime"),
+        ("exif:FNumber", "FNumber"),
+        ("exif:ISOSpeedRatings", "ISOSpeed"),
+        ("exif:FocalLength", "FocalLength"),
     ];
 
     for (xmp_key, mi_key) in &field_map {
@@ -717,13 +736,19 @@ fn extract_xml_element(xml: &str, tag: &str) -> Option<String> {
 
 pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain();
-    if remain < 128 { return false; }
+    if remain < 128 {
+        return false;
+    }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 128 { return false; }
+    if buf.len() < 128 {
+        return false;
+    }
 
     let profile_size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    if profile_size == 0 || profile_size > buf.len() { return false; }
+    if profile_size == 0 || profile_size > buf.len() {
+        return false;
+    }
 
     let _preferred_cmm = read_icc_u32(&buf, 4);
     let _version = read_icc_u32(&buf, 8);
@@ -737,13 +762,19 @@ pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
 
     let mut pos = 132;
     for _ in 0..tag_count.min(50) {
-        if pos + 12 > buf.len() { break; }
+        if pos + 12 > buf.len() {
+            break;
+        }
         let _tag_sig = &buf[pos..pos + 4];
-        let tag_offset = u32::from_be_bytes([buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]]) as usize;
-        let tag_size = u32::from_be_bytes([buf[pos + 8], buf[pos + 9], buf[pos + 10], buf[pos + 11]]) as usize;
+        let tag_offset =
+            u32::from_be_bytes([buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]]) as usize;
+        let tag_size =
+            u32::from_be_bytes([buf[pos + 8], buf[pos + 9], buf[pos + 10], buf[pos + 11]]) as usize;
         pos += 12;
 
-        if tag_offset + tag_size > buf.len() { continue; }
+        if tag_offset + tag_size > buf.len() {
+            continue;
+        }
         if &buf[pos - 12..pos - 8] == b"desc" {
             let tag_data = &buf[tag_offset..tag_offset + tag_size.saturating_sub(12)];
             desc = String::from_utf8_lossy(tag_data).trim_end_matches('\0').to_string();
@@ -751,7 +782,9 @@ pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
     }
 
     tags.push(("ICC_Profile", format!("{} ({})", color_space, device_class)));
-    if !desc.is_empty() { tags.push(("ICC_Description", desc)); }
+    if !desc.is_empty() {
+        tags.push(("ICC_Description", desc));
+    }
 
     fill_tags(fa, &tags);
     true
@@ -765,13 +798,17 @@ fn read_icc_u32(data: &[u8], off: usize) -> u32 {
 
 pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain();
-    if remain < 16 { return false; }
+    if remain < 16 {
+        return false;
+    }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
     // Search for C2PA JUMBF box: "jumb" at any position
     let jumb_pos = buf.windows(4).position(|w| w == b"jumb");
-    if jumb_pos.is_none() { return false; }
+    if jumb_pos.is_none() {
+        return false;
+    }
 
     let mut tags: Vec<TagEntry> = Vec::new();
 
@@ -784,7 +821,7 @@ pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
                 b"c2as" => "C2PA Assertion Store",
                 b"c2cl" => "C2PA Claim",
                 b"c2cs" => "C2PA Claim Signature",
-                _ => "C2PA"
+                _ => "C2PA",
             };
             tags.push(("C2PA_Format", label.to_string()));
         }
@@ -803,23 +840,32 @@ pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
 
 pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
     let remain = fa.remain();
-    if remain < 4 { return false; }
+    if remain < 4 {
+        return false;
+    }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
     // IIM starts with 0x1C marker
-    if !buf.windows(3).any(|w| w == [0x1C, 0x00, 0x02]) { return false; }
+    if !buf.windows(3).any(|w| w == [0x1C, 0x00, 0x02]) {
+        return false;
+    }
 
     let mut tags: Vec<TagEntry> = Vec::new();
     let mut pos = 0;
 
     while pos + 4 < buf.len() {
-        if buf[pos] != 0x1C { pos += 1; continue; }
+        if buf[pos] != 0x1C {
+            pos += 1;
+            continue;
+        }
         let record = buf[pos + 1];
         let dataset = buf[pos + 2];
         let size = u16::from_be_bytes([buf[pos + 3], buf[pos + 4]]) as usize;
         pos += 5;
-        if pos + size > buf.len() { break; }
+        if pos + size > buf.len() {
+            break;
+        }
         let value = String::from_utf8_lossy(&buf[pos..pos + size]).trim_end().to_string();
         pos += size;
 
@@ -851,7 +897,9 @@ pub fn parse_property_list(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     let text = std::str::from_utf8(&buf).unwrap_or("");
-    if !text.contains("<!DOCTYPE plist") && !text.contains("<plist") { return false; }
+    if !text.contains("<!DOCTYPE plist") && !text.contains("<plist") {
+        return false;
+    }
 
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_plist_fields(text, &mut tags);
@@ -861,11 +909,16 @@ pub fn parse_property_list(fa: &mut FileAnalyze) -> bool {
 
 fn extract_plist_fields(xml: &str, tags: &mut Vec<TagEntry>) {
     let keys = [
-        ("director", "Director"), ("producer", "Producer"),
-        ("screenwriter", "ScreenplayBy"), ("studio", "ProductionStudio"),
-        ("cast", "Actor"), ("genre", "Genre"),
-        ("copyright", "Copyright"), ("title", "Title"),
-        ("artist", "Performer"), ("album", "Album"),
+        ("director", "Director"),
+        ("producer", "Producer"),
+        ("screenwriter", "ScreenplayBy"),
+        ("studio", "ProductionStudio"),
+        ("cast", "Actor"),
+        ("genre", "Genre"),
+        ("copyright", "Copyright"),
+        ("title", "Title"),
+        ("artist", "Performer"),
+        ("album", "Album"),
     ];
 
     for (plist_key, mi_key) in &keys {
@@ -898,7 +951,9 @@ fn extract_plist_value(xml: &str, key: &str) -> Option<String> {
             if let Some(s_end) = s.find("</string>") {
                 items.push(s[..s_end].to_string());
                 search_pos += s_start + 8 + s_end + 9;
-            } else { break; }
+            } else {
+                break;
+            }
         }
         if !items.is_empty() { Some(items.join(", ")) } else { None }
     } else {
@@ -913,7 +968,9 @@ pub fn parse_spherical_video(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     let text = std::str::from_utf8(&buf).unwrap_or("");
-    if !text.contains("SphericalVideo") && !text.contains("ProjectionType") { return false; }
+    if !text.contains("SphericalVideo") && !text.contains("ProjectionType") {
+        return false;
+    }
 
     let mut tags: Vec<TagEntry> = Vec::new();
 
@@ -985,12 +1042,21 @@ mod exif_tests {
         buf[2..4].copy_from_slice(&[42, 0]);
         buf[4..8].copy_from_slice(&[8, 0, 0, 0]); // IFD offset 8 (LE)
         // 1 IFD entry at offset 8
-        buf[8] = 0x01; buf[9] = 0x00; // count = 1 (LE u16)
-        buf[10] = 0x0F; buf[11] = 0x01; // tag 0x010F (LE u16)
-        buf[12] = 0x02; buf[13] = 0x00; // type = 2 ASCII (LE u16)
-        buf[14] = 0x05; buf[15] = 0x00; buf[16] = 0x00; buf[17] = 0x00; // count = 5 (LE u32)
+        buf[8] = 0x01;
+        buf[9] = 0x00; // count = 1 (LE u16)
+        buf[10] = 0x0F;
+        buf[11] = 0x01; // tag 0x010F (LE u16)
+        buf[12] = 0x02;
+        buf[13] = 0x00; // type = 2 ASCII (LE u16)
+        buf[14] = 0x05;
+        buf[15] = 0x00;
+        buf[16] = 0x00;
+        buf[17] = 0x00; // count = 5 (LE u32)
         buf[18..23].copy_from_slice(b"Canon"); // 5 bytes value (fits in 4 bytes inline)
-        buf[22] = 0x00; buf[23] = 0x00; buf[24] = 0x00; buf[25] = 0x00; // next IFD offset = 0
+        buf[22] = 0x00;
+        buf[23] = 0x00;
+        buf[24] = 0x00;
+        buf[25] = 0x00; // next IFD offset = 0
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_exif(&mut fa));
     }

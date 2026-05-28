@@ -18,28 +18,25 @@ const SIZ_MARKER: Int16u = 0xFF51;
 
 /// Parse a JPEG 2000 image (JP2 file or raw J2K codestream).
 pub fn parse_jp2(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain().min(4096)) {
-        Some(b) => b,
-        None => return false,
-    };
-
-    if buf.len() < 4 {
-        return false;
-    }
-
-    // Try JP2 file format
-    if buf.len() >= 12 && buf[..12] == JP2_SIG {
-        return parse_jp2_file(fa);
-    }
-
-    // Try raw J2K codestream
+    // Try raw J2K codestream first (peek_b2 doesn't borrow fa long-term)
     let mut magic: Int16u = 0;
     fa.peek_b2(&mut magic);
     if magic == SOC_MARKER {
         return parse_j2k_codestream(fa);
     }
 
-    false
+    // Try JP2 file format — use owned copy to avoid borrow conflict
+    // when calling parse_jp2_file which also peeks fa
+    {
+        let buf = match fa.peek_raw(fa.remain().min(4096)) {
+            Some(b) => b.to_vec(),
+            None => return false,
+        };
+        if buf.len() < 12 || buf[..12] != JP2_SIG {
+            return false;
+        }
+    }
+    parse_jp2_file(fa)
 }
 
 fn parse_jp2_file(fa: &mut FileAnalyze) -> bool {
@@ -61,16 +58,21 @@ fn parse_jp2_file(fa: &mut FileAnalyze) -> bool {
     let mut compression: u8 = 7; // JPEG 2000
 
     while pos + 8 <= buf.len() {
-        let box_len = u32::from_be_bytes([buf[pos], buf[pos+1], buf[pos+2], buf[pos+3]]);
-        let box_type = u32::from_be_bytes([buf[pos+4], buf[pos+5], buf[pos+6], buf[pos+7]]);
+        let box_len = u32::from_be_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]]);
+        let box_type = u32::from_be_bytes([buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]]);
 
-        if box_len == 0 { break; }
+        if box_len == 0 {
+            break;
+        }
         let box_end = pos + (box_len as usize);
-        if box_end > buf.len() { break; }
+        if box_end > buf.len() {
+            break;
+        }
 
         match box_type {
             0x66747970 => { /* ftyp — skip */ }
-            0x6A703268 => { // jp2h — JP2 Header
+            0x6A703268 => {
+                // jp2h — JP2 Header
                 let inner = &buf[pos + 8..box_end];
                 if inner.len() >= 4 {
                     let ihdr_len = u32::from_be_bytes([inner[0], inner[1], inner[2], inner[3]]);
@@ -78,11 +80,21 @@ fn parse_jp2_file(fa: &mut FileAnalyze) -> bool {
                         // ihdr: height(4), width(4), num_components(2), bpc(1), compress(1), ...
                         let hi = 8;
                         if hi + 12 <= inner.len() {
-                            height = u32::from_be_bytes([inner[hi], inner[hi+1], inner[hi+2], inner[hi+3]]);
-                            width = u32::from_be_bytes([inner[hi+4], inner[hi+5], inner[hi+6], inner[hi+7]]);
-                            num_components = u16::from_be_bytes([inner[hi+8], inner[hi+9]]);
-                            bpc = inner[hi+10];
-                            compression = inner[hi+11];
+                            height = u32::from_be_bytes([
+                                inner[hi],
+                                inner[hi + 1],
+                                inner[hi + 2],
+                                inner[hi + 3],
+                            ]);
+                            width = u32::from_be_bytes([
+                                inner[hi + 4],
+                                inner[hi + 5],
+                                inner[hi + 6],
+                                inner[hi + 7],
+                            ]);
+                            num_components = u16::from_be_bytes([inner[hi + 8], inner[hi + 9]]);
+                            bpc = inner[hi + 10];
+                            compression = inner[hi + 11];
                         }
                     }
                 }
@@ -127,10 +139,14 @@ fn parse_j2k_codestream(fa: &mut FileAnalyze) -> bool {
         None => return false,
     };
 
-    if buf.len() < 4 { return false; }
+    if buf.len() < 4 {
+        return false;
+    }
     let mut magic: Int16u = 0;
     fa.peek_b2(&mut magic);
-    if magic != SOC_MARKER { return false; }
+    if magic != SOC_MARKER {
+        return false;
+    }
 
     // Find SIZ marker (0xFF51)
     let mut width: u32 = 0;
@@ -140,24 +156,32 @@ fn parse_j2k_codestream(fa: &mut FileAnalyze) -> bool {
 
     let mut i = 2;
     while i + 3 < buf.len() {
-        let marker = u16::from_be_bytes([buf[i], buf[i+1]]);
+        let marker = u16::from_be_bytes([buf[i], buf[i + 1]]);
         if marker == SIZ_MARKER {
-            if i + 45 > buf.len() { break; }
-            let seg_len = u16::from_be_bytes([buf[i+2], buf[i+3]]);
+            if i + 45 > buf.len() {
+                break;
+            }
+            let seg_len = u16::from_be_bytes([buf[i + 2], buf[i + 3]]);
             let siz_end = i + 2 + seg_len as usize;
-            if siz_end > buf.len() { break; }
+            if siz_end > buf.len() {
+                break;
+            }
 
             // SIZ marker segment (from i+2):
             // Lsiz(2), Rsiz(2), Xsiz(4), Ysiz(4), XOsiz(4), YOsiz(4),
             // XTsiz(4), YTsiz(4), XTOsiz(4), YTOsiz(4), Csiz(2)
             // Then per-component: Ssiz(1), XRsiz(1), YRsiz(1)
             let si = i + 4; // skip marker + Lsiz
-            if si + 34 > buf.len() { break; }
-            let ref_width = u32::from_be_bytes([buf[si+2], buf[si+3], buf[si+4], buf[si+5]]);
-            let ref_height = u32::from_be_bytes([buf[si+6], buf[si+7], buf[si+8], buf[si+9]]);
+            if si + 34 > buf.len() {
+                break;
+            }
+            let ref_width =
+                u32::from_be_bytes([buf[si + 2], buf[si + 3], buf[si + 4], buf[si + 5]]);
+            let ref_height =
+                u32::from_be_bytes([buf[si + 6], buf[si + 7], buf[si + 8], buf[si + 9]]);
             width = ref_width;
             height = ref_height;
-            num_components = u16::from_be_bytes([buf[si+34], buf[si+35]]);
+            num_components = u16::from_be_bytes([buf[si + 34], buf[si + 35]]);
 
             if num_components > 0 && si + 36 < buf.len() {
                 let ssiz = buf[si + 36];
@@ -175,7 +199,7 @@ fn parse_j2k_codestream(fa: &mut FileAnalyze) -> bool {
             continue;
         }
         if i + 4 <= buf.len() {
-            let seg_len = u16::from_be_bytes([buf[i+2], buf[i+3]]) as usize;
+            let seg_len = u16::from_be_bytes([buf[i + 2], buf[i + 3]]) as usize;
             i += 2 + seg_len;
         } else {
             i += 2;
@@ -211,9 +235,9 @@ mod tests {
         let mut buf = Vec::new();
         // JPEG 2000 signature box
         buf.extend_from_slice(&JP2_SIG);
-        // File Type box (ftyp)
+        // File Type box (ftyp) — ftyp includes TBox, so content = ftyp[4..]
         let ftyp = b"ftypjp2 \x00\x00\x00\x00";
-        let ftyp_len = 8 + ftyp.len() as u32;
+        let ftyp_len = 8 + (ftyp.len() - 4) as u32;
         buf.extend_from_slice(&ftyp_len.to_be_bytes());
         buf.extend_from_slice(ftyp);
         // JP2 Header box (jp2h) containing Image Header box (ihdr)

@@ -9,10 +9,14 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_webvtt(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 6 { return false; }
+    if buf.len() < 6 {
+        return false;
+    }
 
     let magic = std::str::from_utf8(&buf[0..6]).unwrap_or("");
-    if magic != "WEBVTT" { return false; }
+    if magic != "WEBVTT" {
+        return false;
+    }
 
     let pos = fa.stream_prepare(StreamKind::Text);
     fa.fill(StreamKind::Text, pos, "Format", "WebVTT", false);
@@ -30,7 +34,10 @@ mod tests {
         let buf = b"WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n".to_vec();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_webvtt(&mut fa));
-        assert_eq!(fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()), Some("WebVTT".into()));
+        assert_eq!(
+            fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()),
+            Some("WebVTT".into())
+        );
     }
 
     #[test]

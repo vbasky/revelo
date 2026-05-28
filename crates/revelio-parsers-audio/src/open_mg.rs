@@ -15,7 +15,7 @@
 //!   ... padding to `Size`
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int8u};
+use zenlib::{Int8u, Int16u};
 
 const MAGIC_EA3: [u8; 3] = *b"EA3";
 

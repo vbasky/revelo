@@ -73,23 +73,12 @@ fn map_aifc_compression(fourcc: Int32u) -> AifcCodec {
             sign: Some("Unsigned"),
             ..Default::default()
         },
-        b"fl32" | b"FL32" | b"fl64" | b"FL64" => AifcCodec {
-            format: "PCM",
-            is_float: true,
-            ..Default::default()
-        },
-        b"alaw" | b"ALAW" => AifcCodec {
-            format: "A-law",
-            ..Default::default()
-        },
-        b"ulaw" | b"ULAW" => AifcCodec {
-            format: "\u{00B5}-law",
-            ..Default::default()
-        },
-        b"ima4" => AifcCodec {
-            format: "ADPCM",
-            ..Default::default()
-        },
+        b"fl32" | b"FL32" | b"fl64" | b"FL64" => {
+            AifcCodec { format: "PCM", is_float: true, ..Default::default() }
+        }
+        b"alaw" | b"ALAW" => AifcCodec { format: "A-law", ..Default::default() },
+        b"ulaw" | b"ULAW" => AifcCodec { format: "\u{00B5}-law", ..Default::default() },
+        b"ima4" => AifcCodec { format: "ADPCM", ..Default::default() },
         _ => AifcCodec::default(),
     }
 }
@@ -244,25 +233,13 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
         fa.fill(StreamKind::Audio, 0, "Format", codec.format, false);
     }
     if let Some(end) = codec.endianness {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "Format_Settings_Endianness",
-            end,
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", end, false);
     }
     if let Some(sign) = codec.sign {
         fa.fill(StreamKind::Audio, 0, "Format_Settings_Sign", sign, false);
     }
     if codec.is_float {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "Format_Settings_Floating",
-            "Yes",
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Floating", "Yes", false);
     }
 
     // Duration as integer milliseconds, matching the C++ AfterComma=0 fill
@@ -273,13 +250,7 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
         0
     };
 
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "Duration",
-        duration_ms_int.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms_int.to_string(), false);
     fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
 
     // BitRate = StreamSize * 8 * 1000 / Duration_ms_int, with the integer
@@ -288,53 +259,17 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
     // oracle's %.10f formatting.
     if duration_ms_int > 0 {
         let bitrate_f64 = (audio_stream_size as f64) * 8.0 * 1000.0 / (duration_ms_int as f64);
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "BitRate",
-            format!("{:.10}", bitrate_f64),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "BitRate", format!("{:.10}", bitrate_f64), false);
     }
 
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "Channels",
-        comm.num_channels.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::Audio, 0, "Channels", comm.num_channels.to_string(), false);
     // Sample rate stored as integer if it's whole; matches oracle's "48000"
     // not "48000.000" for typical AIFF.
     let sr_int: i64 = comm.sample_rate.round() as i64;
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "SamplingRate",
-        sr_int.to_string(),
-        false,
-    );
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "SamplingCount",
-        comm.num_sample_frames.to_string(),
-        false,
-    );
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "BitDepth",
-        comm.sample_size.to_string(),
-        false,
-    );
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "StreamSize",
-        audio_stream_size.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sr_int.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingCount", comm.num_sample_frames.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", comm.sample_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
 
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 }
@@ -399,14 +334,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
 
-        let g = |key: &str| {
-            fa.retrieve(StreamKind::General, 0, key)
-                .map(|z| z.as_str().to_owned())
-        };
-        let a = |key: &str| {
-            fa.retrieve(StreamKind::Audio, 0, key)
-                .map(|z| z.as_str().to_owned())
-        };
+        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("AIFF"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -487,14 +416,8 @@ mod tests {
         let buf = make_aifc(2, 48000, 16, 48000, b"sowt");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
-        let a = |key: &str| {
-            fa.retrieve(StreamKind::Audio, 0, key)
-                .map(|z| z.as_str().to_owned())
-        };
-        let g = |key: &str| {
-            fa.retrieve(StreamKind::General, 0, key)
-                .map(|z| z.as_str().to_owned())
-        };
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("AIFF"));
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Little"));
@@ -509,10 +432,7 @@ mod tests {
         let buf = make_aifc(1, 44100, 32, 44100, b"fl32");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
-        let a = |key: &str| {
-            fa.retrieve(StreamKind::Audio, 0, key)
-                .map(|z| z.as_str().to_owned())
-        };
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Format_Settings_Floating").as_deref(), Some("Yes"));
         // No Endianness/Sign fills for float per task spec.
@@ -527,10 +447,7 @@ mod tests {
         let buf = make_aifc(2, 48000, 24, 48000, b"NONE");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
-        let a = |key: &str| {
-            fa.retrieve(StreamKind::Audio, 0, key)
-                .map(|z| z.as_str().to_owned())
-        };
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Big"));
         assert_eq!(a("Format_Settings_Sign").as_deref(), Some("Signed"));

@@ -1,7 +1,7 @@
-use std::fs;
-use std::path::{Path, PathBuf};
 use super::config::MultiFileConfig;
 use super::reference::ReferenceTracker;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Walks a BDMV playlist or segmented MP4, collecting all referenced
 /// companion files and optionally appending their bytes to the main buffer.
@@ -19,11 +19,7 @@ impl Default for MultiFileLoader {
 
 impl MultiFileLoader {
     pub fn new() -> Self {
-        MultiFileLoader {
-            files: Vec::new(),
-            total_bytes: 0,
-            tracker: ReferenceTracker::new(),
-        }
+        MultiFileLoader { files: Vec::new(), total_bytes: 0, tracker: ReferenceTracker::new() }
     }
 
     /// Scan a BDMV/STREAM directory: collect SST subtitles, secondary audio PIDs
@@ -55,24 +51,28 @@ impl MultiFileLoader {
         // BDMV structure: STREAM/ directory next to primary
         let stream_dir = parent.join("STREAM");
         if stream_dir.is_dir()
-            && let Ok(entries) = fs::read_dir(&stream_dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p == primary_path { continue; }
-                    if let Some(ext) = p.extension()
-                        && (ext == "m2ts" || ext == "mts") {
-                            self.files.push(p.clone());
-                            if let Ok(meta) = fs::metadata(&p) {
-                                self.total_bytes += meta.len();
-                            }
-                            self.tracker.add(
-                                p.to_string_lossy().as_ref(),
-                                "BDAV",
-                                0x1011, // default video PID
-                            );
-                        }
+            && let Ok(entries) = fs::read_dir(&stream_dir)
+        {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p == primary_path {
+                    continue;
+                }
+                if let Some(ext) = p.extension()
+                    && (ext == "m2ts" || ext == "mts")
+                {
+                    self.files.push(p.clone());
+                    if let Ok(meta) = fs::metadata(&p) {
+                        self.total_bytes += meta.len();
+                    }
+                    self.tracker.add(
+                        p.to_string_lossy().as_ref(),
+                        "BDAV",
+                        0x1011, // default video PID
+                    );
                 }
             }
+        }
     }
 
     /// Append all referenced files' content to the output buffer.
@@ -120,9 +120,7 @@ pub fn find_duplicate_streams(
                     let lang_b = b.get("Language").map(|z| z.as_str());
                     let w_a = a.get("Width").or(a.get("Channels")).map(|z| z.as_str());
                     let w_b = b.get("Width").or(b.get("Channels")).map(|z| z.as_str());
-                    if fmt_a == fmt_b && lang_a == lang_b && w_a == w_b
-                        && fmt_a.is_some()
-                    {
+                    if fmt_a == fmt_b && lang_a == lang_b && w_a == w_b && fmt_a.is_some() {
                         // j is a duplicate of i
                         if !duplicates.contains(&(*kind, j)) {
                             duplicates.push((*kind, j));
@@ -135,10 +133,13 @@ pub fn find_duplicate_streams(
     duplicates
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_duplicate_detection() {
-        use super::super::{StreamCollection, StreamKind}; use zenlib::Ztring;
+    #[test]
+    fn test_duplicate_detection() {
+        use super::super::{StreamCollection, StreamKind};
+        use zenlib::Ztring;
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Video);
         sc.fill(StreamKind::Video, 0, "Format", Ztring::from("AVC"), false);
@@ -152,8 +153,10 @@ pub fn find_duplicate_streams(
         assert_eq!(dups.len(), 1);
         assert_eq!(dups[0], (StreamKind::Video, 1));
     }
-    #[test] fn test_no_duplicate_different_lang() {
-        use super::super::{StreamCollection, StreamKind}; use zenlib::Ztring;
+    #[test]
+    fn test_no_duplicate_different_lang() {
+        use super::super::{StreamCollection, StreamKind};
+        use zenlib::Ztring;
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Audio);
         sc.fill(StreamKind::Audio, 0, "Format", Ztring::from("AAC"), false);

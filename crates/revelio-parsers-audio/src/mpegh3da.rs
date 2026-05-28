@@ -9,7 +9,9 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 5 { return false; }
+    if buf.len() < 5 {
+        return false;
+    }
 
     // Check for mhm1/mha1 box (MPEG-H 3D Audio in MP4)
     if buf.len() >= 8 {
@@ -38,5 +40,9 @@ mod tests {
         assert!(parse_mpegh3da(&mut fa));
     }
     #[test]
-    fn mpegh3da_rejects_garbage() { let buf = vec![0u8; 4]; let mut fa = FileAnalyze::new(&buf); assert!(!parse_mpegh3da(&mut fa)); }
+    fn mpegh3da_rejects_garbage() {
+        let buf = vec![0u8; 4];
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_mpegh3da(&mut fa));
+    }
 }

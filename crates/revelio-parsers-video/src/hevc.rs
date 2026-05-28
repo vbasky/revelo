@@ -1,5 +1,5 @@
-use revelio_core::{FileAnalyze, StreamKind};
 use crate::avc::{EncoderInfo, parse_x264_style_encoder};
+use revelio_core::{FileAnalyze, StreamKind};
 
 #[derive(Debug)]
 pub struct HevcInfo {
@@ -76,16 +76,24 @@ fn read_ue(buffer: &[u8], offset: &mut usize) -> Option<u32> {
     while *offset < buffer.len() * 8 {
         let byte = *offset / 8;
         let bit = 7 - (*offset % 8);
-        if byte >= buffer.len() { return None; }
-        if (buffer[byte] >> bit) & 1 == 1 { break; }
+        if byte >= buffer.len() {
+            return None;
+        }
+        if (buffer[byte] >> bit) & 1 == 1 {
+            break;
+        }
         leading_zeros += 1;
         *offset += 1;
     }
-    if leading_zeros >= 31 { return None; }
+    if leading_zeros >= 31 {
+        return None;
+    }
     *offset += 1;
     let mut value = 0u32;
     for _ in 0..leading_zeros {
-        if *offset >= buffer.len() * 8 { return None; }
+        if *offset >= buffer.len() * 8 {
+            return None;
+        }
         let byte = *offset / 8;
         let bit = 7 - (*offset % 8);
         value = (value << 1) | ((buffer[byte] >> bit) & 1) as u32;
@@ -95,7 +103,9 @@ fn read_ue(buffer: &[u8], offset: &mut usize) -> Option<u32> {
 }
 
 fn read_bits64(buffer: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
-    if n > 64 || *offset + n > buffer.len() * 8 { return None; }
+    if n > 64 || *offset + n > buffer.len() * 8 {
+        return None;
+    }
     let mut value = 0u64;
     for _ in 0..n {
         let byte = *offset / 8;
@@ -107,7 +117,9 @@ fn read_bits64(buffer: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
 }
 
 fn read_bits(buffer: &[u8], offset: &mut usize, n: usize) -> Option<u32> {
-    if n > 32 || *offset + n > buffer.len() * 8 { return None; }
+    if n > 32 || *offset + n > buffer.len() * 8 {
+        return None;
+    }
     let mut value = 0u32;
     for _ in 0..n {
         let byte = *offset / 8;
@@ -149,7 +161,9 @@ fn read_profile_tier_level(clean: &[u8], offset: &mut usize) -> Option<(u8, bool
 
 fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     let clean = remove_epb(rbsp);
-    if clean.len() < 6 { return None; }
+    if clean.len() < 6 {
+        return None;
+    }
     let mut offset = 0usize;
 
     // NAL header (2 bytes)
@@ -166,7 +180,9 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     let _space = read_bits(&clean, &mut offset, 2)?;
     let tier_flag = read_bits(&clean, &mut offset, 1)?;
     let profile_idc = read_bits(&clean, &mut offset, 5)? as u8;
-    for _ in 0..32 { read_bits(&clean, &mut offset, 1)?; }
+    for _ in 0..32 {
+        read_bits(&clean, &mut offset, 1)?;
+    }
     read_bits(&clean, &mut offset, 1)?;
     read_bits(&clean, &mut offset, 1)?;
     read_bits(&clean, &mut offset, 1)?;
@@ -226,7 +242,7 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     // sps_sub_layer_ordering_info_present_flag (u1)
     let sub_layer_ordering_present = read_bits(&clean, &mut offset, 1)?;
     let start_idx = if sub_layer_ordering_present != 0 { 0 } else { max_sub_layers };
-    
+
     for _ in start_idx..=max_sub_layers {
         // sps_max_dec_pic_buffering_minus1[...] (ue)
         read_ue(&clean, &mut offset)?;
@@ -267,7 +283,7 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     let _sao_enabled = read_bits(&clean, &mut offset, 1)?;
     // pcm_enabled_flag (u1)
     let pcm_enabled = read_bits(&clean, &mut offset, 1)?;
-    
+
     if pcm_enabled != 0 {
         // pcm_sample_bit_depth_luma_minus1 (u4)
         read_bits(&clean, &mut offset, 4)?;
@@ -325,9 +341,16 @@ fn parse_sps(rbsp: &[u8]) -> Option<(u8, bool, u8, u32, u32, u32, u8)> {
     let width = pic_width - sub_width_c * (conf_win_left + conf_win_right);
     let height = pic_height - sub_height_c * (conf_win_top + conf_win_bottom);
 
-    Some((profile_idc, tier_flag != 0, level_idc, width, height, chroma_format_idc, bit_depth as u8))
+    Some((
+        profile_idc,
+        tier_flag != 0,
+        level_idc,
+        width,
+        height,
+        chroma_format_idc,
+        bit_depth as u8,
+    ))
 }
-
 
 /// Extract encoder string from HEVC SEI user_data_unregistered message.
 /// Similar to AVC but with 2-byte NAL header.
@@ -340,22 +363,32 @@ fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
     read_bits(&clean, &mut off, 16)?;
 
     loop {
-        if off >= clean.len() * 8 { break; }
+        if off >= clean.len() * 8 {
+            break;
+        }
 
         let mut payload_type = 0u32;
         loop {
             let byte = read_bits(&clean, &mut off, 8)?;
             payload_type += byte;
-            if byte != 0xFF { break; }
-            if off >= clean.len() * 8 { return None; }
+            if byte != 0xFF {
+                break;
+            }
+            if off >= clean.len() * 8 {
+                return None;
+            }
         }
 
         let mut payload_size = 0u32;
         loop {
             let byte = read_bits(&clean, &mut off, 8)?;
             payload_size += byte;
-            if byte != 0xFF { break; }
-            if off >= clean.len() * 8 { return None; }
+            if byte != 0xFF {
+                break;
+            }
+            if off >= clean.len() * 8 {
+                return None;
+            }
         }
 
         if payload_type == 5 {
@@ -368,7 +401,9 @@ fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
 
             let string_bytes = payload_size.saturating_sub(16);
             if string_bytes == 0 {
-                if payload_bits > 128 { skip_bits(&mut off, payload_bits - 128); }
+                if payload_bits > 128 {
+                    skip_bits(&mut off, payload_bits - 128);
+                }
                 continue;
             }
             let str_start = off / 8;
@@ -448,11 +483,15 @@ fn parse_mastering_display_sei(payload: &[u8]) -> Option<([(u16, u16); 3], (u16,
     let white_x = ((payload[12] as u16) << 8) | (payload[13] as u16);
     let white_y = ((payload[14] as u16) << 8) | (payload[15] as u16);
     // Max luminance: 32 bits, in 0.0001 cd/m^2
-    let max_lum = ((payload[16] as u32) << 24) | ((payload[17] as u32) << 16) |
-                  ((payload[18] as u32) << 8) | (payload[19] as u32);
+    let max_lum = ((payload[16] as u32) << 24)
+        | ((payload[17] as u32) << 16)
+        | ((payload[18] as u32) << 8)
+        | (payload[19] as u32);
     // Min luminance: 32 bits, in 0.0001 cd/m^2
-    let min_lum = ((payload[20] as u32) << 24) | ((payload[21] as u32) << 16) |
-                  ((payload[22] as u32) << 8) | (payload[23] as u32);
+    let min_lum = ((payload[20] as u32) << 24)
+        | ((payload[21] as u32) << 16)
+        | ((payload[22] as u32) << 8)
+        | (payload[23] as u32);
     Some((primaries, (white_x, white_y), max_lum, min_lum))
 }
 
@@ -468,10 +507,12 @@ fn parse_content_light_level_sei(payload: &[u8]) -> Option<(u16, u16)> {
 }
 
 /// Extract HDR metadata from SEI NAL units.
-pub fn extract_hdr_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<(Option<([(u16, u16); 3], (u16, u16), u32, u32)>, Option<(u16, u16)>)> {
+pub fn extract_hdr_from_sei_nalus(
+    sei_nalus: &[&[u8]],
+) -> Option<(Option<([(u16, u16); 3], (u16, u16), u32, u32)>, Option<(u16, u16)>)> {
     let mut mastering = None;
     let mut light_level = None;
-    
+
     for nal in sei_nalus {
         // Skip NAL header (2 bytes for HEVC)
         if nal.len() < 3 {
@@ -490,7 +531,7 @@ pub fn extract_hdr_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<(Option<([(u16,
             }
             payload_type = payload_type.saturating_add(nal[pos]);
             pos += 1;
-            
+
             // Read payload size (may be multi-byte)
             let mut payload_size = 0usize;
             while pos < nal.len() && nal[pos] == 0xFF {
@@ -502,13 +543,13 @@ pub fn extract_hdr_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<(Option<([(u16,
             }
             payload_size = payload_size.saturating_add(nal[pos] as usize);
             pos += 1;
-            
+
             if pos + payload_size > nal.len() {
                 break;
             }
-            
+
             let payload = &nal[pos..pos + payload_size];
-            
+
             match payload_type {
                 137 => {
                     if let Some(md) = parse_mastering_display_sei(payload) {
@@ -522,29 +563,26 @@ pub fn extract_hdr_from_sei_nalus(sei_nalus: &[&[u8]]) -> Option<(Option<([(u16,
                 }
                 _ => {}
             }
-            
+
             pos += payload_size;
-            
+
             // Skip trailing byte if present
             if pos < nal.len() && nal[pos] == 0x80 {
                 pos += 1;
             }
         }
     }
-    
-    if mastering.is_some() || light_level.is_some() {
-        Some((mastering, light_level))
-    } else {
-        None
-    }
-}
 
+    if mastering.is_some() || light_level.is_some() { Some((mastering, light_level)) } else { None }
+}
 
 /// Parse HEVC SPS and extract info including VUI colour information.
 /// This is the public entry point used by container parsers (MP4, etc.)
 pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
     let clean = remove_epb(rbsp);
-    if clean.len() < 6 { return None; }
+    if clean.len() < 6 {
+        return None;
+    }
     let mut offset = 0usize;
 
     // NAL header (2 bytes)
@@ -561,7 +599,9 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
     let _space = read_bits(&clean, &mut offset, 2)?;
     let tier_flag = read_bits(&clean, &mut offset, 1)?;
     let profile_idc = read_bits(&clean, &mut offset, 5)? as u8;
-    for _ in 0..32 { read_bits(&clean, &mut offset, 1)?; }
+    for _ in 0..32 {
+        read_bits(&clean, &mut offset, 1)?;
+    }
     read_bits(&clean, &mut offset, 1)?;
     read_bits(&clean, &mut offset, 1)?;
     read_bits(&clean, &mut offset, 1)?;
@@ -621,7 +661,7 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
     // sps_sub_layer_ordering_info_present_flag (u1)
     let sub_layer_ordering_present = read_bits(&clean, &mut offset, 1)?;
     let start_idx = if sub_layer_ordering_present != 0 { 0 } else { max_sub_layers };
-    
+
     for _ in start_idx..=max_sub_layers {
         // sps_max_dec_pic_buffering_minus1[...] (ue)
         read_ue(&clean, &mut offset)?;
@@ -662,7 +702,7 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
     let _sao_enabled = read_bits(&clean, &mut offset, 1)?;
     // pcm_enabled_flag (u1)
     let pcm_enabled = read_bits(&clean, &mut offset, 1)?;
-    
+
     if pcm_enabled != 0 {
         // pcm_sample_bit_depth_luma_minus1 (u4)
         read_bits(&clean, &mut offset, 4)?;
@@ -722,8 +762,13 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
 
     // Parse VUI for colour information
     let vui_result = parse_vui(&clean, &mut offset);
-    let (colour_description_present, colour_primaries, transfer_characteristics, matrix_coefficients, video_full_range) = 
-        vui_result.unwrap_or((false, None, None, None, None));
+    let (
+        colour_description_present,
+        colour_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        video_full_range,
+    ) = vui_result.unwrap_or((false, None, None, None, None));
 
     Some(HevcInfo {
         profile_idc,
@@ -746,7 +791,10 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
 }
 
 /// Parse VUI section of SPS to extract colour information.
-fn parse_vui(clean: &[u8], offset: &mut usize) -> Option<(bool, Option<u8>, Option<u8>, Option<u8>, Option<bool>)> {
+fn parse_vui(
+    clean: &[u8],
+    offset: &mut usize,
+) -> Option<(bool, Option<u8>, Option<u8>, Option<u8>, Option<bool>)> {
     // vui_parameters_present_flag
     let vui_present = read_bits(clean, offset, 1)?;
     if vui_present == 0 {
@@ -758,7 +806,8 @@ fn parse_vui(clean: &[u8], offset: &mut usize) -> Option<(bool, Option<u8>, Opti
     let aspect_present = read_bits(clean, offset, 1)?;
     if aspect_present != 0 {
         let aspect_idc = read_bits(clean, offset, 8)?;
-        if aspect_idc == 255 { // EXTENDED_SAR
+        if aspect_idc == 255 {
+            // EXTENDED_SAR
             read_bits(clean, offset, 16)?; // sar_width
             read_bits(clean, offset, 16)?; // sar_height
         }
@@ -794,7 +843,13 @@ fn parse_vui(clean: &[u8], offset: &mut usize) -> Option<(bool, Option<u8>, Opti
 
     // We don't need to parse the rest of VUI - we've got colour info
     // Return what we found
-    Some((colour_description_present, colour_primaries, transfer_characteristics, matrix_coefficients, video_full_range))
+    Some((
+        colour_description_present,
+        colour_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        video_full_range,
+    ))
 }
 
 fn profile_name(profile_idc: u8) -> &'static str {
@@ -825,7 +880,9 @@ fn profile_name(profile_idc: u8) -> &'static str {
 fn level_name(level: u8) -> String {
     let major = level / 30;
     let minor = (level % 30) / 3;
-    if level == 0 { return "0".to_owned(); }
+    if level == 0 {
+        return "0".to_owned();
+    }
     let s = format!("{major}.{minor}");
     if s.ends_with(".0") { s[..s.len() - 2].to_owned() } else { s }
 }
@@ -864,7 +921,9 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
 
     let mut nal_offset = 0usize;
     while let Some(start) = find_start_code(&data, nal_offset) {
-        let start_len = if start + 3 < data.len() && data[start..start + 4].starts_with(&ANNEX_B_START_CODE_LONG) {
+        let start_len = if start + 3 < data.len()
+            && data[start..start + 4].starts_with(&ANNEX_B_START_CODE_LONG)
+        {
             4
         } else {
             3
@@ -908,7 +967,8 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let (profile_idc, tier_flag, level_idc, width, height, chroma_format_idc, bit_depth) = sps_info.unwrap();
+    let (profile_idc, tier_flag, level_idc, width, height, chroma_format_idc, bit_depth) =
+        sps_info.unwrap();
 
     // Extract HDR metadata from SEI NAL units
     let hdr_metadata = extract_hdr_from_sei_nalus(&sei_nalus);
@@ -971,8 +1031,13 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
             // Luminance in cd/m^2 (convert from 0.0001 units)
             let max_lum_cd = max_lum as f64 * 0.0001;
             let min_lum_cd = min_lum as f64 * 0.0001;
-            fa.fill(StreamKind::Video, 0, "MasteringDisplay_Luminance", 
-                format!("min: {:.4} cd/m², max: {:.0} cd/m²", min_lum_cd, max_lum_cd), false);
+            fa.fill(
+                StreamKind::Video,
+                0,
+                "MasteringDisplay_Luminance",
+                format!("min: {:.4} cd/m², max: {:.0} cd/m²", min_lum_cd, max_lum_cd),
+                false,
+            );
         }
         if let Some((max_content, max_frame_avg)) = light_level {
             fa.fill(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content), false);
@@ -1032,12 +1097,24 @@ mod tests {
         assert!(parse_hevc(&mut fa));
 
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("HEVC"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("Main"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("2"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Tier").map(|z| z.as_str()), Some("Main"));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()),
+            Some("Main")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()),
+            Some("2")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Tier").map(|z| z.as_str()),
+            Some("Main")
+        );
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("320"));
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("240"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()), Some("4:2:0"));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()),
+            Some("4:2:0")
+        );
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
     }
 }

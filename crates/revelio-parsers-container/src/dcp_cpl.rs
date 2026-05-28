@@ -85,9 +85,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_cpl(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("DCP CPL")
         );
     }
@@ -98,16 +96,15 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_cpl(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("IMF CPL")
         );
     }
 
     #[test]
     fn rejects_compositionplaylist_with_unknown_namespace() {
-        let xml = br#"<CompositionPlaylist xmlns="http://example.com/other"></CompositionPlaylist>"#;
+        let xml =
+            br#"<CompositionPlaylist xmlns="http://example.com/other"></CompositionPlaylist>"#;
         let mut fa = FileAnalyze::new(xml);
         assert!(!parse_dcp_cpl(&mut fa));
     }

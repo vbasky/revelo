@@ -43,7 +43,8 @@ mod tests {
 
     #[test]
     fn rejects_non_wtv() {
-        let mut fa = FileAnalyze::new(b"This is definitely not a WTV file, just garbage data here!!");
+        let mut fa =
+            FileAnalyze::new(b"This is definitely not a WTV file, just garbage data here!!");
         assert!(!parse_wtv(&mut fa));
     }
 

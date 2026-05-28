@@ -159,10 +159,7 @@ fn parse_vp8l(p: &[u8], info: &mut WebpInfo) {
     info.format = "WebP";
     info.compression = "Lossless";
     // LE bitstream packed across bytes 1-4. Read 32 LE bits then unpack.
-    let bits = (p[1] as u32)
-        | ((p[2] as u32) << 8)
-        | ((p[3] as u32) << 16)
-        | ((p[4] as u32) << 24);
+    let bits = (p[1] as u32) | ((p[2] as u32) << 8) | ((p[3] as u32) << 16) | ((p[4] as u32) << 24);
     let width_m1 = bits & 0x3FFF;
     let height_m1 = (bits >> 14) & 0x3FFF;
     let alpha_used = ((bits >> 28) & 1) != 0;
@@ -218,7 +215,9 @@ mod tests {
             body.extend_from_slice(*fcc);
             body.extend_from_slice(&(data.len() as u32).to_le_bytes());
             body.extend_from_slice(data);
-            if data.len() & 1 == 1 { body.push(0); }
+            if data.len() & 1 == 1 {
+                body.push(0);
+            }
         }
         let mut buf = Vec::new();
         buf.extend_from_slice(b"RIFF");
@@ -248,7 +247,8 @@ mod tests {
     #[test]
     fn parses_lossy_vp8_keyframe() {
         let mut payload = vec![0x10, 0x00, 0x00, 0x9D, 0x01, 0x2A];
-        let w: u16 = 100; let h: u16 = 200;
+        let w: u16 = 100;
+        let h: u16 = 200;
         payload.extend_from_slice(&w.to_le_bytes());
         payload.extend_from_slice(&h.to_le_bytes());
         let buf = build_riff(b"WEBP", &[(b"VP8 ", payload)]);

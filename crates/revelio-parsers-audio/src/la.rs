@@ -23,7 +23,7 @@
 //!   uint32  crc32
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u};
 
 const MAGIC_LA: [u8; 2] = *b"LA";
 const HEADER_LEN: usize = 45;
@@ -74,13 +74,11 @@ pub fn parse_la(fa: &mut FileAnalyze) -> bool {
     }
     // C++ reference notes samples is per-channel-pair-doubled; dividing by
     // Channels gives the correct duration.
-    let duration_ms: u64 =
-        (samples as u64 / channels as u64) * 1000 / sample_rate as u64;
+    let duration_ms: u64 = (samples as u64 / channels as u64) * 1000 / sample_rate as u64;
     if duration_ms == 0 {
         return false;
     }
-    let uncompressed: u64 =
-        (samples as u64) * (channels as u64) * (bits_per_sample as u64 / 8);
+    let uncompressed: u64 = (samples as u64) * (channels as u64) * (bits_per_sample as u64 / 8);
     if uncompressed == 0 {
         return false;
     }

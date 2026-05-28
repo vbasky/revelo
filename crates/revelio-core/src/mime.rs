@@ -39,10 +39,23 @@ pub fn mime_for_codec(fourcc: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_mp4() { assert_eq!(mime_for_container("mp42"), Some("video/mp4")); }
-    #[test] fn test_heif() { assert_eq!(mime_for_container("heic"), Some("image/heif")); }
-    #[test] fn test_av1() { assert_eq!(mime_for_codec("av01"), Some("video/AV1")); }
-    #[test] fn test_unknown() { assert_eq!(mime_for_container("xunk"), None); }
+    #[test]
+    fn test_mp4() {
+        assert_eq!(mime_for_container("mp42"), Some("video/mp4"));
+    }
+    #[test]
+    fn test_heif() {
+        assert_eq!(mime_for_container("heic"), Some("image/heif"));
+    }
+    #[test]
+    fn test_av1() {
+        assert_eq!(mime_for_codec("av01"), Some("video/AV1"));
+    }
+    #[test]
+    fn test_unknown() {
+        assert_eq!(mime_for_container("xunk"), None);
+    }
 }

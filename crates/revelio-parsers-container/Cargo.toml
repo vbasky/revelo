@@ -9,6 +9,9 @@ repository.workspace = true
 name = "revelio_parsers_container"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 revelio-core = { path = "../revelio-core" }
 revelio-parsers-video = { path = "../revelio-parsers-video" }

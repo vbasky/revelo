@@ -21,7 +21,7 @@
 //!   0x20  L4  Video_Size
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int32u, Int8u};
+use zenlib::{Int8u, Int32u};
 
 const DPG_HEADER_SIZE: usize = 36;
 
@@ -69,13 +69,7 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "DPG", false);
-    fa.fill(
-        StreamKind::General,
-        0,
-        "Format_Version",
-        version_digit.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::General, 0, "Format_Version", version_digit.to_string(), false);
 
     // Video stream — mirrors the C++ `Stream_Prepare(Stream_Video)` block.
     fa.stream_prepare(StreamKind::Video);
@@ -84,53 +78,23 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
     let frame_rate = (frame_rate_fp as f64) / 256.0;
     if frame_rate > 0.0 {
         // Three decimal places match the C++ `Fill(..., FrameRate, ..., 3)`.
-        fa.fill(
-            StreamKind::Video,
-            0,
-            "FrameRate",
-            format!("{:.3}", frame_rate),
-            false,
-        );
+        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
     }
     if frame_count > 0 {
-        fa.fill(
-            StreamKind::Video,
-            0,
-            "FrameCount",
-            frame_count.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
     }
     if video_size > 0 {
-        fa.fill(
-            StreamKind::Video,
-            0,
-            "StreamSize",
-            video_size.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Video, 0, "StreamSize", video_size.to_string(), false);
     }
     fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
     // Audio stream — DPG always carries one MPEG audio track.
     fa.stream_prepare(StreamKind::Audio);
     if sampling_rate > 0 {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "SamplingRate",
-            sampling_rate.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_rate.to_string(), false);
     }
     if audio_size > 0 {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "StreamSize",
-            audio_size.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "StreamSize", audio_size.to_string(), false);
     }
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
@@ -177,18 +141,9 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dpg(&mut fa));
 
-        let g = |k: &str| {
-            fa.retrieve(StreamKind::General, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
-        let v = |k: &str| {
-            fa.retrieve(StreamKind::Video, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
-        let a = |k: &str| {
-            fa.retrieve(StreamKind::Audio, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("DPG"));
         assert_eq!(g("Format_Version").as_deref(), Some("0"));

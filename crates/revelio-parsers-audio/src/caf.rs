@@ -76,11 +76,8 @@ pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
             fa.get_b8(&mut chunk_size, "ChunkSize");
             let csize = chunk_size as usize;
             // The `data` chunk may declare size=-1 (to EOF) — clamp to remaining bytes.
-            let effective = if chunk_size as i64 == -1 || csize > fa.remain() {
-                fa.remain()
-            } else {
-                csize
-            };
+            let effective =
+                if chunk_size as i64 == -1 || csize > fa.remain() { fa.remain() } else { csize };
 
             if chunk_type == CHUNK_DESC && effective >= 32 {
                 fa.element_begin("desc");
@@ -101,13 +98,7 @@ pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "CAF", false);
-    fa.fill(
-        StreamKind::General,
-        0,
-        "Format_Version",
-        format!("Version {}", file_version),
-        false,
-    );
+    fa.fill(StreamKind::General, 0, "Format_Version", format!("Version {}", file_version), false);
 
     fa.stream_prepare(StreamKind::Audio);
     if let Some(d) = desc {
@@ -170,7 +161,8 @@ fn fill_audio(fa: &mut FileAnalyze, d: &AudioDesc) {
         fa.fill(StreamKind::Audio, 0, "BitDepth", d.bits_per_channel.to_string(), false);
     }
     if d.bytes_per_packet > 0 && d.frames_per_packet > 0 && d.sample_rate > 0.0 {
-        let bitrate = d.sample_rate * (d.bytes_per_packet as f64) * 8.0 / (d.frames_per_packet as f64);
+        let bitrate =
+            d.sample_rate * (d.bytes_per_packet as f64) * 8.0 / (d.frames_per_packet as f64);
         fa.fill(StreamKind::Audio, 0, "BitRate", (bitrate.round() as u64).to_string(), false);
     }
 }

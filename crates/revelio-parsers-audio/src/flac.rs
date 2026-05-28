@@ -27,7 +27,7 @@
 //!   16 bytes: MD5 of unencoded audio
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int128u, Int16u, Int32u, Int64u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u, Int64u, Int128u};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
 #[allow(dead_code)]
@@ -171,11 +171,8 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<Vorbis
 
     let vendor_bytes = fa.read_raw(vendor_len_usize);
     let vendor = String::from_utf8_lossy(vendor_bytes).into_owned();
-    
-    let mut comments = VorbisComments {
-        vendor,
-        ..Default::default()
-    };
+
+    let mut comments = VorbisComments { vendor, ..Default::default() };
 
     // Consume remaining comments (length-prefixed UTF-8 strings).
     let mut num_comments: Int32u = 0;
@@ -191,16 +188,16 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<Vorbis
             if fa.element_offset() + cl > end_offset {
                 break;
             }
-            
+
             // Read and parse the comment
             let comment_bytes = fa.read_raw(cl);
             let comment = String::from_utf8_lossy(comment_bytes);
-            
+
             // Vorbis comments are "FIELD=value" format
             if let Some(eq_pos) = comment.find('=') {
                 let field = &comment[..eq_pos];
                 let value = &comment[eq_pos + 1..];
-                
+
                 match field.to_uppercase().as_str() {
                     "TITLE" => comments.title = Some(value.to_string()),
                     "ARTIST" => comments.artist = Some(value.to_string()),
@@ -271,7 +268,7 @@ fn fill_streams(
     fa.fill(StreamKind::General, 0, "Format", "FLAC", false);
     // FLAC reports general StreamSize as 0 because the file *is* the audio
     // stream + metadata, with no separate container overhead in MediaInfo's
-    // accounting model. Replace=true so the diff-harness fallback can't
+    // accounting model. Replace=true so the revelio-diff fallback can't
     // overwrite to FileSize-audio_StreamSize.
     fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
 
@@ -304,7 +301,8 @@ fn fill_streams(
 
     // BitRate (integer for FLAC, no decimal — matches oracle "203651").
     if duration_ms_int > 0 {
-        let bitrate = ((audio_stream_size as f64) * 8.0 * 1000.0 / (duration_ms_int as f64)).round() as u64;
+        let bitrate =
+            ((audio_stream_size as f64) * 8.0 * 1000.0 / (duration_ms_int as f64)).round() as u64;
         fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
     }
 
@@ -329,7 +327,7 @@ fn fill_streams(
             fa.fill(StreamKind::Audio, 0, "Encoded_Library", vc.vendor.as_str(), false);
             fa.fill(StreamKind::General, 0, "Encoded_Application", vc.vendor.as_str(), false);
         }
-        
+
         // Emit standard metadata fields from Vorbis comments
         if let Some(ref title) = vc.title {
             fa.fill(StreamKind::General, 0, "Track", title.as_str(), false);
@@ -478,7 +476,9 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_flac(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::Audio, 0, "BitRate_Mode").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "BitRate_Mode")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("CBR")
         );
     }
@@ -503,7 +503,9 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_flac(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "SamplingRate")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("44100")
         );
     }

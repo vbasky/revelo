@@ -27,19 +27,19 @@ const STRH_VIDS: u32 = u32::from_be_bytes(*b"vids");
 const STRH_TXTS: u32 = u32::from_be_bytes(*b"txts");
 
 const FOURCC_INFO: u32 = u32::from_be_bytes(*b"INFO");
-const FOURCC_ISFT: u32 = u32::from_be_bytes(*b"ISFT");  // Software
-const FOURCC_IART: u32 = u32::from_be_bytes(*b"IART");  // Artist
-const FOURCC_ICMT: u32 = u32::from_be_bytes(*b"ICMT");  // Comments
-const FOURCC_ICOP: u32 = u32::from_be_bytes(*b"ICOP");  // Copyright
-const FOURCC_ICRD: u32 = u32::from_be_bytes(*b"ICRD");  // Creation date
-const FOURCC_IGNR: u32 = u32::from_be_bytes(*b"IGNR");  // Genre
-const FOURCC_IKEY: u32 = u32::from_be_bytes(*b"IKEY");  // Keywords
-const FOURCC_IMED: u32 = u32::from_be_bytes(*b"IMED");  // Medium
-const FOURCC_INAM: u32 = u32::from_be_bytes(*b"INAM");  // Name/Title
-const FOURCC_IPRD: u32 = u32::from_be_bytes(*b"IPRD");  // Product/Album
-const FOURCC_ISBJ: u32 = u32::from_be_bytes(*b"ISBJ");  // Subject
-const FOURCC_ISRC: u32 = u32::from_be_bytes(*b"ISRC");  // Source
-const FOURCC_ITCH: u32 = u32::from_be_bytes(*b"ITCH");  // Technician/Encoded by
+const FOURCC_ISFT: u32 = u32::from_be_bytes(*b"ISFT"); // Software
+const FOURCC_IART: u32 = u32::from_be_bytes(*b"IART"); // Artist
+const FOURCC_ICMT: u32 = u32::from_be_bytes(*b"ICMT"); // Comments
+const FOURCC_ICOP: u32 = u32::from_be_bytes(*b"ICOP"); // Copyright
+const FOURCC_ICRD: u32 = u32::from_be_bytes(*b"ICRD"); // Creation date
+const FOURCC_IGNR: u32 = u32::from_be_bytes(*b"IGNR"); // Genre
+const FOURCC_IKEY: u32 = u32::from_be_bytes(*b"IKEY"); // Keywords
+const FOURCC_IMED: u32 = u32::from_be_bytes(*b"IMED"); // Medium
+const FOURCC_INAM: u32 = u32::from_be_bytes(*b"INAM"); // Name/Title
+const FOURCC_IPRD: u32 = u32::from_be_bytes(*b"IPRD"); // Product/Album
+const FOURCC_ISBJ: u32 = u32::from_be_bytes(*b"ISBJ"); // Subject
+const FOURCC_ISRC: u32 = u32::from_be_bytes(*b"ISRC"); // Source
+const FOURCC_ITCH: u32 = u32::from_be_bytes(*b"ITCH"); // Technician/Encoded by
 const FOURCC_MOVI: u32 = u32::from_be_bytes(*b"movi");
 
 #[derive(Default, Debug)]
@@ -167,23 +167,47 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
             }
             (FOURCC_LIST, Some(FOURCC_INFO)) => {
                 walk_riff_chunks(payload, payload.len(), &mut |fc, _, p| {
-                    let s = String::from_utf8_lossy(p)
-                        .trim_end_matches('\0')
-                        .to_string();
+                    let s = String::from_utf8_lossy(p).trim_end_matches('\0').to_string();
                     match fc {
-                        FOURCC_ISFT => { isft = Some(s); }
-                        FOURCC_IART => { meta.artist = Some(s); }
-                        FOURCC_ICMT => { meta.comments = Some(s); }
-                        FOURCC_ICOP => { meta.copyright = Some(s); }
-                        FOURCC_ICRD => { meta.creation_date = Some(s); }
-                        FOURCC_IGNR => { meta.genre = Some(s); }
-                        FOURCC_IKEY => { meta.keywords = Some(s); }
-                        FOURCC_IMED => { meta.medium = Some(s); }
-                        FOURCC_INAM => { meta.title = Some(s); }
-                        FOURCC_IPRD => { meta.product = Some(s); }
-                        FOURCC_ISBJ => { meta.subject = Some(s); }
-                        FOURCC_ISRC => { meta.source = Some(s); }
-                        FOURCC_ITCH => { meta.technician = Some(s); }
+                        FOURCC_ISFT => {
+                            isft = Some(s);
+                        }
+                        FOURCC_IART => {
+                            meta.artist = Some(s);
+                        }
+                        FOURCC_ICMT => {
+                            meta.comments = Some(s);
+                        }
+                        FOURCC_ICOP => {
+                            meta.copyright = Some(s);
+                        }
+                        FOURCC_ICRD => {
+                            meta.creation_date = Some(s);
+                        }
+                        FOURCC_IGNR => {
+                            meta.genre = Some(s);
+                        }
+                        FOURCC_IKEY => {
+                            meta.keywords = Some(s);
+                        }
+                        FOURCC_IMED => {
+                            meta.medium = Some(s);
+                        }
+                        FOURCC_INAM => {
+                            meta.title = Some(s);
+                        }
+                        FOURCC_IPRD => {
+                            meta.product = Some(s);
+                        }
+                        FOURCC_ISBJ => {
+                            meta.subject = Some(s);
+                        }
+                        FOURCC_ISRC => {
+                            meta.source = Some(s);
+                        }
+                        FOURCC_ITCH => {
+                            meta.technician = Some(s);
+                        }
                         _ => {}
                     }
                 });
@@ -224,9 +248,7 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     let scan_end = total.min(256 * 1024);
     let scan_buf = &body[..scan_end];
     for i in 0..scan_buf.len().saturating_sub(13) {
-        if &scan_buf[i..i + 4] == b"Lavc"
-            && scan_buf[i + 4].is_ascii_digit()
-        {
+        if &scan_buf[i..i + 4] == b"Lavc" && scan_buf[i + 4].is_ascii_digit() {
             // Read until a non-printable byte to capture e.g. "Lavc62.28.101".
             let mut end = i + 4;
             while end < scan_buf.len() && end - i < 32 {
@@ -348,11 +370,7 @@ fn parse_strf_audio(p: &[u8]) -> Option<AudioFormat> {
     let sample_rate = u32::from_le_bytes([p[4], p[5], p[6], p[7]]);
     let avg_bytes_per_sec = u32::from_le_bytes([p[8], p[9], p[10], p[11]]);
     let _block_align = u16::from_le_bytes([p[12], p[13]]);
-    let bits_per_sample = if p.len() >= 16 {
-        u16::from_le_bytes([p[14], p[15]])
-    } else {
-        0
-    };
+    let bits_per_sample = if p.len() >= 16 { u16::from_le_bytes([p[14], p[15]]) } else { 0 };
     Some(AudioFormat {
         format_tag,
         channels,
@@ -380,11 +398,7 @@ fn fill_streams(
     file_size: usize,
     meta: &AviMetadata,
 ) {
-    let &AviStreamData {
-        streams,
-        movi_sizes,
-        movi_chunk_counts,
-    } = stream_data;
+    let &AviStreamData { streams, movi_sizes, movi_chunk_counts } = stream_data;
     fa.stream_prepare(StreamKind::General);
     fa.element_end();
     fa.fill(StreamKind::General, 0, "Format", "AVI", false);
@@ -405,9 +419,9 @@ fn fill_streams(
     // Format_Settings: one descriptor per stream kind. Pure video + PCM
     // audio gives "BitmapInfoHeader / PcmWaveformat".
     let has_video = streams.iter().any(|s| s.strh.fcc_type == STRH_VIDS && s.video.is_some());
-    let has_pcm = streams
-        .iter()
-        .any(|s| s.strh.fcc_type == STRH_AUDS && s.audio.as_ref().is_some_and(|a| a.format_tag == 0x0001));
+    let has_pcm = streams.iter().any(|s| {
+        s.strh.fcc_type == STRH_AUDS && s.audio.as_ref().is_some_and(|a| a.format_tag == 0x0001)
+    });
     if has_video && has_pcm {
         fa.fill(
             StreamKind::General,
@@ -431,14 +445,14 @@ fn fill_streams(
     {
         let d = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
         fa.fill(StreamKind::General, 0, "Duration", d.to_string(), false);
-        
+
         // Calculate OverallBitRate = FileSize * 8 / Duration_ms * 1000
         if d > 0 && file_size > 0 {
             let overall_bitrate = (file_size as u64 * 8 * 1000) / d;
             fa.fill(StreamKind::General, 0, "OverallBitRate", overall_bitrate.to_string(), false);
             fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
         }
-        
+
         Some(d)
     } else {
         None
@@ -546,23 +560,18 @@ fn fill_video(
     let pos = fa.stream_prepare(StreamKind::Video);
     fa.fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
     fa.fill(StreamKind::Video, pos, "ID", stream_order.to_string(), false);
-    let format = vf
-        .map(|v| video_format_from_fourcc(v.compression))
-        .unwrap_or("");
+    let format = vf.map(|v| video_format_from_fourcc(v.compression)).unwrap_or("");
     if !format.is_empty() {
         fa.fill(StreamKind::Video, pos, "Format", format, false);
     }
     let mut is_lossy_codec = false;
     if let Some(v) = vf {
         if v.compression != 0 {
-            fa.fill(
-                StreamKind::Video,
-                pos,
-                "CodecID",
-                fourcc_to_string(v.compression),
-                false,
+            fa.fill(StreamKind::Video, pos, "CodecID", fourcc_to_string(v.compression), false);
+            is_lossy_codec = matches!(
+                format,
+                "AVC" | "HEVC" | "VP8" | "VP9" | "MPEG-4 Visual" | "MPEG Video" | "JPEG"
             );
-            is_lossy_codec = matches!(format, "AVC" | "HEVC" | "VP8" | "VP9" | "MPEG-4 Visual" | "MPEG Video" | "JPEG");
         }
         if v.width > 0 {
             fa.fill(StreamKind::Video, pos, "Width", v.width.to_string(), false);
@@ -575,13 +584,7 @@ fn fill_video(
         if v.width > 0 && v.height > 0 {
             fa.fill(StreamKind::Video, pos, "PixelAspectRatio", "1.000", false);
             let dar = v.width as f64 / v.height as f64;
-            fa.fill(
-                StreamKind::Video,
-                pos,
-                "DisplayAspectRatio",
-                format!("{:.3}", dar),
-                false,
-            );
+            fa.fill(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar), false);
         }
         if v.bit_count > 0 && v.compression == 0 {
             fa.fill(StreamKind::Video, pos, "BitDepth", v.bit_count.to_string(), false);
@@ -697,13 +700,7 @@ fn fill_audio(
             fa.fill(StreamKind::Audio, pos, "SamplingRate", a.sample_rate.to_string(), false);
             if let Some(dur) = duration_ms_general {
                 let sampling_count = (dur * a.sample_rate as u64) / 1000;
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "SamplingCount",
-                    sampling_count.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Audio, pos, "SamplingCount", sampling_count.to_string(), false);
             }
         }
         if a.bits_per_sample > 0 {
@@ -715,13 +712,7 @@ fn fill_audio(
             // StreamSize from avg_bytes_per_sec × Duration.
             if let Some(dur) = duration_ms_general {
                 let stream_size = (a.avg_bytes_per_sec as u64 * dur) / 1000;
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "StreamSize",
-                    stream_size.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Audio, pos, "StreamSize", stream_size.to_string(), false);
             }
         }
         // AVI audio Delay defaults to 0, sourced from the stream header.
@@ -760,11 +751,11 @@ fn audio_format_from_tag(tag: u16) -> &'static str {
     match tag {
         0x0001 => "PCM",
         0x0002 => "ADPCM",
-        0x0003 => "PCM",         // IEEE float
+        0x0003 => "PCM", // IEEE float
         0x0006 => "A-law",
         0x0007 => "µ-law",
-        0x0050 => "MPEG Audio",  // MP1/2
-        0x0055 => "MPEG Audio",  // MP3
+        0x0050 => "MPEG Audio", // MP1/2
+        0x0055 => "MPEG Audio", // MP3
         0x00FF => "AAC",
         0x2000 => "AC-3",
         0x2001 => "DTS",
@@ -780,8 +771,8 @@ fn video_format_from_fourcc(fcc: u32) -> &'static str {
         b"HEVC" | b"hevc" | b"HVC1" | b"hvc1" | b"HEV1" | b"hev1" => "HEVC",
         b"VP80" | b"vp80" => "VP8",
         b"VP90" | b"vp90" => "VP9",
-        b"DIV3" | b"div3" | b"DIV4" | b"div4" | b"DIVX" | b"divx" | b"DX50" | b"dx50"
-        | b"XVID" | b"xvid" | b"MP4V" | b"mp4v" | b"FMP4" | b"fmp4" => "MPEG-4 Visual",
+        b"DIV3" | b"div3" | b"DIV4" | b"div4" | b"DIVX" | b"divx" | b"DX50" | b"dx50" | b"XVID"
+        | b"xvid" | b"MP4V" | b"mp4v" | b"FMP4" | b"fmp4" => "MPEG-4 Visual",
         b"MJPG" | b"mjpg" => "JPEG",
         b"DV  " | b"dvsd" | b"DVSD" => "DV",
         b"MPG1" | b"mpg1" | b"mpeg" | b"MPEG" => "MPEG Video",
@@ -806,15 +797,15 @@ mod tests {
         // Single vids stream, no actual movi data — just header structure.
         let mut avih = vec![0u8; 40];
         avih[..4].copy_from_slice(&40_000u32.to_le_bytes()); // 25fps → 40000us/frame
-        avih[16..20].copy_from_slice(&25u32.to_le_bytes());  // 25 frames
-        avih[24..28].copy_from_slice(&1u32.to_le_bytes());   // 1 stream
+        avih[16..20].copy_from_slice(&25u32.to_le_bytes()); // 25 frames
+        avih[24..28].copy_from_slice(&1u32.to_le_bytes()); // 1 stream
         avih[32..36].copy_from_slice(&320u32.to_le_bytes()); // width
         avih[36..40].copy_from_slice(&240u32.to_le_bytes()); // height
 
         let mut strh = vec![0u8; 56];
         strh[..4].copy_from_slice(b"vids");
         strh[4..8].copy_from_slice(b"avc1");
-        strh[20..24].copy_from_slice(&1u32.to_le_bytes());  // Scale
+        strh[20..24].copy_from_slice(&1u32.to_le_bytes()); // Scale
         strh[24..28].copy_from_slice(&25u32.to_le_bytes()); // Rate
         strh[32..36].copy_from_slice(&25u32.to_le_bytes()); // Length
         // Frame_Right/Bottom
@@ -876,9 +867,7 @@ mod tests {
         assert_eq!(v("FrameRate").as_deref(), Some("25.000"));
         assert_eq!(v("Duration").as_deref(), Some("1000"));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("AVI")
         );
         assert_eq!(

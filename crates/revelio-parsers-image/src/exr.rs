@@ -50,9 +50,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
             Some(p) => i + p,
             None => break,
         };
-        let name = std::str::from_utf8(&buf[i..name_end])
-            .unwrap_or("")
-            .to_owned();
+        let name = std::str::from_utf8(&buf[i..name_end]).unwrap_or("").to_owned();
         let after_name = name_end + 1;
         if after_name >= buf.len() {
             break;
@@ -112,13 +110,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "EXR", false);
-    fa.fill(
-        StreamKind::General,
-        0,
-        "Format_Version",
-        version.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::General, 0, "Format_Version", version.to_string(), false);
     fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
     if let Some(c) = comments {
         fa.fill(StreamKind::General, 0, "Comment", c, false);
@@ -126,20 +118,8 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::Image);
     fa.fill(StreamKind::Image, 0, "Format", "EXR", false);
-    fa.fill(
-        StreamKind::Image,
-        0,
-        "Format_Version",
-        version.to_string(),
-        false,
-    );
-    fa.fill(
-        StreamKind::Image,
-        0,
-        "Format_Profile",
-        if is_tile { "Tile" } else { "Line" },
-        false,
-    );
+    fa.fill(StreamKind::Image, 0, "Format_Version", version.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Format_Profile", if is_tile { "Tile" } else { "Line" }, false);
     if let Some(c) = compression {
         fa.fill(StreamKind::Image, 0, "Format_Compression", c, false);
     }
@@ -151,31 +131,13 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     }
     if width > 0 && height > 0 {
         let dar = width as f64 / height as f64;
-        fa.fill(
-            StreamKind::Image,
-            0,
-            "DisplayAspectRatio",
-            format!("{:.3}", dar),
-            false,
-        );
+        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
     }
     if let Some(par) = pixel_aspect_ratio {
-        fa.fill(
-            StreamKind::Image,
-            0,
-            "PixelAspectRatio",
-            format!("{:.3}", par),
-            false,
-        );
+        fa.fill(StreamKind::Image, 0, "PixelAspectRatio", format!("{:.3}", par), false);
     }
     if let Some(fr) = frame_rate {
-        fa.fill(
-            StreamKind::Image,
-            0,
-            "FrameRate",
-            format!("{:.3}", fr),
-            false,
-        );
+        fa.fill(StreamKind::Image, 0, "FrameRate", format!("{:.3}", fr), false);
     }
     // EXR compression codes 0-4 are lossless; 5+ are lossy.
     if compression.is_some() {
@@ -192,13 +154,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         );
     }
     let file_size = fa.remain();
-    fa.fill(
-        StreamKind::Image,
-        0,
-        "StreamSize",
-        file_size.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
     fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
     true
 }
@@ -253,10 +209,7 @@ mod tests {
         let buf = build_minimal_exr(320, 240, 3); // ZIP
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_exr(&mut fa));
-        let i = |k: &str| {
-            fa.retrieve(StreamKind::Image, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("EXR"));
         assert_eq!(i("Format_Version").as_deref(), Some("2"));
         assert_eq!(i("Width").as_deref(), Some("320"));

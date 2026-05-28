@@ -137,19 +137,19 @@ mod tests {
     fn build_kate_header(language: &str, category: &str) -> Vec<u8> {
         let mut buf = Vec::with_capacity(IDENTIFICATION_MIN_SIZE);
         buf.extend_from_slice(KATE_MAGIC);
-        buf.push(0);    // reserved
-        buf.push(0);    // version major
-        buf.push(6);    // version minor
-        buf.push(3);    // num headers
-        buf.push(0);    // text encoding (UTF-8)
-        buf.push(0);    // directionality
-        buf.push(0);    // reserved
-        buf.push(32);   // granule shift
-        buf.extend_from_slice(&0u32.to_le_bytes());     // reserved
-        buf.extend_from_slice(&0u16.to_le_bytes());     // width
-        buf.extend_from_slice(&0u16.to_le_bytes());     // height
-        buf.extend_from_slice(&1000u32.to_le_bytes());  // granule num
-        buf.extend_from_slice(&1u32.to_le_bytes());     // granule den
+        buf.push(0); // reserved
+        buf.push(0); // version major
+        buf.push(6); // version minor
+        buf.push(3); // num headers
+        buf.push(0); // text encoding (UTF-8)
+        buf.push(0); // directionality
+        buf.push(0); // reserved
+        buf.push(32); // granule shift
+        buf.extend_from_slice(&0u32.to_le_bytes()); // reserved
+        buf.extend_from_slice(&0u16.to_le_bytes()); // width
+        buf.extend_from_slice(&0u16.to_le_bytes()); // height
+        buf.extend_from_slice(&1000u32.to_le_bytes()); // granule num
+        buf.extend_from_slice(&1u32.to_le_bytes()); // granule den
 
         let mut lang = [0u8; 16];
         let lb = language.as_bytes();
@@ -168,7 +168,9 @@ mod tests {
 
     #[test]
     fn rejects_non_kate() {
-        let mut fa = FileAnalyze::new(b"NOT a Kate header at all............................................");
+        let mut fa = FileAnalyze::new(
+            b"NOT a Kate header at all............................................",
+        );
         assert!(!parse_kate(&mut fa));
     }
 

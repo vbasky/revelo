@@ -3,14 +3,32 @@ pub fn to_pbcore(streams: &StreamCollection, file_path: &str) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<pbcoreDescriptionDocument xmlns=\"http://www.pbcore.org/PBCore/PBCoreNamespace.html\">\n");
     out.push_str(&format!("<pbcoreIdentifier source=\"revelio\">{file_path}</pbcoreIdentifier>\n"));
-    for kind in [StreamKind::General, StreamKind::Video, StreamKind::Audio] { for p in 0..streams.count_get(kind) { if let Some(s) = streams.stream(kind, p) {
-        out.push_str(&format!("<pbcoreInstantiation>\n<pbcoreFormatID source=\"{}\"/>\n", kind.name()));
-        for (k, v) in s.iter() { out.push_str(&format!("<pbcore{}>{}</pbcore{}>\n", k, v.as_str(), k)); }
-        out.push_str("</pbcoreInstantiation>\n");
-    }}}
+    for kind in [StreamKind::General, StreamKind::Video, StreamKind::Audio] {
+        for p in 0..streams.count_get(kind) {
+            if let Some(s) = streams.stream(kind, p) {
+                out.push_str(&format!(
+                    "<pbcoreInstantiation>\n<pbcoreFormatID source=\"{}\"/>\n",
+                    kind.name()
+                ));
+                for (k, v) in s.iter() {
+                    out.push_str(&format!("<pbcore{}>{}</pbcore{}>\n", k, v.as_str(), k));
+                }
+                out.push_str("</pbcoreInstantiation>\n");
+            }
+        }
+    }
     out.push_str("</pbcoreDescriptionDocument>\n");
     out
 }
-#[cfg(test)] mod tests { use super::*; use zenlib::Ztring;
-    #[test] fn test() { let mut c = StreamCollection::new(); c.fill(StreamKind::General, 0, "Format", Ztring::from("MP4"), false); let xml = to_pbcore(&c, "/x.mp4"); assert!(xml.contains("pbcoreDescriptionDocument")); }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zenlib::Ztring;
+    #[test]
+    fn test() {
+        let mut c = StreamCollection::new();
+        c.fill(StreamKind::General, 0, "Format", Ztring::from("MP4"), false);
+        let xml = to_pbcore(&c, "/x.mp4");
+        assert!(xml.contains("pbcoreDescriptionDocument"));
+    }
 }

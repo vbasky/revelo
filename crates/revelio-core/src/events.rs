@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DemuxLevel(pub u8);
 
@@ -65,7 +64,9 @@ impl DemuxState {
         self.events.push(event);
     }
 
-    pub fn event_count(&self) -> usize { self.events.len() }
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,12 +99,18 @@ impl TraceNode {
         }
     }
 
-    pub fn set_value(&mut self, val: &str) { self.value = Some(val.to_string()); }
-    pub fn set_size(&mut self, size: u64) { self.size = size; }
+    pub fn set_value(&mut self, val: &str) {
+        self.value = Some(val.to_string());
+    }
+    pub fn set_size(&mut self, size: u64) {
+        self.size = size;
+    }
     pub fn add_info(&mut self, key: &str, val: &str) {
         self.infos.push((key.to_string(), val.to_string()));
     }
-    pub fn add_child(&mut self, child: TraceNode) { self.children.push(child); }
+    pub fn add_child(&mut self, child: TraceNode) {
+        self.children.push(child);
+    }
 
     pub fn render(&self, format: TraceFormat, depth: usize) -> String {
         match format {
@@ -146,31 +153,56 @@ impl TraceNode {
         let indent = "  ".repeat(depth);
         let val = self.value.as_deref().unwrap_or("");
         if val.is_empty() && self.children.is_empty() {
-            format!("{}<{} offset=\"{}\" size=\"{}\"/>\n", indent, self.name, self.file_offset, self.size)
+            format!(
+                "{}<{} offset=\"{}\" size=\"{}\"/>\n",
+                indent, self.name, self.file_offset, self.size
+            )
         } else if val.is_empty() {
             let children: String = self.children.iter().map(|c| c.render_xml(depth + 1)).collect();
-            format!("{}<{} offset=\"{}\" size=\"{}\">\n{}{}</{}>\n", indent, self.name, self.file_offset, self.size, children, indent, self.name)
+            format!(
+                "{}<{} offset=\"{}\" size=\"{}\">\n{}{}</{}>\n",
+                indent, self.name, self.file_offset, self.size, children, indent, self.name
+            )
         } else {
             let children: String = self.children.iter().map(|c| c.render_xml(depth + 1)).collect();
-            format!("{}<{} offset=\"{}\" size=\"{}\">\n{}  {}\n{}{}</{}>\n", indent, self.name, self.file_offset, self.size, indent, val, children, indent, self.name)
+            format!(
+                "{}<{} offset=\"{}\" size=\"{}\">\n{}  {}\n{}{}</{}>\n",
+                indent,
+                self.name,
+                self.file_offset,
+                self.size,
+                indent,
+                val,
+                children,
+                indent,
+                self.name
+            )
         }
     }
 
     fn render_micro_xml(&self) -> String {
         let val = self.value.as_deref().unwrap_or("");
         if self.children.is_empty() {
-            format!("<{} o=\"{}\" s=\"{}\" v=\"{}\"/>\n", self.name, self.file_offset, self.size, val)
+            format!(
+                "<{} o=\"{}\" s=\"{}\" v=\"{}\"/>\n",
+                self.name, self.file_offset, self.size, val
+            )
         } else {
             let children: String = self.children.iter().map(|c| c.render_micro_xml()).collect();
-            format!("<{} o=\"{}\" s=\"{}\">\n{}</{}>\n", self.name, self.file_offset, self.size, children, self.name)
+            format!(
+                "<{} o=\"{}\" s=\"{}\">\n{}</{}>\n",
+                self.name, self.file_offset, self.size, children, self.name
+            )
         }
     }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
 
-    #[test] fn test_demux_level() {
+    #[test]
+    fn test_demux_level() {
         let full = DemuxLevel(0x0F);
         assert!(full.contains(DemuxLevel::FRAME));
         assert!(full.contains(DemuxLevel::CONTAINER));
@@ -178,7 +210,8 @@ impl TraceNode {
         assert!(full.contains(DemuxLevel::ANCILLARY));
     }
 
-    #[test] fn test_demux_state() {
+    #[test]
+    fn test_demux_state() {
         let mut state = DemuxState::new(DemuxLevel::CONTAINER);
         state.emit(DemuxEvent {
             content_type: ContentType::MainStream,
@@ -194,7 +227,8 @@ impl TraceNode {
         assert_eq!(state.frame_number, 1);
     }
 
-    #[test] fn test_trace_tree() {
+    #[test]
+    fn test_trace_tree() {
         let mut root = TraceNode::new("mp4", 0);
         root.set_size(1024);
         let mut child = TraceNode::new("moov", 32);
@@ -207,7 +241,8 @@ impl TraceNode {
         assert!(tree.contains("timescale=1000"));
     }
 
-    #[test] fn test_trace_micro_xml() {
+    #[test]
+    fn test_trace_micro_xml() {
         let mut root = TraceNode::new("ftyp", 0);
         root.set_value("mp42");
         root.set_size(28);

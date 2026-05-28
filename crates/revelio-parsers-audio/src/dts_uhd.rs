@@ -53,14 +53,8 @@ mod tests {
         buf.resize(64, 0);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dts_uhd(&mut fa));
-        let a = |k: &str| {
-            fa.retrieve(StreamKind::Audio, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
-        let g = |k: &str| {
-            fa.retrieve(StreamKind::General, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("DTS"));
         assert_eq!(a("Format").as_deref(), Some("DTS"));
         assert_eq!(a("Format_Profile").as_deref(), Some("UHD"));

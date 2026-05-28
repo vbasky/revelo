@@ -38,21 +38,15 @@ mod tests {
     fn parses_cdp_magic() {
         // Minimal CDP-shaped buffer: identifier + length + framerate/flags +
         // some payload. Detection only needs the 2-byte magic.
-        let buf: &[u8] = &[
-            0x96, 0x69, 0x0A, 0x5F, 0x43, 0x00, 0x00, 0x72, 0xF4, 0xFF,
-        ];
+        let buf: &[u8] = &[0x96, 0x69, 0x0A, 0x5F, 0x43, 0x00, 0x00, 0x72, 0xF4, 0xFF];
         let mut fa = FileAnalyze::new(buf);
         assert!(parse_cdp(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("CDP")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::Text, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("CDP")
         );
         assert_eq!(fa.count_get(StreamKind::Text), 1);

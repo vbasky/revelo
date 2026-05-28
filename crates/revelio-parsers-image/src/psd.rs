@@ -66,7 +66,14 @@ fn psd_color_mode(c: u16) -> &'static str {
 mod tests {
     use super::*;
 
-    fn make_psd_header(version: u16, w: u32, h: u32, bits: u16, color_mode: u16, channels: u16) -> Vec<u8> {
+    fn make_psd_header(
+        version: u16,
+        w: u32,
+        h: u32,
+        bits: u16,
+        color_mode: u16,
+        channels: u16,
+    ) -> Vec<u8> {
         let mut buf = Vec::with_capacity(26);
         buf.extend_from_slice(b"8BPS");
         buf.extend_from_slice(&version.to_be_bytes());

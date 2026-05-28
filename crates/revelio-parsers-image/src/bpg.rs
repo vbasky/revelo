@@ -1,6 +1,6 @@
 //! BPG (Better Portable Graphics) parser.
 //!
-//! From http://bellard.org/bpg/bpg_spec.txt
+//! From <http://bellard.org/bpg/bpg_spec.txt>
 //!
 //! Header layout:
 //!   4 bytes  magic 0x42 0x50 0x47 0xFB ("BPG\xFB")
@@ -68,13 +68,7 @@ pub fn parse_bpg(fa: &mut FileAnalyze) -> bool {
     if !cm.is_empty() && pixel_format != 0 {
         fa.fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
     }
-    fa.fill(
-        StreamKind::Image,
-        0,
-        "BitDepth",
-        (bit_depth_minus_8 as u32 + 8).to_string(),
-        false,
-    );
+    fa.fill(StreamKind::Image, 0, "BitDepth", (bit_depth_minus_8 as u32 + 8).to_string(), false);
     let cp = bpg_colour_primaries(color_space);
     if !cp.is_empty() {
         fa.fill(StreamKind::Image, 0, "colour_primaries", cp, false);
@@ -184,10 +178,7 @@ mod tests {
         let buf = build_bpg(1, false, 8, 0, 1920, 1080);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bpg(&mut fa));
-        let i = |k: &str| {
-            fa.retrieve(StreamKind::Image, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("BPG"));
         assert_eq!(i("Width").as_deref(), Some("1920"));
         assert_eq!(i("Height").as_deref(), Some("1080"));
@@ -202,10 +193,7 @@ mod tests {
         let buf = build_bpg(0, false, 10, 1, 64, 64); // grayscale 10-bit RGB
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bpg(&mut fa));
-        let i = |k: &str| {
-            fa.retrieve(StreamKind::Image, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Width").as_deref(), Some("64"));
         assert_eq!(i("Height").as_deref(), Some("64"));
         assert_eq!(i("BitDepth").as_deref(), Some("10"));

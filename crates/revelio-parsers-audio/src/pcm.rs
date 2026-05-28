@@ -9,10 +9,14 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 16 { return false; }
+    if buf.len() < 16 {
+        return false;
+    }
 
     let format_tag = u16::from_le_bytes([buf[0], buf[1]]);
-    if format_tag != 0x0001 && format_tag != 0xFFFE { return false; }
+    if format_tag != 0x0001 && format_tag != 0xFFFE {
+        return false;
+    }
 
     let channels = u16::from_le_bytes([buf[2], buf[3]]);
     let sample_rate = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
@@ -34,10 +38,16 @@ mod tests {
     #[test]
     fn pcm_detects_waveformatex() {
         let mut buf = vec![0u8; 16];
-        buf[0] = 0x01; buf[1] = 0x00; // PCM format tag
-        buf[2] = 0x02; buf[3] = 0x00; // 2 channels
-        buf[4] = 0x80; buf[5] = 0xBB; buf[6] = 0x00; buf[7] = 0x00; // 48000
-        buf[14] = 0x10; buf[15] = 0x00; // 16-bit
+        buf[0] = 0x01;
+        buf[1] = 0x00; // PCM format tag
+        buf[2] = 0x02;
+        buf[3] = 0x00; // 2 channels
+        buf[4] = 0x80;
+        buf[5] = 0xBB;
+        buf[6] = 0x00;
+        buf[7] = 0x00; // 48000
+        buf[14] = 0x10;
+        buf[15] = 0x00; // 16-bit
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pcm(&mut fa));
     }

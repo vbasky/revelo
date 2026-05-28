@@ -26,6 +26,8 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 const OGG_MAGIC: &[u8; 4] = b"OggS";
 
+/// Detection: `OggS` magic at offset 0.
+/// Fills: Vorbis/Opus/Theora/FLAC codec info, VorbisComment tags, duration from granule.
 pub fn parse_ogg(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(4);
     let Some(h) = head else { return false };
@@ -46,7 +48,8 @@ pub fn parse_ogg(fa: &mut FileAnalyze) -> bool {
             break;
         }
         let header_type = h[5];
-        let granule_position = u64::from_le_bytes([h[6], h[7], h[8], h[9], h[10], h[11], h[12], h[13]]);
+        let granule_position =
+            u64::from_le_bytes([h[6], h[7], h[8], h[9], h[10], h[11], h[12], h[13]]);
         let serial = u32::from_le_bytes([h[14], h[15], h[16], h[17]]);
         let _seq = u32::from_le_bytes([h[18], h[19], h[20], h[21]]);
         let _crc = u32::from_le_bytes([h[22], h[23], h[24], h[25]]);
@@ -129,10 +132,7 @@ struct OggStream {
 
 impl OggStream {
     fn new(serial: u32) -> Self {
-        OggStream {
-            serial,
-            ..Default::default()
-        }
+        OggStream { serial, ..Default::default() }
     }
 }
 
@@ -214,9 +214,9 @@ fn parse_vorbis_secondary_packet(packet: &[u8], stream: &mut OggStream) {
     if pos + 4 > packet.len() {
         return;
     }
-    let vendor_len = u32::from_le_bytes([
-        packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3],
-    ]) as usize;
+    let vendor_len =
+        u32::from_le_bytes([packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3]])
+            as usize;
     pos += 4;
     if pos + vendor_len > packet.len() {
         return;
@@ -228,17 +228,17 @@ fn parse_vorbis_secondary_packet(packet: &[u8], stream: &mut OggStream) {
     if pos + 4 > packet.len() {
         return;
     }
-    let comment_count = u32::from_le_bytes([
-        packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3],
-    ]) as usize;
+    let comment_count =
+        u32::from_le_bytes([packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3]])
+            as usize;
     pos += 4;
     for _ in 0..comment_count {
         if pos + 4 > packet.len() {
             return;
         }
-        let clen = u32::from_le_bytes([
-            packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3],
-        ]) as usize;
+        let clen =
+            u32::from_le_bytes([packet[pos], packet[pos + 1], packet[pos + 2], packet[pos + 3]])
+                as usize;
         pos += 4;
         if pos + clen > packet.len() {
             return;
@@ -314,10 +314,8 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                     // Duration_ms, not from the raw granule (which
                     // includes encoder priming + trailing partial
                     // samples). So compute Duration first.
-                    let duration_ms =
-                        (stream.last_granule * 1000) / (stream.sample_rate as u64);
-                    let sampling_count =
-                        duration_ms * (stream.sample_rate as u64) / 1000;
+                    let duration_ms = (stream.last_granule * 1000) / (stream.sample_rate as u64);
+                    let sampling_count = duration_ms * (stream.sample_rate as u64) / 1000;
                     fa.fill(
                         StreamKind::Audio,
                         pos,
@@ -325,21 +323,14 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                         sampling_count.to_string(),
                         false,
                     );
-                    fa.fill(
-                        StreamKind::Audio,
-                        pos,
-                        "Duration",
-                        duration_ms.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Audio, pos, "Duration", duration_ms.to_string(), false);
                     // For Vorbis-in-Ogg the oracle reports StreamSize
                     // = bitrate_nominal/8 * Duration_seconds, not the
                     // actual byte total (which would include Ogg page
                     // overhead). This is the "encoded payload size at
                     // the nominal rate" convention.
                     if stream.bitrate_nominal > 0 {
-                        let stream_size =
-                            (stream.bitrate_nominal as u64) * duration_ms / 8000;
+                        let stream_size = (stream.bitrate_nominal as u64) * duration_ms / 8000;
                         fa.fill(
                             StreamKind::Audio,
                             pos,

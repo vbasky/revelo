@@ -1,4 +1,3 @@
-
 /// Splits a multi-channel PCM stream into independent channel pair buffers.
 /// Mirrors MediaInfoLib's File_ChannelSplitting for SMPTE ST 337 AES3.
 pub struct ChannelSplitter {
@@ -17,10 +16,9 @@ impl ChannelSplitter {
     pub fn new(channel_total: u8, bit_depth: u8, sampling_rate: u16) -> Self {
         let pair_count = (channel_total as usize) / 2;
         ChannelSplitter {
-            channels: (0..pair_count).map(|i| SplitChannel {
-                buffer: Vec::new(),
-                stream_index: i,
-            }).collect(),
+            channels: (0..pair_count)
+                .map(|i| SplitChannel { buffer: Vec::new(), stream_index: i })
+                .collect(),
             channel_total,
             bit_depth,
             sampling_rate,
@@ -34,15 +32,17 @@ impl ChannelSplitter {
         let sample_count = data.len() / bytes_per_sample / self.channel_total as usize;
         for pair_idx in 0..self.channels.len() {
             for sample in 0..sample_count {
-                let src_offset = (sample * self.channel_total as usize + pair_idx * 2) * bytes_per_sample;
-                self.channels[pair_idx].buffer.extend_from_slice(
-                    &data[src_offset..src_offset + bytes_per_sample]
-                );
+                let src_offset =
+                    (sample * self.channel_total as usize + pair_idx * 2) * bytes_per_sample;
+                self.channels[pair_idx]
+                    .buffer
+                    .extend_from_slice(&data[src_offset..src_offset + bytes_per_sample]);
                 if pair_idx * 2 + 1 < self.channel_total as usize {
-                    let src_offset2 = (sample * self.channel_total as usize + pair_idx * 2 + 1) * bytes_per_sample;
-                    self.channels[pair_idx].buffer.extend_from_slice(
-                        &data[src_offset2..src_offset2 + bytes_per_sample]
-                    );
+                    let src_offset2 = (sample * self.channel_total as usize + pair_idx * 2 + 1)
+                        * bytes_per_sample;
+                    self.channels[pair_idx]
+                        .buffer
+                        .extend_from_slice(&data[src_offset2..src_offset2 + bytes_per_sample]);
                 }
             }
         }
@@ -52,12 +52,16 @@ impl ChannelSplitter {
         self.channels.iter().map(|c| c.buffer.as_slice()).collect()
     }
 
-    pub fn pair_count(&self) -> usize { self.channels.len() }
+    pub fn pair_count(&self) -> usize {
+        self.channels.len()
+    }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_4ch_16bit() {
+    #[test]
+    fn test_4ch_16bit() {
         // 4 channels, 16-bit: sample0 = [L0 R0 L1 R1]
         // channel_total=4, pair_count=2, bytes_per_sample=2
         let mut splitter = ChannelSplitter::new(4, 16, 48000);
@@ -75,7 +79,8 @@ impl ChannelSplitter {
         assert_eq!(bufs[1].len(), 8);
     }
 
-    #[test] fn test_2ch_no_split() {
+    #[test]
+    fn test_2ch_no_split() {
         let mut splitter = ChannelSplitter::new(2, 24, 48000);
         assert_eq!(splitter.pair_count(), 1);
         let data = vec![0u8; 2 * 3]; // 1 sample, 2 channels, 24-bit = 6 bytes

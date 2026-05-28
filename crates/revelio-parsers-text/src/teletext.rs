@@ -44,7 +44,10 @@ mod tests {
         buf[2] = 0x27;
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_teletext(&mut fa));
-        assert_eq!(fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()), Some("Teletext".into()));
+        assert_eq!(
+            fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()),
+            Some("Teletext".into())
+        );
     }
 
     #[test]

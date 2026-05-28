@@ -59,9 +59,13 @@ pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
 }
 
 fn vc3_from_cid(cid: u32) -> (&'static str, &'static str, u8) {
-    let profile = if (1235..=1260).contains(&cid) { "HD" }
-        else if (1270..=1275).contains(&cid) { "RI" }
-        else { "" };
+    let profile = if (1235..=1260).contains(&cid) {
+        "HD"
+    } else if (1270..=1275).contains(&cid) {
+        "RI"
+    } else {
+        ""
+    };
 
     let level = match cid {
         1256 | 1270 => "444",
@@ -93,16 +97,7 @@ struct Vc3Info {
 }
 
 fn fill_vc3_streams(fa: &mut FileAnalyze, info: Vc3Info) {
-    let Vc3Info {
-        version,
-        width,
-        height,
-        cid,
-        sst,
-        profile,
-        level,
-        bit_depth,
-    } = info;
+    let Vc3Info { version, width, height, cid, sst, profile, level, bit_depth } = info;
     fa.stream_prepare(StreamKind::Video);
     fa.fill(StreamKind::Video, 0, "Format", "VC-3", false);
     fa.fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", version), false);
@@ -128,16 +123,25 @@ mod tests {
     #[test]
     fn vc3_detects_header_prefix() {
         let mut buf = vec![0u8; 0x2C];
-        buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x02; buf[3] = 0x80;
+        buf[0] = 0x00;
+        buf[1] = 0x00;
+        buf[2] = 0x02;
+        buf[3] = 0x80;
         buf[4] = 3; // version 3
         // active lines = 1080
-        buf[0x18] = 0x04; buf[0x19] = 0x38;
+        buf[0x18] = 0x04;
+        buf[0x19] = 0x38;
         // samples per line = 1920
-        buf[0x1A] = 0x07; buf[0x1B] = 0x80;
+        buf[0x1A] = 0x07;
+        buf[0x1B] = 0x80;
         // SST = progressive
-        buf[0x22] = 0x00; buf[0x23] = 0x00;
+        buf[0x22] = 0x00;
+        buf[0x23] = 0x00;
         // CID = 1235 (DNxHD HQX 10-bit 1080p)
-        buf[0x28] = 0x00; buf[0x29] = 0x00; buf[0x2A] = 0x04; buf[0x2B] = 0xD3;
+        buf[0x28] = 0x00;
+        buf[0x29] = 0x00;
+        buf[0x2A] = 0x04;
+        buf[0x2B] = 0xD3;
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vc3(&mut fa));

@@ -44,8 +44,12 @@ ISO 639 language (0x0A — 3-letter codes), AC-3 descriptor (0x6A/0x7A).
 Two-pass: header pass for BITMAPINFOHEADER/WAVEFORMATEX, movi pass for frame counts.
 
 ### WAV (Waveform Audio)
-**Spec:** Multimedia Programming Interface and Data Specifications 1.0 (IBM/Microsoft)
+**Spec:** Multimedia Programming Interface and Data Specifications 1.0 (IBM/Microsoft),
+EBU Tech 3285 (BWF), EBU Tech 3293 (iXML/aXML)
 **Detection:** `RIFF` + `WAVE` → `fmt ` (WAVEFORMATEX) + `data` chunks.
+**BWF (Broadcast Wave):** `bext` chunk → Description, Originator, OriginationDate/Time,
+TimeReference (sample count), BWFVersion, UMID, LoudnessValue/Range/MaxTruePeak.
+`iXML`/`aXML` chunks → embedded XML metadata with scene/take/note fields.
 
 ### Ogg
 **Spec:** RFC 3533
@@ -63,6 +67,13 @@ Vorbis/Opus/Theora/FLAC/Speex identification header parsing.
 | DV-DIF | DIF block header | Sony DVCPRO/DVCAM |
 | IVF | `DKIF` | VP8/VP9/AV1 elementary stream |
 | SWF | `FWS`/`CWS`/`ZWS` | Adobe Flash |
+
+### SCTE-35 (Digital Program Insertion / Ad Cueing)
+**Spec:** ANSI/SCTE 35
+**Detection:** Table ID `0xFC` (splice_info_section) in MPEG-TS or raw binary.
+Commands: splice_insert (0x05), time_signal (0x06). Segmentation descriptors
+extract seg_type_id/name, segmentation_duration, and UPID (Unique Program
+Identifier) with UPID type names (Ad ID, ISAN, EIDR, URI, UUID, etc.).
 
 ---
 
@@ -214,6 +225,7 @@ SR index, channel count, bit depth lookup. Output: Lossless, VBR.
 | BPG | `BPG\xFB` | HEVC intra |
 | PCX | 0x0A+version | ZSoft PCX |
 | TGA | Image ID field | Truevision TARGA |
+| JPEG 2000 | `\x00\x00\x00\x0C\x6A\x50\x20\x20...` (JP2) or `\xFF\x4F` (J2K) | ISO/IEC 15444-1 |
 | HEIF | ftyp+mif1/heic/hevc | ISO/IEC 23008-12 |
 | ArriRaw | ARRIRAW | Arri Alexa |
 | Amiga Icon | 0xE310 | AmigaOS |

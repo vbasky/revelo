@@ -116,11 +116,7 @@ impl<'a> BitStream<'a> {
             to_return = self.last_byte >> self.last_byte_size;
         } else {
             let mut new_bits = how_many - self.last_byte_size;
-            let mut acc: usize = if new_bits == 32 {
-                0
-            } else {
-                self.last_byte << new_bits
-            };
+            let mut acc: usize = if new_bits == 32 { 0 } else { self.last_byte << new_bits };
             // Mirror the C++ switch/fallthrough: pull whole bytes until <=8
             // bits remain to consume.
             let mut tier = (new_bits - 1) / 8;

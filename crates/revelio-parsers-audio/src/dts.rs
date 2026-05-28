@@ -33,22 +33,16 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 const SYNC_CORE_BE16: u32 = 0x7FFE8001;
 
-const DTS_SAMPLE_RATES: [u32; 16] = [
-    0, 8000, 16000, 32000, 0, 0, 11025, 22050,
-    44100, 0, 0, 12000, 24000, 48000, 96000, 192000,
-];
+const DTS_SAMPLE_RATES: [u32; 16] =
+    [0, 8000, 16000, 32000, 0, 0, 11025, 22050, 44100, 0, 0, 12000, 24000, 48000, 96000, 192000];
 
 const DTS_BIT_RATES: [u32; 32] = [
-    32000, 56000, 64000, 96000, 112000, 128000, 192000, 224000,
-    256000, 320000, 384000, 448000, 512000, 576000, 640000, 754500,
-    960000, 1024000, 1152000, 1280000, 1344000, 1408000, 1411200, 1472000,
-    1509750, 1920000, 2048000, 3072000, 3840000, 0, 0, 0,
+    32000, 56000, 64000, 96000, 112000, 128000, 192000, 224000, 256000, 320000, 384000, 448000,
+    512000, 576000, 640000, 754500, 960000, 1024000, 1152000, 1280000, 1344000, 1408000, 1411200,
+    1472000, 1509750, 1920000, 2048000, 3072000, 3840000, 0, 0, 0,
 ];
 
-const DTS_CHANNELS: [u8; 16] = [
-    1, 2, 2, 2, 2, 3, 3, 4,
-    4, 5, 6, 6, 6, 7, 8, 8,
-];
+const DTS_CHANNELS: [u8; 16] = [1, 2, 2, 2, 2, 3, 3, 4, 4, 5, 6, 6, 6, 7, 8, 8];
 
 const DTS_CHANNEL_POSITIONS: [&str; 16] = [
     "Front: C",
@@ -238,11 +232,8 @@ impl<'a> BitReader<'a> {
         for _ in 0..n {
             let byte_idx = self.bit_pos / 8;
             let bit_idx = 7 - (self.bit_pos % 8);
-            let bit = if byte_idx < self.bytes.len() {
-                (self.bytes[byte_idx] >> bit_idx) & 1
-            } else {
-                0
-            };
+            let bit =
+                if byte_idx < self.bytes.len() { (self.bytes[byte_idx] >> bit_idx) & 1 } else { 0 };
             v = (v << 1) | (bit as u32);
             self.bit_pos += 1;
         }
@@ -269,12 +260,12 @@ mod tests {
         // amode=2 (L R, 2ch), sample_freq=13 (48000), bit_rate=12 (512000),
         // lfe=0, source_pcm_resolution=0 (16-bit).
         let mut bits = BitWriter::new();
-        bits.write(1, 0);  // frame_type
-        bits.write(5, 0);  // deficit
-        bits.write(1, 0);  // crc_present
+        bits.write(1, 0); // frame_type
+        bits.write(5, 0); // deficit
+        bits.write(1, 0); // crc_present
         bits.write(7, 16 - 1); // num_pcm_sample_blocks (stored value)
         bits.write(14, 1024 - 1); // primary_frame_byte_size
-        bits.write(6, 2);  // amode = 2 → 2ch L R
+        bits.write(6, 2); // amode = 2 → 2ch L R
         bits.write(4, 13); // sample_freq = 13 → 48000
         bits.write(5, 12); // bit_rate = 12 → 512000
         bits.write(1, 0);
@@ -285,13 +276,13 @@ mod tests {
         bits.write(3, 0);
         bits.write(1, 0);
         bits.write(1, 0);
-        bits.write(2, 0);  // lfe_effects
+        bits.write(2, 0); // lfe_effects
         bits.write(1, 0);
         // skip crc since crc_present=0
-        bits.write(1, 0);  // multirate
-        bits.write(4, 0);  // encoder_rev
-        bits.write(2, 0);  // copy_history
-        bits.write(2, 0);  // source_pcm_resolution → 16-bit
+        bits.write(1, 0); // multirate
+        bits.write(4, 0); // encoder_rev
+        bits.write(2, 0); // copy_history
+        bits.write(2, 0); // source_pcm_resolution → 16-bit
 
         let mut buf = vec![0x7Fu8, 0xFE, 0x80, 0x01];
         buf.extend_from_slice(&bits.bytes());
@@ -316,16 +307,22 @@ mod tests {
         bit_pos: usize,
     }
     impl BitWriter {
-        fn new() -> Self { Self { buf: Vec::new(), bit_pos: 0 } }
+        fn new() -> Self {
+            Self { buf: Vec::new(), bit_pos: 0 }
+        }
         fn write(&mut self, n: u32, v: u32) {
             for i in (0..n).rev() {
                 let byte_idx = self.bit_pos / 8;
-                while self.buf.len() <= byte_idx { self.buf.push(0); }
+                while self.buf.len() <= byte_idx {
+                    self.buf.push(0);
+                }
                 let bit = ((v >> i) & 1) as u8;
                 self.buf[byte_idx] |= bit << (7 - (self.bit_pos % 8));
                 self.bit_pos += 1;
             }
         }
-        fn bytes(self) -> Vec<u8> { self.buf }
+        fn bytes(self) -> Vec<u8> {
+            self.buf
+        }
     }
 }

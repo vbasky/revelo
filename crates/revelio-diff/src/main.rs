@@ -4,13 +4,44 @@ use std::path::Path;
 use std::process::{Command, ExitCode};
 use std::time::UNIX_EPOCH;
 
-use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
+use revelio_core::{FileAnalyze, FileLevelInfo, fill_file_level_fields};
 use revelio_export::to_xml;
-use revelio_parsers_audio::{parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr, parse_ape, parse_aptx100, parse_au, parse_caf, parse_dat, parse_dsdiff, parse_dsf, parse_dts, parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker, parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_open_mg, parse_rkau, parse_scream_tracker3, parse_speex, parse_tak, parse_tta, parse_twin_vq, parse_wvpk, parse_opus, parse_vorbis, parse_usac};
-use revelio_parsers_container::{parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd, parse_dcp_am, parse_dcp_cpl, parse_dcp_pkl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw, parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf, parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf, parse_nsv, parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm, parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv, parse_xdcam_clip};
-use revelio_parsers_text::{parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle, parse_eia608, parse_eia708, parse_kate, parse_n19, parse_other_text, parse_pgs, parse_sub_rip, parse_ttml, parse_teletext, parse_scc, parse_timed_text};
-use revelio_parsers_image::{parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle, parse_tga, parse_tiff, parse_webp};
-use revelio_parsers_video::{parse_av1, parse_avc, parse_hevc, parse_theora, parse_vp8, parse_vp9, parse_y4m, parse_vc1, parse_mpeg2, parse_vvc, parse_prores, parse_vc3, parse_dolby_vision};
+use revelio_parsers_audio::{
+    parse_aac_adts, parse_ac3, parse_ac4, parse_adpcm, parse_als, parse_amr, parse_ape,
+    parse_aptx100, parse_au, parse_caf, parse_celt, parse_channel_grouping,
+    parse_channel_splitting, parse_dat, parse_dolby_e, parse_dsdiff, parse_dsf, parse_dts,
+    parse_dts_uhd, parse_extended_module, parse_flac, parse_iab, parse_iamf, parse_impulse_tracker,
+    parse_la, parse_midi, parse_module, parse_mp3, parse_mpc, parse_mpc_sv8, parse_mpegh3da,
+    parse_open_mg, parse_opus, parse_pcm, parse_ps2_audio, parse_rkau, parse_scream_tracker3,
+    parse_smpte_st0302, parse_smpte_st0331, parse_smpte_st0337, parse_speex, parse_tak,
+    parse_truehd, parse_tta, parse_twin_vq, parse_usac, parse_vorbis, parse_wvpk,
+};
+use revelio_parsers_container::{
+    parse_aaf, parse_aiff, parse_amv, parse_avi, parse_bdmv, parse_cdxa, parse_dash_mpd,
+    parse_dcp_am, parse_dcp_cpl, parse_dcp_pkl, parse_dpg, parse_dv_dif, parse_dvdv, parse_dxw,
+    parse_flv, parse_gxf, parse_hds_f4m, parse_hls, parse_ibi, parse_ism, parse_ivf, parse_lxf,
+    parse_mi_xml, parse_mkv, parse_mp4, parse_mpeg_ps, parse_mpeg_ts, parse_mxf, parse_nsv,
+    parse_nut, parse_ogg, parse_p2_clip, parse_pmp, parse_ptx, parse_rm, parse_scte35,
+    parse_sequence_info, parse_skm, parse_swf, parse_vbi, parse_wav, parse_wm, parse_wtv,
+    parse_xdcam_clip,
+};
+use revelio_parsers_image::{
+    parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr,
+    parse_jp2,
+    parse_gain_map, parse_gif, parse_ico, parse_jpeg, parse_pcx, parse_png, parse_psd, parse_rle,
+    parse_tga, parse_tiff, parse_webp,
+};
+use revelio_parsers_text::{
+    parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dvb_subtitle, parse_eia608, parse_eia708,
+    parse_kate, parse_n19, parse_other_text, parse_pgs, parse_scc, parse_sub_rip, parse_teletext,
+    parse_timed_text, parse_ttml, parse_webvtt,
+};
+use revelio_parsers_video::{
+    parse_afd_bar_data, parse_aic, parse_av1, parse_avc, parse_avs, parse_avs3, parse_canopus,
+    parse_cineform, parse_dirac, parse_dolby_vision, parse_flic, parse_fraps, parse_hdr_vivid,
+    parse_hevc, parse_huffyuv, parse_lagarith, parse_mpeg2, parse_prores, parse_theora, parse_vc1,
+    parse_vc3, parse_vp8, parse_vp9, parse_vvc, parse_y4m,
+};
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -36,7 +67,7 @@ fn main() -> ExitCode {
         .unwrap_or(false);
 
     if args.is_empty() {
-        eprintln!("usage: diff-harness [--rust-xml] [--strict] <media-file> [<media-file> ...]");
+        eprintln!("usage: revelio-diff [--rust-xml] [--strict] <media-file> [<media-file> ...]");
         return ExitCode::from(2);
     }
 
@@ -104,12 +135,7 @@ impl std::fmt::Display for Report {
 fn diff_one(path: &str, strict: bool) -> Result<Report, String> {
     let oracle_xml = run_oracle(path)?;
     let rust_xml = run_rust_engine(path)?;
-    Ok(Report {
-        path: path.to_owned(),
-        oracle_xml,
-        rust_xml,
-        strict,
-    })
+    Ok(Report { path: path.to_owned(), oracle_xml, rust_xml, strict })
 }
 
 fn run_oracle(path: &str) -> Result<String, String> {
@@ -138,7 +164,8 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
 
     // Structured/magic-based parsers first; sync-based MP3 last so it
     // only fires when nothing else claimed the file.
-    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 125] = [
+    let parsers: [(&str, fn(&mut FileAnalyze) -> bool); 152] = [
+        ("SCTE-35", parse_scte35),
         ("WAV", parse_wav),
         ("AVI", parse_avi),
         ("CDXA", parse_cdxa),
@@ -210,6 +237,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("PCX", parse_pcx),
         ("ArriRaw", parse_arriraw),
         ("AmigaIcon", parse_amiga_icon),
+        ("JPEG 2000", parse_jp2),
         ("Y4M", parse_y4m),
         ("VC1", parse_vc1),
         ("MPEG-2", parse_mpeg2),
@@ -219,6 +247,16 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("VP8", parse_vp8),
         ("VP9", parse_vp9),
         ("Theora", parse_theora),
+        ("AIC", parse_aic),
+        ("AVS", parse_avs),
+        ("AVS3", parse_avs3),
+        ("Canopus", parse_canopus),
+        ("CineForm", parse_cineform),
+        ("Dirac", parse_dirac),
+        ("FLIC", parse_flic),
+        ("Fraps", parse_fraps),
+        ("HuffYUV", parse_huffyuv),
+        ("Lagarith", parse_lagarith),
         ("AC3", parse_ac3),
         ("AC4", parse_ac4),
         ("DTS", parse_dts),
@@ -247,6 +285,18 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("IT", parse_impulse_tracker),
         ("S3M", parse_scream_tracker3),
         ("MP3", parse_mp3),
+        ("CELT", parse_celt),
+        ("Dolby E", parse_dolby_e),
+        ("MPEG-H 3D", parse_mpegh3da),
+        ("Musepack SV8", parse_mpc_sv8),
+        ("PS2 Audio", parse_ps2_audio),
+        ("TrueHD", parse_truehd),
+        ("SMPTE ST 302", parse_smpte_st0302),
+        ("SMPTE ST 331", parse_smpte_st0331),
+        ("SMPTE ST 337", parse_smpte_st0337),
+        ("ChannelGrouping", parse_channel_grouping),
+        ("ChannelSplitting", parse_channel_splitting),
+        ("PCM", parse_pcm),
         ("TGA", parse_tga),
         ("GainMap", parse_gain_map),
         ("RLE", parse_rle),
@@ -254,6 +304,9 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         ("EIA-608", parse_eia608),
         ("EIA-708", parse_eia708),
         ("VBI", parse_vbi),
+        ("WebVTT", parse_webvtt),
+        ("AFD/Bar", parse_afd_bar_data),
+        ("HDR Vivid", parse_hdr_vivid),
         ("VVC", parse_vvc),
         ("ProRes", parse_prores),
         ("VC-3", parse_vc3),
@@ -274,10 +327,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         }
     }
     if !parsed {
-        return Err(format!(
-            "no rust parser matched ({} bytes)",
-            bytes.len()
-        ));
+        return Err(format!("no rust parser matched ({} bytes)", bytes.len()));
     }
 
     // Shared with the CLI via revelio-core — single source of truth for
@@ -375,11 +425,8 @@ fn diff_lines_ordered<'a>(oracle: &'a str, rust: &'a str) -> Vec<LineDiff<'a>> {
     let mut dp = vec![vec![0u32; m + 1]; n + 1];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
-            dp[i][j] = if o[i] == r[j] {
-                dp[i + 1][j + 1] + 1
-            } else {
-                dp[i + 1][j].max(dp[i][j + 1])
-            };
+            dp[i][j] =
+                if o[i] == r[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
         }
     }
 

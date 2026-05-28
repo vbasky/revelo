@@ -1,13 +1,17 @@
 [package]
-name = "diff-harness"
+name = "revelio-diff"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Differential testing against mediainfo oracle"
 
 [[bin]]
-name = "diff-harness"
+name = "revelio-diff"
 path = "src/main.rs"
+
+[lints]
+workspace = true
 
 [dependencies]
 revelio-core = { path = "../revelio-core" }

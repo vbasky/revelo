@@ -1,7 +1,7 @@
 //! NUT container parser.
 //!
 //! Mirrors MediaInfoLib's `File_Nut.cpp` `FileHeader_Parse`. The NUT format
-//! (http://svn.mplayerhq.hu/nut/docs/nut.txt) starts with a 24-byte ASCII
+//! (<http://svn.mplayerhq.hu/nut/docs/nut.txt>) starts with a 24-byte ASCII
 //! file_id_string followed by a single zero byte. Element packets that
 //! follow each start with a 64-bit startcode whose first byte is 'N'
 //! (0x4E) — e.g. main = 0x4E4D7A561F5F04AD. This parser only validates the
@@ -63,9 +63,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_nut(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("Nut")
         );
     }

@@ -80,19 +80,13 @@ fn detect(lines: &[&str], line0: &str, line1: &str, line2: &str) -> Option<Match
     let is_script_info = line0 == "[Script Info]";
 
     if is_script_info
-        && (lines.contains(&"ScriptType: v4.00")
-            || lines.contains(&"Script Type: V4.00"))
+        && (lines.contains(&"ScriptType: v4.00") || lines.contains(&"Script Type: V4.00"))
         && lines.contains(&"[V4 Styles]")
     {
-        return Some(Match {
-            format: "SSA",
-            format_info: Some("SubStation Alpha"),
-            codec: "SSA",
-        });
+        return Some(Match { format: "SSA", format_info: Some("SubStation Alpha"), codec: "SSA" });
     }
     if is_script_info
-        && (lines.contains(&"ScriptType: v4.00+")
-            || lines.contains(&"Script Type: V4.00+"))
+        && (lines.contains(&"ScriptType: v4.00+") || lines.contains(&"Script Type: V4.00+"))
         && lines.contains(&"[V4+ Styles]")
     {
         return Some(Match {
@@ -103,11 +97,7 @@ fn detect(lines: &[&str], line0: &str, line1: &str, line2: &str) -> Option<Match
     }
 
     if matches_timecode_pair(line0, b' ') {
-        return Some(Match {
-            format: "Adobe encore DVD",
-            format_info: None,
-            codec: "Adobe",
-        });
+        return Some(Match { format: "Adobe encore DVD", format_info: None, codec: "Adobe" });
     }
 
     let l0b = line0.as_bytes();
@@ -124,28 +114,15 @@ fn detect(lines: &[&str], line0: &str, line1: &str, line2: &str) -> Option<Match
     }
 
     if matches_captions32(line0) {
-        return Some(Match {
-            format: "Captions 32",
-            format_info: None,
-            codec: "Caption 32",
-        });
+        return Some(Match { format: "Captions 32", format_info: None, codec: "Caption 32" });
     }
 
-    if line0 == "*Timecode type: PAL/EBU"
-        && line1.is_empty()
-        && matches_timecode_pair(line2, b' ')
+    if line0 == "*Timecode type: PAL/EBU" && line1.is_empty() && matches_timecode_pair(line2, b' ')
     {
-        return Some(Match {
-            format: "Captions Inc",
-            format_info: None,
-            codec: "Captions Inc",
-        });
+        return Some(Match { format: "Captions Inc", format_info: None, codec: "Captions Inc" });
     }
 
-    if line0.starts_with('*')
-        && line0.len() > 1
-        && lines.contains(&"** Caption Number 1")
-    {
+    if line0.starts_with('*') && line0.len() > 1 && lines.contains(&"** Caption Number 1") {
         return Some(Match { format: "Cheeta", format_info: None, codec: "Cheeta" });
     }
 

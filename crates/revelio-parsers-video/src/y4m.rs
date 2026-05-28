@@ -79,10 +79,19 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
             b'A' => {
                 let val = &param[1..];
                 if let Some(colon) = val.find(':')
-                    && let (Ok(x), Ok(y)) = (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>())
-                        && x > 0.0 && y > 0.0 {
-                            fa.fill(StreamKind::Video, 0, "PixelAspectRatio", format!("{:.3}", x / y), false);
-                        }
+                    && let (Ok(x), Ok(y)) =
+                        (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>())
+                    && x > 0.0
+                    && y > 0.0
+                {
+                    fa.fill(
+                        StreamKind::Video,
+                        0,
+                        "PixelAspectRatio",
+                        format!("{:.3}", x / y),
+                        false,
+                    );
+                }
             }
             b'C' => {
                 // Color space — the token is e.g. "C420" or "C420jpeg".
@@ -102,11 +111,14 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
             b'F' => {
                 let val = &param[1..];
                 if let Some(colon) = val.find(':')
-                    && let (Ok(n), Ok(d)) = (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>())
-                        && n > 0.0 && d > 0.0 {
-                            frame_rate = n / d;
-                            fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
-                        }
+                    && let (Ok(n), Ok(d)) =
+                        (val[..colon].parse::<f64>(), val[colon + 1..].parse::<f64>())
+                    && n > 0.0
+                    && d > 0.0
+                {
+                    frame_rate = n / d;
+                    fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+                }
             }
             b'H' => {
                 if let Ok(h) = param[1..].parse::<u64>() {
@@ -114,22 +126,19 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
                     fa.fill(StreamKind::Video, 0, "Height", h.to_string(), false);
                 }
             }
-            b'I'
-                if param.len() == 2 => {
-                    match bytes[1] {
-                        b'p' => fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false),
-                        b't' => {
-                            fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
-                            fa.fill(StreamKind::Video, 0, "ScanOrder", "TFF", false);
-                        }
-                        b'b' => {
-                            fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
-                            fa.fill(StreamKind::Video, 0, "ScanOrder", "BFF", false);
-                        }
-                        b'm' => fa.fill(StreamKind::Video, 0, "ScanType", "Mixed", false),
-                        _ => {}
-                    }
+            b'I' if param.len() == 2 => match bytes[1] {
+                b'p' => fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false),
+                b't' => {
+                    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
+                    fa.fill(StreamKind::Video, 0, "ScanOrder", "TFF", false);
                 }
+                b'b' => {
+                    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
+                    fa.fill(StreamKind::Video, 0, "ScanOrder", "BFF", false);
+                }
+                b'm' => fa.fill(StreamKind::Video, 0, "ScanType", "Mixed", false),
+                _ => {}
+            },
             b'W' => {
                 if let Ok(w) = param[1..].parse::<u64>() {
                     width = w;
@@ -198,18 +207,9 @@ mod tests {
         let buf = make_y4m("W1920 H1080 F25:1 C420jpeg Ip A1:1");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_y4m(&mut fa));
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
-            Some("YUV")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
-            Some("1920")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
-            Some("1080")
-        );
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("YUV"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("1920"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("1080"));
         assert_eq!(
             fa.retrieve(StreamKind::Video, 0, "FrameRate").map(|z| z.as_str()),
             Some("25.000")

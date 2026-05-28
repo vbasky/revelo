@@ -101,10 +101,7 @@ mod tests {
             s.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
             Some("8000")
         );
-        assert_eq!(
-            s.retrieve(StreamKind::Audio, 0, "Channels").map(|z| z.as_str()),
-            Some("1")
-        );
+        assert_eq!(s.retrieve(StreamKind::Audio, 0, "Channels").map(|z| z.as_str()), Some("1"));
         assert_eq!(
             s.retrieve(StreamKind::Audio, 0, "BitRate_Mode").map(|z| z.as_str()),
             Some("VBR")

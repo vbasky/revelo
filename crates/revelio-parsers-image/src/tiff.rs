@@ -167,7 +167,13 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         _ => "",
     };
     let format_rat = |(n, d): (u32, u32)| -> String {
-        if d == 0 { n.to_string() } else if n % d == 0 { (n / d).to_string() } else { format!("{:.3}", n as f64 / d as f64) }
+        if d == 0 {
+            n.to_string()
+        } else if n % d == 0 {
+            (n / d).to_string()
+        } else {
+            format!("{:.3}", n as f64 / d as f64)
+        }
     };
     if let Some(x) = ifd.x_resolution {
         fa.fill(StreamKind::Image, 0, "Density_X", format_rat(x), false);
@@ -222,11 +228,8 @@ fn read_ifd(buf: &[u8], offset: usize, le: bool) -> Option<Ifd> {
             _ => 1,
         };
         let total_bytes = count * type_size;
-        let data_off = if total_bytes <= 4 {
-            val_field
-        } else {
-            read_u32(buf, val_field, le) as usize
-        };
+        let data_off =
+            if total_bytes <= 4 { val_field } else { read_u32(buf, val_field, le) as usize };
 
         match tag {
             TAG_SUBFILE_TYPE => {
@@ -244,99 +247,95 @@ fn read_ifd(buf: &[u8], offset: usize, le: bool) -> Option<Ifd> {
             TAG_COMPRESSION => ifd.compression = read_int(buf, data_off, entry_type, le) as u32,
             TAG_PHOTOMETRIC => ifd.photometric = read_int(buf, data_off, entry_type, le) as u32,
             TAG_EXTRA_SAMPLES => ifd.extra_samples = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_SAMPLES_PER_PIXEL => ifd.samples_per_pixel = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_ROWS_PER_STRIP => ifd.rows_per_strip = read_int(buf, data_off, entry_type, le) as u32,
+            TAG_SAMPLES_PER_PIXEL => {
+                ifd.samples_per_pixel = read_int(buf, data_off, entry_type, le) as u32
+            }
+            TAG_ROWS_PER_STRIP => {
+                ifd.rows_per_strip = read_int(buf, data_off, entry_type, le) as u32
+            }
             TAG_PLANAR_CONFIG => ifd.planar_config = read_int(buf, data_off, entry_type, le) as u32,
             TAG_SAMPLE_FORMAT => ifd.sample_format = read_int(buf, data_off, entry_type, le) as u32,
             TAG_ORIENTATION => ifd.orientation = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_MAKE
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        if !s.is_empty() { ifd.make = Some(s); }
+            TAG_MAKE if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    if !s.is_empty() {
+                        ifd.make = Some(s);
                     }
                 }
-            TAG_MODEL
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        if !s.is_empty() { ifd.model = Some(s); }
+            }
+            TAG_MODEL if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    if !s.is_empty() {
+                        ifd.model = Some(s);
                     }
                 }
-            TAG_SOFTWARE
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        ifd.software = Some(s);
+            }
+            TAG_SOFTWARE if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    ifd.software = Some(s);
+                }
+            }
+            TAG_ARTIST if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    if !s.is_empty() {
+                        ifd.artist = Some(s);
                     }
                 }
-            TAG_ARTIST
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        if !s.is_empty() { ifd.artist = Some(s); }
+            }
+            TAG_COPYRIGHT if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    if !s.is_empty() {
+                        ifd.copyright = Some(s);
                     }
                 }
-            TAG_COPYRIGHT
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        if !s.is_empty() { ifd.copyright = Some(s); }
+            }
+            TAG_DATE_TIME if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    if !s.is_empty() {
+                        ifd.date_time = Some(s);
                     }
                 }
-            TAG_DATE_TIME
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        if !s.is_empty() { ifd.date_time = Some(s); }
+            }
+            TAG_IMAGE_DESCRIPTION if entry_type == 2 => {
+                let end = (data_off + count).min(buf.len());
+                if data_off < buf.len() {
+                    let raw = &buf[data_off..end];
+                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                    if !s.is_empty() {
+                        ifd.image_description = Some(s);
                     }
                 }
-            TAG_IMAGE_DESCRIPTION
-                if entry_type == 2 => {
-                    let end = (data_off + count).min(buf.len());
-                    if data_off < buf.len() {
-                        let raw = &buf[data_off..end];
-                        let s = String::from_utf8_lossy(raw)
-                            .trim_end_matches('\0')
-                            .to_string();
-                        if !s.is_empty() { ifd.image_description = Some(s); }
-                    }
+            }
+            TAG_X_RESOLUTION | TAG_Y_RESOLUTION if entry_type == 5 && data_off + 8 <= buf.len() => {
+                let num = read_u32(buf, data_off, le);
+                let den = read_u32(buf, data_off + 4, le);
+                if tag == TAG_X_RESOLUTION {
+                    ifd.x_resolution = Some((num, den));
+                } else {
+                    ifd.y_resolution = Some((num, den));
                 }
-            TAG_X_RESOLUTION | TAG_Y_RESOLUTION
-                if entry_type == 5 && data_off + 8 <= buf.len() => {
-                    let num = read_u32(buf, data_off, le);
-                    let den = read_u32(buf, data_off + 4, le);
-                    if tag == TAG_X_RESOLUTION {
-                        ifd.x_resolution = Some((num, den));
-                    } else {
-                        ifd.y_resolution = Some((num, den));
-                    }
-                }
-            TAG_RESOLUTION_UNIT => ifd.resolution_unit = read_int(buf, data_off, entry_type, le) as u32,
+            }
+            TAG_RESOLUTION_UNIT => {
+                ifd.resolution_unit = read_int(buf, data_off, entry_type, le) as u32
+            }
             _ => {}
         }
     }

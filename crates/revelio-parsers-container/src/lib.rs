@@ -1,6 +1,7 @@
 //! Container parsers: RIFF/WAV, MKV/WebM, MP4/MOV, MPEG-TS, AVI, etc.
 
 #![allow(non_snake_case)]
+#![deny(unsafe_code)]
 
 pub mod aaf;
 pub mod aiff;

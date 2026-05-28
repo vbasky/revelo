@@ -8,7 +8,7 @@
 //! terminators) or non-ASCII byte rejects the buffer.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int8u};
+use zenlib::{Int8u, Int16u};
 
 const HEADER_SIZE: usize = 0x5C;
 const ASCII_REGION: usize = 60 + 8 + 7;
@@ -105,7 +105,13 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
         fa.fill(StreamKind::General, 0, "ProductionStudio", studio.as_str(), false);
     }
     if disc_number != 0 {
-        fa.fill(StreamKind::General, 0, "Part_Position", ((disc_number >> 7) + 1).to_string(), false);
+        fa.fill(
+            StreamKind::General,
+            0,
+            "Part_Position",
+            ((disc_number >> 7) + 1).to_string(),
+            false,
+        );
     }
     if reel_number != 0 {
         fa.fill(StreamKind::General, 0, "Reel_Position", reel_number.to_string(), false);
@@ -171,10 +177,22 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
     fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
     fa.fill(StreamKind::Audio, 0, "SamplingRate", "44100", false);
     fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "TimeCode_FirstFrame", format_timecode(start_hh, start_mm, start_ss, start_ff), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "TimeCode_FirstFrame",
+        format_timecode(start_hh, start_mm, start_ss, start_ff),
+        false,
+    );
     // C++ does `End--` before printing; subtract one frame (1/100 s, since 99fps).
     let (e_hh, e_mm, e_ss, e_ff) = decrement_frame(end_hh, end_mm, end_ss, end_ff);
-    fa.fill(StreamKind::Audio, 0, "TimeCode_LastFrame", format_timecode(e_hh, e_mm, e_ss, e_ff), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "TimeCode_LastFrame",
+        format_timecode(e_hh, e_mm, e_ss, e_ff),
+        false,
+    );
 
     let language_out = map_language(&language);
     if !language_out.is_empty() {
@@ -212,7 +230,12 @@ fn format_timecode(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> String {
     format!("{:02}:{:02}:{:02}:{:02}", hh, mm, ss, ff)
 }
 
-fn decrement_frame(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> (Int16u, Int16u, Int16u, Int16u) {
+fn decrement_frame(
+    hh: Int16u,
+    mm: Int16u,
+    ss: Int16u,
+    ff: Int16u,
+) -> (Int16u, Int16u, Int16u, Int16u) {
     if ff > 0 {
         return (hh, mm, ss, ff - 1);
     }
@@ -354,8 +377,16 @@ mod tests {
     fn parses_5ch_dts_70mm_variant() {
         // serial=11131 triggers DTS 70 mm classification at 5 channels.
         let buf = build_header(
-            "Movie", "ENG", "none", 0x81, 2, 11131, 5,
-            (1, 0, 0, 0), (1, 30, 0, 0), 500,
+            "Movie",
+            "ENG",
+            "none",
+            0x81,
+            2,
+            11131,
+            5,
+            (1, 0, 0, 0),
+            (1, 30, 0, 0),
+            500,
         );
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aptx100(&mut fa));
@@ -383,10 +414,8 @@ mod tests {
         assert!(!parse_aptx100(&mut fa2));
 
         // Non-ASCII byte in title region → rejected.
-        let mut buf3 = build_header(
-            "Movie", "ENG", "Studio", 0x01, 1, 1, 2,
-            (0, 0, 0, 0), (0, 1, 0, 0), 100,
-        );
+        let mut buf3 =
+            build_header("Movie", "ENG", "Studio", 0x01, 1, 1, 2, (0, 0, 0, 0), (0, 1, 0, 0), 100);
         buf3[5] = 0xFF;
         let mut fa3 = FileAnalyze::new(&buf3);
         assert!(!parse_aptx100(&mut fa3));

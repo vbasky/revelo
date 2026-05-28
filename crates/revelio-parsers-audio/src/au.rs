@@ -17,31 +17,31 @@ const AU_MAGIC: [u8; 4] = [0x2E, 0x73, 0x6E, 0x64];
 /// `bit_depth` is 0 when not applicable (compressed/non-PCM).
 fn map_encoding(enc: u32) -> Option<(&'static str, &'static str, u16, bool)> {
     match enc {
-        1  => Some(("ADPCM", "8-bit mu-law",                                  8,  false)),
-        2  => Some(("PCM",   "8-bit signed linear",                           8,  true)),
-        3  => Some(("PCM",   "16-bit signed linear",                          16, true)),
-        4  => Some(("PCM",   "24-bit signed linear",                          24, true)),
-        5  => Some(("PCM",   "32-bit signed linear",                          32, true)),
-        6  => Some(("PCM",   "floating-point",                                32, true)),
-        7  => Some(("PCM",   "double precision float",                        64, true)),
-        8  => Some(("fragmented sampled data", "fragmented sampled data",     0,  false)),
-        10 => Some(("DSP program", "DSP program",                             0,  false)),
-        11 => Some(("PCM",   "8-bit fixed-point",                             8,  true)),
-        12 => Some(("PCM",   "16-bit fixed-point",                            16, true)),
-        13 => Some(("PCM",   "24-bit fixed-point",                            24, true)),
-        14 => Some(("PCM",   "32-bit fixed-point",                            32, true)),
-        17 => Some(("ADPCM", "mu-law squelch",                                0,  false)),
-        18 => Some(("PCM",   "16-bit linear with emphasis",                   16, true)),
-        19 => Some(("PCM",   "16-bit linear with compression",                16, false)),
-        20 => Some(("PCM",   "16-bit linear with emphasis and compression",   16, false)),
-        21 => Some(("Music Kit DSP commands", "Music Kit DSP commands",       0,  false)),
-        22 => Some(("Music Kit DSP samples",  "Music Kit DSP samples",        0,  false)),
-        23 => Some(("ADPCM", "G.721 ADPCM",                                   0,  false)),
-        24 => Some(("ADPCM", "G.722 ADPCM",                                   0,  false)),
-        25 => Some(("ADPCM", "G.723 ADPCM",                                   0,  false)),
-        26 => Some(("ADPCM", "5-bit G.723 ADPCM",                             0,  false)),
-        27 => Some(("ADPCM", "8-bit a-law",                                   8,  false)),
-        _  => None,
+        1 => Some(("ADPCM", "8-bit mu-law", 8, false)),
+        2 => Some(("PCM", "8-bit signed linear", 8, true)),
+        3 => Some(("PCM", "16-bit signed linear", 16, true)),
+        4 => Some(("PCM", "24-bit signed linear", 24, true)),
+        5 => Some(("PCM", "32-bit signed linear", 32, true)),
+        6 => Some(("PCM", "floating-point", 32, true)),
+        7 => Some(("PCM", "double precision float", 64, true)),
+        8 => Some(("fragmented sampled data", "fragmented sampled data", 0, false)),
+        10 => Some(("DSP program", "DSP program", 0, false)),
+        11 => Some(("PCM", "8-bit fixed-point", 8, true)),
+        12 => Some(("PCM", "16-bit fixed-point", 16, true)),
+        13 => Some(("PCM", "24-bit fixed-point", 24, true)),
+        14 => Some(("PCM", "32-bit fixed-point", 32, true)),
+        17 => Some(("ADPCM", "mu-law squelch", 0, false)),
+        18 => Some(("PCM", "16-bit linear with emphasis", 16, true)),
+        19 => Some(("PCM", "16-bit linear with compression", 16, false)),
+        20 => Some(("PCM", "16-bit linear with emphasis and compression", 16, false)),
+        21 => Some(("Music Kit DSP commands", "Music Kit DSP commands", 0, false)),
+        22 => Some(("Music Kit DSP samples", "Music Kit DSP samples", 0, false)),
+        23 => Some(("ADPCM", "G.721 ADPCM", 0, false)),
+        24 => Some(("ADPCM", "G.722 ADPCM", 0, false)),
+        25 => Some(("ADPCM", "G.723 ADPCM", 0, false)),
+        26 => Some(("ADPCM", "5-bit G.723 ADPCM", 0, false)),
+        27 => Some(("ADPCM", "8-bit a-law", 8, false)),
+        _ => None,
     }
 }
 
@@ -57,11 +57,11 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let data_offset  = u32::from_be_bytes([h[4],  h[5],  h[6],  h[7]]);
-    let data_size    = u32::from_be_bytes([h[8],  h[9],  h[10], h[11]]);
-    let encoding     = u32::from_be_bytes([h[12], h[13], h[14], h[15]]);
-    let sample_rate  = u32::from_be_bytes([h[16], h[17], h[18], h[19]]);
-    let channels     = u32::from_be_bytes([h[20], h[21], h[22], h[23]]);
+    let data_offset = u32::from_be_bytes([h[4], h[5], h[6], h[7]]);
+    let data_size = u32::from_be_bytes([h[8], h[9], h[10], h[11]]);
+    let encoding = u32::from_be_bytes([h[12], h[13], h[14], h[15]]);
+    let sample_rate = u32::from_be_bytes([h[16], h[17], h[18], h[19]]);
+    let channels = u32::from_be_bytes([h[20], h[21], h[22], h[23]]);
 
     if data_offset < 24 {
         return false;
@@ -196,7 +196,9 @@ mod tests {
             Some("8-bit a-law")
         );
         assert_eq!(
-            fa2.retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()).as_deref(),
+            fa2.retrieve(StreamKind::Audio, 0, "Compression_Mode")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("Lossy")
         );
     }

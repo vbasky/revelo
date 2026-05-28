@@ -79,9 +79,9 @@ mod tests {
         // 0xC0 >> 6 = 3 => xHE-AAC
         // sr_idx = (buf[2] >> 2) & 0x0F
         let buf: Vec<u8> = vec![
-            0xFF, 0xF9,  // sync(12bits=0xFFF) + version(1) + layer(00) + protection(1)
-            0xC4,         // profile(2bits=11→3=xHE-AAC) + sr_idx(4bits=4→44100 in our map but 0x04=0001→idx=1)
-            0x80,         // ch=2
+            0xFF, 0xF9, // sync(12bits=0xFFF) + version(1) + layer(00) + protection(1)
+            0xC4, // profile(2bits=11→3=xHE-AAC) + sr_idx(4bits=4→44100 in our map but 0x04=0001→idx=1)
+            0x80, // ch=2
             0x00,
         ];
         let mut fa = FileAnalyze::new(&buf);

@@ -174,7 +174,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                     } else if is_pmt {
                         if let Some(prog) = programs_by_pmt_pid.get_mut(&pid) {
                             if prog.streams.is_empty() {
-                        parse_pmt(&section, prog);
+                                parse_pmt(&section, prog);
                             }
                         }
                     }
@@ -269,32 +269,26 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     // Calculate file size and estimate duration from PCR values
     let _file_size = buf.len();
     let (duration_ms, overall_bitrate) = estimate_duration_and_bitrate(
-        buf, 
-        first_offset, 
-        stride, 
+        buf,
+        first_offset,
+        stride,
         layout.bdav_prefix,
-        &programs_by_pmt_pid
+        &programs_by_pmt_pid,
     );
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", container_format, true);
-    
+
     // General.ID = program_number of the first program (matches oracle
     // for single-program files; multi-program TS would list each).
     if let Some(first_prog) = programs_by_pmt_pid.values().next() {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "ID",
-            first_prog.program_number.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "ID", first_prog.program_number.to_string(), false);
     }
-    
+
     if let Some(dur) = duration_ms {
         fa.fill(StreamKind::General, 0, "Duration", dur.to_string(), false);
     }
-    
+
     if let Some(br) = overall_bitrate {
         fa.fill(StreamKind::General, 0, "OverallBitRate", br.to_string(), false);
         fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
@@ -353,13 +347,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             fa.stream_prepare(kind);
             let pos_in_kind = fa.count_get(kind) - 1;
             // StreamOrder = "<program_idx>-<es_idx_in_program>" per oracle.
-            fa.fill(
-                kind,
-                pos_in_kind,
-                "StreamOrder",
-                format!("{}-{}", prog_idx, es_idx),
-                false,
-            );
+            fa.fill(kind, pos_in_kind, "StreamOrder", format!("{}-{}", prog_idx, es_idx), false);
             // ID = PID. Oracle renders as decimal.
             fa.fill(kind, pos_in_kind, "ID", es.pid.to_string(), false);
             fa.fill(kind, pos_in_kind, "MenuID", prog.program_number.to_string(), false);
@@ -380,13 +368,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                         // Split "x264 - core 165 r3222 b35605a" into name + version.
                         if let Some(rest) = lib.strip_prefix("x264 - ") {
                             fa.fill(kind, pos_in_kind, "Encoded_Library_Name", "x264", false);
-                            fa.fill(
-                                kind,
-                                pos_in_kind,
-                                "Encoded_Library_Version",
-                                rest,
-                                false,
-                            );
+                            fa.fill(kind, pos_in_kind, "Encoded_Library_Version", rest, false);
                         }
                     }
                 }
@@ -450,11 +432,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
 }
 
 fn prog_or_es_fid(prog: &Program, es: &ElementaryStream) -> u32 {
-    if es.format_identifier != 0 {
-        es.format_identifier
-    } else {
-        prog.format_identifier
-    }
+    if es.format_identifier != 0 { es.format_identifier } else { prog.format_identifier }
 }
 
 fn find_first_sync(buf: &[u8], layout: &PacketLayout) -> Option<usize> {
@@ -485,7 +463,6 @@ fn resync(buf: &[u8], from: usize, layout: &PacketLayout) -> Option<usize> {
     None
 }
 
-
 /// Estimate duration from PCR (Program Clock Reference) values and calculate bitrate.
 /// PCR is a 33-bit clock reference in 90kHz units found in adaptation fields.
 fn estimate_duration_and_bitrate(
@@ -497,7 +474,7 @@ fn estimate_duration_and_bitrate(
 ) -> (Option<u64>, Option<u64>) {
     // Collect PCR values from adaptation fields
     let mut pcr_values: Vec<(usize, u64)> = Vec::new(); // (byte_position, pcr_value)
-    
+
     let mut pos = first_offset;
     while pos + 188 <= buf.len() && pcr_values.len() < 100 {
         let sync_pos = pos + bdav_prefix;
@@ -505,18 +482,18 @@ fn estimate_duration_and_bitrate(
             pos += stride;
             continue;
         }
-        
+
         let pkt = &buf[sync_pos..sync_pos + 188];
         let adaptation_control = (pkt[3] >> 4) & 0x3;
         let has_adaptation = adaptation_control == 2 || adaptation_control == 3;
-        
+
         if has_adaptation && pkt.len() > 5 {
             let af_len = pkt[4] as usize;
             if af_len > 0 && pkt.len() > 6 {
                 // Adaptation field flags at byte 5
                 let flags = pkt[5];
                 let pcr_flag = (flags & 0x10) != 0;
-                
+
                 if pcr_flag && af_len >= 7 && pkt.len() >= 12 {
                     // PCR is 6 bytes: 33-bit base + 6-bit reserved + 9-bit extension
                     // Read as 48 bits (6 bytes) and extract 33-bit base
@@ -525,14 +502,14 @@ fn estimate_duration_and_bitrate(
                         | ((pkt[8] as u64) << 9)
                         | ((pkt[9] as u64) << 1)
                         | ((pkt[10] as u64) >> 7);
-                    
+
                     pcr_values.push((pos, pcr_base));
                 }
             }
         }
         pos += stride;
     }
-    
+
     if pcr_values.len() < 2 {
         // Not enough PCR values to estimate duration
         // Fall back to simple bitrate estimation from file size
@@ -542,11 +519,11 @@ fn estimate_duration_and_bitrate(
         }
         return (None, None);
     }
-    
+
     // Calculate duration from first and last PCR
     let first_pcr = pcr_values.first().unwrap();
     let last_pcr = pcr_values.last().unwrap();
-    
+
     // PCR is in 90kHz units
     let pcr_diff = if last_pcr.1 >= first_pcr.1 {
         last_pcr.1 - first_pcr.1
@@ -554,16 +531,13 @@ fn estimate_duration_and_bitrate(
         // Handle PCR wraparound (33-bit value wraps)
         (0x1FFFFFFFF - first_pcr.1) + last_pcr.1
     };
-    
+
     let duration_ms = (pcr_diff * 1000) / 90000; // Convert from 90kHz to ms
-    
+
     // Calculate overall bitrate
-    let overall_bitrate = if duration_ms > 0 {
-        Some((buf.len() as u64 * 8 * 1000) / duration_ms)
-    } else {
-        None
-    };
-    
+    let overall_bitrate =
+        if duration_ms > 0 { Some((buf.len() as u64 * 8 * 1000) / duration_ms) } else { None };
+
     (Some(duration_ms), overall_bitrate)
 }
 
@@ -661,7 +635,9 @@ fn scan_descriptors(desc_block: &[u8]) -> (Option<String>, bool) {
         let tag = desc_block[i];
         let len = desc_block[i + 1] as usize;
         let payload_end = i + 2 + len;
-        if payload_end > desc_block.len() { break; }
+        if payload_end > desc_block.len() {
+            break;
+        }
         let data = &desc_block[i + 2..payload_end];
         match tag {
             0x0A if len >= 4 => {
@@ -669,7 +645,9 @@ fn scan_descriptors(desc_block: &[u8]) -> (Option<String>, bool) {
                     lang = Some(s.to_string());
                 }
             }
-            0x6A | 0x7A => { ac3 = true; }
+            0x6A | 0x7A => {
+                ac3 = true;
+            }
             _ => {}
         }
         i = payload_end;
@@ -825,7 +803,6 @@ fn stream_codec(stream_type: u8, fid: u32) -> &'static str {
     }
 }
 
-
 /// Parse PES header to extract PTS (Presentation Timestamp).
 /// PES header format:
 ///   0-2: packet_start_code_prefix (0x000001)
@@ -851,34 +828,34 @@ fn parse_pes_pts(buf: &[u8]) -> Option<u64> {
     if !is_video && !is_audio {
         return None;
     }
-    
+
     // Skip PES_packet_length (2 bytes) to get to flags
     let _flags1 = buf[6];
     let flags2 = buf[7];
     let pes_header_len = buf[8] as usize;
-    
+
     if buf.len() < 9 + pes_header_len {
         return None;
     }
-    
+
     // Check PTS_DTS_flags (bits 5-6 of flags2)
     let pts_dts_flags = (flags2 >> 6) & 0x3;
     if pts_dts_flags == 0 {
         return None; // No PTS present
     }
-    
+
     // PTS is in bytes 9-13 (5 bytes) when present
     // Format: 4 bits '0010' or '0011' + 33-bit PTS value
     if buf.len() < 14 {
         return None;
     }
-    
+
     let pts_byte1 = buf[9];
     let pts_byte2 = buf[10];
     let pts_byte3 = buf[11];
     let pts_byte4 = buf[12];
     let pts_byte5 = buf[13];
-    
+
     // Extract 33-bit PTS: marker bits at positions
     // Bits: [4 marker bits][3 bits][1 marker][15 bits][1 marker][15 bits][1 marker]
     let pts: u64 = (((pts_byte1 as u64) & 0x0E) << 29)
@@ -886,7 +863,7 @@ fn parse_pes_pts(buf: &[u8]) -> Option<u64> {
         | (((pts_byte3 as u64) & 0xFE) << 14)
         | ((pts_byte4 as u64) << 7)
         | ((pts_byte5 as u64) >> 1);
-    
+
     Some(pts)
 }
 
@@ -897,20 +874,21 @@ fn extract_avc_frame_rate(pes_payload: &[u8]) -> Option<f64> {
     // Look for SPS NAL unit: nal_unit_type = 7
     // NAL header: 1 byte (forbidden_zero_bit | nal_ref_idc | nal_unit_type)
     // We need to find 0x67 or 0x27 (nal_unit_type = 7, different nal_ref_idc values)
-    
+
     for i in 0..pes_payload.len().saturating_sub(5) {
         let nal_type = pes_payload[i] & 0x1F;
-        if nal_type == 7 { // SPS
+        if nal_type == 7 {
+            // SPS
             // Skip NAL header (1 byte) and start parsing SPS
             let sps = &pes_payload[i..];
             if sps.len() < 5 {
                 continue;
             }
-            
+
             // Try to extract frame rate from VUI if present
             // This is a simplified extraction - full SPS parsing is complex
             // Look for VUI presence and timing_info_present_flag
-            
+
             // For now, return common frame rates based on profile/level
             // or extract from VUI if we can find it
             return parse_sps_for_frame_rate(sps);
@@ -924,21 +902,21 @@ fn extract_avc_frame_rate(pes_payload: &[u8]) -> Option<f64> {
 fn parse_sps_for_frame_rate(sps: &[u8]) -> Option<f64> {
     // Simplified: skip to VUI parameters
     // Real implementation would need full Exp-Golomb decoding
-    
+
     // Common frame rates for broadcast
     // If we can't parse, return None and let the caller use defaults
-    
+
     // Try to find VUI and timing_info
     // This is a heuristic search for timing_info_present_flag pattern
     for i in 10..sps.len().saturating_sub(10) {
         // Look for patterns that suggest timing info
         // time_scale and num_units_in_tick are key values
-        if sps[i] == 0 && sps[i+1] == 0 && sps[i+2] == 0 && sps[i+3] == 1 {
+        if sps[i] == 0 && sps[i + 1] == 0 && sps[i + 2] == 0 && sps[i + 3] == 1 {
             // Found start code, skip
             continue;
         }
     }
-    
+
     // Return None for now - would need full bitstream parsing
     None
 }
@@ -950,12 +928,12 @@ fn calculate_frame_rate_from_pts(pts_samples: &[(usize, u64)]) -> Option<f64> {
     if pts_samples.len() < 2 {
         return None;
     }
-    
+
     // PTS is in 90kHz units
     // Calculate average frame duration
     let mut total_duration_pts: u64 = 0;
     let mut count = 0;
-    
+
     for window in pts_samples.windows(2) {
         let pts_diff = if window[1].1 >= window[0].1 {
             window[1].1 - window[0].1
@@ -966,11 +944,11 @@ fn calculate_frame_rate_from_pts(pts_samples: &[(usize, u64)]) -> Option<f64> {
         total_duration_pts += pts_diff;
         count += 1;
     }
-    
+
     if count == 0 {
         return None;
     }
-    
+
     let avg_duration_pts = total_duration_pts / count as u64;
     // Frame rate = 90000 / avg_duration_pts
     if avg_duration_pts > 0 {
@@ -985,10 +963,10 @@ fn calculate_frame_rate_from_pts(pts_samples: &[(usize, u64)]) -> Option<f64> {
 #[allow(dead_code)]
 fn round_to_common_fps(fps: f64) -> f64 {
     const COMMON_RATES: [f64; 8] = [23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0];
-    
+
     let mut closest = fps;
     let mut min_diff = f64::MAX;
-    
+
     for &rate in &COMMON_RATES {
         let diff = (fps - rate).abs();
         if diff < min_diff {
@@ -996,22 +974,17 @@ fn round_to_common_fps(fps: f64) -> f64 {
             closest = rate;
         }
     }
-    
+
     // Only accept if within 1% of common rate
-    if min_diff / closest < 0.01 {
-        closest
-    } else {
-        fps
-    }
+    if min_diff / closest < 0.01 { closest } else { fps }
 }
 
 /// Scan a PES payload accumulator for the first ADTS sync (0xFFF) and
 /// decode the header. Returns None if no sync found in the first 1 KiB
 /// or if the header fields are invalid.
 fn sniff_aac_adts(buf: &[u8]) -> Option<AacInfo> {
-    const SAMPLE_RATE_TABLE: [u32; 13] = [
-        96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
-    ];
+    const SAMPLE_RATE_TABLE: [u32; 13] =
+        [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
     for i in 0..buf.len().saturating_sub(7) {
         if buf[i] == 0xFF && (buf[i + 1] & 0xF0) == 0xF0 {
             let profile = (buf[i + 2] >> 6) & 0x3;

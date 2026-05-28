@@ -131,21 +131,9 @@ mod tests {
         let buf = make_vp8_iframe(1920, 1080);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp8(&mut fa));
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
-            Some("VP8")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
-            Some("1920")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
-            Some("1080")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()),
-            Some("8")
-        );
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("VP8"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("1920"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("1080"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
     }
 }

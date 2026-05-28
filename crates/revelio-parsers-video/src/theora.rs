@@ -104,11 +104,7 @@ pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
             fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
         }
 
-        let pixel_ratio = if parn > 0 && pard > 0 {
-            parn as f64 / pard as f64
-        } else {
-            1.0
-        };
+        let pixel_ratio = if parn > 0 && pard > 0 { parn as f64 / pard as f64 } else { 1.0 };
 
         fa.fill(StreamKind::Video, 0, "Width", picw.to_string(), false);
         fa.fill(StreamKind::Video, 0, "Height", pich.to_string(), false);
@@ -204,18 +200,9 @@ mod tests {
         let buf = make_theora_identification();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_theora(&mut fa));
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
-            Some("Theora")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
-            Some("640")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
-            Some("480")
-        );
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("Theora"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("640"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("480"));
     }
 
     #[test]

@@ -8,3 +8,6 @@ repository.workspace = true
 [lib]
 name = "zenlib"
 path = "src/lib.rs"
+
+[lints]
+workspace = true

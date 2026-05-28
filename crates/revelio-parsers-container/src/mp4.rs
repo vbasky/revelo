@@ -278,6 +278,8 @@ struct TrackInfo {
     has_data: bool,
 }
 
+/// Detection: `ftyp` box at offset 4.
+/// Fills: Brands, moov→trak→mdia→minf→stbl metadata, CodecPrivate, tracks, chapters.
 pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
     // Detect by leading ftyp box.
     let head = fa.peek_raw(8);
@@ -294,55 +296,45 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
     let mut moov_offset: Option<usize> = None;
     let file_size = fa.remain();
 
-    walk_boxes(
-        fa,
-        file_size,
-        0,
-        &mut |fa, box_type, box_size, box_start, depth| match box_type {
-            BOX_FTYP => {
-                ftyp_brands = parse_ftyp(fa, box_size);
+    walk_boxes(fa, file_size, 0, &mut |fa, box_type, box_size, box_start, depth| match box_type {
+        BOX_FTYP => {
+            ftyp_brands = parse_ftyp(fa, box_size);
+        }
+        BOX_MDAT => {
+            if mdat_offset.is_none() {
+                mdat_offset = Some(box_start);
+                mdat_size = Some(box_size);
             }
-            BOX_MDAT => {
-                if mdat_offset.is_none() {
-                    mdat_offset = Some(box_start);
-                    mdat_size = Some(box_size);
-                }
-                fa.skip_hexa(box_size.saturating_sub(8), "mdat_body");
+            fa.skip_hexa(box_size.saturating_sub(8), "mdat_body");
+        }
+        BOX_MOOV => {
+            if moov_offset.is_none() {
+                moov_offset = Some(box_start);
             }
-            BOX_MOOV => {
-                if moov_offset.is_none() {
-                    moov_offset = Some(box_start);
-                }
-                let inner = box_size.saturating_sub(8);
-                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
-                    handle_inner(fa, t, s, &mut tracks, &mut movie);
-                });
-            }
-            BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
-                let inner = box_size.saturating_sub(8);
-                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
-                    handle_inner(fa, t, s, &mut tracks, &mut movie);
-                });
-            }
-            BOX_TRAK => {
-                tracks.push(TrackInfo::default());
-                let inner = box_size.saturating_sub(8);
-                walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
-                    handle_inner(fa, t, s, &mut tracks, &mut movie);
-                });
-            }
-            _ => {
-                fa.skip_hexa(box_size.saturating_sub(8), "BoxBody");
-            }
-        },
-    );
+            let inner = box_size.saturating_sub(8);
+            walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
+                handle_inner(fa, t, s, &mut tracks, &mut movie);
+            });
+        }
+        BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
+            let inner = box_size.saturating_sub(8);
+            walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
+                handle_inner(fa, t, s, &mut tracks, &mut movie);
+            });
+        }
+        BOX_TRAK => {
+            tracks.push(TrackInfo::default());
+            let inner = box_size.saturating_sub(8);
+            walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
+                handle_inner(fa, t, s, &mut tracks, &mut movie);
+            });
+        }
+        _ => {
+            fa.skip_hexa(box_size.saturating_sub(8), "BoxBody");
+        }
+    });
 
-    let layout = BoxLayout {
-        file_size,
-        mdat_offset,
-        mdat_size,
-        moov_offset,
-    };
+    let layout = BoxLayout { file_size, mdat_offset, mdat_size, moov_offset };
     // AVC encoder SEI lives in the first mdat sample, not avcC — scan for
     // it before emitting (HEVC already gets its SEI from the hvcC arrays).
     scan_avc_encoder_sei(fa, &mut tracks);
@@ -1057,10 +1049,7 @@ fn decode_hdlr_name(bytes: &[u8]) -> Option<String> {
     let raw = if pascal_len > 0 && pascal_len == bytes.len() - 1 {
         String::from_utf8_lossy(&bytes[1..1 + pascal_len]).into_owned()
     } else {
-        String::from_utf8_lossy(bytes)
-            .trim_end_matches('\0')
-            .trim()
-            .to_string()
+        String::from_utf8_lossy(bytes).trim_end_matches('\0').trim().to_string()
     };
     if raw.is_empty() {
         return None;
@@ -1501,16 +1490,8 @@ fn parse_dvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     let dv_profile = (body[2] >> 1) & 0x7F;
     let dv_bl_present = (body[2] & 0x01) != 0;
     let dv_level = body[3] & 0x0F;
-    let dv_rpu_present = if body_size > 4 {
-        (body[4] & 0x80) != 0
-    } else {
-        false
-    };
-    let dv_el_present = if body_size > 4 {
-        (body[4] & 0x40) != 0
-    } else {
-        false
-    };
+    let dv_rpu_present = if body_size > 4 { (body[4] & 0x80) != 0 } else { false };
+    let dv_el_present = if body_size > 4 { (body[4] & 0x40) != 0 } else { false };
 
     track.dovi_profile = Some(dv_profile);
     track.dovi_level = Some(dv_level);
@@ -2084,34 +2065,10 @@ fn fill_streams(
     if let (Some(mdat_off), Some(mdat_tot)) = (layout.mdat_offset, layout.mdat_size) {
         let footer_size = layout.file_size.saturating_sub(mdat_off + mdat_tot);
         let stream_size = layout.file_size.saturating_sub(mdat_tot.saturating_sub(8));
-        fa.fill(
-            StreamKind::General,
-            0,
-            "StreamSize",
-            stream_size.to_string(),
-            true,
-        );
-        fa.fill(
-            StreamKind::General,
-            0,
-            "HeaderSize",
-            mdat_off.to_string(),
-            false,
-        );
-        fa.fill(
-            StreamKind::General,
-            0,
-            "DataSize",
-            mdat_tot.to_string(),
-            false,
-        );
-        fa.fill(
-            StreamKind::General,
-            0,
-            "FooterSize",
-            footer_size.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "StreamSize", stream_size.to_string(), true);
+        fa.fill(StreamKind::General, 0, "HeaderSize", mdat_off.to_string(), false);
+        fa.fill(StreamKind::General, 0, "DataSize", mdat_tot.to_string(), false);
+        fa.fill(StreamKind::General, 0, "FooterSize", footer_size.to_string(), false);
         let is_streamable = match layout.moov_offset {
             Some(mv_off) if mv_off < mdat_off => "Yes",
             _ => "No",
@@ -2140,13 +2097,7 @@ fn fill_streams(
     for (key, value) in &movie.itunes_metadata {
         match *key {
             ITUNES_KEY_TOOL => {
-                fa.fill(
-                    StreamKind::General,
-                    0,
-                    "Encoded_Application",
-                    value.clone(),
-                    false,
-                );
+                fa.fill(StreamKind::General, 0, "Encoded_Application", value.clone(), false);
             }
             ITUNES_KEY_COMMENT => {
                 fa.fill(StreamKind::General, 0, "Comment", value.clone(), false);
@@ -2161,13 +2112,7 @@ fn fill_streams(
                 fa.fill(StreamKind::General, 0, "Album", value.clone(), false);
             }
             ITUNES_KEY_DATE => {
-                fa.fill(
-                    StreamKind::General,
-                    0,
-                    "Released_Date",
-                    value.clone(),
-                    false,
-                );
+                fa.fill(StreamKind::General, 0, "Released_Date", value.clone(), false);
             }
             ITUNES_KEY_GENRE => {
                 fa.fill(StreamKind::General, 0, "Genre", value.clone(), false);
@@ -2187,13 +2132,7 @@ fn fill_streams(
                         fa.fill(StreamKind::General, 0, "Track", track.to_string(), false);
                     }
                     if total > 0 {
-                        fa.fill(
-                            StreamKind::General,
-                            0,
-                            "Track/Total",
-                            total.to_string(),
-                            false,
-                        );
+                        fa.fill(StreamKind::General, 0, "Track/Total", total.to_string(), false);
                     }
                 }
             }
@@ -2206,13 +2145,7 @@ fn fill_streams(
                         fa.fill(StreamKind::General, 0, "Part", disc.to_string(), false);
                     }
                     if total > 0 {
-                        fa.fill(
-                            StreamKind::General,
-                            0,
-                            "Part/Total",
-                            total.to_string(),
-                            false,
-                        );
+                        fa.fill(StreamKind::General, 0, "Part/Total", total.to_string(), false);
                     }
                 }
             }
@@ -2242,13 +2175,7 @@ fn fill_streams(
                         | ((value.as_bytes()[1] as u32) << 16)
                         | ((value.as_bytes()[2] as u32) << 8)
                         | (value.as_bytes()[3] as u32);
-                    fa.fill(
-                        StreamKind::General,
-                        0,
-                        "TVSeason",
-                        season.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::General, 0, "TVSeason", season.to_string(), false);
                 }
             }
             ITUNES_KEY_TV_EPISODE_NUM => {
@@ -2258,13 +2185,7 @@ fn fill_streams(
                         | ((value.as_bytes()[1] as u32) << 16)
                         | ((value.as_bytes()[2] as u32) << 8)
                         | (value.as_bytes()[3] as u32);
-                    fa.fill(
-                        StreamKind::General,
-                        0,
-                        "TVEpisodeNumber",
-                        ep.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::General, 0, "TVEpisodeNumber", ep.to_string(), false);
                 }
             }
             ITUNES_KEY_HD_VIDEO => {
@@ -2286,13 +2207,7 @@ fn fill_streams(
                         14 => "Ringtone",
                         _ => "Unknown",
                     };
-                    fa.fill(
-                        StreamKind::General,
-                        0,
-                        "MediaType",
-                        media_str.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::General, 0, "MediaType", media_str.to_string(), false);
                 }
             }
             ITUNES_KEY_RATING => {
@@ -2304,13 +2219,7 @@ fn fill_streams(
                         4 => "Explicit",
                         _ => "Unknown",
                     };
-                    fa.fill(
-                        StreamKind::General,
-                        0,
-                        "ContentRating",
-                        rating_str.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::General, 0, "ContentRating", rating_str.to_string(), false);
                 }
             }
             ITUNES_KEY_PUBLISHER => {
@@ -2375,44 +2284,14 @@ fn fill_streams(
         // Apple-made files (even when the make/model/software say more
         // specific things) — emit unconditionally when we detect Apple.
         if make == "Apple" {
-            fa.fill(
-                StreamKind::General,
-                0,
-                "Encoded_Library",
-                "Apple QuickTime",
-                false,
-            );
-            fa.fill(
-                StreamKind::General,
-                0,
-                "Encoded_Library_CompanyName",
-                "Apple",
-                false,
-            );
-            fa.fill(
-                StreamKind::General,
-                0,
-                "Encoded_Library_Name",
-                "QuickTime",
-                false,
-            );
+            fa.fill(StreamKind::General, 0, "Encoded_Library", "Apple QuickTime", false);
+            fa.fill(StreamKind::General, 0, "Encoded_Library_CompanyName", "Apple", false);
+            fa.fill(StreamKind::General, 0, "Encoded_Library_Name", "QuickTime", false);
         }
         // Hardware fields use the make string directly as company.
-        fa.fill(
-            StreamKind::General,
-            0,
-            "Encoded_Hardware_CompanyName",
-            make.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "Encoded_Hardware_CompanyName", make.to_string(), false);
         if let Some(m) = qt_model {
-            fa.fill(
-                StreamKind::General,
-                0,
-                "Encoded_Hardware_Name",
-                m.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::General, 0, "Encoded_Hardware_Name", m.to_string(), false);
         }
     }
     if let Some(sw) = qt_software {
@@ -2420,28 +2299,10 @@ fn fill_streams(
         // "18.6.2". Oracle derives Name="iOS" + CompanyName="Apple" when
         // the make is Apple (heuristic: presence of make=Apple implies
         // this is an iOS device, not a desktop).
-        fa.fill(
-            StreamKind::General,
-            0,
-            "Encoded_OperatingSystem_Version",
-            sw.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "Encoded_OperatingSystem_Version", sw.to_string(), false);
         if matches!(qt_make, Some("Apple")) {
-            fa.fill(
-                StreamKind::General,
-                0,
-                "Encoded_OperatingSystem_CompanyName",
-                "Apple",
-                false,
-            );
-            fa.fill(
-                StreamKind::General,
-                0,
-                "Encoded_OperatingSystem_Name",
-                "iOS",
-                false,
-            );
+            fa.fill(StreamKind::General, 0, "Encoded_OperatingSystem_CompanyName", "Apple", false);
+            fa.fill(StreamKind::General, 0, "Encoded_OperatingSystem_Name", "iOS", false);
         }
     }
     // mvhd creation/modification → General.Encoded_Date / Tagged_Date.
@@ -2453,13 +2314,7 @@ fn fill_streams(
     }
 
     if !ftyp_brands.is_empty() {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "CodecID",
-            ftyp_brands[0].clone(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "CodecID", ftyp_brands[0].clone(), false);
         // CodecID_Compatible = all unique brands in ftyp (major + compat)
         // joined with "/". Oracle:
         //   [mp42, mp42, avc1]            → "mp42/avc1"
@@ -2474,13 +2329,7 @@ fn fill_streams(
             }
         }
         if !seen.is_empty() {
-            fa.fill(
-                StreamKind::General,
-                0,
-                "CodecID_Compatible",
-                seen.join("/"),
-                false,
-            );
+            fa.fill(StreamKind::General, 0, "CodecID_Compatible", seen.join("/"), false);
         }
         // QuickTime brand also surfaces a CodecID_Version field — a
         // 16.16-fixed-point minor version (typically 0). Oracle formats
@@ -2520,13 +2369,7 @@ fn fill_streams(
     for (track_idx, track) in tracks.iter().enumerate() {
         if track.handler == HANDLER_SOUN && track.has_data {
             let pos = fa.stream_prepare(StreamKind::Audio);
-            fa.fill(
-                StreamKind::Audio,
-                pos,
-                "StreamOrder",
-                stream_order.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
             // Prefer tkhd's track_ID; fall back to position in moov.
             let id = track.track_id.unwrap_or((track_idx + 1) as u32);
             fa.fill(StreamKind::Audio, pos, "ID", id.to_string(), false);
@@ -2539,13 +2382,7 @@ fn fill_streams(
             // "No (Explicit)" by the oracle.
             if let Some(aot) = track.audio_object_type {
                 if let Some(profile) = aac_profile_name(aot) {
-                    fa.fill(
-                        StreamKind::Audio,
-                        pos,
-                        "Format_AdditionalFeatures",
-                        profile,
-                        false,
-                    );
+                    fa.fill(StreamKind::Audio, pos, "Format_AdditionalFeatures", profile, false);
                 }
                 // Format_Settings_SBR: AAC LC (AOT 2) is explicitly
                 // signalled as no-SBR — the oracle emits "No (Explicit)".
@@ -2614,13 +2451,7 @@ fn fill_streams(
                         (Some(avg), Some(max)) if avg != max)
                 {
                     let max = track.max_bitrate_bps.unwrap_or(br);
-                    fa.fill(
-                        StreamKind::Audio,
-                        pos,
-                        "BitRate_Maximum",
-                        max.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Audio, pos, "BitRate_Maximum", max.to_string(), false);
                 }
             }
             if let Some(ch) = track.audio_channels {
@@ -2634,26 +2465,14 @@ fn fill_streams(
                 }
             }
             if let Some(sr) = track.audio_sample_rate {
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "SamplingRate",
-                    sr.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
                 // AAC frames are always 1024 samples. FrameRate is
                 // sample_rate/1024 (e.g. 48000/1024 = 46.875).
                 if matches!(track.audio_format, Some("AAC")) {
                     fa.fill(StreamKind::Audio, pos, "SamplesPerFrame", "1024", false);
                     if sr > 0 {
                         let rate = (sr as f64) / 1024.0;
-                        fa.fill(
-                            StreamKind::Audio,
-                            pos,
-                            "FrameRate",
-                            format!("{:.3}", rate),
-                            false,
-                        );
+                        fa.fill(StreamKind::Audio, pos, "FrameRate", format!("{:.3}", rate), false);
                     }
                 }
             }
@@ -2674,46 +2493,22 @@ fn fill_streams(
             };
             let _ = track.elst_segment_duration; // reserved for multi-track refinement
             if let Some(units) = trimmed_units {
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "SamplingCount",
-                    units.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Audio, pos, "SamplingCount", units.to_string(), false);
                 if let Some(sr) = track.audio_sample_rate {
                     let duration_ms = (units * 1000 + sr as u64 / 2) / sr as u64;
-                    fa.fill(
-                        StreamKind::Audio,
-                        pos,
-                        "Duration",
-                        duration_ms.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Audio, pos, "Duration", duration_ms.to_string(), false);
                 }
                 if matches!(track.audio_format, Some("AAC")) {
                     // FrameCount: round-to-nearest for partial AAC frames
                     // (1024 samples each). Oracle's ceil/round behaviour
                     // matches rounding: 1465296/1024 = 1430.95 → 1431.
                     let frame_count = (units + 512) / 1024;
-                    fa.fill(
-                        StreamKind::Audio,
-                        pos,
-                        "FrameCount",
-                        frame_count.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Audio, pos, "FrameCount", frame_count.to_string(), false);
                 }
             }
             // Source_* fields: pre-edit values from stsz / mdhd directly.
             if let Some(count) = track.sample_count {
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "Source_FrameCount",
-                    count.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Audio, pos, "Source_FrameCount", count.to_string(), false);
                 if matches!(track.audio_format, Some("AAC")) {
                     if let Some(sr) = track.audio_sample_rate {
                         // Source_Duration = mdhd.duration (raw, pre-elst)
@@ -2789,20 +2584,8 @@ fn fill_streams(
             // not per-sample, emit the full size — matches oracle
             // for the common no-trim and sub-frame-trim cases.
             if let Some(size) = track.source_stream_size {
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "Source_StreamSize",
-                    size.to_string(),
-                    false,
-                );
-                fa.fill(
-                    StreamKind::Audio,
-                    pos,
-                    "StreamSize",
-                    size.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Audio, pos, "Source_StreamSize", size.to_string(), false);
+                fa.fill(StreamKind::Audio, pos, "StreamSize", size.to_string(), false);
             }
             // Default: the oracle emits this for tracks in an alternate
             // group — "Yes" for the enabled track, "No" when the
@@ -2814,13 +2597,7 @@ fn fill_streams(
             }
             if let Some(group) = track.alternate_group {
                 if group != 0 {
-                    fa.fill(
-                        StreamKind::Audio,
-                        pos,
-                        "AlternateGroup",
-                        group.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Audio, pos, "AlternateGroup", group.to_string(), false);
                 }
             }
             if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
@@ -2840,13 +2617,7 @@ fn fill_streams(
             audio_count += 1;
         } else if track.handler == HANDLER_VIDE && track.has_data {
             let pos = fa.stream_prepare(StreamKind::Video);
-            fa.fill(
-                StreamKind::Video,
-                pos,
-                "StreamOrder",
-                stream_order.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
             let id = track.track_id.unwrap_or((track_idx + 1) as u32);
             fa.fill(StreamKind::Video, pos, "ID", id.to_string(), false);
             stream_order += 1;
@@ -2855,10 +2626,8 @@ fn fill_streams(
             }
             // AVC profile/level/CABAC + CodecConfigurationBox from avcC.
             if let Some(idc) = track.avc_profile_idc {
-                let constrained = track
-                    .avc_profile_compat
-                    .map(|c| (c & 0x40) != 0)
-                    .unwrap_or(false);
+                let constrained =
+                    track.avc_profile_compat.map(|c| (c & 0x40) != 0).unwrap_or(false);
                 if let Some(profile) = avc_profile_name(idc, constrained) {
                     fa.fill(StreamKind::Video, pos, "Format_Profile", profile, false);
                 }
@@ -2875,13 +2644,7 @@ fn fill_streams(
                 }
             }
             if let Some(lvl) = track.avc_level_idc {
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "Format_Level",
-                    format_avc_level(lvl),
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "Format_Level", format_avc_level(lvl), false);
             }
             // Format_Settings_RefFrames from SPS.
             if let Some(sps) = track.avc_sps.as_ref() {
@@ -2894,13 +2657,7 @@ fn fill_streams(
                 );
             }
             if track.avc_profile_idc.is_some() {
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "CodecConfigurationBox",
-                    "avcC",
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "CodecConfigurationBox", "avcC", false);
             }
             // HEVC profile/level/tier from hvcC fixed header.
             if let Some(idc) = track.hevc_profile_idc {
@@ -2912,11 +2669,7 @@ fn fill_streams(
                 // HEVC encodes level as `level * 30`, so 153 → "5.1".
                 let major = lvl / 30;
                 let minor = (lvl % 30) / 3;
-                let s = if minor == 0 {
-                    format!("{major}")
-                } else {
-                    format!("{major}.{minor}")
-                };
+                let s = if minor == 0 { format!("{major}") } else { format!("{major}.{minor}") };
                 fa.fill(StreamKind::Video, pos, "Format_Level", s, false);
             }
             if let Some(high) = track.hevc_tier_high {
@@ -2929,42 +2682,18 @@ fn fill_streams(
                 );
             }
             if track.hevc_profile_idc.is_some() {
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "CodecConfigurationBox",
-                    "hvcC",
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "CodecConfigurationBox", "hvcC", false);
             }
             // Encoder info from SEI user_data_unregistered — applies to both
             // AVC (avcC) and HEVC (hvcC) tracks. The MP4 path previously
             // dropped name/version/settings, keeping only Encoded_Library.
             if let Some(ref enc) = track.encoder_info {
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "Encoded_Library",
-                    enc.library.as_str(),
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "Encoded_Library", enc.library.as_str(), false);
                 if let Some(ref name) = enc.name {
-                    fa.fill(
-                        StreamKind::Video,
-                        pos,
-                        "Encoded_Library_Name",
-                        name.as_str(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Video, pos, "Encoded_Library_Name", name.as_str(), false);
                 }
                 if let Some(ref ver) = enc.version {
-                    fa.fill(
-                        StreamKind::Video,
-                        pos,
-                        "Encoded_Library_Version",
-                        ver.as_str(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Video, pos, "Encoded_Library_Version", ver.as_str(), false);
                 }
                 if let Some(ref settings) = enc.settings {
                     fa.fill(
@@ -2980,10 +2709,7 @@ fn fill_streams(
             // are always 8-bit YUV 4:2:0 progressive per the H.264 spec.
             // High 10/4:2:2/4:4:4 would need SPS chroma_format_idc to be
             // safe; skip defaults for those.
-            if matches!(
-                track.avc_profile_idc,
-                Some(0x42) | Some(0x4D) | Some(0x58) | Some(0x64)
-            ) {
+            if matches!(track.avc_profile_idc, Some(0x42) | Some(0x4D) | Some(0x58) | Some(0x64)) {
                 fa.fill(StreamKind::Video, pos, "ColorSpace", "YUV", false);
                 fa.fill(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0", false);
                 fa.fill(StreamKind::Video, pos, "BitDepth", "8", false);
@@ -3094,27 +2820,9 @@ fn fill_streams(
                     let num = tsc / g;
                     let den = delta / g;
                     fa.fill(StreamKind::Video, pos, "FrameRate_Mode", "CFR", false);
-                    fa.fill(
-                        StreamKind::Video,
-                        pos,
-                        "FrameRate",
-                        format!("{:.3}", fr),
-                        false,
-                    );
-                    fa.fill(
-                        StreamKind::Video,
-                        pos,
-                        "FrameRate_Num",
-                        num.to_string(),
-                        false,
-                    );
-                    fa.fill(
-                        StreamKind::Video,
-                        pos,
-                        "FrameRate_Den",
-                        den.to_string(),
-                        false,
-                    );
+                    fa.fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr), false);
+                    fa.fill(StreamKind::Video, pos, "FrameRate_Num", num.to_string(), false);
+                    fa.fill(StreamKind::Video, pos, "FrameRate_Den", den.to_string(), false);
                     frame_rate_emitted = true;
                 }
             } else if track.stts_total_samples > 0
@@ -3134,20 +2842,8 @@ fn fill_streams(
                 let avg = snap_standard_frame_rate(raw_avg);
                 let num = (avg * 1000.0).round() as u64;
                 fa.fill(StreamKind::Video, pos, "FrameRate_Mode", "VFR", false);
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "FrameRate",
-                    format!("{:.3}", avg),
-                    false,
-                );
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "FrameRate_Num",
-                    num.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", avg), false);
+                fa.fill(StreamKind::Video, pos, "FrameRate_Num", num.to_string(), false);
                 fa.fill(StreamKind::Video, pos, "FrameRate_Den", "1000", false);
                 if let Some(max_d) = track.stts_max_delta {
                     let min_fr = tsc / max_d as f64;
@@ -3175,13 +2871,7 @@ fn fill_streams(
                 if let (Some(fc), tsc) = (track.sample_count, track.timescale) {
                     if tsc > 0 && track.duration_units > 0 {
                         let fr = (fc as f64) * (tsc as f64) / (track.duration_units as f64);
-                        fa.fill(
-                            StreamKind::Video,
-                            pos,
-                            "FrameRate",
-                            format!("{:.3}", fr),
-                            false,
-                        );
+                        fa.fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr), false);
                     }
                 }
             }
@@ -3229,53 +2919,20 @@ fn fill_streams(
                 let par = h_sp / v_sp;
                 let sampled_w = (w as f64 * par).round() as u64;
                 let dar = sampled_w as f64 / h as f64;
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "Sampled_Width",
-                    sampled_w.to_string(),
-                    false,
-                );
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "Sampled_Height",
-                    h.to_string(),
-                    false,
-                );
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "PixelAspectRatio",
-                    format!("{:.3}", par),
-                    false,
-                );
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "DisplayAspectRatio",
-                    format!("{:.3}", dar),
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "Sampled_Width", sampled_w.to_string(), false);
+                fa.fill(StreamKind::Video, pos, "Sampled_Height", h.to_string(), false);
+                fa.fill(StreamKind::Video, pos, "PixelAspectRatio", format!("{:.3}", par), false);
+                fa.fill(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar), false);
                 let rot = track.rotation_deg.unwrap_or(0);
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "Rotation",
-                    format!("{rot}.000"),
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "Rotation", format!("{rot}.000"), false);
             }
             // Resolve colour info from colr box (preferred) or SPS VUI.
             // Determine source: Container (colr box), Stream (SPS), or both.
             let has_colr = track.color_primaries_idc.is_some()
                 || track.color_transfer_idc.is_some()
                 || track.color_matrix_idc.is_some();
-            let avc_vui_has_colour = track
-                .avc_sps
-                .as_ref()
-                .map(|s| s.colour_description_present)
-                .unwrap_or(false);
+            let avc_vui_has_colour =
+                track.avc_sps.as_ref().map(|s| s.colour_description_present).unwrap_or(false);
             let is_hevc = track.hevc_profile_idc.is_some();
             // _Source labels:
             //   colr + (AVC SPS VUI or HEVC) → "Container / Stream"
@@ -3296,69 +2953,29 @@ fn fill_streams(
             // colour_range source: colr `nclc` doesn't carry the range
             // bit; only `nclx` does. When we got range from the stream
             // (or the HEVC default), the source is just "Stream".
-            let range_source = if track.color_full_range.is_some() {
-                source
-            } else {
-                "Stream"
-            };
+            let range_source = if track.color_full_range.is_some() { source } else { "Stream" };
 
             let (cp_idc, tc_idc, mc_idc, full_range, cdp) = resolve_colour(track);
             if cdp {
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "colour_description_present",
-                    "Yes",
-                    false,
-                );
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "colour_description_present_Source",
-                    source,
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "colour_description_present", "Yes", false);
+                fa.fill(StreamKind::Video, pos, "colour_description_present_Source", source, false);
             }
             if let Some(fr) = full_range {
                 let label = if fr { "Full" } else { "Limited" };
                 fa.fill(StreamKind::Video, pos, "colour_range", label, false);
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "colour_range_Source",
-                    range_source,
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "colour_range_Source", range_source, false);
             }
             if let Some(p) = cp_idc.and_then(cicp_primaries) {
                 fa.fill(StreamKind::Video, pos, "colour_primaries", p, false);
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "colour_primaries_Source",
-                    source,
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "colour_primaries_Source", source, false);
             }
             if let Some(t) = tc_idc.and_then(cicp_transfer) {
                 fa.fill(StreamKind::Video, pos, "transfer_characteristics", t, false);
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "transfer_characteristics_Source",
-                    source,
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "transfer_characteristics_Source", source, false);
             }
             if let Some(m) = mc_idc.and_then(cicp_matrix) {
                 fa.fill(StreamKind::Video, pos, "matrix_coefficients", m, false);
-                fa.fill(
-                    StreamKind::Video,
-                    pos,
-                    "matrix_coefficients_Source",
-                    source,
-                    false,
-                );
+                fa.fill(StreamKind::Video, pos, "matrix_coefficients_Source", source, false);
             }
             // Stored_Height = SPS pre-crop height. Only emit when it
             // differs from the displayed Height (oracle suppresses it
@@ -3406,13 +3023,7 @@ fn fill_streams(
             video_count += 1;
         } else if track.handler == HANDLER_HINT {
             let pos = fa.stream_prepare(StreamKind::Other);
-            fa.fill(
-                StreamKind::Other,
-                pos,
-                "StreamOrder",
-                stream_order.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::Other, pos, "StreamOrder", stream_order.to_string(), false);
             let id = track.track_id.unwrap_or((track_idx + 1) as u32);
             fa.fill(StreamKind::Other, pos, "ID", id.to_string(), false);
             stream_order += 1;
@@ -3445,21 +3056,13 @@ fn fill_streams(
                 fa.fill(StreamKind::Other, pos, "Tagged_Date", s, false);
             }
             other_count += 1;
-        } else if matches!(
-            track.handler,
-            HANDLER_META | HANDLER_TEXT | HANDLER_SUBT | HANDLER_SBTL
-        ) {
+        } else if matches!(track.handler, HANDLER_META | HANDLER_TEXT | HANDLER_SUBT | HANDLER_SBTL)
+        {
             // Non-codec data tracks (timed metadata, subtitles in MOV
             // containers, etc.) → emit as Other stream so oracle's
             // OtherCount + the per-track entries line up.
             let pos = fa.stream_prepare(StreamKind::Other);
-            fa.fill(
-                StreamKind::Other,
-                pos,
-                "StreamOrder",
-                stream_order.to_string(),
-                false,
-            );
+            fa.fill(StreamKind::Other, pos, "StreamOrder", stream_order.to_string(), false);
             let id = track.track_id.unwrap_or((track_idx + 1) as u32);
             // Collect metadata track IDs for the General.Metas field
             if track.handler == HANDLER_META {
@@ -3480,13 +3083,7 @@ fn fill_streams(
             }
             if let Some(cid) = track.meta_codec_id {
                 if cid == "mebx" {
-                    fa.fill(
-                        StreamKind::Other,
-                        pos,
-                        "Format",
-                        "Timed Metadata Sample",
-                        false,
-                    );
+                    fa.fill(StreamKind::Other, pos, "Format", "Timed Metadata Sample", false);
                 }
                 fa.fill(StreamKind::Other, pos, "CodecID", cid, false);
             }
@@ -3502,13 +3099,7 @@ fn fill_streams(
             if track.timescale > 0 && track.duration_units > 0 {
                 let ts = track.timescale as u64;
                 let dur_ms = (track.duration_units * 1000 + ts / 2) / ts;
-                fa.fill(
-                    StreamKind::Other,
-                    pos,
-                    "Duration",
-                    dur_ms.to_string(),
-                    false,
-                );
+                fa.fill(StreamKind::Other, pos, "Duration", dur_ms.to_string(), false);
             }
             // mebx metadata tracks carry variable-size frames → oracle
             // marks them as VBR.
@@ -3538,39 +3129,18 @@ fn fill_streams(
     }
 
     if audio_count > 0 {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "AudioCount",
-            audio_count.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
     }
     if video_count > 0 {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "VideoCount",
-            video_count.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
     }
     if other_count > 0 {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "OtherCount",
-            other_count.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "OtherCount", other_count.to_string(), false);
     }
     // Emit Metas = comma-separated list of metadata track IDs
     if !meta_track_ids.is_empty() {
-        let metas_str = meta_track_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
+        let metas_str =
+            meta_track_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
         fa.fill(StreamKind::General, 0, "Metas", metas_str, false);
     }
 }
@@ -3656,7 +3226,7 @@ fn mp4_date_string(secs_since_1904: u64) -> Option<String> {
     Some(format!("{y:04}-{m:02}-{d:02} {hh:02}:{mm:02}:{ss:02} UTC"))
 }
 
-/// Same algorithm as diff-harness's civil_from_unix — proleptic
+/// Same algorithm as revelio-diff's civil_from_unix — proleptic
 /// Gregorian via Howard Hinnant's `days_from_civil`. Inlined here so
 /// the parser doesn't depend on the harness.
 fn civil_from_unix_mp4(unix_secs: i64) -> (i32, u8, u8, u8, u8, u8) {
@@ -3667,11 +3237,7 @@ fn civil_from_unix_mp4(unix_secs: i64) -> (i32, u8, u8, u8, u8, u8) {
     let ss = (rem % 60) as u8;
 
     let z = days + 719_468;
-    let era = if z >= 0 {
-        z / 146_097
-    } else {
-        (z - 146_096) / 146_097
-    };
+    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
     let doe = (z - era * 146_097) as u32;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe as i64 + era * 400;
@@ -3735,13 +3301,7 @@ fn resolve_colour(
             .color_full_range
             .or_else(|| track.avc_sps.as_ref().and_then(|s| s.video_full_range))
             .or_else(|| track.hevc_sps.as_ref().and_then(|s| s.video_full_range))
-            .or_else(|| {
-                if track.hevc_profile_idc.is_some() {
-                    Some(false)
-                } else {
-                    None
-                }
-            });
+            .or_else(|| if track.hevc_profile_idc.is_some() { Some(false) } else { None });
         return (
             track.color_primaries_idc,
             track.color_transfer_idc,
@@ -3854,11 +3414,7 @@ fn hevc_profile_name(idc: u8) -> Option<&'static str> {
 /// `Avc_profile_idc_to_string` table for the common cases.
 fn avc_profile_name(idc: u8, constrained: bool) -> Option<&'static str> {
     match idc {
-        0x42 => Some(if constrained {
-            "Constrained Baseline"
-        } else {
-            "Baseline"
-        }),
+        0x42 => Some(if constrained { "Constrained Baseline" } else { "Baseline" }),
         0x4D => Some("Main"),
         0x58 => Some("Extended"),
         0x64 => Some("High"),
@@ -3875,11 +3431,7 @@ fn avc_profile_name(idc: u8, constrained: bool) -> Option<&'static str> {
 fn format_avc_level(idc: u8) -> String {
     let major = idc / 10;
     let minor = idc % 10;
-    if minor == 0 {
-        format!("{major}")
-    } else {
-        format!("{major}.{minor}")
-    }
+    if minor == 0 { format!("{major}") } else { format!("{major}.{minor}") }
 }
 
 /// AAC AOT → MediaInfo `Format_AdditionalFeatures` profile name.
@@ -3944,9 +3496,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mp4(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("MPEG-4")
         );
         assert_eq!(

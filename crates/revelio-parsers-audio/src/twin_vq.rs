@@ -129,7 +129,12 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
 mod tests {
     use super::*;
 
-    fn make_twinvq(channel_mode: u32, bitrate_kbps: u32, sr_code: u32, audio_bytes: usize) -> Vec<u8> {
+    fn make_twinvq(
+        channel_mode: u32,
+        bitrate_kbps: u32,
+        sr_code: u32,
+        audio_bytes: usize,
+    ) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(b"TWIN");
         buf.extend_from_slice(b"NEW0VQF0"); // 8-byte version

@@ -42,9 +42,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_lxf(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("LXF"),
         );
     }

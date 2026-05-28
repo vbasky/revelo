@@ -21,7 +21,7 @@
 //!             FrameCount (u16 LE)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u};
 
 const MAGIC_LEN: usize = 3;
 const HEADER_LEN: usize = 8;

@@ -35,9 +35,8 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
         fa.fill(StreamKind::General, 0, "FileExtension", ext.to_owned(), false);
     }
 
-    let audio_stream_size: Option<u64> = fa
-        .retrieve(StreamKind::Audio, 0, "StreamSize")
-        .and_then(|z| z.as_str().parse().ok());
+    let audio_stream_size: Option<u64> =
+        fa.retrieve(StreamKind::Audio, 0, "StreamSize").and_then(|z| z.as_str().parse().ok());
 
     // Prefer a parser-filled General.Duration (always integer ms).
     // Fall back to Audio.Duration for parsers that only emit there in
@@ -48,8 +47,7 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
         .retrieve(StreamKind::General, 0, "Duration")
         .and_then(|z| z.as_str().parse().ok())
         .or_else(|| {
-            fa.retrieve(StreamKind::Audio, 0, "Duration")
-                .and_then(|z| z.as_str().parse().ok())
+            fa.retrieve(StreamKind::Audio, 0, "Duration").and_then(|z| z.as_str().parse().ok())
         });
 
     if let Some(ms) = duration_ms {
@@ -62,27 +60,22 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
     //   * video present: "VBR" only when Video is VFR (authored MP4s
     //     with VBR AAC inside CFR video omit the field, matching oracle)
     if let Some(ms) = duration_ms
-        && ms > 0 {
-            let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-            let has_video = fa.count_get(StreamKind::Video) > 0;
-            let overall_mode = if !has_video {
-                fa.retrieve(StreamKind::Audio, 0, "BitRate_Mode")
-                    .map(|z| z.as_str().to_owned())
-            } else {
-                let video_fr_mode = fa
-                    .retrieve(StreamKind::Video, 0, "FrameRate_Mode")
-                    .map(|z| z.as_str().to_owned());
-                if video_fr_mode.as_deref() == Some("VFR") {
-                    Some("VBR".to_owned())
-                } else {
-                    None
-                }
-            };
-            if let Some(mode) = overall_mode {
-                fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
-            }
-            fa.fill(StreamKind::General, 0, "OverallBitRate", overall.to_string(), false);
+        && ms > 0
+    {
+        let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
+        let has_video = fa.count_get(StreamKind::Video) > 0;
+        let overall_mode = if !has_video {
+            fa.retrieve(StreamKind::Audio, 0, "BitRate_Mode").map(|z| z.as_str().to_owned())
+        } else {
+            let video_fr_mode =
+                fa.retrieve(StreamKind::Video, 0, "FrameRate_Mode").map(|z| z.as_str().to_owned());
+            if video_fr_mode.as_deref() == Some("VFR") { Some("VBR".to_owned()) } else { None }
+        };
+        if let Some(mode) = overall_mode {
+            fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
         }
+        fa.fill(StreamKind::General, 0, "OverallBitRate", overall.to_string(), false);
+    }
 
     // Propagate the primary video stream's frame rate + total frame
     // count up to the General stream — MediaInfo surfaces them at the
@@ -91,19 +84,17 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
     // hasn't already set them on General.
     if fa.count_get(StreamKind::Video) > 0 {
         if fa.retrieve(StreamKind::General, 0, "FrameRate").is_none()
-            && let Some(fr) = fa
-                .retrieve(StreamKind::Video, 0, "FrameRate")
-                .map(|z| z.as_str().to_owned())
-            {
-                fa.fill(StreamKind::General, 0, "FrameRate", fr, false);
-            }
+            && let Some(fr) =
+                fa.retrieve(StreamKind::Video, 0, "FrameRate").map(|z| z.as_str().to_owned())
+        {
+            fa.fill(StreamKind::General, 0, "FrameRate", fr, false);
+        }
         if fa.retrieve(StreamKind::General, 0, "FrameCount").is_none()
-            && let Some(fc) = fa
-                .retrieve(StreamKind::Video, 0, "FrameCount")
-                .map(|z| z.as_str().to_owned())
-            {
-                fa.fill(StreamKind::General, 0, "FrameCount", fc, false);
-            }
+            && let Some(fc) =
+                fa.retrieve(StreamKind::Video, 0, "FrameCount").map(|z| z.as_str().to_owned())
+        {
+            fa.fill(StreamKind::General, 0, "FrameCount", fc, false);
+        }
     }
 
     // General StreamSize = container overhead = FileSize − elementary
@@ -116,20 +107,26 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
     if let Some(audio_size) = audio_stream_size {
         let elementary = audio_size + video_stream_size;
         if elementary < file_size {
-            fa.fill(StreamKind::General, 0, "StreamSize", (file_size - elementary).to_string(), false);
+            fa.fill(
+                StreamKind::General,
+                0,
+                "StreamSize",
+                (file_size - elementary).to_string(),
+                false,
+            );
         }
     } else if video_stream_size > 0 && video_stream_size < file_size {
-        fa.fill(StreamKind::General, 0, "StreamSize", (file_size - video_stream_size).to_string(), false);
-    }
-
-    if let Some(unix_secs) = info.modified_unix_secs {
         fa.fill(
             StreamKind::General,
             0,
-            "File_Modified_Date",
-            format_utc(unix_secs),
+            "StreamSize",
+            (file_size - video_stream_size).to_string(),
             false,
         );
+    }
+
+    if let Some(unix_secs) = info.modified_unix_secs {
+        fa.fill(StreamKind::General, 0, "File_Modified_Date", format_utc(unix_secs), false);
         fa.fill(
             StreamKind::General,
             0,
@@ -188,11 +185,15 @@ mod tests {
         };
         fill_file_level_fields(&mut fa, &info);
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "FileSize").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "FileSize")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("12548")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "FileExtension").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "FileExtension")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("jpg")
         );
     }
@@ -211,11 +212,15 @@ mod tests {
         };
         fill_file_level_fields(&mut fa, &info);
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "FrameRate").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "FrameRate")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("24.000")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "FrameCount").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "FrameCount")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("1440")
         );
     }
@@ -248,7 +253,9 @@ mod tests {
         };
         fill_file_level_fields(&mut fa, &info);
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "OverallBitRate").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "OverallBitRate")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("1000000")
         );
     }
@@ -266,11 +273,15 @@ mod tests {
         };
         fill_file_level_fields(&mut fa, &info);
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "File_Modified_Date").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "File_Modified_Date")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("2021-01-01 00:00:00 UTC")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "File_Modified_Date_Local").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::General, 0, "File_Modified_Date_Local")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("2021-01-01 01:00:00")
         );
     }

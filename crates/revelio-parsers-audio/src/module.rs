@@ -25,10 +25,7 @@ const HEADER_MIN_BYTES: usize = 1084;
 const SIGNATURE_OFFSET: usize = 1080;
 
 fn is_valid_signature(sig: &[u8]) -> bool {
-    matches!(
-        sig,
-        b"M.K." | b"M!K!" | b"FLT4" | b"FLT8" | b"6CHN" | b"8CHN"
-    )
+    matches!(sig, b"M.K." | b"M!K!" | b"FLT4" | b"FLT8" | b"6CHN" | b"8CHN")
 }
 
 pub fn parse_module(fa: &mut FileAnalyze) -> bool {
@@ -82,14 +79,8 @@ pub fn parse_module(fa: &mut FileAnalyze) -> bool {
 // decode (printable ASCII in practice) and trim trailing NULs and spaces
 // to mirror C++ `Get_Local` + `Ztring::Trim`.
 fn trim_local_string(bytes: &[u8]) -> String {
-    let end = bytes
-        .iter()
-        .rposition(|&b| b != 0 && b != b' ')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    String::from_utf8_lossy(&bytes[..end])
-        .trim_matches(' ')
-        .to_string()
+    let end = bytes.iter().rposition(|&b| b != 0 && b != b' ').map(|i| i + 1).unwrap_or(0);
+    String::from_utf8_lossy(&bytes[..end]).trim_matches(' ').to_string()
 }
 
 #[cfg(test)]

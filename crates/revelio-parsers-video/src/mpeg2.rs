@@ -70,7 +70,7 @@ impl Mpeg2Info {
             None
         }
     }
-    
+
     pub fn chroma_format_str(&self) -> Option<&'static str> {
         match self.chroma_format {
             1 => Some("4:2:0"),
@@ -116,19 +116,17 @@ pub fn parse_mpeg2_sequence_header(data: &[u8]) -> Option<Mpeg2Info> {
     let frame_rate_code = b3 & 0x0F;
     let bit_rate = ((b4 << 10) | (b5 << 2) | (b6 >> 6)) & 0x3FFFF;
     let marker_bit = (b6 >> 5) & 0x01;
-    let vbv_buffer_size = ((b6 & 0x1F) << 5) | (data.get(offset + 7).copied().unwrap_or(0) as u32 >> 3);
-    
+    let vbv_buffer_size =
+        ((b6 & 0x1F) << 5) | (data.get(offset + 7).copied().unwrap_or(0) as u32 >> 3);
+
     if marker_bit != 1 {
         return None;
     }
 
-    let (frame_rate_num, frame_rate_den) = FRAME_RATE_TABLE.get(frame_rate_code as usize)
-        .copied()
-        .unwrap_or((0, 1));
+    let (frame_rate_num, frame_rate_den) =
+        FRAME_RATE_TABLE.get(frame_rate_code as usize).copied().unwrap_or((0, 1));
 
-    let aspect = ASPECT_RATIO_TABLE.get(aspect_ratio as usize)
-        .copied()
-        .flatten();
+    let aspect = ASPECT_RATIO_TABLE.get(aspect_ratio as usize).copied().flatten();
 
     let mut info = Mpeg2Info {
         width: horizontal_size,
@@ -150,27 +148,25 @@ pub fn parse_mpeg2_sequence_header(data: &[u8]) -> Option<Mpeg2Info> {
 
 fn parse_extensions(data: &[u8], info: &mut Mpeg2Info) {
     let mut pos = 0;
-    
+
     while pos + 4 < data.len() {
         if data[pos..pos + 4] == [0x00, 0x00, 0x01, 0xB5] {
             if pos + 5 >= data.len() {
                 break;
             }
-            
+
             let ext_id = (data[pos + 4] >> 4) & 0x0F;
-            
+
             match ext_id {
-                1
-                    if pos + 6 < data.len() => {
-                        parse_sequence_display_extension(&data[pos + 4..], info);
-                    }
-                2
-                    if pos + 6 < data.len() => {
-                        parse_sequence_scalable_extension(&data[pos + 4..], info);
-                    }
+                1 if pos + 6 < data.len() => {
+                    parse_sequence_display_extension(&data[pos + 4..], info);
+                }
+                2 if pos + 6 < data.len() => {
+                    parse_sequence_scalable_extension(&data[pos + 4..], info);
+                }
                 _ => {}
             }
-            
+
             pos += 4;
         } else {
             pos += 1;
@@ -182,20 +178,20 @@ fn parse_sequence_display_extension(data: &[u8], info: &mut Mpeg2Info) {
     if data.len() < 3 {
         return;
     }
-    
+
     let colour_description = data[0] & 0x01;
-    
+
     let mut offset = 1;
     if colour_description != 0 && data.len() >= offset + 3 {
         offset += 3;
     }
-    
+
     if data.len() >= offset + 3 {
-        let display_horizontal_size = ((data[offset] as u32) << 9) | 
-                                      ((data[offset + 1] as u32) << 1) | 
-                                      ((data[offset + 2] >> 7) as u32);
+        let display_horizontal_size = ((data[offset] as u32) << 9)
+            | ((data[offset + 1] as u32) << 1)
+            | ((data[offset + 2] >> 7) as u32);
         let display_vertical_size = ((data[offset + 2] & 0x7F) as u32) << 5;
-        
+
         if display_horizontal_size > 0 && display_vertical_size > 0 && info.height > 0 {
             let dar_num = display_horizontal_size * info.height;
             let dar_den = display_vertical_size * info.width;
@@ -209,9 +205,9 @@ fn parse_sequence_scalable_extension(data: &[u8], info: &mut Mpeg2Info) {
     if data.len() < 2 {
         return;
     }
-    
+
     let scalable_mode = (data[0] >> 5) & 0x03;
-    
+
     info.profile = match scalable_mode {
         0 => Some(Mpeg2Profile::SNRScalable),
         1 => Some(Mpeg2Profile::SpatiallyScalable),
@@ -264,46 +260,59 @@ const ASPECT_RATIO_TABLE: [Option<(u16, u16)>; 16] = [
 
 pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
     fa.stream_prepare(StreamKind::Video);
-    
+
     fa.fill(StreamKind::Video, 0, "Format", "MPEG Video", false);
     fa.fill(StreamKind::Video, 0, "Format_Version", "Version 2", false);
-    
+
     if let Some(profile) = info.profile {
         fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
     }
-    
+
     if let Some(level) = info.level
-        && let Some(level_str) = level.as_str() {
-            fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
-        }
-    
+        && let Some(level_str) = level.as_str()
+    {
+        fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
+    }
+
     if info.width > 0 {
         fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
     }
-    
+
     if info.height > 0 {
         fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
     }
-    
+
     if let Some(fr) = info.frame_rate() {
         fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
     }
-    
+
     if let Some(bitrate) = info.bit_rate {
         fa.fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
     }
-    
+
     if let Some((num, den)) = info.aspect_ratio {
         let dar = num as f64 / den as f64;
         fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
-        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio/String", format!("{}:{}", num, den), false);
+        fa.fill(
+            StreamKind::Video,
+            0,
+            "DisplayAspectRatio/String",
+            format!("{}:{}", num, den),
+            false,
+        );
     }
-    
+
     if let Some(chroma) = info.chroma_format_str() {
         fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
     }
-    
-    fa.fill(StreamKind::Video, 0, "ScanType", if info.progressive { "Progressive" } else { "Interlaced" }, false);
+
+    fa.fill(
+        StreamKind::Video,
+        0,
+        "ScanType",
+        if info.progressive { "Progressive" } else { "Interlaced" },
+        false,
+    );
 }
 
 /// Parse MPEG-2 Video (H.262) elementary stream.
@@ -313,16 +322,16 @@ pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
 pub fn parse_mpeg2(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(4);
     let Some(h) = head else { return false };
-    
+
     let is_mpeg2 = h == [0x00, 0x00, 0x01, 0xB3];
-    
+
     if !is_mpeg2 {
         return false;
     }
-    
+
     let data = fa.peek_raw(256);
     let Some(data) = data else { return false };
-    
+
     if let Some(info) = parse_mpeg2_sequence_header(data) {
         fill_mpeg2_streams(fa, &info);
         true
@@ -348,7 +357,7 @@ mod tests {
             0x20, // marker_bit=1 (bit 5)
             0x00, // vbv + flags
         ];
-        
+
         let info = parse_mpeg2_sequence_header(&data);
         assert!(info.is_some());
         let info = info.unwrap();

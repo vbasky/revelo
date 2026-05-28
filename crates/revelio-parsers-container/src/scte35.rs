@@ -162,8 +162,7 @@ pub fn parse_scte35(fa: &mut FileAnalyze) -> bool {
         0x07 => "bandwidth_reservation",
         _ => "reserved",
     };
-    fa.fill(StreamKind::Other, 0, "Format_Info",
-        format!("SCTE 35 {} command", cmd_name), false);
+    fa.fill(StreamKind::Other, 0, "Format_Info", format!("SCTE 35 {} command", cmd_name), false);
 
     fa.fill(StreamKind::Other, 0, "SpliceCommandType", splice_command_type.to_string(), false);
     fa.fill(StreamKind::Other, 0, "SpliceCommandName", cmd_name, false);
@@ -218,27 +217,27 @@ fn parse_time_signal(_buf: &[u8], pos: &mut usize) {
 }
 
 fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mut FileAnalyze) {
-    if dlen < 8 {
+    if dlen < 12 {
         return;
     }
-    let _seg_event_id = u32::from_be_bytes([
-        buf[offset],
-        buf[offset + 1],
-        buf[offset + 2],
-        buf[offset + 3],
-    ]);
-    let cancel = (buf[offset + 4] >> 7) & 1;
+    // Skip 4-byte identifier (typically 0x43554549 = 'CUEI')
+    let o = offset + 4;
+    if o + 8 > buf.len() {
+        return;
+    }
+    let _seg_event_id = u32::from_be_bytes([buf[o], buf[o + 1], buf[o + 2], buf[o + 3]]);
+    let cancel = (buf[o + 4] >> 7) & 1;
     if cancel == 1 {
         return;
     }
-    if offset + 7 >= buf.len() {
+    if o + 7 >= buf.len() {
         return;
     }
 
-    let dur_flag = (buf[offset + 5] >> 7) & 1;
-    let _delivery_not_restricted = (buf[offset + 5] >> 6) & 1;
+    let dur_flag = (buf[o + 5] >> 7) & 1;
+    let _delivery_not_restricted = (buf[o + 5] >> 6) & 1;
 
-    let mut dpos = offset + 6;
+    let mut dpos = o + 6;
     let seg_dur;
     if dur_flag == 1 {
         if dpos + 4 > buf.len() {
@@ -272,20 +271,8 @@ fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mu
     let seg_type = buf[dpos];
     let seg_type_name = segmentation_type_name(seg_type);
     dpos += 2;
-    fa.fill(
-        StreamKind::Other,
-        0,
-        "SegmentationTypeID",
-        seg_type.to_string(),
-        false,
-    );
-    fa.fill(
-        StreamKind::Other,
-        0,
-        "SegmentationTypeName",
-        seg_type_name,
-        false,
-    );
+    fa.fill(StreamKind::Other, 0, "SegmentationTypeID", seg_type.to_string(), false);
+    fa.fill(StreamKind::Other, 0, "SegmentationTypeName", seg_type_name, false);
 
     if upid_len > 0 && dpos + upid_len <= buf.len() {
         let upid_type = buf[dpos];
@@ -296,8 +283,7 @@ fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mu
             if !upid_data.is_empty() {
                 if let Ok(s) = std::str::from_utf8(upid_data) {
                     if !s.is_empty()
-                        && s.chars()
-                            .all(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
+                        && s.chars().all(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
                     {
                         fa.fill(StreamKind::Other, 0, "UPID", s, false);
                     }
@@ -315,65 +301,29 @@ mod tests {
     #[test]
     fn scte35_splice_insert() {
         // Minimal SCTE-35 splice_insert() splice_info_section
+        // Byte layout matching parser:
+        //   [0] table_id, [1-2] section_length,
+        //   [3] protocol, [4-7] pts_adjustment(33) + cw_index(6),
+        //   [8-9] tier(12), [9-10] splice_command_length(12),
+        //   [11] splice_command_type
         let mut buf = vec![
-            0xFC, // table_id
-            0x30, // section_syntax_indicator=1, private=0, reserved=11, section_length hi
-            0x1E, // section_length lo (30 bytes)
-            0x00, // protocol_version=0, encrypted=0, pts_adj hi
-            0x00, 0x00, 0x00, 0x00, // pts_adjustment=0
-            0x00, // cw_index=0
-            0x00, // tier hi=0
-            0x10, // tier lo=0, splice_command_length hi=1
-            0x08, // splice_command_length lo=8
-            0x05, // splice_command_type=splice_insert
+            0xFC, // [0]  table_id
+            0x30, 0x00, // [1-2] section_length placeholder
+            0x00, // [3]  protocol_version
+            0x00, 0x00, 0x00, 0x00, // [4-7] pts_adjustment + cw_index
+            0x00, 0x00, // [8-9] tier
+            0x10, // [10] splice_command_length lo = 16
+            0x05, // [11] splice_command_type = splice_insert
             // splice_insert():
-            0x00, 0x00, 0x00, 0x01, // splice_event_id=1
-            0x00, // cancel=0, reserved
-            0xE0, // out_of_network=1, program_splice=1, duration=1, immediate=0, reserved=0000
-            0x00, 0x00, 0x00, 0x00, 0x00, // splice_time=0 (33-bit)
-            0x00, 0x00, 0x00, 0x00, 0x00, // duration=0 (33-bit)
+            0x00, 0x00, 0x00, 0x01, // [12-15] splice_event_id=1
+            0x00, // [16] cancel=0
+            0xE0, // [17] out_of_network=1, program_splice=1, duration=1, immediate=0
+            0x00, 0x00, 0x00, 0x00, 0x00, // [18-22] splice_time=0 (33-bit)
+            0x00, 0x00, 0x00, 0x00, 0x00, // [23-27] duration=0 (33-bit)
             // descriptor_loop_length
-            0x00, 0x00, // no descriptors
-            // CRC (ignored)
-            0x00, 0x00, 0x00, 0x00,
-        ];
-        // Fix section_length
-        let section_len = buf.len() - 3; // total after table_id + section_length fields
-        buf[1] = 0x30 | ((section_len >> 8) as u8) & 0x0F;
-        buf[2] = (section_len & 0xFF) as u8;
-
-        let mut fa = FileAnalyze::new(&buf);
-        assert!(parse_scte35(&mut fa));
-        assert_eq!(
-            fa.retrieve(StreamKind::Other, 0, "Format")
-                .map(|z| z.as_str().to_owned()),
-            Some("SCTE 35".into())
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Other, 0, "SpliceCommandName")
-                .map(|z| z.as_str().to_owned()),
-            Some("splice_insert".into())
-        );
-    }
-
-    #[test]
-    fn scte35_time_signal() {
-        let mut buf = vec![
-            0xFC, 0x30, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, // pts_adjustment
-            0x00, 0x00, 0x10, // cw=0, tier=0, cmd_len=16
-            0x06, // time_signal
-            0x00, 0x00, 0x00, 0x00, 0x00, // splice_time
-            // descriptor_loop_length
-            0x00, 0x0F, // loop_len = 15
-            // segmentation_descriptor (tag=0x02, len=12)
-            0x02, 0x0C, 0x43, 0x55, 0x45, 0x49, // identifier='CUEI'
-            0x00, 0x00, 0x00, 0x01, // seg_event_id=1
-            0x00, // cancel=0
-            0x80, // dur_flag=1
-            0x00, 0x00, 0x00, 0x00, 0x00, // seg_duration=0
-            0x10, 0x00, // seg_type=0x10 (Break), upid_len=0
+            0x00, 0x00, // [28-29] no descriptors
             // CRC
-            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, // [30-33]
         ];
         let section_len = buf.len() - 3;
         buf[1] = 0x30 | ((section_len >> 8) as u8) & 0x0F;
@@ -382,8 +332,48 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_scte35(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::Other, 0, "SpliceCommandName")
-                .map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Other, 0, "Format").map(|z| z.as_str().to_owned()),
+            Some("SCTE 35".into())
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Other, 0, "SpliceCommandName").map(|z| z.as_str().to_owned()),
+            Some("splice_insert".into())
+        );
+    }
+
+    #[test]
+    fn scte35_time_signal() {
+        // Byte layout: same header as splice_insert, then time_signal command
+        // with a segmentation_descriptor containing 4-byte 'CUEI' identifier.
+        let mut buf = vec![
+            0xFC, 0x30, 0x00, 0x00, // [0-3]: table_id, section_len, protocol
+            0x00, 0x00, 0x00, 0x00, // [4-7]: pts_adjustment + cw_index
+            0x00, 0x00, // [8-9]: tier=0
+            0x05, // [10]: splice_command_length lo = 5
+            0x06, // [11]: splice_command_type = time_signal
+            0x00, 0x00, 0x00, 0x00, 0x00, // [12-16]: splice_time (33-bit)
+            // descriptor_loop_length
+            0x00, 0x13, // [17-18]: loop_len = 19
+            // segmentation_descriptor (tag=0x02, len=17)
+            0x02, 0x11, // [19-20]: tag=2, dlen=17
+            0x43, 0x55, 0x45, 0x49, // [21-24]: identifier='CUEI'
+            0x00, 0x00, 0x00, 0x01, // [25-28]: seg_event_id=1
+            0x00, // [29]: cancel=0
+            0x80, // [30]: dur_flag=1
+            0x00, 0x00, 0x00, 0x00, 0x00, // [31-35]: seg_duration=0
+            0x10, // [36]: seg_type=0x10 (Break)
+            0x00, // [37]: upid_len=0
+            // CRC
+            0x00, 0x00, 0x00, 0x00, // [38-41]
+        ];
+        let section_len = buf.len() - 3;
+        buf[1] = 0x30 | ((section_len >> 8) as u8) & 0x0F;
+        buf[2] = (section_len & 0xFF) as u8;
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_scte35(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::Other, 0, "SpliceCommandName").map(|z| z.as_str().to_owned()),
             Some("time_signal".into())
         );
         assert_eq!(

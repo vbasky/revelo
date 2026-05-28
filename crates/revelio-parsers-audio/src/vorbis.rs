@@ -54,7 +54,10 @@ fn fill_vorbis_streams(
     fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
     fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
 
-    let brm = if bitrate_nominal > 0 && bitrate_max == bitrate_nominal && bitrate_nominal == bitrate_min {
+    let brm = if bitrate_nominal > 0
+        && bitrate_max == bitrate_nominal
+        && bitrate_nominal == bitrate_min
+    {
         "CBR"
     } else {
         "VBR"
@@ -78,9 +81,18 @@ mod tests {
         buf[0] = 1; // packet type: identification
         buf[1..7].copy_from_slice(b"vorbis");
         buf[11] = 2; // stereo
-        buf[12] = 0x80; buf[13] = 0xBB; buf[14] = 0; buf[15] = 0; // 48000 LE
-        buf[20] = 0x80; buf[21] = 0xBB; buf[22] = 0; buf[23] = 0; // nominal 48000 too? nah - just set nominal to 128kbps
-        buf[20] = 0x00; buf[21] = 0xF4; buf[22] = 0x01; buf[23] = 0x00; // 128000
+        buf[12] = 0x80;
+        buf[13] = 0xBB;
+        buf[14] = 0;
+        buf[15] = 0; // 48000 LE
+        buf[20] = 0x80;
+        buf[21] = 0xBB;
+        buf[22] = 0;
+        buf[23] = 0; // nominal 48000 too? nah - just set nominal to 128kbps
+        buf[20] = 0x00;
+        buf[21] = 0xF4;
+        buf[22] = 0x01;
+        buf[23] = 0x00; // 128000
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vorbis(&mut fa));
@@ -95,7 +107,10 @@ mod tests {
         let mut buf = vec![0u8; 30];
         buf[0] = 1;
         buf[1..7].copy_from_slice(b"vorbis");
-        buf[7] = 1; buf[8] = 0; buf[9] = 0; buf[10] = 0; // version 1
+        buf[7] = 1;
+        buf[8] = 0;
+        buf[9] = 0;
+        buf[10] = 0; // version 1
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_vorbis(&mut fa));
     }

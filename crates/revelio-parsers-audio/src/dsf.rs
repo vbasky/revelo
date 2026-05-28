@@ -40,16 +40,8 @@ const DSF_CHANNEL_POSITIONS: [&str; 8] = [
     "Front: L C R, Side: L R, LFE",
 ];
 
-const DSF_CHANNEL_LAYOUT: [&str; 8] = [
-    "",
-    "M",
-    "L R",
-    "L R C",
-    "L R C LFE",
-    "L R Ls Rs",
-    "L R C Ls Rs",
-    "L R C Ls Rs LFE",
-];
+const DSF_CHANNEL_LAYOUT: [&str; 8] =
+    ["", "M", "L R", "L R C", "L R C LFE", "L R Ls Rs", "L R C Ls Rs", "L R C Ls Rs LFE"];
 
 /// Parse DSD Stream File.
 ///
@@ -96,21 +88,17 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     // Try to read the data chunk header (at offset 80) for StreamSize.
     let mut audio_stream_size: u64 = 0;
     if let Some(full) = fa.peek_raw(fa.remain().min(92))
-        && full.len() >= 92 && &full[80..84] == b"data" {
-            let data_chunk_size = data_helpers::le_u64(&full[84..92]);
-            // data chunk_size includes the 12-byte chunk header per spec.
-            audio_stream_size = data_chunk_size.saturating_sub(12);
-        }
+        && full.len() >= 92
+        && &full[80..84] == b"data"
+    {
+        let data_chunk_size = data_helpers::le_u64(&full[84..92]);
+        // data chunk_size includes the 12-byte chunk header per spec.
+        audio_stream_size = data_chunk_size.saturating_sub(12);
+    }
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "DSF", false);
-    fa.fill(
-        StreamKind::General,
-        0,
-        "Format_Version",
-        format!("Version {}", format_version),
-        false,
-    );
+    fa.fill(StreamKind::General, 0, "Format_Version", format!("Version {}", format_version), false);
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
     let file_size_now = fa.remain() as u64;
     if total_file_size != 0 && total_file_size != file_size_now {
@@ -128,20 +116,8 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
 
     let ct_idx = channel_type as usize;
     if ct_idx > 0 && ct_idx < DSF_CHANNEL_POSITIONS.len() {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "ChannelPositions",
-            DSF_CHANNEL_POSITIONS[ct_idx],
-            false,
-        );
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "ChannelLayout",
-            DSF_CHANNEL_LAYOUT[ct_idx],
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "ChannelPositions", DSF_CHANNEL_POSITIONS[ct_idx], false);
+        fa.fill(StreamKind::Audio, 0, "ChannelLayout", DSF_CHANNEL_LAYOUT[ct_idx], false);
     }
     fa.fill(StreamKind::Audio, 0, "Channels", channel_num.to_string(), false);
     fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_frequency.to_string(), false);
@@ -163,13 +139,7 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
     fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
     if audio_stream_size > 0 {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "StreamSize",
-            audio_stream_size.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
     }
 
     // Format_Commercial_IfAny: DSDxxx where xxx is the multiplier over the
@@ -179,13 +149,7 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     while mult <= 512 {
         let base = sr / mult;
         if base == 48000 || base == 44100 {
-            fa.fill(
-                StreamKind::Audio,
-                0,
-                "Format_Commercial_IfAny",
-                format!("DSD{}", mult),
-                false,
-            );
+            fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", format!("DSD{}", mult), false);
             break;
         }
         mult *= 2;
@@ -264,7 +228,8 @@ mod tests {
 
     #[test]
     fn rejects_non_dsf() {
-        let mut fa = FileAnalyze::new(b"RIFF....WAVEfmt this is not DSF padding padding padding padding");
+        let mut fa =
+            FileAnalyze::new(b"RIFF....WAVEfmt this is not DSF padding padding padding padding");
         assert!(!parse_dsf(&mut fa));
     }
 

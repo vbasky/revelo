@@ -46,8 +46,16 @@ pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
     }
     // Color map consistency: image types 1/9 require map, others reject if present.
     match image_type {
-        1 | 9 => if color_map_type != 1 { return false },
-        _ => if color_map_type != 0 { return false },
+        1 | 9 => {
+            if color_map_type != 1 {
+                return false;
+            }
+        }
+        _ => {
+            if color_map_type != 0 {
+                return false;
+            }
+        }
     }
     // Pixel depth must be 8, 16, 24, or 32.
     if !matches!(pixel_depth, 8 | 16 | 24 | 32) {
@@ -73,11 +81,8 @@ pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
     };
 
     // Detect Version 2 by footer signature.
-    let version = if file_size >= 26 && &head[file_size - 18..file_size] == V2_SIGNATURE {
-        2u8
-    } else {
-        1
-    };
+    let version =
+        if file_size >= 26 && &head[file_size - 18..file_size] == V2_SIGNATURE { 2u8 } else { 1 };
 
     fa.stream_prepare(StreamKind::Image);
     let _pos = 0usize;
@@ -185,7 +190,8 @@ mod tests {
         assert!(parse_tga(&mut fa));
         assert_eq!(
             fa.retrieve(StreamKind::General, 0, "Format_Version")
-                .map(|z| z.as_str().to_owned()).as_deref(),
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
             Some("Version 2")
         );
     }

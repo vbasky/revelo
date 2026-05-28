@@ -83,13 +83,7 @@ pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
     fa.element_end();
 
     let bitrate_opt = if bitrate == u32::MAX { None } else { Some(bitrate) };
-    fill_streams(
-        fa,
-        &speex_version,
-        Some(rate),
-        Some(nb_channels),
-        bitrate_opt,
-    );
+    fill_streams(fa, &speex_version, Some(rate), Some(nb_channels), bitrate_opt);
     // vbr field: 0 => CBR, anything else => VBR. Done after fill_streams
     // because fill_streams defaults BitRate_Mode to VBR (task spec); override
     // here when the header explicitly says CBR.
@@ -154,18 +148,18 @@ mod tests {
         ver[..n].copy_from_slice(&vb[..n]);
         buf.extend_from_slice(&ver);
         buf.extend_from_slice(&version_id.to_le_bytes());
-        buf.extend_from_slice(&80u32.to_le_bytes());     // header_size
+        buf.extend_from_slice(&80u32.to_le_bytes()); // header_size
         buf.extend_from_slice(&rate.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());      // mode
-        buf.extend_from_slice(&4u32.to_le_bytes());      // mode_bitstream_version
+        buf.extend_from_slice(&0u32.to_le_bytes()); // mode
+        buf.extend_from_slice(&4u32.to_le_bytes()); // mode_bitstream_version
         buf.extend_from_slice(&channels.to_le_bytes());
         buf.extend_from_slice(&bitrate.to_le_bytes());
-        buf.extend_from_slice(&160u32.to_le_bytes());    // frame_size
+        buf.extend_from_slice(&160u32.to_le_bytes()); // frame_size
         buf.extend_from_slice(&vbr.to_le_bytes());
-        buf.extend_from_slice(&1u32.to_le_bytes());      // frames_per_packet
-        buf.extend_from_slice(&0u32.to_le_bytes());      // extra_headers
-        buf.extend_from_slice(&0u32.to_le_bytes());      // reserved1
-        buf.extend_from_slice(&0u32.to_le_bytes());      // reserved2
+        buf.extend_from_slice(&1u32.to_le_bytes()); // frames_per_packet
+        buf.extend_from_slice(&0u32.to_le_bytes()); // extra_headers
+        buf.extend_from_slice(&0u32.to_le_bytes()); // reserved1
+        buf.extend_from_slice(&0u32.to_le_bytes()); // reserved2
         buf
     }
 

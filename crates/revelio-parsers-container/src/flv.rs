@@ -14,7 +14,7 @@
 //!   0x05  B4  DataOffset (header size, typically 9)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int32u, Int8u};
+use zenlib::{Int8u, Int32u};
 
 const FLV_HEADER_SIZE: usize = 9;
 const FLV_SIGNATURE: [u8; 3] = *b"FLV";
@@ -62,20 +62,8 @@ pub fn parse_flv(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "Flash Video", false);
-    fa.fill(
-        StreamKind::General,
-        0,
-        "VideoCount",
-        if has_video { "1" } else { "0" },
-        false,
-    );
-    fa.fill(
-        StreamKind::General,
-        0,
-        "AudioCount",
-        if has_audio { "1" } else { "0" },
-        false,
-    );
+    fa.fill(StreamKind::General, 0, "VideoCount", if has_video { "1" } else { "0" }, false);
+    fa.fill(StreamKind::General, 0, "AudioCount", if has_audio { "1" } else { "0" }, false);
 
     true
 }

@@ -35,7 +35,9 @@ pub fn parse_ffv1(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::Video);
     fa.fill(StreamKind::Video, 0, "Format", "FFV1", false);
-    if version > 0 { fa.fill(StreamKind::Video, 0, "Format_Version", version.to_string(), false); }
+    if version > 0 {
+        fa.fill(StreamKind::Video, 0, "Format_Version", version.to_string(), false);
+    }
     fa.fill(StreamKind::Video, 0, "Compression_Mode", "Lossless", false);
     true
 }

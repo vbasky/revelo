@@ -47,9 +47,7 @@ pub struct ElementTree {
 
 impl ElementTree {
     pub fn new() -> Self {
-        ElementTree {
-            stack: vec![ElementNode::new("")],
-        }
+        ElementTree { stack: vec![ElementNode::new("")] }
     }
 
     pub fn element_begin(&mut self, name: impl Into<String>) {
@@ -61,11 +59,7 @@ impl ElementTree {
             return;
         }
         let child = self.stack.pop().expect("len > 1 checked above");
-        self.stack
-            .last_mut()
-            .expect("len > 0 invariant")
-            .children
-            .push(child);
+        self.stack.last_mut().expect("len > 0 invariant").children.push(child);
     }
 
     pub fn element_name(&mut self, name: impl Into<String>) {
@@ -82,11 +76,7 @@ impl ElementTree {
             if value == "NOK" || measure == Some("Error") {
                 last.has_error = true;
             }
-            last.infos.push(ElementInfo {
-                name: None,
-                value,
-                measure: measure.map(String::from),
-            });
+            last.infos.push(ElementInfo { name: None, value, measure: measure.map(String::from) });
         }
     }
 
@@ -121,9 +111,7 @@ impl ElementTree {
     /// Mutable access to the current (top-of-stack) element. Used by
     /// `FileAnalyze::Get_B*` etc. to record param entries.
     pub fn current_mut(&mut self) -> &mut ElementNode {
-        self.stack
-            .last_mut()
-            .expect("stack invariant: root always present")
+        self.stack.last_mut().expect("stack invariant: root always present")
     }
 }
 

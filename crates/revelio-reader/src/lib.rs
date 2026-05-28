@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_file_reader(fa: &mut FileAnalyze) -> bool {

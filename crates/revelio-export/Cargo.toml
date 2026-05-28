@@ -9,6 +9,9 @@ repository.workspace = true
 name = "revelio_export"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 revelio-core = { path = "../revelio-core" }
 zenlib = { path = "../zenlib" }

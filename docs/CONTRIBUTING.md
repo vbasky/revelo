@@ -15,7 +15,7 @@ Cargo workspace root
 ├─ crates/revelio-cli         CLI tool (cargo run --bin revelio -- path/to/file)
 ├─ crates/revelio-cdylib      C dynamic library (MediaInfo_New/Open/Inform/…)
 ├─ crates/revelio-reader      Reader layer (File, Directory, HTTP, MMS)
-├─ crates/diff-harness        Differential testing against `mediainfo` oracle
+├─ crates/revelio-diff        Differential testing against `mediainfo` oracle
 ├─ crates/revelio-parsers-audio       Audio codec parsers (56 parsers)
 ├─ crates/revelio-parsers-container   Container parsers (42 parsers)
 ├─ crates/revelio-parsers-image       Image format parsers (19 parsers)
@@ -124,10 +124,10 @@ In `crates/revelio-cli/src/main.rs` and `crates/revelio-cdylib/src/lib.rs`:
 
 Add your format to `docs/formats.md` with detection method and spec reference.
 
-### Step 5: Run the diff harness
+### Step 5: Run revelio-diff
 
 ```bash
-cargo run --bin diff-harness -- /path/to/sample.myformat
+cargo run --bin revelio-diff -- /path/to/sample.myformat
 ```
 
 If the output doesn't byte-match `mediainfo`, fix fields until it does.
@@ -208,5 +208,5 @@ Common field names by stream kind:
 - **Every parser returns `bool`:** `true` if it recognized the format, `false` otherwise.
 - **First match wins:** The parser table is ordered. Containers run before elementary codec parsers.
 - **Tests are mandatory:** Every parser module must have at least one `#[test]` that validates the parser recognizes valid input and rejects invalid input.
-- **Field names must match MediaInfoLib exactly:** The diff harness does byte-level comparison of XML output.
+- **Field names must match MediaInfoLib exactly:** revelio-diff does byte-level comparison of XML output.
 - **Doc comments use `//!`** for module-level docs and `///` for function/struct docs.

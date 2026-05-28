@@ -14,7 +14,7 @@
 //! C++ which simply skips the unknown payload.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int32u, Int8u};
+use zenlib::{Int8u, Int32u};
 
 const IAB_SAMPLE_RATE: [u32; 4] = [48000, 96000, 0, 0];
 const IAB_BIT_DEPTH: [u8; 4] = [16, 24, 0, 0];
@@ -50,15 +50,11 @@ pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
     if head[0] != 0x01 {
         return false;
     }
-    let preamble_length =
-        u32::from_be_bytes([head[1], head[2], head[3], head[4]]) as usize;
+    let preamble_length = u32::from_be_bytes([head[1], head[2], head[3], head[4]]) as usize;
 
     // Full header: 5 (preamble header) + preamble_length + 5 (iaframe header)
     // + 1 (version). Use peek_raw with the Remain-clamped len per spec.
-    let full_needed = 5usize
-        .saturating_add(preamble_length)
-        .saturating_add(5)
-        .saturating_add(1);
+    let full_needed = 5usize.saturating_add(preamble_length).saturating_add(5).saturating_add(1);
     let peek_len = fa.remain().min(full_needed);
     if peek_len < full_needed {
         return false;

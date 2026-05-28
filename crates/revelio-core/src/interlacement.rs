@@ -56,17 +56,17 @@ pub struct FieldTracker {
 
 impl FieldTracker {
     pub fn new() -> Self {
-        FieldTracker {
-            current_order: ScanOrder::Progressive,
-            ..Default::default()
-        }
+        FieldTracker { current_order: ScanOrder::Progressive, ..Default::default() }
     }
 
     /// Register a field and determine scan order from top/bottom ratio.
     pub fn feed_field(&mut self, is_top: bool) {
         self.field_count += 1;
-        if is_top { self.top_field_count += 1; }
-        else { self.bottom_field_count += 1; }
+        if is_top {
+            self.top_field_count += 1;
+        } else {
+            self.bottom_field_count += 1;
+        }
     }
 
     /// Register a progressive frame.
@@ -101,16 +101,19 @@ impl FieldTracker {
     }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_progressive() {
+    #[test]
+    fn test_progressive() {
         let mut ft = FieldTracker::new();
         ft.feed_progressive();
         ft.feed_progressive();
         assert_eq!(ft.infer_scan_order(), ScanOrder::Progressive);
         assert_eq!(ft.interlacement(), InterlacementMode::Ppf);
     }
-    #[test] fn test_tff() {
+    #[test]
+    fn test_tff() {
         let mut ft = FieldTracker::new();
         ft.feed_field(true);
         ft.feed_field(true);
@@ -118,7 +121,8 @@ impl FieldTracker {
         assert_eq!(ft.infer_scan_order(), ScanOrder::Tff);
         assert_eq!(ft.interlacement(), InterlacementMode::Tff);
     }
-    #[test] fn test_mixed() {
+    #[test]
+    fn test_mixed() {
         let mut ft = FieldTracker::new();
         ft.feed_field(true);
         ft.feed_field(false);

@@ -17,9 +17,8 @@
 
 use revelio_core::{FileAnalyze, StreamKind};
 
-const SAMPLE_RATE_TABLE: [u32; 13] = [
-    96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
-];
+const SAMPLE_RATE_TABLE: [u32; 13] =
+    [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
 
 /// Parse AAC (Advanced Audio Coding) ADTS stream.
 ///
@@ -114,13 +113,7 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
     if frame_count > 0 {
         fa.fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
         let frame_rate = (sample_rate as f64) / 1024.0;
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "FrameRate",
-            format!("{:.3}", frame_rate),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
     }
     fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
     fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);

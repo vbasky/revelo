@@ -7,5 +7,9 @@ repository.workspace = true
 [lib]
 name = "revelio_reader"
 path = "src/lib.rs"
+
+[lints]
+workspace = true
+
 [dependencies]
 revelio-core = { path = "../revelio-core" }

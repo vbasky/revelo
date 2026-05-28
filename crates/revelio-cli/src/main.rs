@@ -4,13 +4,12 @@ use std::path::Path;
 use std::process;
 use std::time::UNIX_EPOCH;
 
-use revelio_core::{fill_file_level_fields, FileAnalyze, FileLevelInfo};
+use revelio_core::computed_fields::fill_computed_fields;
 use revelio_core::multi_file::MultiFileLoader;
 use revelio_core::multi_file::find_duplicate_streams;
-use revelio_core::computed_fields::fill_computed_fields;
-use revelio_export::{to_xml, to_text, to_json};
+use revelio_core::{FileAnalyze, FileLevelInfo, fill_file_level_fields};
 use revelio_dispatcher::detect;
-
+use revelio_export::{to_json, to_text, to_xml};
 
 fn main() -> process::ExitCode {
     let mut args: Vec<String> = env::args().skip(1).collect();
@@ -21,31 +20,48 @@ fn main() -> process::ExitCode {
     let mut multi_file = false;
 
     args.retain(|a| {
-        if a == "--xml" { xml_mode = true; false }
-        else if a == "--json" { json_mode = true; false }
-        else if a.starts_with("--demux=") { demux_level = a[8..].to_string(); false }
-        else if a.starts_with("--trace=") { trace_level = a[8..].to_string(); false }
-        else if a == "--multi-file" { multi_file = true; false }
-        else { true }
+        if a == "--xml" {
+            xml_mode = true;
+            false
+        } else if a == "--json" {
+            json_mode = true;
+            false
+        } else if a.starts_with("--demux=") {
+            demux_level = a[8..].to_string();
+            false
+        } else if a.starts_with("--trace=") {
+            trace_level = a[8..].to_string();
+            false
+        } else if a == "--multi-file" {
+            multi_file = true;
+            false
+        } else {
+            true
+        }
     });
 
     if args.is_empty() {
         eprintln!("{}", include_str!("banner.txt"));
-        eprintln!("Usage: revelio [--xml|--json] <file-path>
+        eprintln!(
+            "Usage: revelio [--xml|--json] <file-path>
 Options:
   --xml         XML output
   --json        JSON output
   --multi-file  scan companion files (BDMV M2TS, sidecar subtitles)
   --demux=N     demux level: frame (default), container, elementary
   --trace=N     trace verbosity (0-9)
-");
+"
+        );
         return process::ExitCode::SUCCESS;
     }
 
     let path = &args[0];
     let bytes = match fs::read(path) {
         Ok(b) => b,
-        Err(e) => { eprintln!("{path}: {e}"); return process::ExitCode::from(1); }
+        Err(e) => {
+            eprintln!("{path}: {e}");
+            return process::ExitCode::from(1);
+        }
     };
 
     let metadata = fs::metadata(path).ok();
@@ -88,7 +104,7 @@ Options:
             // Fill the derived General-stream fields (FileSize,
             // OverallBitRate, Duration, FileExtension, dates, container
             // StreamSize overhead) that aren't readable from the media
-            // bytes alone — shared with the diff harness via core.
+            // bytes alone — shared with revelio-diff via core.
             let modified_unix_secs = metadata
                 .as_ref()
                 .and_then(|m| m.modified().ok())

@@ -24,7 +24,7 @@
 //!   ... plus more fields and 32-byte channel settings.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int8u};
+use zenlib::{Int8u, Int16u};
 
 const HEADER_MIN_BYTES: usize = 96;
 const SCRM_OFFSET: usize = 0x2C;
@@ -104,12 +104,7 @@ pub fn parse_scream_tracker3(fa: &mut FileAnalyze) -> bool {
     // (Scream Tracker family); other trackers (Impulse Tracker, etc.)
     // also write S3M but with different signatures.
     if (sw_major & 0xF0) == 0x10 {
-        let app = format!(
-            "Scream Tracker {}.{}{}",
-            sw_major,
-            sw_minor / 16,
-            sw_minor % 16
-        );
+        let app = format!("Scream Tracker {}.{}{}", sw_major, sw_minor / 16, sw_minor % 16);
         fa.fill(StreamKind::General, 0, "Encoded_Application", app, false);
     }
     fa.fill(StreamKind::General, 0, "BPM", initial_tempo.to_string(), false);
@@ -147,9 +142,9 @@ mod tests {
         let mut buf = Vec::new();
         buf.extend_from_slice(song_name);
         buf.push(0x1A); // sentinel at offset 28
-        buf.push(16);   // Type
-        buf.push(0);    // Unknown
-        buf.push(0);    // Unknown
+        buf.push(16); // Type
+        buf.push(0); // Unknown
+        buf.push(0); // Unknown
         buf.extend_from_slice(&ord_num.to_le_bytes());
         buf.extend_from_slice(&ins_num.to_le_bytes());
         buf.extend_from_slice(&pat_num.to_le_bytes());
@@ -157,18 +152,18 @@ mod tests {
         buf.push(sw_major);
         buf.push(sw_minor);
         buf.extend_from_slice(&0u16.to_le_bytes()); // File format info
-        buf.extend_from_slice(b"SCRM");             // signature at 0x2C (44)
-        buf.push(64);                                // global volume
-        buf.push(6);                                 // initial speed
-        buf.push(initial_tempo);                     // initial tempo
-        buf.push(48);                                // master volume
-        buf.push(16);                                // ultra click removal
-        buf.push(252);                               // default channel pan
+        buf.extend_from_slice(b"SCRM"); // signature at 0x2C (44)
+        buf.push(64); // global volume
+        buf.push(6); // initial speed
+        buf.push(initial_tempo); // initial tempo
+        buf.push(48); // master volume
+        buf.push(16); // ultra click removal
+        buf.push(252); // default channel pan
         for _ in 0..8 {
             buf.push(0);
         }
         buf.extend_from_slice(&0u16.to_le_bytes()); // Special
-        buf.extend_from_slice(&[255u8; 32]);        // Channel settings
+        buf.extend_from_slice(&[255u8; 32]); // Channel settings
         assert_eq!(buf.len(), 96);
         // Variable tail: orders + instruments(*2) + patterns(*2).
         buf.resize(buf.len() + ord_num as usize + ins_num as usize * 2 + pat_num as usize * 2, 0);

@@ -16,13 +16,27 @@ fn field_val(sc: &StreamCollection, kind: StreamKind, pos: usize, key: &str) -> 
 fn fill_bits_pixel_frame(sc: &mut StreamCollection) {
     let n = sc.count_get(StreamKind::Video);
     for i in 0..n {
-        let w: f64 = field_val(sc, StreamKind::Video, i, "Width").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-        let h: f64 = field_val(sc, StreamKind::Video, i, "Height").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-        let fr: f64 = field_val(sc, StreamKind::Video, i, "FrameRate").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-        let br: f64 = field_val(sc, StreamKind::Video, i, "BitRate").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let w: f64 = field_val(sc, StreamKind::Video, i, "Width")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0);
+        let h: f64 = field_val(sc, StreamKind::Video, i, "Height")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0);
+        let fr: f64 = field_val(sc, StreamKind::Video, i, "FrameRate")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0);
+        let br: f64 = field_val(sc, StreamKind::Video, i, "BitRate")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0);
         if w > 0.0 && h > 0.0 && fr > 0.0 && br > 0.0 {
             let bpp = br / (w * h * fr);
-            sc.fill(StreamKind::Video, i, "Bits_Pixel_Frame", Ztring::from(format!("{:.3}", bpp)), false);
+            sc.fill(
+                StreamKind::Video,
+                i,
+                "Bits_Pixel_Frame",
+                Ztring::from(format!("{:.3}", bpp)),
+                false,
+            );
         }
     }
 }
@@ -31,21 +45,35 @@ fn fill_compression_ratio(sc: &mut StreamCollection) {
     for kind in &[StreamKind::Video, StreamKind::Audio] {
         let n = sc.count_get(*kind);
         for i in 0..n {
-            let stream_size: u64 = field_val(sc, *kind, i, "StreamSize").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let dur_s: f64 = field_val(sc, *kind, i, "Duration").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-            let channels: u64 = field_val(sc, *kind, i, "Channels").and_then(|v| v.parse().ok()).unwrap_or(1);
-            let bit_depth: u64 = field_val(sc, *kind, i, "BitDepth").and_then(|v| v.parse().ok()).unwrap_or(8);
-            let sr: u64 = field_val(sc, *kind, i, "SamplingRate").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let stream_size: u64 =
+                field_val(sc, *kind, i, "StreamSize").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let dur_s: f64 =
+                field_val(sc, *kind, i, "Duration").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            let channels: u64 =
+                field_val(sc, *kind, i, "Channels").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let bit_depth: u64 =
+                field_val(sc, *kind, i, "BitDepth").and_then(|v| v.parse().ok()).unwrap_or(8);
+            let sr: u64 =
+                field_val(sc, *kind, i, "SamplingRate").and_then(|v| v.parse().ok()).unwrap_or(0);
             let is_audio = matches!(kind, StreamKind::Audio);
             let uncompressed: u64 = if is_audio && sr > 0 && dur_s > 0.0 {
                 (channels * sr * bit_depth * (dur_s * 1000.0) as u64) / 8 / 1000
             } else if dur_s > 0.0 {
-                let br: u64 = field_val(sc, *kind, i, "BitRate").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let br: u64 =
+                    field_val(sc, *kind, i, "BitRate").and_then(|v| v.parse().ok()).unwrap_or(0);
                 if br > 0 { (br * (dur_s * 1000.0) as u64) / 8 / 1000 } else { 0 }
-            } else { 0 };
+            } else {
+                0
+            };
             if stream_size > 0 && uncompressed > 0 {
                 let ratio = uncompressed as f64 / stream_size as f64;
-                sc.fill(*kind, i, "Compression_Ratio", Ztring::from(format!("{:.3}", ratio)), false);
+                sc.fill(
+                    *kind,
+                    i,
+                    "Compression_Ratio",
+                    Ztring::from(format!("{:.3}", ratio)),
+                    false,
+                );
             }
         }
     }
@@ -61,25 +89,45 @@ fn fill_bitrate_ranges(sc: &mut StreamCollection) {
         let n = sc.count_get(*kind);
         for i in 0..n {
             if let Some(max_str) = field_val(sc, *kind, i, "BitRate_Maximum")
-                && let Ok(v) = max_str.parse::<u64>() {
-                    overall_max += v;
-                }
+                && let Ok(v) = max_str.parse::<u64>()
+            {
+                overall_max += v;
+            }
             if let Some(br_str) = field_val(sc, *kind, i, "BitRate")
                 && let Ok(v) = br_str.parse::<u64>()
-                    && v < overall_min { overall_min = v; }
+                && v < overall_min
+            {
+                overall_min = v;
+            }
             // Fill BitRate_Minimum if empty
             if field_val(sc, *kind, i, "BitRate_Minimum").is_none()
                 && let Some(br_str) = field_val(sc, *kind, i, "BitRate")
-                    && let Ok(v) = br_str.parse::<u64>() {
-                        sc.fill(*kind, i, "BitRate_Minimum", Ztring::from(format!("{}", v / 2)), false);
-                    }
+                && let Ok(v) = br_str.parse::<u64>()
+            {
+                sc.fill(*kind, i, "BitRate_Minimum", Ztring::from(format!("{}", v / 2)), false);
+            }
         }
     }
-    if overall_max > 0 && field_val(sc, StreamKind::General, 0, "OverallBitRate_Maximum").is_none() {
-        sc.fill(StreamKind::General, 0, "OverallBitRate_Maximum", Ztring::from(format!("{}", overall_max)), false);
+    if overall_max > 0 && field_val(sc, StreamKind::General, 0, "OverallBitRate_Maximum").is_none()
+    {
+        sc.fill(
+            StreamKind::General,
+            0,
+            "OverallBitRate_Maximum",
+            Ztring::from(format!("{}", overall_max)),
+            false,
+        );
     }
-    if overall_min < u64::MAX && field_val(sc, StreamKind::General, 0, "OverallBitRate_Minimum").is_none() {
-        sc.fill(StreamKind::General, 0, "OverallBitRate_Minimum", Ztring::from(format!("{}", overall_min)), false);
+    if overall_min < u64::MAX
+        && field_val(sc, StreamKind::General, 0, "OverallBitRate_Minimum").is_none()
+    {
+        sc.fill(
+            StreamKind::General,
+            0,
+            "OverallBitRate_Minimum",
+            Ztring::from(format!("{}", overall_min)),
+            false,
+        );
     }
 }
 
@@ -109,9 +157,11 @@ fn fill_frame_rate_mode_original(sc: &mut StreamCollection) {
     }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_bpp() {
+    #[test]
+    fn test_bpp() {
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Video);
         sc.fill(StreamKind::Video, 0, "Width", Ztring::from("1920"), false);
@@ -121,7 +171,8 @@ fn fill_frame_rate_mode_original(sc: &mut StreamCollection) {
         fill_computed_fields(&mut sc);
         assert_eq!(field_val(&sc, StreamKind::Video, 0, "Bits_Pixel_Frame").unwrap(), "0.096");
     }
-    #[test] fn test_compression_ratio() {
+    #[test]
+    fn test_compression_ratio() {
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Audio);
         sc.fill(StreamKind::Audio, 0, "StreamSize", Ztring::from("1000"), false);
@@ -132,12 +183,16 @@ fn fill_frame_rate_mode_original(sc: &mut StreamCollection) {
         fill_computed_fields(&mut sc);
         assert!(field_val(&sc, StreamKind::Audio, 0, "Compression_Ratio").is_some());
     }
-    #[test] fn test_format_profile_general() {
+    #[test]
+    fn test_format_profile_general() {
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::General);
         sc.fill(StreamKind::General, 0, "Format", Ztring::from("MPEG-4"), false);
         sc.fill(StreamKind::General, 0, "CodecID", Ztring::from("mp42"), false);
         fill_computed_fields(&mut sc);
-        assert_eq!(field_val(&sc, StreamKind::General, 0, "Format_Profile").unwrap(), "Base Media / Version 2");
+        assert_eq!(
+            field_val(&sc, StreamKind::General, 0, "Format_Profile").unwrap(),
+            "Base Media / Version 2"
+        );
     }
 }

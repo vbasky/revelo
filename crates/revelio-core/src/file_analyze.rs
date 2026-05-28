@@ -13,11 +13,15 @@
 //! advances the position. If the read would overrun, the position is
 //! pinned at the end, the out-parameter is left zeroed, and `truncated()`
 //! returns true — matching the C++ flag-and-continue semantics.
+//!
+//! Parsers write results into the [`StreamCollection`] via [`fill`](FileAnalyze::fill),
+//! and optionally record parser trace nodes in the [`ElementTree`]. The
+//! [`StreamKind`] enum partitions fields by media type (General, Video, Audio, etc.).
 
 use crate::config::MediaConfig;
 use crate::element::ElementTree;
 use crate::stream::{StreamCollection, StreamKind};
-use zenlib::{Ztring, Float32, Float64, Float80, Int128u, Int16u, Int32u, Int64u, Int8u};
+use zenlib::{Float32, Float64, Float80, Int8u, Int16u, Int32u, Int64u, Int128u, Ztring};
 
 pub struct FileAnalyze<'a> {
     buffer: &'a [u8],
@@ -285,15 +289,33 @@ impl<'a> FileAnalyze<'a> {
     // Big-endian — Skip_B*
     // ----------------------------------------------------------------------
 
-    pub fn skip_b1(&mut self, _name: &str) { self.skip(1) }
-    pub fn skip_b2(&mut self, _name: &str) { self.skip(2) }
-    pub fn skip_b3(&mut self, _name: &str) { self.skip(3) }
-    pub fn skip_b4(&mut self, _name: &str) { self.skip(4) }
-    pub fn skip_b5(&mut self, _name: &str) { self.skip(5) }
-    pub fn skip_b6(&mut self, _name: &str) { self.skip(6) }
-    pub fn skip_b7(&mut self, _name: &str) { self.skip(7) }
-    pub fn skip_b8(&mut self, _name: &str) { self.skip(8) }
-    pub fn skip_b16(&mut self, _name: &str) { self.skip(16) }
+    pub fn skip_b1(&mut self, _name: &str) {
+        self.skip(1)
+    }
+    pub fn skip_b2(&mut self, _name: &str) {
+        self.skip(2)
+    }
+    pub fn skip_b3(&mut self, _name: &str) {
+        self.skip(3)
+    }
+    pub fn skip_b4(&mut self, _name: &str) {
+        self.skip(4)
+    }
+    pub fn skip_b5(&mut self, _name: &str) {
+        self.skip(5)
+    }
+    pub fn skip_b6(&mut self, _name: &str) {
+        self.skip(6)
+    }
+    pub fn skip_b7(&mut self, _name: &str) {
+        self.skip(7)
+    }
+    pub fn skip_b8(&mut self, _name: &str) {
+        self.skip(8)
+    }
+    pub fn skip_b16(&mut self, _name: &str) {
+        self.skip(16)
+    }
 
     pub fn skip_hexa(&mut self, bytes: usize, _name: &str) {
         self.skip(bytes);
@@ -457,15 +479,33 @@ impl<'a> FileAnalyze<'a> {
         *info = v;
     }
 
-    pub fn skip_l1(&mut self, _name: &str) { self.skip(1) }
-    pub fn skip_l2(&mut self, _name: &str) { self.skip(2) }
-    pub fn skip_l3(&mut self, _name: &str) { self.skip(3) }
-    pub fn skip_l4(&mut self, _name: &str) { self.skip(4) }
-    pub fn skip_l5(&mut self, _name: &str) { self.skip(5) }
-    pub fn skip_l6(&mut self, _name: &str) { self.skip(6) }
-    pub fn skip_l7(&mut self, _name: &str) { self.skip(7) }
-    pub fn skip_l8(&mut self, _name: &str) { self.skip(8) }
-    pub fn skip_l16(&mut self, _name: &str) { self.skip(16) }
+    pub fn skip_l1(&mut self, _name: &str) {
+        self.skip(1)
+    }
+    pub fn skip_l2(&mut self, _name: &str) {
+        self.skip(2)
+    }
+    pub fn skip_l3(&mut self, _name: &str) {
+        self.skip(3)
+    }
+    pub fn skip_l4(&mut self, _name: &str) {
+        self.skip(4)
+    }
+    pub fn skip_l5(&mut self, _name: &str) {
+        self.skip(5)
+    }
+    pub fn skip_l6(&mut self, _name: &str) {
+        self.skip(6)
+    }
+    pub fn skip_l7(&mut self, _name: &str) {
+        self.skip(7)
+    }
+    pub fn skip_l8(&mut self, _name: &str) {
+        self.skip(8)
+    }
+    pub fn skip_l16(&mut self, _name: &str) {
+        self.skip(16)
+    }
 
     // ----------------------------------------------------------------------
     // Floats — BF* (big-endian), LF* (little-endian)
@@ -549,11 +589,21 @@ impl<'a> FileAnalyze<'a> {
         }
     }
 
-    pub fn skip_bf4(&mut self, _name: &str) { self.skip(4) }
-    pub fn skip_bf8(&mut self, _name: &str) { self.skip(8) }
-    pub fn skip_bf10(&mut self, _name: &str) { self.skip(10) }
-    pub fn skip_lf4(&mut self, _name: &str) { self.skip(4) }
-    pub fn skip_lf8(&mut self, _name: &str) { self.skip(8) }
+    pub fn skip_bf4(&mut self, _name: &str) {
+        self.skip(4)
+    }
+    pub fn skip_bf8(&mut self, _name: &str) {
+        self.skip(8)
+    }
+    pub fn skip_bf10(&mut self, _name: &str) {
+        self.skip(10)
+    }
+    pub fn skip_lf4(&mut self, _name: &str) {
+        self.skip(4)
+    }
+    pub fn skip_lf8(&mut self, _name: &str) {
+        self.skip(8)
+    }
 
     // ----------------------------------------------------------------------
     // Bitstream mode — BS_Begin / Get_S* / BS_End
@@ -590,11 +640,8 @@ impl<'a> FileAnalyze<'a> {
 
         // Bytes required from current byte to satisfy `n` bits.
         let bits_in_current_byte = 8 - self.bs_bits_consumed;
-        let bytes_after_current = if n <= bits_in_current_byte {
-            0
-        } else {
-            (n - bits_in_current_byte).div_ceil(8)
-        };
+        let bytes_after_current =
+            if n <= bits_in_current_byte { 0 } else { (n - bits_in_current_byte).div_ceil(8) };
         let bytes_needed = 1 + bytes_after_current;
 
         if self.element_offset + bytes_needed > self.buffer.len() {
@@ -653,12 +700,24 @@ impl<'a> FileAnalyze<'a> {
         self.param(name, *info);
     }
 
-    pub fn skip_s1(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn skip_s2(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn skip_s3(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn skip_s4(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn skip_s5(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn skip_s8(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s1(&mut self, n: usize, _name: &str) {
+        self.read_bits_be(n);
+    }
+    pub fn skip_s2(&mut self, n: usize, _name: &str) {
+        self.read_bits_be(n);
+    }
+    pub fn skip_s3(&mut self, n: usize, _name: &str) {
+        self.read_bits_be(n);
+    }
+    pub fn skip_s4(&mut self, n: usize, _name: &str) {
+        self.read_bits_be(n);
+    }
+    pub fn skip_s5(&mut self, n: usize, _name: &str) {
+        self.read_bits_be(n);
+    }
+    pub fn skip_s8(&mut self, n: usize, _name: &str) {
+        self.read_bits_be(n);
+    }
 
     // ----------------------------------------------------------------------
     // 4CC / Character codes (Get_C4 is used everywhere for MP4 atoms, RIFF)
@@ -831,8 +890,8 @@ mod tests {
     fn get_l16_reads_uuid_little_endian() {
         // First 8 bytes form low 64 bits, last 8 bytes form high 64 bits.
         let buf: [u8; 16] = [
-            0xEF, 0xCD, 0xAB, 0x90, 0x78, 0x56, 0x34, 0x12,
-            0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11,
+            0xEF, 0xCD, 0xAB, 0x90, 0x78, 0x56, 0x34, 0x12, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33,
+            0x22, 0x11,
         ];
         let mut fa = FileAnalyze::new(&buf);
         let mut v: Int128u = 0;
@@ -944,14 +1003,14 @@ mod tests {
         ];
         let mut fa = FileAnalyze::new(&buf);
         fa.element_begin("moov");
-            fa.element_begin("mvhd");
-                let mut ver: Int8u = 0;
-                fa.get_b1(&mut ver, "Version");
-                let mut flags: Int32u = 0;
-                fa.get_b3(&mut flags, "Flags");
-            fa.element_end();
-            fa.element_begin("trak");
-            fa.element_end();
+        fa.element_begin("mvhd");
+        let mut ver: Int8u = 0;
+        fa.get_b1(&mut ver, "Version");
+        let mut flags: Int32u = 0;
+        fa.get_b3(&mut flags, "Flags");
+        fa.element_end();
+        fa.element_begin("trak");
+        fa.element_end();
         fa.element_end();
 
         let moov = &fa.tree().root().children[0];
@@ -991,10 +1050,7 @@ mod tests {
         let pos = fa.stream_prepare(StreamKind::Audio);
         fa.fill(StreamKind::Audio, pos, "Format", "FLAC", false);
         fa.fill(StreamKind::Audio, pos, "BitDepth", "24", false);
-        assert_eq!(
-            fa.retrieve(StreamKind::Audio, pos, "Format").map(|z| z.as_str()),
-            Some("FLAC")
-        );
+        assert_eq!(fa.retrieve(StreamKind::Audio, pos, "Format").map(|z| z.as_str()), Some("FLAC"));
         assert_eq!(fa.count_get(StreamKind::Audio), 1);
     }
 

@@ -14,7 +14,9 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
     while fa.remain() >= 4 {
         let mut code: u32 = 0;
         fa.peek_b4(&mut code);
-        if (code >> 8) != 0x000001 { break; }
+        if (code >> 8) != 0x000001 {
+            break;
+        }
 
         let start_code = (code & 0xFF) as u8;
 
@@ -30,13 +32,21 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
                     fa.stream_prepare(StreamKind::Video);
                     fa.fill(StreamKind::Video, 0, "Format", "MPEG-4 Visual", false);
                     let profile_str = match profile {
-                        0x01 => "Simple Profile", 0x02 => "Simple Scalable Profile",
-                        0x03 => "Core Profile", 0x04 => "Main Profile", 0x05 => "N-bit Profile",
-                        0x06 => "Scalable Texture Profile", 0x07 => "Simple Face Animation Profile",
-                        0x08 => "Simple FBA Profile", 0x09 => "Basic Animated Texture Profile",
-                        0x0A => "Hybrid Profile", 0x0B => "Advanced Real Time Simple Profile",
-                        0x0C => "Core Scalable Profile", 0x0D => "Advanced Coding Efficiency Profile",
-                        0x0E => "Advanced Core Profile", 0x0F => "Advanced Scalable Texture Profile",
+                        0x01 => "Simple Profile",
+                        0x02 => "Simple Scalable Profile",
+                        0x03 => "Core Profile",
+                        0x04 => "Main Profile",
+                        0x05 => "N-bit Profile",
+                        0x06 => "Scalable Texture Profile",
+                        0x07 => "Simple Face Animation Profile",
+                        0x08 => "Simple FBA Profile",
+                        0x09 => "Basic Animated Texture Profile",
+                        0x0A => "Hybrid Profile",
+                        0x0B => "Advanced Real Time Simple Profile",
+                        0x0C => "Core Scalable Profile",
+                        0x0D => "Advanced Coding Efficiency Profile",
+                        0x0E => "Advanced Core Profile",
+                        0x0F => "Advanced Scalable Texture Profile",
                         _ => "",
                     };
                     fa.fill(StreamKind::Video, 0, "Format_Profile", profile_str, false);
@@ -116,12 +126,20 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
 
                 fa.stream_prepare(StreamKind::Video);
                 fa.fill(StreamKind::Video, 0, "Format", "MPEG-4 Visual", false);
-                if width > 0 { fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false); }
-                if height > 0 { fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false); }
+                if width > 0 {
+                    fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
+                }
+                if height > 0 {
+                    fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
+                }
                 found = true;
             }
             _ => {
-                if start_code < 0xB0 || (start_code > 0xB7 && start_code != 0xB3 && !(0x20..=0x2F).contains(&start_code)) {
+                if start_code < 0xB0
+                    || (start_code > 0xB7
+                        && start_code != 0xB3
+                        && !(0x20..=0x2F).contains(&start_code))
+                {
                     break;
                 }
                 fa.skip_b4("start code");

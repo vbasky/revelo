@@ -54,7 +54,9 @@ mod tests {
 
     #[test]
     fn parses_xdcam_with_prolog() {
-        let mut fa = FileAnalyze::new(b"<?xml version=\"1.0\"?><NonRealTimeMeta><CreationDate/></NonRealTimeMeta>");
+        let mut fa = FileAnalyze::new(
+            b"<?xml version=\"1.0\"?><NonRealTimeMeta><CreationDate/></NonRealTimeMeta>",
+        );
         assert!(parse_xdcam_clip(&mut fa));
         assert_eq!(
             fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),

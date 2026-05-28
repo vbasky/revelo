@@ -51,14 +51,8 @@ pub fn parse_ism(fa: &mut FileAnalyze) -> bool {
     // Accept either the SMIL server manifest (`<smil>`) — which is what
     // the C++ parser uses — or the client Smooth Streaming manifest
     // (`<SmoothStreamingMedia>` / `<ism:SmoothStreamingMedia>`).
-    let candidates: &[&str] = &[
-        "<smil",
-        "<SmoothStreamingMedia",
-        "<ism:SmoothStreamingMedia",
-    ];
-    let rest = candidates
-        .iter()
-        .find_map(|tag| after_prolog.strip_prefix(*tag));
+    let candidates: &[&str] = &["<smil", "<SmoothStreamingMedia", "<ism:SmoothStreamingMedia"];
+    let rest = candidates.iter().find_map(|tag| after_prolog.strip_prefix(*tag));
     let Some(rest) = rest else {
         return false;
     };
@@ -111,9 +105,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_ism(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("ISM")
         );
     }
@@ -125,9 +117,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_ism(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("ISM")
         );
     }

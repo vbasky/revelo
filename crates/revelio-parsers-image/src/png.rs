@@ -19,6 +19,8 @@ use zenlib::Int32u;
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1A\n";
 
+/// Detection: 8-byte PNG signature (0x89 0x50 0x4E 0x47 …).
+/// Fills: IHDR (width, height, bit depth, color type), pHYs DPI, iTXt/tEXt metadata.
 pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(8);
     let Some(h) = head else { return false };
@@ -64,7 +66,7 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     let mut copyright: Option<String> = None;
     let mut creation_time: Option<String> = None;
     let mut comment: Option<String> = None;
-    
+
     while fa.remain() >= 12 {
         let mut len: Int32u = 0;
         fa.get_b4(&mut len, "chunk_length");
@@ -87,14 +89,16 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
             // Extract keywords from tEXt/iTXt for metadata fields.
             let payload = fa.read_raw(payload_len).to_vec();
             fa.skip_hexa(4, "crc");
-            
+
             // Parse tEXt chunk: keyword\0text
             if ty == u32::from_be_bytes(*b"tEXt") {
                 if let Some(nul) = payload.iter().position(|&b| b == 0) {
                     let key = String::from_utf8_lossy(&payload[..nul]).into_owned();
                     let val = String::from_utf8_lossy(&payload[nul + 1..]).into_owned();
                     match key.as_str() {
-                        "Software" if encoded_application.is_none() => encoded_application = Some(val),
+                        "Software" if encoded_application.is_none() => {
+                            encoded_application = Some(val)
+                        }
                         "Title" if title.is_none() => title = Some(val),
                         "Author" if author.is_none() => author = Some(val),
                         "Description" if description.is_none() => description = Some(val),
@@ -124,20 +128,23 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
                     }
                     // Skip translated_keyword
                     if pos < rest.len()
-                        && let Some(n) = rest[pos..].iter().position(|&b| b == 0) {
-                            pos += n + 1;
-                            let val = String::from_utf8_lossy(&rest[pos..]).into_owned();
-                            match key.as_str() {
-                                "Software" if encoded_application.is_none() => encoded_application = Some(val),
-                                "Title" if title.is_none() => title = Some(val),
-                                "Author" if author.is_none() => author = Some(val),
-                                "Description" if description.is_none() => description = Some(val),
-                                "Copyright" if copyright.is_none() => copyright = Some(val),
-                                "Creation Time" if creation_time.is_none() => creation_time = Some(val),
-                                "Comment" if comment.is_none() => comment = Some(val),
-                                _ => {}
+                        && let Some(n) = rest[pos..].iter().position(|&b| b == 0)
+                    {
+                        pos += n + 1;
+                        let val = String::from_utf8_lossy(&rest[pos..]).into_owned();
+                        match key.as_str() {
+                            "Software" if encoded_application.is_none() => {
+                                encoded_application = Some(val)
                             }
+                            "Title" if title.is_none() => title = Some(val),
+                            "Author" if author.is_none() => author = Some(val),
+                            "Description" if description.is_none() => description = Some(val),
+                            "Copyright" if copyright.is_none() => copyright = Some(val),
+                            "Creation Time" if creation_time.is_none() => creation_time = Some(val),
+                            "Comment" if comment.is_none() => comment = Some(val),
+                            _ => {}
                         }
+                    }
                 }
             }
             // zTXt is compressed text, skip for now
@@ -243,13 +250,7 @@ fn fill_streams(fa: &mut FileAnalyze, file_size: usize, meta: PngMeta) {
     fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
     if width > 0 && height > 0 {
         let dar = (width as f64) / (height as f64);
-        fa.fill(
-            StreamKind::Image,
-            0,
-            "DisplayAspectRatio",
-            format!("{:.3}", dar),
-            false,
-        );
+        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
     }
     let color_space = match color_type {
         0 => "Y",

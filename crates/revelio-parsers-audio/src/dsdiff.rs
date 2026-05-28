@@ -21,7 +21,7 @@
 //!   Chunk bodies are padded to even byte boundary (1-byte pad if size is odd).
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int64u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u, Int64u};
 
 const FOURCC_FRM8: Int32u = u32::from_be_bytes(*b"FRM8");
 const FOURCC_DSD_FORMTYPE: Int32u = u32::from_be_bytes(*b"DSD ");
@@ -103,11 +103,8 @@ fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
         fa.get_b8(&mut chunk_size, "ChunkSize");
 
         // Guard against malformed sizes that exceed the buffer.
-        let body_len = if (chunk_size as usize) > fa.remain() {
-            fa.remain()
-        } else {
-            chunk_size as usize
-        };
+        let body_len =
+            if (chunk_size as usize) > fa.remain() { fa.remain() } else { chunk_size as usize };
         let body_start = fa.element_offset();
         let body_end = body_start + body_len;
 
@@ -256,22 +253,10 @@ fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
         fa.fill(StreamKind::Audio, 0, "Format", fmt, false);
     }
     if info.sample_rate > 0 {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "SamplingRate",
-            info.sample_rate.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string(), false);
     }
     if info.num_channels > 0 {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "Channels",
-            info.num_channels.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "Channels", info.num_channels.to_string(), false);
     }
     // DSD is by construction 1-bit-per-sample-per-channel; this is the
     // defining property of Direct Stream Digital and the reason MediaInfo
@@ -281,13 +266,7 @@ fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
     fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
 
     if info.audio_stream_size > 0 {
-        fa.fill(
-            StreamKind::Audio,
-            0,
-            "StreamSize",
-            info.audio_stream_size.to_string(),
-            false,
-        );
+        fa.fill(StreamKind::Audio, 0, "StreamSize", info.audio_stream_size.to_string(), false);
     }
 
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);

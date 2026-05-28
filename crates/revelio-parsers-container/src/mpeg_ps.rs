@@ -23,6 +23,8 @@ use std::collections::BTreeSet;
 
 const PACK_SC: [u8; 4] = [0x00, 0x00, 0x01, 0xBA];
 
+/// Detection: Pack start code 0x000001BA or PES start codes.
+/// Fills: Video stream dimensions, aspect ratio, frame rate, MPEG-2 sequence headers.
 pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
     let total = fa.remain();
     let buf = match fa.peek_raw(total) {
@@ -67,9 +69,15 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
                     // MPEG_program_end_code — done.
                     break;
                 }
-                0xC0..=0xDF => { audio_ids.insert(sid); }
-                0xE0..=0xEF => { video_ids.insert(sid); }
-                0xBD => { private1_seen = true; }
+                0xC0..=0xDF => {
+                    audio_ids.insert(sid);
+                }
+                0xE0..=0xEF => {
+                    video_ids.insert(sid);
+                }
+                0xBD => {
+                    private1_seen = true;
+                }
                 _ => {}
             }
             // PES packet: skip past it using the declared length field.
@@ -102,25 +110,15 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
 
     // Sniff audio + video payloads before mutating fa (buf borrow
     // lives until here).
-    let audio_frames: Vec<Option<MpegAudioFrame>> = audio_ids
-        .iter()
-        .map(|sid| sniff_mpeg_audio(buf, *sid))
-        .collect();
-    let video_seqs: Vec<Option<Mpeg2SeqHeader>> = video_ids
-        .iter()
-        .map(|sid| sniff_mpeg2_sequence(buf, *sid))
-        .collect();
+    let audio_frames: Vec<Option<MpegAudioFrame>> =
+        audio_ids.iter().map(|sid| sniff_mpeg_audio(buf, *sid)).collect();
+    let video_seqs: Vec<Option<Mpeg2SeqHeader>> =
+        video_ids.iter().map(|sid| sniff_mpeg2_sequence(buf, *sid)).collect();
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "MPEG-PS", false);
     if !video_ids.is_empty() {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "VideoCount",
-            video_ids.len().to_string(),
-            false,
-        );
+        fa.fill(StreamKind::General, 0, "VideoCount", video_ids.len().to_string(), false);
     }
     let audio_count = audio_ids.len() + (if private1_seen { 1 } else { 0 });
     if audio_count > 0 {
@@ -181,14 +179,26 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
             fa.fill(StreamKind::Audio, pos, "Format_Version", mp.version_name, false);
             fa.fill(StreamKind::Audio, pos, "Format_Profile", mp.layer_name, false);
             fa.fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
-            fa.fill(StreamKind::Audio, pos, "BitRate", (mp.bitrate_kbps as u32 * 1000).to_string(), false);
+            fa.fill(
+                StreamKind::Audio,
+                pos,
+                "BitRate",
+                (mp.bitrate_kbps as u32 * 1000).to_string(),
+                false,
+            );
             fa.fill(StreamKind::Audio, pos, "Channels", mp.channels.to_string(), false);
             fa.fill(StreamKind::Audio, pos, "SamplingRate", mp.sample_rate.to_string(), false);
-            fa.fill(StreamKind::Audio, pos, "SamplesPerFrame", mp.samples_per_frame.to_string(), false);
+            fa.fill(
+                StreamKind::Audio,
+                pos,
+                "SamplesPerFrame",
+                mp.samples_per_frame.to_string(),
+                false,
+            );
             if mp.frame_count > 0 && mp.sample_rate > 0 {
                 let total_samples = mp.frame_count as u64 * mp.samples_per_frame as u64;
-                let dur_ms = (total_samples * 1000 + mp.sample_rate as u64 / 2)
-                    / mp.sample_rate as u64;
+                let dur_ms =
+                    (total_samples * 1000 + mp.sample_rate as u64 / 2) / mp.sample_rate as u64;
                 fa.fill(StreamKind::Audio, pos, "Duration", dur_ms.to_string(), false);
                 fa.fill(StreamKind::Audio, pos, "FrameCount", mp.frame_count.to_string(), false);
                 fa.fill(StreamKind::Audio, pos, "SamplingCount", total_samples.to_string(), false);
@@ -260,11 +270,8 @@ fn sniff_mpeg2_sequence(buf: &[u8], sid: u8) -> Option<Mpeg2SeqHeader> {
             continue;
         }
         let pes = &buf[i + 6..i + 6 + pes_len];
-        let pes_payload_off = if pes.len() >= 3 && (pes[0] & 0xC0) == 0x80 {
-            3 + pes[2] as usize
-        } else {
-            0
-        };
+        let pes_payload_off =
+            if pes.len() >= 3 && (pes[0] & 0xC0) == 0x80 { 3 + pes[2] as usize } else { 0 };
         if pes_payload_off < pes.len() {
             es.extend_from_slice(&pes[pes_payload_off..]);
         }
@@ -349,11 +356,8 @@ fn sniff_mpeg_audio(buf: &[u8], sid: u8) -> Option<MpegAudioFrame> {
             continue;
         }
         let pes = &buf[p + 6..p + 6 + pes_len];
-        let pes_payload_off = if pes.len() >= 3 && (pes[0] & 0xC0) == 0x80 {
-            3 + pes[2] as usize
-        } else {
-            0
-        };
+        let pes_payload_off =
+            if pes.len() >= 3 && (pes[0] & 0xC0) == 0x80 { 3 + pes[2] as usize } else { 0 };
         if pes_payload_off < pes.len() {
             es.extend_from_slice(&pes[pes_payload_off..]);
         }
@@ -372,10 +376,10 @@ fn sniff_mpeg_audio(buf: &[u8], sid: u8) -> Option<MpegAudioFrame> {
                 count += 1;
                 // Estimate frame size to skip ahead (avoid double-counting
                 // false syncs within the same frame).
-                let bytes_per_frame = (info.bitrate_kbps as usize * 1000
-                    * info.samples_per_frame as usize / 8)
-                    .checked_div(info.sample_rate as usize)
-                    .unwrap_or(0);
+                let bytes_per_frame =
+                    (info.bitrate_kbps as usize * 1000 * info.samples_per_frame as usize / 8)
+                        .checked_div(info.sample_rate as usize)
+                        .unwrap_or(0);
                 if bytes_per_frame >= 4 {
                     q += bytes_per_frame;
                 } else {
@@ -395,27 +399,25 @@ fn sniff_mpeg_audio(buf: &[u8], sid: u8) -> Option<MpegAudioFrame> {
 fn sniff_mpeg_audio_es(buf: &[u8]) -> Option<MpegAudioFrame> {
     const BITRATES: [[[u16; 16]; 4]; 4] = [
         // [version][layer][bitrate_idx]
-        [[0; 16]; 4],  // reserved version
-        [  // MPEG 2.5 (treated same as MPEG 2)
+        [[0; 16]; 4], // reserved version
+        [
+            // MPEG 2.5 (treated same as MPEG 2)
             [0; 16],
-            [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],   // Layer 3
-            [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],   // Layer 2
+            [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0], // Layer 3
+            [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0], // Layer 2
             [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0], // Layer 1
         ],
-        [[0; 16]; 4],  // reserved layer
-        [  // MPEG 1
+        [[0; 16]; 4], // reserved layer
+        [
+            // MPEG 1
             [0; 16],
-            [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],  // Layer 3
-            [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],  // Layer 2
-            [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0],  // Layer 1
+            [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0], // Layer 3
+            [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0], // Layer 2
+            [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0], // Layer 1
         ],
     ];
-    const SAMPLE_RATES: [[u32; 4]; 4] = [
-        [11025, 12000, 8000, 0],
-        [0, 0, 0, 0],
-        [22050, 24000, 16000, 0],
-        [44100, 48000, 32000, 0],
-    ];
+    const SAMPLE_RATES: [[u32; 4]; 4] =
+        [[11025, 12000, 8000, 0], [0, 0, 0, 0], [22050, 24000, 16000, 0], [44100, 48000, 32000, 0]];
     // Scan for the first MPEG audio frame sync in the raw ES bytes.
     for j in 0..buf.len().saturating_sub(4) {
         if buf[j] != 0xFF || (buf[j + 1] & 0xE0) != 0xE0 {
@@ -435,8 +437,18 @@ fn sniff_mpeg_audio_es(buf: &[u8]) -> Option<MpegAudioFrame> {
             continue;
         }
         let channels: u8 = if channel_mode == 3 { 1 } else { 2 };
-        let version_name = match version { 3 => "1", 2 => "2", 0 => "2.5", _ => "" };
-        let layer_name = match layer { 3 => "Layer 1", 2 => "Layer 2", 1 => "Layer 3", _ => "" };
+        let version_name = match version {
+            3 => "1",
+            2 => "2",
+            0 => "2.5",
+            _ => "",
+        };
+        let layer_name = match layer {
+            3 => "Layer 1",
+            2 => "Layer 2",
+            1 => "Layer 3",
+            _ => "",
+        };
         let samples_per_frame: u16 = match (version, layer) {
             (3, 3) => 384,
             (3, _) => 1152,

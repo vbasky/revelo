@@ -84,9 +84,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_mi_xml(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("MediaInfo XML")
         );
     }

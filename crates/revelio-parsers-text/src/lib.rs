@@ -1,6 +1,7 @@
 //! Text/subtitle format parsers (SubRip, SSA/ASS, TTML, Kate, etc.).
 
 #![allow(non_snake_case)]
+#![deny(unsafe_code)]
 
 pub mod arib_std_b24_b37;
 pub use arib_std_b24_b37::parse_arib_std_b24_b37;
@@ -24,25 +25,24 @@ pub mod pgs;
 pub use pgs::parse_pgs;
 pub mod sub_rip;
 pub use sub_rip::parse_sub_rip;
-pub mod ttml;
-pub mod teletext;
-pub mod scc;
-pub mod timed_text;
-pub mod webvtt;
-pub mod pdf;
-pub mod sdp;
-pub mod pac;
 pub mod dtvcc_transport;
+pub mod pac;
+pub mod pdf;
+pub mod scc;
 pub mod scte20;
+pub mod sdp;
+pub mod teletext;
+pub mod timed_text;
+pub mod ttml;
+pub mod webvtt;
 
-pub use ttml::parse_ttml;
-pub use teletext::parse_teletext;
-pub use scc::parse_scc;
-pub use timed_text::parse_timed_text;
-pub use webvtt::parse_webvtt;
-pub use pdf::parse_pdf;
-pub use sdp::parse_sdp;
-pub use pac::parse_pac;
 pub use dtvcc_transport::parse_dtvcc_transport;
+pub use pac::parse_pac;
+pub use pdf::parse_pdf;
+pub use scc::parse_scc;
 pub use scte20::parse_scte20;
-
+pub use sdp::parse_sdp;
+pub use teletext::parse_teletext;
+pub use timed_text::parse_timed_text;
+pub use ttml::parse_ttml;
+pub use webvtt::parse_webvtt;

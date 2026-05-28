@@ -3,9 +3,10 @@
 //!
 //! On the C++ side this is `MediaInfo_Internal::Stream` indexed by
 //! `(stream_t, size_t)` (kind + position-within-kind) and stores parsed
-//! fields as `Ztring`. Output formatters (`Inform`, XML, JSON) walk this
-//! state to produce their results, so this is the canonical place every
-//! parser writes into.
+//! fields as [`Ztring`]. Output formatters (in the `revelio-export` crate)
+//! walk this state to produce XML, JSON, and text results, so this is the
+//! canonical place every parser writes into under the direction of a
+//! [`FileAnalyze`](super::FileAnalyze).
 
 use std::collections::BTreeMap;
 use zenlib::Ztring;
@@ -177,9 +178,7 @@ impl StreamCollection {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (StreamKind, usize, &Stream)> {
-        self.by_kind
-            .iter()
-            .flat_map(|(k, v)| v.iter().enumerate().map(move |(i, s)| (*k, i, s)))
+        self.by_kind.iter().flat_map(|(k, v)| v.iter().enumerate().map(move |(i, s)| (*k, i, s)))
     }
 }
 
@@ -204,10 +203,7 @@ mod tests {
         c.stream_prepare(StreamKind::Audio);
         c.fill(StreamKind::Audio, 0, "Format", "FLAC", false);
         c.fill(StreamKind::Audio, 0, "SamplingRate", "48000", false);
-        assert_eq!(
-            c.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()),
-            Some("FLAC")
-        );
+        assert_eq!(c.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()), Some("FLAC"));
         assert_eq!(
             c.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
             Some("48000")
@@ -220,10 +216,7 @@ mod tests {
         let mut c = StreamCollection::new();
         c.fill(StreamKind::General, 0, "Format", "MP4", false);
         c.fill(StreamKind::General, 0, "Format", "MOV", false);
-        assert_eq!(
-            c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
-            Some("MP4")
-        );
+        assert_eq!(c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()), Some("MP4"));
     }
 
     #[test]
@@ -231,10 +224,7 @@ mod tests {
         let mut c = StreamCollection::new();
         c.fill(StreamKind::General, 0, "Format", "MP4", false);
         c.fill(StreamKind::General, 0, "Format", "MOV", true);
-        assert_eq!(
-            c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
-            Some("MOV")
-        );
+        assert_eq!(c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()), Some("MOV"));
     }
 
     #[test]
@@ -242,10 +232,7 @@ mod tests {
         let mut c = StreamCollection::new();
         c.fill(StreamKind::Audio, 2, "Format", "AAC", false);
         assert_eq!(c.count_get(StreamKind::Audio), 3);
-        assert_eq!(
-            c.retrieve(StreamKind::Audio, 2, "Format").map(|z| z.as_str()),
-            Some("AAC")
-        );
+        assert_eq!(c.retrieve(StreamKind::Audio, 2, "Format").map(|z| z.as_str()), Some("AAC"));
         // The auto-created earlier streams are empty
         assert_eq!(c.retrieve(StreamKind::Audio, 0, "Format"), None);
     }

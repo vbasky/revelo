@@ -42,7 +42,10 @@ pub fn parse_dpx(fa: &mut FileAnalyze) -> bool {
     if h.len() < 32 {
         return false;
     }
-    let m0 = h[0]; let m1 = h[1]; let m2 = h[2]; let m3 = h[3];
+    let m0 = h[0];
+    let m1 = h[1];
+    let m2 = h[2];
+    let m3 = h[3];
     let (is_dpx, le) = match (m0, m1, m2, m3) {
         (b'S', b'D', b'P', b'X') => (true, false),
         (b'X', b'P', b'D', b'S') => (true, true),
@@ -80,7 +83,9 @@ pub fn parse_dpx(fa: &mut FileAnalyze) -> bool {
     let creator = if h.len() >= 260 {
         let s = String::from_utf8_lossy(&h[160..260]).trim_end_matches('\0').to_string();
         if s.is_empty() { None } else { Some(s) }
-    } else { None };
+    } else {
+        None
+    };
 
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "DPX", false);
@@ -151,28 +156,38 @@ fn format_version(raw: &str) -> String {
 }
 
 fn read_u16(buf: &[u8], off: usize, le: bool) -> u16 {
-    if off + 2 > buf.len() { return 0; }
-    if le { u16::from_le_bytes([buf[off], buf[off + 1]]) }
-    else  { u16::from_be_bytes([buf[off], buf[off + 1]]) }
+    if off + 2 > buf.len() {
+        return 0;
+    }
+    if le {
+        u16::from_le_bytes([buf[off], buf[off + 1]])
+    } else {
+        u16::from_be_bytes([buf[off], buf[off + 1]])
+    }
 }
 fn read_u32(buf: &[u8], off: usize, le: bool) -> u32 {
-    if off + 4 > buf.len() { return 0; }
-    if le { u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]) }
-    else  { u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]) }
+    if off + 4 > buf.len() {
+        return 0;
+    }
+    if le {
+        u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]])
+    } else {
+        u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]])
+    }
 }
 
 fn dpx_descriptor_color_space(d: u8) -> &'static str {
     // SMPTE 268M-2003 Annex C
     match d {
         0 => "User-defined",
-        1 => "Y",     // Red
-        2 => "Y",     // Green
-        3 => "Y",     // Blue
-        4 => "A",     // Alpha
-        6 => "Y",     // Luma
-        7 => "YUV",   // Cb
-        8 => "YUV",   // Cr
-        9 => "YUV",   // Depth
+        1 => "Y",   // Red
+        2 => "Y",   // Green
+        3 => "Y",   // Blue
+        4 => "A",   // Alpha
+        6 => "Y",   // Luma
+        7 => "YUV", // Cb
+        8 => "YUV", // Cr
+        9 => "YUV", // Depth
         50 => "RGB",
         51 => "RGBA",
         52 => "ABGR",

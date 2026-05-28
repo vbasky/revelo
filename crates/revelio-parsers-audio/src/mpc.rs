@@ -1,7 +1,7 @@
 //! Musepack SV7 (.mpc) parser — lossy perceptual audio codec.
 //!
 //! Mirrors MediaInfoLib's `File_Mpc.cpp` (SV7 path).
-//! Source: http://trac.musepack.net/trac/wiki/SV7Specification
+//! Source: <http://trac.musepack.net/trac/wiki/SV7Specification>
 //!
 //! Magic: "MP+" (3 bytes) followed by 1 byte whose low nibble == 7
 //!        (high nibble = PNS, low nibble = StreamVersion).
@@ -32,7 +32,7 @@
 //!   1 byte:   EncoderVersion     (e.g. 115 → "1.15")
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u};
 
 const HEADER_SIZE: u64 = 25;
 const SAMPLES_PER_FRAME: u64 = 1152;
@@ -256,14 +256,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mpc(&mut fa));
 
-        let g = |k: &str| {
-            fa.retrieve(StreamKind::General, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
-        let a = |k: &str| {
-            fa.retrieve(StreamKind::Audio, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Musepack"));
         assert_eq!(g("Format_Version").as_deref(), Some("Version 7"));
@@ -293,10 +287,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mpc(&mut fa));
 
-        let a = |k: &str| {
-            fa.retrieve(StreamKind::Audio, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
         // samples = 500*1152 = 576000; duration = 576000*1000/48000 = 12000
         assert_eq!(a("SamplingCount").as_deref(), Some("576000"));

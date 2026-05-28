@@ -31,10 +31,7 @@ pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str
         "<creatingLibrary version=\"{}\" url=\"https://mediaarea.net/MediaInfo\">MediaInfoLib</creatingLibrary>\n",
         xml_escape_attr(library_version)
     ));
-    out.push_str(&format!(
-        "<media ref=\"{}\">\n",
-        xml_escape_attr(file_path)
-    ));
+    out.push_str(&format!("<media ref=\"{}\">\n", xml_escape_attr(file_path)));
 
     for kind in [
         StreamKind::General,
@@ -127,9 +124,10 @@ fn push_field(out: &mut String, name: &str, raw_value: &str) {
 /// seconds with 3 fraction digits.
 pub(crate) fn render_field_value(name: &str, raw: &str) -> String {
     if is_duration_field(name)
-        && let Ok(ms) = raw.parse::<i64>() {
-            return format_milliseconds_as_seconds(ms);
-        }
+        && let Ok(ms) = raw.parse::<i64>()
+    {
+        return format_milliseconds_as_seconds(ms);
+    }
     raw.to_owned()
 }
 
@@ -194,7 +192,9 @@ pub(crate) fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
             "Source_Delay",
             "Source_Delay_Source",
         ],
-        StreamKind::Image => &["FrameRate", "DPI", "Density_X", "Density_Y", "Density_Unit", "Density_String"],
+        StreamKind::Image => {
+            &["FrameRate", "DPI", "Density_X", "Density_Y", "Density_Unit", "Density_String"]
+        }
         // CodecConfigurationBox (avcC/hvcC/…) is emitted by the oracle as
         // the sole <extra> entry, after Encoded_Library*, not as a regular
         // field.
@@ -529,10 +529,8 @@ mod tests {
         let audio_section = xml.split("<track type=\"Audio\">").nth(1).unwrap();
         let audio_section = audio_section.split("</track>").next().unwrap();
 
-        let lines: Vec<&str> = audio_section
-            .lines()
-            .filter(|l| l.contains('<') && !l.is_empty())
-            .collect();
+        let lines: Vec<&str> =
+            audio_section.lines().filter(|l| l.contains('<') && !l.is_empty()).collect();
 
         let names: Vec<String> = lines
             .iter()

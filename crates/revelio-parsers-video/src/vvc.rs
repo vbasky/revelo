@@ -2,10 +2,10 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 // NAL unit types for VVC
 #[allow(dead_code)]
-const NAL_VPS: u8 = 14;   // Video Parameter Set
-const NAL_SPS: u8 = 15;   // Sequence Parameter Set
+const NAL_VPS: u8 = 14; // Video Parameter Set
+const NAL_SPS: u8 = 15; // Sequence Parameter Set
 #[allow(dead_code)]
-const NAL_PPS: u8 = 16;   // Picture Parameter Set
+const NAL_PPS: u8 = 16; // Picture Parameter Set
 #[allow(dead_code)]
 const NAL_IDR_W_RADL: u8 = 19;
 #[allow(dead_code)]
@@ -45,7 +45,8 @@ pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
     let mut sps_info: Option<VvcInfo> = None;
 
     while let Some(start) = find_nal_start(&data, nal_offset) {
-        let start_len = if start + 3 < data.len() && data[start..start + 3] == [0, 0, 1] { 3 } else { 4 };
+        let start_len =
+            if start + 3 < data.len() && data[start..start + 3] == [0, 0, 1] { 3 } else { 4 };
         let nal_start = start + start_len;
         nal_offset = nal_start;
 
@@ -71,13 +72,16 @@ pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
 
         let header = nal_unit[0];
         let nal_type = header >> 3;
-        let nuh_layer_id = ((header & 0x07) << 3) | ((nal_unit.get(1).copied().unwrap_or(0) >> 5) & 0x07);
+        let nuh_layer_id =
+            ((header & 0x07) << 3) | ((nal_unit.get(1).copied().unwrap_or(0) >> 5) & 0x07);
 
-        if nal_type == NAL_SPS && nuh_layer_id == 0
-            && let Some(info) = parse_sps(nal_unit) {
-                sps_info = Some(info);
-                break;
-            }
+        if nal_type == NAL_SPS
+            && nuh_layer_id == 0
+            && let Some(info) = parse_sps(nal_unit)
+        {
+            sps_info = Some(info);
+            break;
+        }
 
         nal_offset = nal_end;
     }
@@ -100,7 +104,10 @@ fn is_nal_start(data: &[u8]) -> bool {
 fn find_nal_start(data: &[u8], from: usize) -> Option<usize> {
     let mut i = from;
     while i + 3 <= data.len() {
-        if data[i] == 0 && data[i + 1] == 0 && (data[i + 2] == 1 || (i + 4 <= data.len() && data[i + 2] == 0 && data[i + 3] == 1)) {
+        if data[i] == 0
+            && data[i + 1] == 0
+            && (data[i + 2] == 1 || (i + 4 <= data.len() && data[i + 2] == 0 && data[i + 3] == 1))
+        {
             return Some(i);
         }
         i += 1;
@@ -124,11 +131,8 @@ fn parse_sps(sps_nal: &[u8]) -> Option<VvcInfo> {
     let max_sublayers = read_bits(&data, &mut offset, 3)?;
     read_bits(&data, &mut offset, 2)?; // sps_chroma_format_idc
 
-    let chroma_format_idc = if max_sublayers > 0 {
-        read_bits(&data, &mut offset, 2)? as u8
-    } else {
-        1u8
-    };
+    let chroma_format_idc =
+        if max_sublayers > 0 { read_bits(&data, &mut offset, 2)? as u8 } else { 1u8 };
 
     let bit_depth = match chroma_format_idc {
         0 => 8u8,

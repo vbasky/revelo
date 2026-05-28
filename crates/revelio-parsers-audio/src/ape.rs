@@ -41,7 +41,7 @@
 //!   uint32 LE  SampleRate
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int128u, Int16u, Int32u};
+use zenlib::{Int16u, Int32u, Int128u};
 
 const MAGIC_MAC_SPACE: u32 = u32::from_be_bytes(*b"MAC ");
 const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
@@ -81,11 +81,8 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
     let mut version: Int16u = 0;
     fa.get_l2(&mut version, "Version");
 
-    let header = if version < 3980 {
-        parse_legacy_header(fa, version)
-    } else {
-        parse_modern_header(fa)
-    };
+    let header =
+        if version < 3980 { parse_legacy_header(fa, version) } else { parse_modern_header(fa) };
     fa.element_end();
     let Some(h) = header else {
         return false;
@@ -205,13 +202,7 @@ fn fill_streams(
     h: &ApeHeader,
     samples: u64,
 ) {
-    let &ApeHeader {
-        compression_level,
-        channels,
-        resolution,
-        sample_rate,
-        ..
-    } = h;
+    let &ApeHeader { compression_level, channels, resolution, sample_rate, .. } = h;
     let duration_ms: u64 = samples * 1000 / (sample_rate as u64);
     let uncompressed_size: u64 = samples * (channels as u64) * (resolution as u64 / 8);
     let version_str = format!("{:.3}", (version as f64) / 1000.0);

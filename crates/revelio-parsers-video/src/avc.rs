@@ -162,9 +162,18 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
     let mut bit_depth_luma = 8u32;
     let mut bit_depth_chroma = 8u32;
 
-    if profile_idc == 100 || profile_idc == 110 || profile_idc == 122 || profile_idc == 244
-        || profile_idc == 44 || profile_idc == 83 || profile_idc == 86 || profile_idc == 118
-        || profile_idc == 128 || profile_idc == 138 || profile_idc == 139 || profile_idc == 134
+    if profile_idc == 100
+        || profile_idc == 110
+        || profile_idc == 122
+        || profile_idc == 244
+        || profile_idc == 44
+        || profile_idc == 83
+        || profile_idc == 86
+        || profile_idc == 118
+        || profile_idc == 128
+        || profile_idc == 138
+        || profile_idc == 139
+        || profile_idc == 134
     {
         chroma_format_idc = read_ue(&clean, &mut offset)?;
         if chroma_format_idc == 3 {
@@ -324,17 +333,16 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
     let pic_height_in_map_units = pic_height_in_map_units_minus1 + 1;
 
     let (crop_unit_x, crop_unit_y) = match chroma_format_idc {
-        0 => (1, 1),   // Monochrome
-        1 => (2, 2),   // 4:2:0
-        2 => (2, 1),   // 4:2:2
-        3 => (1, 1),   // 4:4:4
+        0 => (1, 1), // Monochrome
+        1 => (2, 2), // 4:2:0
+        2 => (2, 1), // 4:2:2
+        3 => (1, 1), // 4:4:4
         _ => (2, 2),
     };
 
     let width = pic_width_in_mbs * 16 - crop_unit_x * (crop_left + crop_right);
     let stored_height = pic_height_in_map_units * 16 * (2 - frame_mbs_only_flag);
-    let height = stored_height
-        - crop_unit_y * (2 - frame_mbs_only_flag) * (crop_top + crop_bottom);
+    let height = stored_height - crop_unit_y * (2 - frame_mbs_only_flag) * (crop_top + crop_bottom);
 
     let chroma_str = match chroma_format_idc {
         0 => 0,
@@ -402,11 +410,7 @@ fn profile_name(profile: u8) -> &'static str {
 fn level_name(level: u8) -> String {
     let major = level / 10;
     let minor = level % 10;
-    if minor == 0 {
-        format!("{major}")
-    } else {
-        format!("{major}.{minor}")
-    }
+    if minor == 0 { format!("{major}") } else { format!("{major}.{minor}") }
 }
 
 pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
@@ -429,22 +433,18 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
             // Drop the encoder's fps=/bitdepth= tokens (the oracle omits
             // them). Do NOT drop digit-leading tokens — "8x8dct=1" is a
             // real x264 option that begins with a digit.
-            let filtered: Vec<&str> = tokens.iter()
-                .filter(|t| {
-                    !t.is_empty()
-                    && !t.starts_with("fps=")
-                    && !t.starts_with("bitdepth=")
-                })
+            let filtered: Vec<&str> = tokens
+                .iter()
+                .filter(|t| !t.is_empty() && !t.starts_with("fps=") && !t.starts_with("bitdepth="))
                 .copied()
                 .collect();
             if !filtered.is_empty() {
                 settings = Some(filtered.join(" / "));
             }
         } else if segment_idx == 0 {
-            let cleaned: String = segment.chars()
-                .skip_while(|&c| (c as u32) < 0x30)
-                .collect();
-            let cleaned: String = cleaned.chars()
+            let cleaned: String = segment.chars().skip_while(|&c| (c as u32) < 0x30).collect();
+            let cleaned: String = cleaned
+                .chars()
                 .rev()
                 .skip_while(|&c| (c as u32) < 0x30)
                 .collect::<String>()
@@ -455,16 +455,16 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
             let first_word = cleaned.split_whitespace().next().unwrap_or(&cleaned);
             name = Some(first_word.to_owned());
         } else if segment_idx == 1
-            && (library.starts_with("x264") || library.starts_with("eavc") || library.starts_with("x265")) {
-                let cleaned = if let Some(pos) = segment.find(" 8bpp") {
-                    &segment[..pos]
-                } else {
-                    segment
-                };
-                library.push_str(" - ");
-                library.push_str(cleaned);
-                version = Some(cleaned.to_owned());
-            }
+            && (library.starts_with("x264")
+                || library.starts_with("eavc")
+                || library.starts_with("x265"))
+        {
+            let cleaned =
+                if let Some(pos) = segment.find(" 8bpp") { &segment[..pos] } else { segment };
+            library.push_str(" - ");
+            library.push_str(cleaned);
+            version = Some(cleaned.to_owned());
+        }
 
         cursor = segment_end;
         if sep.is_some() {
@@ -490,10 +490,14 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
 #[allow(dead_code)]
 fn parse_slice_type_from_nal(nal_unit: &[u8]) -> Option<u8> {
     let clean = remove_epb(nal_unit);
-    if clean.len() < 3 { return None; }
+    if clean.len() < 3 {
+        return None;
+    }
     let mut off = 8; // skip NAL header
     let first_mb = read_ue(&clean, &mut off)?;
-    if first_mb != 0 { return None; } // only parse first slice in frame
+    if first_mb != 0 {
+        return None;
+    } // only parse first slice in frame
     read_ue(&clean, &mut off)?; // slice_type
     None // placeholder — real impl reads Exp-Golomb coded slice_type
 }
@@ -502,12 +506,16 @@ fn parse_slice_type_from_nal(nal_unit: &[u8]) -> Option<u8> {
 /// Returns "M=X, N=Y" string or None if insufficient data.
 pub fn gop_detect(frame_types: &[u8]) -> Option<String> {
     let n = frame_types.len();
-    if n < 2 { return None; }
+    if n < 2 {
+        return None;
+    }
 
     // Find M: typical distance between P frames
     let mut p_positions = Vec::new();
     for (i, &t) in frame_types.iter().enumerate() {
-        if t == 1 { p_positions.push(i); } // P frame
+        if t == 1 {
+            p_positions.push(i);
+        } // P frame
     }
     let m = if p_positions.len() >= 2 {
         p_positions[1] - p_positions[0]
@@ -516,22 +524,22 @@ pub fn gop_detect(frame_types: &[u8]) -> Option<String> {
     } else {
         return None; // no P frames
     };
-    if m == 0 { return None; }
+    if m == 0 {
+        return None;
+    }
 
     // Find N: distance between IDR/I frames
     let mut i_positions = Vec::new();
     for (i, &t) in frame_types.iter().enumerate() {
-        if t == 2 { i_positions.push(i); } // I/IDR frame
+        if t == 2 {
+            i_positions.push(i);
+        } // I/IDR frame
     }
     if i_positions.len() < 2 {
         return Some(format!("M={m}"));
     }
     let gop_len = i_positions[1] - i_positions[0];
-    if gop_len > 0 {
-        Some(format!("M={m}, N={gop_len}"))
-    } else {
-        Some(format!("M={m}"))
-    }
+    if gop_len > 0 { Some(format!("M={m}, N={gop_len}")) } else { Some(format!("M={m}")) }
 }
 
 /// Parse AVC/H.264 (MPEG-4 Part 10) elementary stream.
@@ -572,7 +580,9 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 
     let mut nal_offset = 0usize;
     while let Some(start) = find_start_code(&data, nal_offset) {
-        let start_len = if start + 3 < data.len() && data[start..start + 4].starts_with(&ANNEX_B_START_CODE_LONG) {
+        let start_len = if start + 3 < data.len()
+            && data[start..start + 4].starts_with(&ANNEX_B_START_CODE_LONG)
+        {
             4
         } else {
             3
@@ -703,7 +713,13 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
 
     fa.fill(StreamKind::Video, 0, "FrameRate_Mode", "CFR", false);
     if info.frame_rate_num > 0 && info.frame_rate_den > 0 {
-        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", info.frame_rate_num as f64 / info.frame_rate_den as f64), false);
+        fa.fill(
+            StreamKind::Video,
+            0,
+            "FrameRate",
+            format!("{:.3}", info.frame_rate_num as f64 / info.frame_rate_den as f64),
+            false,
+        );
         fa.fill(StreamKind::Video, 0, "FrameRate_Num", info.frame_rate_num.to_string(), false);
         fa.fill(StreamKind::Video, 0, "FrameRate_Den", info.frame_rate_den.to_string(), false);
     }
@@ -725,7 +741,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     };
     fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
     fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
-    
+
     // Emit color information from VUI if present
     if info.colour_description_present {
         if let Some(primaries) = info.colour_primaries {
@@ -774,7 +790,13 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
                 _ => "Unknown",
             };
             if transfer > 0 {
-                fa.fill(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string(), false);
+                fa.fill(
+                    StreamKind::Video,
+                    0,
+                    "transfer_characteristics",
+                    transfer_str.to_string(),
+                    false,
+                );
             }
         }
         if let Some(matrix) = info.matrix_coefficients {
@@ -800,7 +822,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
             }
         }
     }
-    
+
     fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
 
     if let Some(ref enc) = info.encoder_string {
@@ -849,20 +871,28 @@ fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
     }
     let mut off = 0usize;
     // Skip NAL header
-    if clean.len() < 2 { return None; }
+    if clean.len() < 2 {
+        return None;
+    }
     read_bits(&clean, &mut off, 8)?; // nal_unit_header
 
     // Parse SEI messages
     loop {
-        if off >= clean.len() * 8 { break; }
+        if off >= clean.len() * 8 {
+            break;
+        }
 
         // Read payload_type (variable length, 0xFF terminated)
         let mut payload_type = 0u32;
         loop {
             let byte = read_bits(&clean, &mut off, 8)?;
             payload_type += byte;
-            if byte != 0xFF { break; }
-            if off >= clean.len() * 8 { return None; }
+            if byte != 0xFF {
+                break;
+            }
+            if off >= clean.len() * 8 {
+                return None;
+            }
         }
 
         // Read payload_size (variable length, 0xFF terminated)
@@ -870,8 +900,12 @@ fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
         loop {
             let byte = read_bits(&clean, &mut off, 8)?;
             payload_size += byte;
-            if byte != 0xFF { break; }
-            if off >= clean.len() * 8 { return None; }
+            if byte != 0xFF {
+                break;
+            }
+            if off >= clean.len() * 8 {
+                return None;
+            }
         }
 
         if payload_type == 5 {
@@ -965,9 +999,18 @@ mod tests {
         assert!(parse_avc(&mut fa));
 
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("AVC"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("Constrained Baseline"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("1.3"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Settings_CABAC").map(|z| z.as_str()), Some("No"));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()),
+            Some("Constrained Baseline")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()),
+            Some("1.3")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Settings_CABAC").map(|z| z.as_str()),
+            Some("No")
+        );
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("320"));
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("240"));
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
@@ -984,11 +1027,20 @@ mod tests {
         assert!(parse_avc(&mut fa));
 
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("AVC"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("High"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("3"));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()),
+            Some("High")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()),
+            Some("3")
+        );
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("640"));
         assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("480"));
-        assert_eq!(fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()), Some("4:2:0"));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()),
+            Some("4:2:0")
+        );
     }
 
     #[test]

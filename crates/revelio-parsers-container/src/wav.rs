@@ -13,12 +13,16 @@
 //!       (other chunks ignored)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int8u};
+use zenlib::{Int8u, Int16u, Int32u};
 
 const FOURCC_RIFF: Int32u = u32::from_be_bytes(*b"RIFF");
 const FOURCC_WAVE: Int32u = u32::from_be_bytes(*b"WAVE");
 const FOURCC_FMT: Int32u = u32::from_be_bytes(*b"fmt ");
 const FOURCC_DATA: Int32u = u32::from_be_bytes(*b"data");
+const FOURCC_BEXT: Int32u = u32::from_be_bytes(*b"bext");
+const FOURCC_IXML: Int32u = u32::from_be_bytes(*b"iXML");
+const FOURCC_AXML: Int32u = u32::from_be_bytes(*b"axml");
+const FOURCC_UMID: Int32u = u32::from_be_bytes(*b"umid");
 
 // Common WAVEFORMATEX format codes — only the ones we handle by name.
 const WAVE_FORMAT_PCM: Int16u = 0x0001;
@@ -36,6 +40,97 @@ struct FmtChunk {
     byte_rate: Int32u,
     block_align: Int16u,
     bits_per_sample: Int16u,
+}
+
+#[derive(Debug, Default)]
+struct BwfInfo {
+    description: Option<String>,
+    originator: Option<String>,
+    originator_ref: Option<String>,
+    origination_date: Option<String>,
+    origination_time: Option<String>,
+    time_reference: Option<u64>,
+    bwf_version: Option<u16>,
+    umid: Option<String>,
+    coding_history: Option<String>,
+    loudness_value: Option<i16>,
+    loudness_range: Option<i16>,
+    max_true_peak: Option<i16>,
+}
+
+fn read_padded_string(buf: &[u8], offset: usize, max_len: usize) -> Option<String> {
+    let end = offset.saturating_add(max_len).min(buf.len());
+    let slice = &buf[offset..end];
+    let up_to_null = slice.split(|&b| b == 0).next().unwrap_or(slice);
+    let s = std::str::from_utf8(up_to_null).ok()?;
+    let trimmed = s.trim_end_matches(' ');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+fn parse_bext_chunk(fa: &mut FileAnalyze, chunk_size: usize) -> BwfInfo {
+    let raw = fa.peek_raw(chunk_size).unwrap_or_default();
+    let mut info = BwfInfo::default();
+
+    if raw.len() < 256 {
+        return info;
+    }
+    info.description = read_padded_string(raw, 0, 256);
+    if raw.len() < 288 {
+        return info;
+    }
+    info.originator = read_padded_string(raw, 256, 32);
+    if raw.len() < 320 {
+        return info;
+    }
+    info.originator_ref = read_padded_string(raw, 288, 32);
+    if raw.len() < 340 {
+        return info;
+    }
+    info.origination_date = read_padded_string(raw, 320, 20);
+    info.origination_time = read_padded_string(raw, 340, 10);
+    if raw.len() < 358 {
+        return info;
+    }
+    let tr_low = u64::from(raw[350])
+        | u64::from(raw[351]) << 8
+        | u64::from(raw[352]) << 16
+        | u64::from(raw[353]) << 24;
+    let tr_high = u64::from(raw[354])
+        | u64::from(raw[355]) << 8
+        | u64::from(raw[356]) << 16
+        | u64::from(raw[357]) << 24;
+    info.time_reference = Some(tr_low | (tr_high << 32));
+    if raw.len() < 360 {
+        return info;
+    }
+    info.bwf_version = Some(u16::from(raw[358]) | u16::from(raw[359]) << 8);
+    if raw.len() < 424 {
+        return info;
+    }
+    let umid_bytes = &raw[360..424.min(raw.len())];
+    let hex: String = umid_bytes.iter().map(|b| format!("{:02X}", b)).collect();
+    if hex.chars().any(|c| c != '0') {
+        info.umid = Some(hex);
+    }
+    if raw.len() >= 428 {
+        info.loudness_value = Some(i16::from_le_bytes([raw[424], raw[425]]));
+    }
+    if raw.len() >= 430 {
+        info.loudness_range = Some(i16::from_le_bytes([raw[426], raw[427]]));
+    }
+    if raw.len() >= 432 {
+        info.max_true_peak = Some(i16::from_le_bytes([raw[428], raw[429]]));
+    }
+    if raw.len() > 602 {
+        let coding_start = 602usize.min(raw.len());
+        if coding_start < raw.len() {
+            info.coding_history = read_padded_string(raw, coding_start, raw.len() - coding_start);
+        }
+    }
+    info
 }
 
 /// Parse a WAV file buffer, filling the General and Audio streams on the
@@ -63,6 +158,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
 
     let mut fmt: Option<FmtChunk> = None;
     let mut data_size: u32 = 0;
+    let mut bwf: Option<BwfInfo> = None;
 
     while fa.remain() >= 8 {
         let mut chunk_id: Int32u = 0;
@@ -121,6 +217,43 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 }
                 fa.element_end();
             }
+            FOURCC_BEXT => {
+                fa.element_begin("bext");
+                bwf = Some(parse_bext_chunk(fa, chunk_size_usize));
+                fa.skip_hexa(chunk_size_usize, "BroadcastAudioExtension");
+                fa.element_end();
+            }
+            FOURCC_IXML => {
+                fa.element_begin("iXML");
+                if let Some(raw) = fa.peek_raw(chunk_size_usize) {
+                    if let Ok(xml) = std::str::from_utf8(raw) {
+                        let b = bwf.get_or_insert_with(BwfInfo::default);
+                        b.description = b.description.take().or_else(|| {
+                            let s = xml.trim().to_string();
+                            if s.is_empty() { None } else { Some(s) }
+                        });
+                    }
+                }
+                fa.skip_hexa(chunk_size_usize, "iXML");
+                fa.element_end();
+            }
+            FOURCC_AXML => {
+                fa.element_begin("axml");
+                fa.skip_hexa(chunk_size_usize, "ADMXML");
+                fa.element_end();
+            }
+            FOURCC_UMID => {
+                fa.element_begin("umid");
+                if let Some(raw) = fa.peek_raw(chunk_size_usize) {
+                    let hex: String = raw.iter().map(|b| format!("{:02X}", b)).collect();
+                    if hex.chars().any(|c| c != '0') {
+                        let b = bwf.get_or_insert_with(BwfInfo::default);
+                        b.umid = Some(hex);
+                    }
+                }
+                fa.skip_hexa(chunk_size_usize, "UMID");
+                fa.element_end();
+            }
             _ => {
                 // Unknown chunk — skip it, honoring word-alignment.
                 fa.skip_hexa(chunk_size_usize, "Unknown");
@@ -135,14 +268,14 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     fa.element_end();
 
     if let Some(fmt) = fmt {
-        fill_streams(fa, &fmt, data_size);
+        fill_streams(fa, &fmt, data_size, &bwf);
         true
     } else {
         false
     }
 }
 
-fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32) {
+fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Option<BwfInfo>) {
     fa.stream_prepare(StreamKind::General);
     fa.fill(StreamKind::General, 0, "Format", "Wave", false);
 
@@ -159,17 +292,12 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32) {
     if let Some(s) = sign {
         fa.fill(StreamKind::Audio, 0, "Format_Settings_Sign", s, false);
     }
-    fa.fill(
-        StreamKind::Audio,
-        0,
-        "CodecID",
-        fmt.audio_format.to_string(),
-        false,
-    );
+    fa.fill(StreamKind::Audio, 0, "CodecID", fmt.audio_format.to_string(), false);
 
     fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
 
-    let bitrate = (fmt.sample_rate as u64) * (fmt.num_channels as u64) * (fmt.bits_per_sample as u64);
+    let bitrate =
+        (fmt.sample_rate as u64) * (fmt.num_channels as u64) * (fmt.bits_per_sample as u64);
     if bitrate > 0 {
         fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
     }
@@ -190,16 +318,77 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32) {
     }
 
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+
+    if let Some(bwf) = bwf {
+        if bwf.description.is_some() || bwf.originator.is_some() {
+            fa.fill(StreamKind::General, 0, "Format_Commercial", "Broadcast Wave", false);
+        }
+        if let Some(ref d) = bwf.description {
+            fa.fill(StreamKind::General, 0, "Title", d.clone(), false);
+        }
+        if let Some(ref o) = bwf.originator {
+            fa.fill(StreamKind::General, 0, "Encoded_Library", o.clone(), false);
+        }
+        if let Some(ref r) = bwf.originator_ref {
+            fa.fill(StreamKind::General, 0, "Encoded_Library_Settings", r.clone(), false);
+        }
+        if let Some(ref d) = bwf.origination_date {
+            fa.fill(StreamKind::General, 0, "Recorded_Date", d.clone(), false);
+        }
+        if let Some(ref t) = bwf.origination_time {
+            fa.fill(StreamKind::General, 0, "Recorded_Time", t.clone(), false);
+        }
+        if let Some(tr) = bwf.time_reference {
+            fa.fill(StreamKind::General, 0, "TimeReference", tr.to_string(), false);
+        }
+        if let Some(v) = bwf.bwf_version {
+            fa.fill(StreamKind::General, 0, "Format_Version", v.to_string(), false);
+        }
+        if let Some(ref u) = bwf.umid {
+            fa.fill(StreamKind::General, 0, "UMID", u.clone(), false);
+        }
+        if let Some(lv) = bwf.loudness_value {
+            if lv != -32768 {
+                fa.fill(
+                    StreamKind::Audio,
+                    0,
+                    "Loudness_Value",
+                    format!("{:.1} LUFS", lv as f64 * 0.1),
+                    false,
+                );
+            }
+        }
+        if let Some(lr) = bwf.loudness_range {
+            if lr != -32768 {
+                fa.fill(
+                    StreamKind::Audio,
+                    0,
+                    "Loudness_Range",
+                    format!("{:.1} LU", lr as f64 * 0.1),
+                    false,
+                );
+            }
+        }
+        if let Some(pt) = bwf.max_true_peak {
+            if pt != -32768 {
+                fa.fill(
+                    StreamKind::Audio,
+                    0,
+                    "Loudness_MaxTruePeakLevel",
+                    format!("{:.1} dBTP", pt as f64 * 0.1),
+                    false,
+                );
+            }
+        }
+    }
 }
 
-fn wav_format_descriptors(fmt: &FmtChunk) -> (&'static str, Option<&'static str>, Option<&'static str>) {
+fn wav_format_descriptors(
+    fmt: &FmtChunk,
+) -> (&'static str, Option<&'static str>, Option<&'static str>) {
     match fmt.audio_format {
         WAVE_FORMAT_PCM => {
-            let sign = if fmt.bits_per_sample <= 8 {
-                Some("Unsigned")
-            } else {
-                Some("Signed")
-            };
+            let sign = if fmt.bits_per_sample <= 8 { Some("Unsigned") } else { Some("Signed") };
             ("PCM", Some("Little"), sign)
         }
         WAVE_FORMAT_IEEE_FLOAT => ("PCM", Some("Little"), Some("Signed")),
@@ -354,5 +543,116 @@ mod tests {
                 .as_deref(),
             Some("100")
         );
+    }
+
+    #[test]
+    fn parse_bwf_bext_chunk() {
+        fn make_bwf_wav() -> Vec<u8> {
+            let bext = {
+                let mut b = Vec::new();
+                let desc = b"My Test Recording\0";
+                b.extend_from_slice(desc);
+                b.resize(256, 0);
+                let orig = b"TestCorp\0";
+                b.extend_from_slice(orig);
+                b.resize(288, 0);
+                let refstr = b"TC-2024-001\0";
+                b.extend_from_slice(refstr);
+                b.resize(320, 0);
+                b.extend_from_slice(b"2024-03-15");
+                b.resize(340, 0);
+                b.extend_from_slice(b"10:30:00");
+                b.resize(350, 0);
+                b.extend_from_slice(&48000u64.to_le_bytes());
+                b.extend_from_slice(&1u16.to_le_bytes());
+                b.resize(424, 0);
+                b.extend_from_slice(&(-240i16).to_le_bytes());
+                b.extend_from_slice(&100i16.to_le_bytes());
+                b.extend_from_slice(&(-10i16).to_le_bytes());
+                b.resize(604, 0);
+                b.extend_from_slice(b"A=PCM,F=48000,W=16,M=stereo,T=TestCorp\0");
+                b
+            };
+            let data = vec![0u8; 48000 * 2];
+            let data_size = data.len() as u32;
+            let bext_size = bext.len() as u32;
+            let riff_size = 4
+                + 8
+                + 16
+                + 8
+                + bext_size
+                + 8
+                + data_size
+                + (if bext_size % 2 == 1 { 1 } else { 0 });
+            let mut buf = Vec::new();
+            buf.extend_from_slice(b"RIFF");
+            buf.extend_from_slice(&riff_size.to_le_bytes());
+            buf.extend_from_slice(b"WAVE");
+            buf.extend_from_slice(b"fmt ");
+            buf.extend_from_slice(&16u32.to_le_bytes());
+            buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+            buf.extend_from_slice(&1u16.to_le_bytes()); // mono
+            buf.extend_from_slice(&48000u32.to_le_bytes());
+            buf.extend_from_slice(&96000u32.to_le_bytes());
+            buf.extend_from_slice(&2u16.to_le_bytes()); // block align
+            buf.extend_from_slice(&16u16.to_le_bytes());
+            buf.extend_from_slice(b"bext");
+            buf.extend_from_slice(&bext_size.to_le_bytes());
+            buf.extend_from_slice(&bext);
+            if bext_size % 2 == 1 {
+                buf.push(0);
+            }
+            buf.extend_from_slice(b"data");
+            buf.extend_from_slice(&data_size.to_le_bytes());
+            buf.extend_from_slice(&data);
+            buf
+        }
+        let buf = make_bwf_wav();
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_wav(&mut fa));
+        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        assert_eq!(g("Format_Commercial").as_deref(), Some("Broadcast Wave"));
+        assert_eq!(g("Title").as_deref(), Some("My Test Recording"));
+        assert_eq!(g("Encoded_Library").as_deref(), Some("TestCorp"));
+        assert_eq!(g("Recorded_Date").as_deref(), Some("2024-03-15"));
+        assert_eq!(g("Recorded_Time").as_deref(), Some("10:30:00"));
+        assert_eq!(a("Loudness_Value").as_deref(), Some("-24.0 LUFS"));
+        assert_eq!(a("Loudness_Range").as_deref(), Some("10.0 LU"));
+        assert_eq!(a("Loudness_MaxTruePeakLevel").as_deref(), Some("-1.0 dBTP"));
+        assert_eq!(g("TimeReference").as_deref(), Some("48000"));
+        assert_eq!(g("Format_Version").as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn parse_bwf_ixml_chunk() {
+        let ixml =
+            br#"<?xml version="1.0"?><BWFXML><Description>Scene 5 Take 2</Description></BWFXML>"#;
+        let data = vec![0u8; 48000 * 2];
+        let data_size = data.len() as u32;
+        let ixml_size = ixml.len() as u32;
+        let riff_size = 4 + 8 + 16 + 8 + ixml_size + 8 + data_size;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&riff_size.to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&48000u32.to_le_bytes());
+        buf.extend_from_slice(&96000u32.to_le_bytes());
+        buf.extend_from_slice(&2u16.to_le_bytes());
+        buf.extend_from_slice(&16u16.to_le_bytes());
+        buf.extend_from_slice(b"iXML");
+        buf.extend_from_slice(&ixml_size.to_le_bytes());
+        buf.extend_from_slice(ixml);
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&data_size.to_le_bytes());
+        buf.extend_from_slice(&data);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_wav(&mut fa));
+        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
+        assert_eq!(g("Format_Commercial").as_deref(), Some("Broadcast Wave"));
     }
 }

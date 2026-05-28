@@ -116,7 +116,8 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
     }
 
     if has_default_tool != 0 && off + 4 <= full.len() {
-        let length = u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]) as usize;
+        let length =
+            u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]) as usize;
         off += 4;
         let take = length.min(full.len() - off);
         off += take;
@@ -124,7 +125,8 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
 
     let mut new_icon: Option<(u16, u16)> = None;
     if has_tool_types != 0 && off + 4 <= full.len() {
-        let count_field = u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]);
+        let count_field =
+            u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]);
         off += 4;
         if count_field >= 8 {
             let mut num_entries = count_field / 4 - 1;
@@ -136,22 +138,27 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
                 if full.len() - off < 4 {
                     break;
                 }
-                let length = u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]) as usize;
+                let length =
+                    u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]])
+                        as usize;
                 off += 4;
-                if new_icon.is_none() && length >= 5 && full.len() - off >= 4
-                    && &full[off..off + 4] == b"IM1=" {
-                        if length >= 9
-                            && full.len() - off >= 9
-                            && full[off + 5] >= 0x21
-                            && full[off + 6] >= 0x21
-                        {
-                            let w = (full[off + 5] - 0x21) as u16;
-                            let h = (full[off + 6] - 0x21) as u16;
-                            new_icon = Some((w, h));
-                        } else {
-                            new_icon = Some((0, 0));
-                        }
+                if new_icon.is_none()
+                    && length >= 5
+                    && full.len() - off >= 4
+                    && &full[off..off + 4] == b"IM1="
+                {
+                    if length >= 9
+                        && full.len() - off >= 9
+                        && full[off + 5] >= 0x21
+                        && full[off + 6] >= 0x21
+                    {
+                        let w = (full[off + 5] - 0x21) as u16;
+                        let h = (full[off + 6] - 0x21) as u16;
+                        new_icon = Some((w, h));
+                    } else {
+                        new_icon = Some((0, 0));
                     }
+                }
                 if length > full.len() - off {
                     break;
                 }
@@ -161,7 +168,8 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
     }
 
     if has_tool_window != 0 && off + 4 <= full.len() {
-        let length = u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]) as usize;
+        let length =
+            u32::from_be_bytes([full[off], full[off + 1], full[off + 2], full[off + 3]]) as usize;
         off += 4;
         let take = length.min(full.len() - off);
         off += take;
@@ -180,11 +188,13 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
                 && &full[search_pos + 8..search_pos + 12] == b"ICON"
             {
                 let mut p = search_pos + 4;
-                let form_size = u32::from_be_bytes([full[p], full[p + 1], full[p + 2], full[p + 3]]);
+                let form_size =
+                    u32::from_be_bytes([full[p], full[p + 1], full[p + 2], full[p + 3]]);
                 p += 4;
                 p += 4; // skip "ICON"
 
-                let form_end_raw = p as u64 + if form_size >= 4 { (form_size - 4) as u64 } else { 0 };
+                let form_end_raw =
+                    p as u64 + if form_size >= 4 { (form_size - 4) as u64 } else { 0 };
                 let form_end = (form_end_raw as usize).min(full.len());
 
                 let mut face_w: u16 = 0;
@@ -197,7 +207,8 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
                 while p <= form_end && form_end - p >= 8 && full.len() - p >= 8 {
                     let chunk_name = &full[p..p + 4];
                     p += 4;
-                    let chunk_size = u32::from_be_bytes([full[p], full[p + 1], full[p + 2], full[p + 3]]);
+                    let chunk_size =
+                        u32::from_be_bytes([full[p], full[p + 1], full[p + 2], full[p + 3]]);
                     p += 4;
 
                     if chunk_name == b"FACE" {
@@ -254,25 +265,30 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
     }
 
     if let Some((w, h, d)) = classic
-        && gadget_render != 0 && w > 0 && h > 0 {
-            let pos = fa.stream_prepare(StreamKind::Image);
-            fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
-            fa.fill(StreamKind::Image, pos, "Format_Profile", "Classic", false);
-            fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-            fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-            fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-            fa.fill(StreamKind::Image, pos, "BitDepth", d.to_string(), false);
-        }
+        && gadget_render != 0
+        && w > 0
+        && h > 0
+    {
+        let pos = fa.stream_prepare(StreamKind::Image);
+        fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
+        fa.fill(StreamKind::Image, pos, "Format_Profile", "Classic", false);
+        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
+        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "BitDepth", d.to_string(), false);
+    }
 
     if let Some((w, h)) = new_icon
-        && w > 0 && h > 0 {
-            let pos = fa.stream_prepare(StreamKind::Image);
-            fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
-            fa.fill(StreamKind::Image, pos, "Format_Profile", "NewIcon", false);
-            fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-            fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-            fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-        }
+        && w > 0
+        && h > 0
+    {
+        let pos = fa.stream_prepare(StreamKind::Image);
+        fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
+        fa.fill(StreamKind::Image, pos, "Format_Profile", "NewIcon", false);
+        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
+        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+    }
 
     if let Some((w, h, depth, fmt)) = glow {
         let pos = fa.stream_prepare(StreamKind::Image);

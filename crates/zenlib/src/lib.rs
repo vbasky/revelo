@@ -5,6 +5,7 @@
 //! convention to keep parser code visually close to the C++ original.
 
 #![allow(non_snake_case)]
+#![deny(unsafe_code)]
 
 pub mod bitstream;
 pub mod types;

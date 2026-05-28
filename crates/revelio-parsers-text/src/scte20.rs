@@ -6,7 +6,9 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_scte20(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 4 { return false; }
+    if buf.len() < 4 {
+        return false;
+    }
     if &buf[0..4] == b"SCTE" || &buf[0..4] == b"scte" {
         let pos = fa.stream_prepare(StreamKind::Text);
         fa.fill(StreamKind::Text, pos, "Format", "SCTE-20", false);
@@ -15,6 +17,13 @@ pub fn parse_scte20(fa: &mut FileAnalyze) -> bool {
     }
     false
 }
-#[cfg(test)] mod tests { use super::*;
-    #[test] fn test() { let buf = b"SCTE\x00\x00\x00\x00".to_vec(); let mut fa = FileAnalyze::new(&buf); assert!(parse_scte20(&mut fa)); }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test() {
+        let buf = b"SCTE\x00\x00\x00\x00".to_vec();
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_scte20(&mut fa));
+    }
 }

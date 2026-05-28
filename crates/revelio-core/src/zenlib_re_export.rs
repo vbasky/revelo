@@ -3,4 +3,4 @@
 //! file pulling in the full `zenlib` prelude.
 
 #[allow(unused_imports)]
-pub use zenlib::{Float32, Float64, Float80, Int128u, Int16u, Int32u, Int64u, Int8u};
+pub(crate) use zenlib::{Float32, Float64, Float80, Int8u, Int16u, Int32u, Int64u, Int128u};

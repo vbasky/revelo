@@ -51,9 +51,11 @@ impl ChannelGrouper {
     }
 }
 
-#[cfg(test)] mod tests {
+#[cfg(test)]
+mod tests {
     use super::*;
-    #[test] fn test_group_two_channels_16bit() {
+    #[test]
+    fn test_group_two_channels_16bit() {
         let mut grouper = ChannelGrouper::new(2, 16, 48000);
         grouper.feed_channel(0, &[0x00, 0x01]);
         grouper.feed_channel(1, &[0x00, 0x02]);

@@ -12,7 +12,7 @@ The differential harness diffs revelio's XML against the installed
 set-based and hides field-ordering / duplicate differences:
 
 ```sh
-cargo run --release -p diff-harness -- --strict /path/to/file
+cargo run --release -p revelio-diff -- --strict /path/to/file
 ```
 
 `BYTE-EQUAL N/N` means line-for-line identical. `M only in oracle, K only

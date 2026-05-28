@@ -105,9 +105,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dash_mpd(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("DASH MPD")
         );
     }
@@ -122,7 +120,8 @@ mod tests {
 
     #[test]
     fn rejects_xml_with_wrong_root_element() {
-        let xml = br#"<?xml version="1.0"?><manifest xmlns="http://ns.adobe.com/f4m/1.0"></manifest>"#;
+        let xml =
+            br#"<?xml version="1.0"?><manifest xmlns="http://ns.adobe.com/f4m/1.0"></manifest>"#;
         let mut fa = FileAnalyze::new(xml);
         assert!(!parse_dash_mpd(&mut fa));
     }

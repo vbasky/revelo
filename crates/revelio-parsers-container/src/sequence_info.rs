@@ -54,7 +54,9 @@ mod tests {
 
     #[test]
     fn parses_with_prolog() {
-        let mut fa = FileAnalyze::new(b"<?xml version=\"1.0\"?><SEQUENCEINFO><Frame n=\"1\"/></SEQUENCEINFO>");
+        let mut fa = FileAnalyze::new(
+            b"<?xml version=\"1.0\"?><SEQUENCEINFO><Frame n=\"1\"/></SEQUENCEINFO>",
+        );
         assert!(parse_sequence_info(&mut fa));
         assert_eq!(
             fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),

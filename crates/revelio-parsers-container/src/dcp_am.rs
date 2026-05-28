@@ -94,9 +94,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_am(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Format")
-                .map(|z| z.as_str().to_owned())
-                .as_deref(),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("DCP AM")
         );
         assert_eq!(
@@ -109,7 +107,8 @@ mod tests {
 
     #[test]
     fn parses_interop_assetmap_without_prolog() {
-        let xml = br#"<AssetMap xmlns="http://www.digicine.com/PROTO-ASDCP-AM-20040311#"></AssetMap>"#;
+        let xml =
+            br#"<AssetMap xmlns="http://www.digicine.com/PROTO-ASDCP-AM-20040311#"></AssetMap>"#;
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_am(&mut fa));
         assert_eq!(

@@ -51,22 +51,28 @@ const BITRATES_KBPS: [[[u16; 16]; 4]; 4] = [
 ];
 
 const SAMPLE_RATES: [[u32; 4]; 4] = [
-    [11025, 12000, 8000, 0], // MPEG 2.5
-    [0, 0, 0, 0],            // Reserved
+    [11025, 12000, 8000, 0],  // MPEG 2.5
+    [0, 0, 0, 0],             // Reserved
     [22050, 24000, 16000, 0], // MPEG 2
     [44100, 48000, 32000, 0], // MPEG 1
 ];
 
 const SAMPLES_PER_FRAME: [[u16; 4]; 4] = [
-    [0, 576, 1152, 384], // MPEG 2.5: Layer X, III, II, I
-    [0, 0, 0, 0],        // Reserved
-    [0, 576, 1152, 384], // MPEG 2
+    [0, 576, 1152, 384],  // MPEG 2.5: Layer X, III, II, I
+    [0, 0, 0, 0],         // Reserved
+    [0, 576, 1152, 384],  // MPEG 2
     [0, 1152, 1152, 384], // MPEG 1
 ];
 
 /// Coefficient × bitrate_kbps × 1000 / sample_rate = frame size in bytes
 /// (before padding). MPEG-1 Layer I needs special handling.
-fn frame_size_bytes(version: u8, layer: u8, bitrate_kbps: u16, sample_rate: u32, padding: u8) -> u32 {
+fn frame_size_bytes(
+    version: u8,
+    layer: u8,
+    bitrate_kbps: u16,
+    sample_rate: u32,
+    padding: u8,
+) -> u32 {
     if sample_rate == 0 || bitrate_kbps == 0 {
         return 0;
     }
@@ -231,18 +237,14 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // Read the first frame (info frame, if present) up front so we can
     // capture the magic + Xing/LAME fields without holding a borrow of
     // `fa` through the later mutable calls.
-    let first_frame_owned: Option<Vec<u8>> = fa
-        .peek_raw(first_header.frame_size as usize)
-        .map(|b| b.to_vec());
+    let first_frame_owned: Option<Vec<u8>> =
+        fa.peek_raw(first_header.frame_size as usize).map(|b| b.to_vec());
     let info_magic: Option<[u8; 4]> = first_frame_owned.as_ref().and_then(|b| {
         let off = info_magic_offset(first_header.version, first_header.channel_mode);
-        if b.len() >= off + 4 {
-            Some([b[off], b[off + 1], b[off + 2], b[off + 3]])
-        } else {
-            None
-        }
+        if b.len() >= off + 4 { Some([b[off], b[off + 1], b[off + 2], b[off + 3]]) } else { None }
     });
-    let is_info_frame = matches!(info_magic, Some(m) if &m == b"Xing" || &m == b"Info" || &m == b"VBRI");
+    let is_info_frame =
+        matches!(info_magic, Some(m) if &m == b"Xing" || &m == b"Info" || &m == b"VBRI");
     // LAME tag's nominal bitrate (1 byte at offset 20 from LAME magic,
     // which sits ~36 bytes after Xing/Info magic when all 4 flags set).
     // Also encoder delay+padding (3 bytes packed: 12 bits each).
@@ -365,11 +367,7 @@ fn parse_xing_lame(
     // delay = high 12 bits across bytes [0]+[1high4], padding = low 12 bits.
     let delay = (dp_byte0 << 4) | (dp_byte1 >> 4);
     let padding = ((dp_byte1 & 0x0F) << 8) | dp_byte2;
-    (
-        if nominal_kbps > 0 { Some(nominal_kbps) } else { None },
-        Some(delay),
-        Some(padding),
-    )
+    (if nominal_kbps > 0 { Some(nominal_kbps) } else { None }, Some(delay), Some(padding))
 }
 
 #[derive(Default, Debug)]
@@ -468,20 +466,27 @@ fn parse_id3v2(fa: &mut FileAnalyze) -> (usize, Option<Id3Metadata>) {
         let body = &full[body_pos..body_pos + frame_size];
         let value = decode_text_frame(id.as_str(), body);
         match id.as_str() {
-            "COMM" | "COM"
-                if md.comment.is_none() => { md.comment = value; }
-            "TIT2" | "TT2"
-                if md.title.is_none() => { md.title = value; }
-            "TPE1" | "TP1"
-                if md.performer.is_none() => { md.performer = value; }
-            "TALB" | "TAL"
-                if md.album.is_none() => { md.album = value; }
-            "TRCK" | "TRK"
-                if md.track.is_none() => { md.track = value; }
-            "TCON" | "TCO"
-                if md.genre.is_none() => { md.genre = value; }
-            "TDRC" | "TYER" | "TYE"
-                if md.year.is_none() => { md.year = value; }
+            "COMM" | "COM" if md.comment.is_none() => {
+                md.comment = value;
+            }
+            "TIT2" | "TT2" if md.title.is_none() => {
+                md.title = value;
+            }
+            "TPE1" | "TP1" if md.performer.is_none() => {
+                md.performer = value;
+            }
+            "TALB" | "TAL" if md.album.is_none() => {
+                md.album = value;
+            }
+            "TRCK" | "TRK" if md.track.is_none() => {
+                md.track = value;
+            }
+            "TCON" | "TCO" if md.genre.is_none() => {
+                md.genre = value;
+            }
+            "TDRC" | "TYER" | "TYE" if md.year.is_none() => {
+                md.year = value;
+            }
             _ => {}
         }
         p = body_pos + frame_size;
@@ -565,10 +570,8 @@ fn decode_text_with_encoding(encoding: u8, bytes: &[u8]) -> Option<String> {
         }
         // UTF-16BE (v2.4)
         2 => {
-            let u16s: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|c| u16::from_be_bytes([c[0], c[1]]))
-                .collect();
+            let u16s: Vec<u16> =
+                bytes.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
             String::from_utf16_lossy(&u16s)
         }
         // UTF-8 (v2.4)
@@ -577,7 +580,6 @@ fn decode_text_with_encoding(encoding: u8, bytes: &[u8]) -> Option<String> {
     let trimmed = s.trim_end_matches('\0').trim().to_owned();
     if trimmed.is_empty() { None } else { Some(trimmed) }
 }
-
 
 /// Scan frames sequentially from the current position, returning
 /// (frame_count, total_bytes_consumed, is_vbr). VBR is detected by
@@ -733,25 +735,12 @@ fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
         // General Duration = Audio.StreamSize * 8000 / BitRate_bps — gives a
         // round duration like 1.536s for a 24576-byte/128kbps stream, which
         // is what the oracle reports.
-        let general_duration_ms =
-            (audio_bytes_consumed * 8 * 1000) / (bitrate_bps as u64);
-        fa.fill(
-            StreamKind::General,
-            0,
-            "Duration",
-            general_duration_ms.to_string(),
-            true,
-        );
+        let general_duration_ms = (audio_bytes_consumed * 8 * 1000) / (bitrate_bps as u64);
+        fa.fill(StreamKind::General, 0, "Duration", general_duration_ms.to_string(), true);
         // OverallBitRate for CBR MPEG Audio is the audio bitrate itself —
         // the C++ side bypasses the FileSize/Duration computation in this
         // case. replace=true to override the harness fallback.
-        fa.fill(
-            StreamKind::General,
-            0,
-            "OverallBitRate",
-            bitrate_bps.to_string(),
-            true,
-        );
+        fa.fill(StreamKind::General, 0, "OverallBitRate", bitrate_bps.to_string(), true);
     }
     fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 }

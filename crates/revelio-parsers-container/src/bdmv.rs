@@ -90,10 +90,7 @@ mod tests {
         let buf = make_header(b"MPLS", b"0200");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bdmv(&mut fa));
-        let g = |k: &str| {
-            fa.retrieve(StreamKind::General, 0, k)
-                .map(|z| z.as_str().to_owned())
-        };
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("BDMV"));
         assert_eq!(g("Format_Profile").as_deref(), Some("PlayList"));
         assert_eq!(g("Format_Version").as_deref(), Some("02.00"));

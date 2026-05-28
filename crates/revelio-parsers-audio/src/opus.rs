@@ -80,7 +80,13 @@ fn fill_opus_streams(
     if channel_map == 0 || channel_map == 1 {
         let ch = channel_count as usize;
         if ch > 0 && ch <= 8 {
-            fa.fill(StreamKind::Audio, pos, "ChannelPositions", OPUS_CHANNEL_POSITIONS[ch - 1], false);
+            fa.fill(
+                StreamKind::Audio,
+                pos,
+                "ChannelPositions",
+                OPUS_CHANNEL_POSITIONS[ch - 1],
+                false,
+            );
             fa.fill(StreamKind::Audio, pos, "ChannelLayout", OPUS_CHANNEL_LAYOUT[ch - 1], false);
         }
     }
@@ -95,10 +101,14 @@ mod tests {
     fn opus_detects_header() {
         let mut buf = vec![0u8; 19];
         buf[0..8].copy_from_slice(b"OpusHead");
-        buf[8] = 1;  // version
-        buf[9] = 2;  // 2 channels (stereo)
-        buf[10] = 120; buf[11] = 0; // preskip LE
-        buf[12] = 0x80; buf[13] = 0xBB; buf[14] = 0; buf[15] = 0; // 48000 LE
+        buf[8] = 1; // version
+        buf[9] = 2; // 2 channels (stereo)
+        buf[10] = 120;
+        buf[11] = 0; // preskip LE
+        buf[12] = 0x80;
+        buf[13] = 0xBB;
+        buf[14] = 0;
+        buf[15] = 0; // 48000 LE
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_opus(&mut fa));

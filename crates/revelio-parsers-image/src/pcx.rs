@@ -26,11 +26,7 @@ pub fn parse_pcx(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(130);
     let Some(h) = head else { return false };
     // Validate the magic / version / encoding / bit-depth fields.
-    if h[0] != 0x0A
-        || h[1] > 0x05
-        || h[2] != 0x01
-        || !matches!(h[3], 1 | 4 | 8 | 24)
-    {
+    if h[0] != 0x0A || h[1] > 0x05 || h[2] != 0x01 || !matches!(h[3], 1 | 4 | 8 | 24) {
         return false;
     }
     let version = h[1];
@@ -66,13 +62,7 @@ pub fn parse_pcx(fa: &mut FileAnalyze) -> bool {
     fa.fill(StreamKind::Image, 0, "BitDepth", bits_per_pixel.to_string(), false);
     // PCX uses RLE (encoding byte = 1) — always lossless.
     fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(
-        StreamKind::Image,
-        0,
-        "DPI",
-        format!("{} x {}", vert_dpi, hor_dpi),
-        false,
-    );
+    fa.fill(StreamKind::Image, 0, "DPI", format!("{} x {}", vert_dpi, hor_dpi), false);
     true
 }
 
@@ -91,7 +81,14 @@ fn pcx_version_info(v: u8) -> &'static str {
 mod tests {
     use super::*;
 
-    fn build_pcx(version: u8, bits: u8, width: u16, height: u16, dpi_h: u16, dpi_v: u16) -> Vec<u8> {
+    fn build_pcx(
+        version: u8,
+        bits: u8,
+        width: u16,
+        height: u16,
+        dpi_h: u16,
+        dpi_v: u16,
+    ) -> Vec<u8> {
         let mut buf = vec![0u8; 130];
         buf[0] = 0x0A;
         buf[1] = version;

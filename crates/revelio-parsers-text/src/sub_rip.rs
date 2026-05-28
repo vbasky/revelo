@@ -128,11 +128,15 @@ fn is_subrip_timestamp(ts: &[u8]) -> bool {
     let d = |i: usize| ts[i].is_ascii_digit();
     d(0) && d(1)
         && ts[2] == b':'
-        && d(3) && d(4)
+        && d(3)
+        && d(4)
         && ts[5] == b':'
-        && d(6) && d(7)
+        && d(6)
+        && d(7)
         && (ts[8] == b',' || ts[8] == b'.')
-        && d(9) && d(10) && d(11)
+        && d(9)
+        && d(10)
+        && d(11)
 }
 
 fn is_subrip_timestamp_prefix(ts: &[u8]) -> bool {
@@ -179,7 +183,8 @@ mod tests {
         // WebVTT starts with a header, not a numeric counter — must reject.
         assert!(!parse_sub_rip(&mut fa));
 
-        let mut fa2 = FileAnalyze::new(b"This is just a plain text file, no timecodes here at all.\n");
+        let mut fa2 =
+            FileAnalyze::new(b"This is just a plain text file, no timecodes here at all.\n");
         assert!(!parse_sub_rip(&mut fa2));
     }
 }

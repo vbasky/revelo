@@ -79,12 +79,12 @@ pub fn parse_vc1_sequence_header(data: &[u8]) -> Option<Vc1Info> {
     }
 
     let mut offset = 0;
-    
+
     // Check for start code prefix
     if data.len() >= 4 && data[0..3] == [0x00, 0x00, 0x01] {
         offset = 4;
     }
-    
+
     if offset >= data.len() {
         return None;
     }
@@ -92,7 +92,7 @@ pub fn parse_vc1_sequence_header(data: &[u8]) -> Option<Vc1Info> {
     let profile_byte = data[offset];
     let profile_idx = (profile_byte >> 6) & 0x3;
     let level_idx = (profile_byte >> 3) & 0x7;
-    
+
     let profile = match profile_idx {
         0 => Vc1Profile::Simple,
         1 => Vc1Profile::Main,
@@ -100,12 +100,9 @@ pub fn parse_vc1_sequence_header(data: &[u8]) -> Option<Vc1Info> {
         3 => Vc1Profile::Advanced,
         _ => return None,
     };
-    
-    let mut info = Vc1Info {
-        profile: Some(profile),
-        level: Some(Vc1Level(level_idx)),
-        ..Default::default()
-    };
+
+    let mut info =
+        Vc1Info { profile: Some(profile), level: Some(Vc1Level(level_idx)), ..Default::default() };
 
     match profile {
         Vc1Profile::Simple | Vc1Profile::Main => {
@@ -134,7 +131,7 @@ fn parse_simple_main_header(data: &[u8], info: &mut Vc1Info) -> Option<()> {
     let wh = ((data[1] as u32) << 16) | ((data[2] as u32) << 8) | (data[3] as u32);
     let coded_width = ((wh >> 12) & 0xFFF) + 1;
     let coded_height = (wh & 0xFFF) + 1;
-    
+
     info.width = coded_width * 2;
     info.height = coded_height * 2;
 
@@ -142,9 +139,11 @@ fn parse_simple_main_header(data: &[u8], info: &mut Vc1Info) -> Option<()> {
         let fr_byte = data[4];
         let fr_num_idx = (fr_byte >> 4) & 0xF;
         let fr_den_idx = fr_byte & 0xF;
-        
-        info.frame_rate_numerator = FRAME_RATE_NUMERATORS.get(fr_num_idx as usize).copied().unwrap_or(0);
-        info.frame_rate_denominator = FRAME_RATE_DENOMINATORS.get(fr_den_idx as usize).copied().unwrap_or(1);
+
+        info.frame_rate_numerator =
+            FRAME_RATE_NUMERATORS.get(fr_num_idx as usize).copied().unwrap_or(0);
+        info.frame_rate_denominator =
+            FRAME_RATE_DENOMINATORS.get(fr_den_idx as usize).copied().unwrap_or(1);
     }
 
     Some(())
@@ -154,7 +153,7 @@ fn parse_advanced_header(data: &[u8], info: &mut Vc1Info) -> Option<()> {
     if data.len() < 10 {
         return None;
     }
-    
+
     info.width = ((data[1] as u32) << 8) | (data[2] as u32);
     info.height = ((data[3] as u32) << 8) | (data[4] as u32);
 
@@ -168,21 +167,17 @@ fn parse_advanced_header(data: &[u8], info: &mut Vc1Info) -> Option<()> {
     Some(())
 }
 
-const FRAME_RATE_NUMERATORS: [u32; 16] = [
-    0, 24000, 24, 25, 30000, 30, 50, 60000, 60,
-    1, 1, 1, 1, 1, 1, 1,
-];
+const FRAME_RATE_NUMERATORS: [u32; 16] =
+    [0, 24000, 24, 25, 30000, 30, 50, 60000, 60, 1, 1, 1, 1, 1, 1, 1];
 
-const FRAME_RATE_DENOMINATORS: [u32; 16] = [
-    1, 1001, 1, 1, 1001, 1, 1, 1001, 1,
-    1, 1, 1, 1, 1, 1, 1,
-];
+const FRAME_RATE_DENOMINATORS: [u32; 16] =
+    [1, 1001, 1, 1, 1001, 1, 1, 1001, 1, 1, 1, 1, 1, 1, 1, 1];
 
 pub fn parse_vc1_codec_private(data: &[u8]) -> Option<Vc1Info> {
     if data.is_empty() {
         return None;
     }
-    
+
     let header_len = data[0] as usize;
     if header_len > 0 && header_len < data.len() {
         parse_vc1_sequence_header(&data[1..=header_len])
@@ -193,35 +188,42 @@ pub fn parse_vc1_codec_private(data: &[u8]) -> Option<Vc1Info> {
 
 pub fn fill_vc1_streams(fa: &mut FileAnalyze, info: &Vc1Info) {
     fa.stream_prepare(StreamKind::Video);
-    
+
     fa.fill(StreamKind::Video, 0, "Format", "VC-1", false);
-    
+
     if let Some(profile) = info.profile {
         fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
     }
-    
+
     if let Some(level) = info.level
-        && let Some(level_str) = level.as_str() {
-            fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
-        }
-    
+        && let Some(level_str) = level.as_str()
+    {
+        fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
+    }
+
     if info.width > 0 {
         fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
     }
-    
+
     if info.height > 0 {
         fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
     }
-    
+
     if let Some(fr) = info.frame_rate() {
         fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
     }
-    
+
     if let Some(bitrate) = info.bit_rate {
         fa.fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
     }
-    
-    fa.fill(StreamKind::Video, 0, "ScanType", if info.interlace { "Interlaced" } else { "Progressive" }, false);
+
+    fa.fill(
+        StreamKind::Video,
+        0,
+        "ScanType",
+        if info.interlace { "Interlaced" } else { "Progressive" },
+        false,
+    );
 }
 
 /// Parse VC-1 (SMPTE 421M) elementary stream.
@@ -231,18 +233,18 @@ pub fn fill_vc1_streams(fa: &mut FileAnalyze, info: &Vc1Info) {
 pub fn parse_vc1(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(4);
     let Some(h) = head else { return false };
-    
-    let is_vc1 = (h == [0x00, 0x00, 0x01, 0x0F]) || 
-                 (h == [0x00, 0x00, 0x01, 0x0E]) ||
-                 (h == [0x00, 0x00, 0x01, 0x0D]);
-    
+
+    let is_vc1 = (h == [0x00, 0x00, 0x01, 0x0F])
+        || (h == [0x00, 0x00, 0x01, 0x0E])
+        || (h == [0x00, 0x00, 0x01, 0x0D]);
+
     if !is_vc1 {
         return false;
     }
-    
+
     let data = fa.peek_raw(32);
     let Some(data) = data else { return false };
-    
+
     if let Some(info) = parse_vc1_sequence_header(data) {
         fill_vc1_streams(fa, &info);
         true
@@ -257,13 +259,8 @@ mod tests {
 
     #[test]
     fn test_parse_simple_profile_header() {
-        let data = vec![
-            0x00, 0x00, 0x01, 0x0F,
-            0x00,
-            0x00,
-            0x01, 0x01,
-        ];
-        
+        let data = vec![0x00, 0x00, 0x01, 0x0F, 0x00, 0x00, 0x01, 0x01];
+
         let info = parse_vc1_sequence_header(&data);
         assert!(info.is_some());
         let info = info.unwrap();
@@ -274,15 +271,9 @@ mod tests {
     #[test]
     fn test_parse_advanced_profile_header() {
         let data = vec![
-            0x00, 0x00, 0x01, 0x0F,
-            0xC0,
-            0x02, 0x80,
-            0x01, 0xE0,
-            0x00,
-            0x00, 0x1E,
-            0x00, 0x01,
+            0x00, 0x00, 0x01, 0x0F, 0xC0, 0x02, 0x80, 0x01, 0xE0, 0x00, 0x00, 0x1E, 0x00, 0x01,
         ];
-        
+
         let info = parse_vc1_sequence_header(&data);
         assert!(info.is_some());
         let info = info.unwrap();

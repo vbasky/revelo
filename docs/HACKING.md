@@ -25,7 +25,7 @@ The diff harness runs revelio against MediaInfoLib's `mediainfo` binary
 and compares output byte-for-byte or by structural equivalence.
 
 ```bash
-cargo run --bin diff-harness -- /path/to/media/file.mp4
+cargo run --bin revelio-diff -- /path/to/media/file.mp4
 ```
 
 Requires `mediainfo` on `$PATH`.
@@ -98,11 +98,11 @@ The `replace` parameter: `false` = don't overwrite existing value,
 ## Debugging parsers
 
 Add `#[test]` functions that validate each field the parser fills.
-Use the diff harness to compare against oracle output:
+Use revelio-diff to compare against oracle output:
 
 ```bash
 # Run against a real file and see what's missing
-cargo run --bin diff-harness -- /path/to/sample.mp4
+cargo run --bin revelio-diff -- /path/to/sample.mp4
 
 # If XML doesn't match byte-for-byte, check:
 # 1. Are all field names correct?

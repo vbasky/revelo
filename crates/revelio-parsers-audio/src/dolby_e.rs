@@ -6,14 +6,20 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_dolby_e(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
-    if buf.len() < 4 { return false; }
+    if buf.len() < 4 {
+        return false;
+    }
 
     // SMPTE 337M preamble: 0x96 0x69 for Dolby E + AES3 sync
     let preamble = u16::from_be_bytes([buf[0], buf[1]]);
     let sync = u16::from_be_bytes([buf[2], buf[3]]);
 
-    if preamble != 0x9669 && preamble != 0x966A { return false; }
-    if sync != 0x078E { return false; }
+    if preamble != 0x9669 && preamble != 0x966A {
+        return false;
+    }
+    if sync != 0x078E {
+        return false;
+    }
 
     let pos = fa.stream_prepare(StreamKind::Audio);
     fa.fill(StreamKind::Audio, pos, "Format", "Dolby E", false);
@@ -31,7 +37,10 @@ mod tests {
         let buf: Vec<u8> = vec![0x96, 0x69, 0x07, 0x8E];
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dolby_e(&mut fa));
-        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()), Some("Dolby E".into()));
+        assert_eq!(
+            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
+            Some("Dolby E".into())
+        );
     }
 
     #[test]

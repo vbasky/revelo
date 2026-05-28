@@ -7,6 +7,7 @@
 //! 1:1 readability with the upstream parsers.
 
 #![allow(non_snake_case)]
+#![deny(unsafe_code)]
 
 pub mod element;
 pub mod file_analyze;
@@ -48,11 +49,7 @@ pub mod reference {
             Self { files: Vec::new() }
         }
         pub fn add(&mut self, path: &str, format: &'static str, stream_id: u64) {
-            self.files.push(ReferenceFile {
-                path: path.to_string(),
-                format,
-                stream_id,
-            });
+            self.files.push(ReferenceFile { path: path.to_string(), format, stream_id });
         }
         pub fn count(&self) -> usize {
             self.files.len()
@@ -70,6 +67,6 @@ pub mod reference {
     }
 }
 pub mod computed_fields;
-pub mod data_helpers;
 pub mod config;
+pub mod data_helpers;
 pub mod multi_file;
