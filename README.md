@@ -9,12 +9,12 @@ C++ `mediainfo` CLI.
 
 ## Status
 
-**150 parsers** registered across 7 domains, **504 tests** passing.
+**155 parsers** registered across 7 domains, **515 tests** passing.
 
 | Category | Count | Coverage | Formats |
 |---|---|---|---|
 | Containers | 42 | 98% | MP4/MOV, MKV/WebM, AVI, MPEG-TS, MPEG-PS, WAV, AIFF, Ogg, FLV, MXF, ASF/WM, RealMedia, WTV, NUT, DV-DIF, GXF, LXF, IVF, BDMV, DVD-Video, CDXA, AMV, SWF, DPG, NSV, PMP, AAF, P2-Clip, XDCAM-Clip, SKM, Ptx, Ibi, HLS, DASH-MPD, HDS-F4M, ISM, DCP-AM, DCP-CPL, DXW, MediaInfo-XML, SequenceInfo, VBI |
-| Audio | 37 | 64% | AAC, MP3, AC-3, AC-4, DTS, DTS-UHD, FLAC, Opus, Vorbis, TrueHD, Speex, ALAC/CAF, AU, APE, WavPack, TAK, TTA, Musepack, LA, RKAU, OpenMG, ADPCM, aptX-100, TwinVQ, USAC, IAB, IAMF, ALS, AMR, DSF, DSDIFF, MIDI, DAT, Module/MOD, XM, Impulse Tracker, ScreamTracker3 |
+| Audio | 44 | 76% | TrueHD, Dolby E, MPEG-H 3D, CELT, PCM, SMPTE ST 302/331/337, +5 | AAC, MP3, AC-3, AC-4, DTS, DTS-UHD, FLAC, Opus, Vorbis, TrueHD, Speex, ALAC/CAF, AU, APE, WavPack, TAK, TTA, Musepack, LA, RKAU, OpenMG, ADPCM, aptX-100, TwinVQ, USAC, IAB, IAMF, ALS, AMR, DSF, DSDIFF, MIDI, DAT, Module/MOD, XM, Impulse Tracker, ScreamTracker3 |
 | Video | 16 | 52% | AVC, HEVC, VVC, AV1, VP8, VP9, MPEG-2, MPEG-4 Visual, VC-1, VC-3/DNxHD, FFV1, ProRes, H.263, Theora, Dolby Vision, Y4M |
 | Image | 19 | 100% | JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, PSD, DPX, EXR, DDS, BPG, PCX, TGA, ArriRaw, Amiga Icon, RLE, AVIF Gain Map, HEIF |
 | Text/Subtitles | 16 | 80% | SubRip, TTML, Timed Text, PGS, DVB Subtitle, Teletext, EIA-608, EIA-708, CDP, SCC, N19/EBU-STL, Kate, CMML, ARIB STD-B24/B37, OtherText, WebVTT |
