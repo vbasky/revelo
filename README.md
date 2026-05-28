@@ -1,4 +1,4 @@
-# revelio
+# 🦀 revelio
 
 A Rust library and CLI for reading technical metadata from media files —
 containers, audio codecs, video codecs, image formats, subtitle streams,
@@ -128,7 +128,7 @@ cargo build -p revelio-cdylib --release
 All layers are implemented and validated:
 
 | Layer | Status | Detail |
-|---|---|---|
+| --- | --- | --- |
 | Format parsers | ✓ | 193 parsers across 8 domains |
 | Output fields | ✓ | 185 fields, all gaps closed |
 | Output formatters | ✓ | XML/Text/JSON + 7 domain |
