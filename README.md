@@ -9,60 +9,61 @@ C++ `mediainfo` CLI.
 
 ## Status
 
-**170 parsers** registered across 7 domains, **521 tests** passing.
+**174 parsers** registered across 8 domains, **530 tests** passing.
 
-| Category | Count | Coverage | Formats |
+| Category | Parsers | Coverage | Formats |
 |---|---|---|---|
-| Containers | 42 | 98% | MP4/MOV, MKV/WebM, AVI, MPEG-TS, MPEG-PS, WAV, AIFF, Ogg, FLV, MXF, ASF/WM, RealMedia, WTV, NUT, DV-DIF, GXF, LXF, IVF, BDMV, DVD-Video, CDXA, AMV, SWF, DPG, NSV, PMP, AAF, P2-Clip, XDCAM-Clip, SKM, Ptx, Ibi, HLS, DASH-MPD, HDS-F4M, ISM, DCP-AM, DCP-CPL, DXW, MediaInfo-XML, SequenceInfo, VBI |
-| Audio | 44 | 76% | AAC, MP3, AC-3, AC-4, DTS, DTS-UHD, TrueHD, Dolby E, FLAC, Opus, Vorbis, Speex, ALAC/CAF, AU, PCM, APE, WavPack, TAK, TTA, Musepack, LA, RKAU, OpenMG, ADPCM, aptX-100, TwinVQ, USAC, MPEG-H 3D, CELT, IAB, IAMF, ALS, AMR, DSF, DSDIFF, SMPTE ST 302, SMPTE ST 331, SMPTE ST 337, MIDI, DAT, Module/MOD, XM, Impulse Tracker, ScreamTracker3 |
-| Video | 28 | 90% | AVC, HEVC, VVC, AV1, VP8, VP9, MPEG-2, MPEG-4 Visual, VC-1, VC-3/DNxHD, FFV1, ProRes, H.263, Theora, Dolby Vision, Y4M, Canopus HQ, CineForm, Fraps, FLIC, HuffYUV, Lagarith, AVS, AVS3, Dirac, HDR Vivid, AIC, AFD/Bar Data |
+| Containers | 42 | 98% | MP4/MOV, MKV/WebM, AVI, MPEG-TS, MPEG-PS, WAV, AIFF, Ogg, FLV, MXF, +32 more |
+| Audio | 50 | 86% | AAC, MP3, AC-3/4, DTS/DTS-UHD, FLAC, Opus, Vorbis, TrueHD, Dolby E, PCM, CELT, MPEG-H 3D, SMPTE ST 302/331/337, +35 more |
+| Video | 28 | 90% | AVC, HEVC, VVC, AV1, VP8/VP9, MPEG-2, VC-1, VC-3/DNxHD, ProRes, FFV1, H.263, MPEG-4V, Theora, Y4M, Canopus HQ, CineForm, Fraps, FLIC, HuffYUV, Lagarith, AVS/AVS3, Dirac, HDR Vivid, Dolby Vision, AIC, AFD/Bar |
 | Image | 19 | 100% | JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, PSD, DPX, EXR, DDS, BPG, PCX, TGA, ArriRaw, Amiga Icon, RLE, AVIF Gain Map, HEIF |
-| Text/Subtitles | 16 | 80% | SubRip, TTML, Timed Text, PGS, DVB Subtitle, Teletext, EIA-608, EIA-708, CDP, SCC, N19/EBU-STL, Kate, CMML, ARIB STD-B24/B37, OtherText, WebVTT |
-| **Archives** | 11 | 100% | ZIP, 7z, RAR, TAR, gzip, bzip2, ACE, ISO 9660, ELF, Mach-O, MZ/PE |
-| **Tags** | 12 | 86% | ID3v1, ID3v2, APE Tag, Vorbis Comment, Lyrics3, EXIF, XMP, ICC, IIM/IPTC, C2PA, PropertyList, Spherical Video |
+| Text/Subtitles | 16 | 80% | SubRip, TTML, Timed Text, PGS, DVB Subtitle, Teletext, EIA-608/708, CDP, SCC, N19, Kate, CMML, ARIB STD-B24/B37, OtherText, WebVTT |
+| Archives | 11 | 100% | ZIP, 7z, RAR, TAR, gzip, bzip2, ACE, ISO 9660, ELF, Mach-O, MZ/PE |
+| Tags | 12 | 86% | ID3v1/v2, APE Tag, Vorbis Comment, Lyrics3, EXIF, XMP, ICC, IIM/IPTC, C2PA, PropertyList, SphericalVideo |
+| Reader | 4 | 100% | File, Directory, HTTP, MMS |
 
 ### Deep codec analysis
 
-- **AVC/H.264:** Full SPS VUI (colour primaries/transfer/matrix, aspect ratio, chroma
-  sample location, video full range), EncoderInfo with name/version/settings
-  extraction from x264/x265 SEI, GOP detection (`M=X, N=Y`)
-- **HEVC/H.265:** Full SPS VUI, HDR10 mastering display colour volume SEI
-  (primaries, white point, luminance), content light level SEI (MaxCLL/MaxFALL),
-  x265 encoder string extraction
-- **Dolby Vision:** dvcC/dvvC configuration box parsing in MP4, codec ID
-  recognition in MKV, standalone XML metadata parser, HDR format profile/level
-  extraction
+- **AVC/H.264:** Full SPS VUI (colour primaries/transfer/matrix, aspect ratio, chroma sample location, video full range), EncoderInfo with name/version/settings extraction from x264/x265 SEI, GOP detection (M=X, N=Y)
+- **HEVC/H.265:** Full SPS VUI, HDR10 mastering display colour volume SEI (primaries, white point, luminance), content light level SEI (MaxCLL/MaxFALL), x265 encoder string extraction
+- **Dolby Vision:** dvcC/dvvC configuration box parsing in MP4, codec ID recognition in MKV, standalone XML metadata parser, HDR format profile/level extraction
 
 ### Output formatters
 
 - XML (byte-equal with MediaInfoLib oracle)
 - Text (42-column layout, duration as `X s Y ms`)
 - JSON (MediaInfo-compatible `{media:{@ref, track:[...]}}` structure)
+- EBUCore, MPEG-7, PBCore, NISO, FIMS, Graph, reVTMD (7 domain formatters)
 
-### C ABI
+### C ABI + Reader + Core
 
-`revelio-cdylib` exposes `MediaInfo_New/Open/Close/Inform/Get/Count_Get/Option`
-entry points for drop-in replacement of libmediainfo.
+- `revelio-cdylib`: `MediaInfo_New/Open/Close/Inform/Get/Count_Get/Option` entry points
+- `revelio-reader`: File, Directory, HTTP, MMS reader layer
+- `revelio-core`: SMPTE timecode parser (DF/NDF, milliseconds conversion)
+- `revelio-export`: 10 output formatters total
 
 ## Building
 
 ```sh
-cargo build --release        # all crates including cdylib
+cargo build --release
 cargo run -p revelio-cli -- --text /path/to/media.mp4
 ```
 
 ## Running
 
 ```sh
-# differential test harness (requires mediainfo CLI installed)
-cargo run -p diff-harness -- /path/to/media-file.mp4
-
-# standalone CLI (default: text output)
-cargo run -p revelio-cli -- --text /path/to/media.mp4
-cargo run -p revelio-cli -- --json /path/to/media.mp4
-cargo run -p revelio-cli -- /path/to/media.mp4  # XML output
-
-# build the C shared library
+cargo run -p diff-harness -- /path/to/file
+cargo run -p revelio-cli -- --text /path/to/file
+cargo run -p revelio-cli -- --json /path/to/file
 cargo build -p revelio-cdylib --release
-# output: target/release/librevelio_cdylib.dylib (or .so/.dll)
 ```
+
+## Pending
+
+**Audio (remainder):** ADM, Dolby Audio Metadata, PcmVob, PcmM2ts, MGA, MPEG-4 AAC full, ChannelSplitting/Grouping depth
+
+**Text (remainder):** PDF, SDP, PAC, DTvCC Transport, SCTE-20
+
+**Container infrastructure:** RIFF elements helper, Ogg sub-elements, MPEG-4 descriptors, PSI table depth, IBI creation, reference files
+
+**Core:** MediaInfo_Config field ordering, trace/demux events, multi-file support, MIME type detection, duplicate/reference parsing

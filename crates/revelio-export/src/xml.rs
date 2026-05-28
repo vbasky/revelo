@@ -298,6 +298,7 @@ pub(crate) fn canonical_field_order(kind: StreamKind) -> &'static [&'static str]
             "Format_Settings_Endianness",
             "Format_Settings_Sign",
             "Format_Settings_SBR",
+            "Format_Settings_Floor",
             "Format_AdditionalFeatures",
             "CodecID",
             "CodecID_String",
