@@ -20,7 +20,7 @@ const NUT_FILE_ID: &[u8; 24] = b"nut/multimedia container";
 pub fn parse_nut(fa: &mut FileAnalyze) -> bool {
     // peek_raw(min(N, Remain)) shields tiny buffers from a panic; we still
     // require the full 25-byte header to accept.
-    let want = NUT_HEADER_SIZE.min(fa.Remain());
+    let want = NUT_HEADER_SIZE.min(fa.remain());
     let header = match fa.peek_raw(want) {
         Some(b) if b.len() == NUT_HEADER_SIZE => b,
         _ => return false,
@@ -30,14 +30,14 @@ pub fn parse_nut(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("Nut header");
+    fa.element_begin("Nut header");
     let _ = fa.read_raw(24);
     let mut _zero: int8u = 0;
-    fa.Get_B1(&mut _zero, "file_id_string zero");
-    fa.Element_End();
+    fa.get_b1(&mut _zero, "file_id_string zero");
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Nut", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Nut", false);
 
     true
 }
@@ -59,7 +59,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_nut(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("Nut")

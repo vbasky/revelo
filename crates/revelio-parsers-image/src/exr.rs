@@ -21,7 +21,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const EXR_MAGIC: [u8; 4] = [0x76, 0x2F, 0x31, 0x01];
 
 pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
-    let total = fa.Remain();
+    let total = fa.remain();
     let buf = match fa.peek_raw(total) {
         Some(b) => b,
         None => return false,
@@ -110,30 +110,30 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         i = value_end;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "EXR", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "EXR", false);
+    fa.fill(
         StreamKind::General,
         0,
         "Format_Version",
         version.to_string(),
         false,
     );
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
     if let Some(c) = comments {
-        fa.Fill(StreamKind::General, 0, "Comment", c, false);
+        fa.fill(StreamKind::General, 0, "Comment", c, false);
     }
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "EXR", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "EXR", false);
+    fa.fill(
         StreamKind::Image,
         0,
         "Format_Version",
         version.to_string(),
         false,
     );
-    fa.Fill(
+    fa.fill(
         StreamKind::Image,
         0,
         "Format_Profile",
@@ -141,17 +141,17 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         false,
     );
     if let Some(c) = compression {
-        fa.Fill(StreamKind::Image, 0, "Format_Compression", c, false);
+        fa.fill(StreamKind::Image, 0, "Format_Compression", c, false);
     }
     if width > 0 {
-        fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
     }
     if height > 0 {
-        fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
     }
     if width > 0 && height > 0 {
         let dar = width as f64 / height as f64;
-        fa.Fill(
+        fa.fill(
             StreamKind::Image,
             0,
             "DisplayAspectRatio",
@@ -160,7 +160,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         );
     }
     if let Some(par) = pixel_aspect_ratio {
-        fa.Fill(
+        fa.fill(
             StreamKind::Image,
             0,
             "PixelAspectRatio",
@@ -169,7 +169,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
         );
     }
     if let Some(fr) = frame_rate {
-        fa.Fill(
+        fa.fill(
             StreamKind::Image,
             0,
             "FrameRate",
@@ -183,7 +183,7 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
             compression,
             Some("raw") | Some("RLZ") | Some("ZIPS") | Some("ZIP") | Some("PIZ")
         );
-        fa.Fill(
+        fa.fill(
             StreamKind::Image,
             0,
             "Compression_Mode",
@@ -191,15 +191,15 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
             false,
         );
     }
-    let file_size = fa.Remain();
-    fa.Fill(
+    let file_size = fa.remain();
+    fa.fill(
         StreamKind::Image,
         0,
         "StreamSize",
         file_size.to_string(),
         false,
     );
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
     true
 }
 
@@ -254,7 +254,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_exr(&mut fa));
         let i = |k: &str| {
-            fa.Retrieve(StreamKind::Image, 0, k)
+            fa.retrieve(StreamKind::Image, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         assert_eq!(i("Format").as_deref(), Some("EXR"));

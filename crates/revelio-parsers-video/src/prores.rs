@@ -22,7 +22,7 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
         && magic != 0x6170636F && magic != 0x61703468 && magic != 0x70727266
     {
         // Check for ProRes in MOV container: skip to frame data
-        let raw = fa.peek_raw(fa.Remain() as usize);
+        let raw = fa.peek_raw(fa.remain() as usize);
         let buf = match raw { Some(b) => b, None => return false };
         if buf.len() < 20 { return false; }
 
@@ -34,7 +34,7 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    let buf = match fa.peek_raw(fa.Remain() as usize) { Some(b) => b, None => return false };
+    let buf = match fa.peek_raw(fa.remain() as usize) { Some(b) => b, None => return false };
     if buf.len() < 20 { return false; }
 
     let _hdr_size = u16::from_be_bytes([buf[8], buf[9]]);
@@ -68,9 +68,9 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
 }
 
 fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "ProRes", false);
-    fa.Fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", info.version), false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "ProRes", false);
+    fa.fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", info.version), false);
 
     let profile = match info.chrominance_factor {
         0 => "422 Proxy",
@@ -87,18 +87,18 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
             }
         }
     };
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile, false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", profile, false);
 
-    fa.Fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
 
     let chroma = match info.chrominance_factor {
         2 => "4:2:2",
         3 | 4 => "4:4:4",
         _ => "4:2:2",
     };
-    fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
 
     let scan = match info.frame_type {
         0 => "Progressive",
@@ -106,7 +106,7 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
         _ => "",
     };
     if !scan.is_empty() {
-        fa.Fill(StreamKind::Video, 0, "ScanType", scan, false);
+        fa.fill(StreamKind::Video, 0, "ScanType", scan, false);
     }
 
     let creator = match info.creator_id {
@@ -116,7 +116,7 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
         _ => "",
     };
     if !creator.is_empty() {
-        fa.Fill(StreamKind::Video, 0, "Encoded_Library", creator, false);
+        fa.fill(StreamKind::Video, 0, "Encoded_Library", creator, false);
     }
 
     if info.primaries != 0 {
@@ -125,7 +125,7 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
             9 => "BT.2020",
             _ => "BT.709",
         };
-        fa.Fill(StreamKind::Video, 0, "colour_primaries", prim, false);
+        fa.fill(StreamKind::Video, 0, "colour_primaries", prim, false);
     }
 }
 
@@ -155,8 +155,8 @@ mod tests {
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_prores(&mut fa));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()), Some("ProRes".into()));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str().to_owned()), Some("4:2:2".into()));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()), Some("ProRes".into()));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str().to_owned()), Some("4:2:2".into()));
     }
 
     #[test]

@@ -20,10 +20,10 @@ const MAGIC_RKA: [u8; 3] = *b"RKA";
 const HEADER_LEN: usize = 15;
 
 pub fn parse_rkau(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_LEN {
+    if fa.remain() < HEADER_LEN {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(3)) {
+    let head = match fa.peek_raw(fa.remain().min(3)) {
         Some(h) if h.len() == 3 => h,
         _ => return false,
     };
@@ -31,26 +31,26 @@ pub fn parse_rkau(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("RKAU");
-    fa.Skip_Hexa(3, "Signature");
+    fa.element_begin("RKAU");
+    fa.skip_hexa(3, "Signature");
     let mut version_bytes = [0u8; 1];
     if let Some(b) = fa.peek_raw(1) {
         version_bytes[0] = b[0];
     }
-    fa.Skip_L1("Version");
+    fa.skip_l1("Version");
     let mut source_bytes: int32u = 0;
-    fa.Get_L4(&mut source_bytes, "SourceBytes");
+    fa.get_l4(&mut source_bytes, "SourceBytes");
     let mut sample_rate: int32u = 0;
-    fa.Get_L4(&mut sample_rate, "SampleRate");
+    fa.get_l4(&mut sample_rate, "SampleRate");
     let mut channels: int8u = 0;
-    fa.Get_L1(&mut channels, "Channels");
+    fa.get_l1(&mut channels, "Channels");
     let mut bits_per_sample: int8u = 0;
-    fa.Get_L1(&mut bits_per_sample, "BitsPerSample");
+    fa.get_l1(&mut bits_per_sample, "BitsPerSample");
     let mut quality: int8u = 0;
-    fa.Get_L1(&mut quality, "Quality");
+    fa.get_l1(&mut quality, "Quality");
     let mut flags: int8u = 0;
-    fa.Get_L1(&mut flags, "Flags");
-    fa.Element_End();
+    fa.get_l1(&mut flags, "Flags");
+    fa.element_end();
 
     if sample_rate == 0 || channels == 0 || bits_per_sample == 0 {
         return false;
@@ -71,20 +71,20 @@ pub fn parse_rkau(fa: &mut FileAnalyze) -> bool {
     let version_str = format!("1.0{}", version_bytes[0] as char);
     let compression_mode = if quality == 0 { "Lossless" } else { "Lossy" };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "RKAU", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "RKAU", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "RKAU", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", compression_mode, false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "RKAU", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", compression_mode, false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
 
     let _ = flags;
     true
@@ -129,8 +129,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_rkau(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("RKAU"));
         assert_eq!(g("Format_Version").as_deref(), Some("1.01"));
@@ -151,11 +151,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_rkau(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()).as_deref(),
             Some("Lossy")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format_Version").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Format_Version").map(|z| z.as_str().to_owned()).as_deref(),
             Some("1.02")
         );
     }

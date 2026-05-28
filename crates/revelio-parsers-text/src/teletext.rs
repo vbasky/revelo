@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_teletext(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -20,9 +20,9 @@ pub fn parse_teletext(fa: &mut FileAnalyze) -> bool {
         return true; // partial packet, accept tentative
     }
 
-    let pos = fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, pos, "Format", "Teletext", false);
-    fa.Fill(StreamKind::Text, pos, "MuxingMode", "Teletext", false);
+    let pos = fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, pos, "Format", "Teletext", false);
+    fa.fill(StreamKind::Text, pos, "MuxingMode", "Teletext", false);
 
     true
 }
@@ -40,7 +40,7 @@ mod tests {
         buf[2] = 0x27;
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_teletext(&mut fa));
-        assert_eq!(fa.Retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()), Some("Teletext".into()));
+        assert_eq!(fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()), Some("Teletext".into()));
     }
 
     #[test]

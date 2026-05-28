@@ -3,7 +3,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_ffv1(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 4 {
+    if fa.remain() < 4 {
         return false;
     }
 
@@ -16,22 +16,22 @@ pub fn parse_ffv1(fa: &mut FileAnalyze) -> bool {
     }
 
     let mut _magic: u32 = 0;
-    fa.Get_B4(&mut _magic, "magic");
+    fa.get_b4(&mut _magic, "magic");
 
-    fa.Element_Begin("FFV1");
+    fa.element_begin("FFV1");
     let mut version: u8 = 0;
     let mut coder_type: u8 = 0;
     let mut colorspace_type: u8 = 0;
-    if fa.Remain() >= 3 {
-        fa.Get_B1(&mut version, "version");
-        fa.Get_B1(&mut coder_type, "coder_type");
-        fa.Get_B1(&mut colorspace_type, "colorspace_type");
+    if fa.remain() >= 3 {
+        fa.get_b1(&mut version, "version");
+        fa.get_b1(&mut coder_type, "coder_type");
+        fa.get_b1(&mut colorspace_type, "colorspace_type");
     }
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "FFV1", false);
-    if version > 0 { fa.Fill(StreamKind::Video, 0, "Format_Version", version.to_string(), false); }
-    fa.Fill(StreamKind::Video, 0, "Compression_Mode", "Lossless", false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "FFV1", false);
+    if version > 0 { fa.fill(StreamKind::Video, 0, "Format_Version", version.to_string(), false); }
+    fa.fill(StreamKind::Video, 0, "Compression_Mode", "Lossless", false);
     true
 }

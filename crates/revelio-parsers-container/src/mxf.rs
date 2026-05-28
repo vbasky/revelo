@@ -141,7 +141,7 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
 }
 
 pub fn parse_mxf(fa: &mut FileAnalyze) -> bool {
-    let want = fa.Remain().min(SCAN_WINDOW);
+    let want = fa.remain().min(SCAN_WINDOW);
     if want < 16 {
         return false;
     }
@@ -168,13 +168,13 @@ pub fn parse_mxf(fa: &mut FileAnalyze) -> bool {
     // Try to extract timecode from the header partition before mutable borrows
     let timecode = extract_mxf_timecode(buf);
     
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "MXF", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "MXF", false);
     
     // Emit timecode if found
     if let Some(tc) = timecode {
-        fa.Fill(StreamKind::General, 0, "TimeCode_FirstFrame", tc, false);
-        fa.Fill(StreamKind::General, 0, "TimeCode_Source", "Material Package", false);
+        fa.fill(StreamKind::General, 0, "TimeCode_FirstFrame", tc, false);
+        fa.fill(StreamKind::General, 0, "TimeCode_Source", "Material Package", false);
     }
     
     true
@@ -228,7 +228,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mxf(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("MXF".into())
         );
     }

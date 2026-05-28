@@ -42,7 +42,7 @@ pub fn parse_gxf(fa: &mut FileAnalyze) -> bool {
     // Peek up to 64 KiB — enough to validate the first packet's coherence
     // (a map packet is typically a few hundred bytes) without slurping
     // the whole file when callers stream large GXF assets.
-    let want = fa.Remain().min(64 * 1024);
+    let want = fa.remain().min(64 * 1024);
     let buf = match fa.peek_raw(want) {
         Some(b) => b,
         None => return false,
@@ -70,8 +70,8 @@ pub fn parse_gxf(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "GXF", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "GXF", false);
     true
 }
 
@@ -99,7 +99,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_gxf(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("GXF"),

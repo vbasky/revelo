@@ -45,7 +45,7 @@ pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str
         StreamKind::Image,
         StreamKind::Menu,
     ] {
-        let count = streams.Count_Get(kind);
+        let count = streams.count_get(kind);
         for pos in 0..count {
             // Oracle emits `typeorder="N"` (1-based) only when there are
             // multiple streams of the same kind. Single-stream kinds get
@@ -477,21 +477,21 @@ mod tests {
 
     fn build_wav_streams() -> StreamCollection {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", Ztring::from("Wave"), false);
-        c.Fill(StreamKind::General, 0, "Format_Settings", Ztring::from("PcmWaveformat"), false);
-        c.Fill(StreamKind::General, 0, "AudioCount", Ztring::from("1"), false);
-        c.Fill(StreamKind::Audio, 0, "Format", Ztring::from("PCM"), false);
-        c.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", Ztring::from("Little"), false);
-        c.Fill(StreamKind::Audio, 0, "Format_Settings_Sign", Ztring::from("Signed"), false);
-        c.Fill(StreamKind::Audio, 0, "CodecID", Ztring::from("1"), false);
-        c.Fill(StreamKind::Audio, 0, "BitRate_Mode", Ztring::from("CBR"), false);
-        c.Fill(StreamKind::Audio, 0, "BitRate", Ztring::from("1536000"), false);
-        c.Fill(StreamKind::Audio, 0, "Channels", Ztring::from("2"), false);
-        c.Fill(StreamKind::Audio, 0, "SamplingRate", Ztring::from("48000"), false);
-        c.Fill(StreamKind::Audio, 0, "BitDepth", Ztring::from("16"), false);
-        c.Fill(StreamKind::Audio, 0, "StreamSize", Ztring::from("286552"), false);
-        c.Fill(StreamKind::Audio, 0, "SamplingCount", Ztring::from("71638"), false);
-        c.Fill(StreamKind::Audio, 0, "Duration", Ztring::from("1492"), false);
+        c.fill(StreamKind::General, 0, "Format", Ztring::from("Wave"), false);
+        c.fill(StreamKind::General, 0, "Format_Settings", Ztring::from("PcmWaveformat"), false);
+        c.fill(StreamKind::General, 0, "AudioCount", Ztring::from("1"), false);
+        c.fill(StreamKind::Audio, 0, "Format", Ztring::from("PCM"), false);
+        c.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", Ztring::from("Little"), false);
+        c.fill(StreamKind::Audio, 0, "Format_Settings_Sign", Ztring::from("Signed"), false);
+        c.fill(StreamKind::Audio, 0, "CodecID", Ztring::from("1"), false);
+        c.fill(StreamKind::Audio, 0, "BitRate_Mode", Ztring::from("CBR"), false);
+        c.fill(StreamKind::Audio, 0, "BitRate", Ztring::from("1536000"), false);
+        c.fill(StreamKind::Audio, 0, "Channels", Ztring::from("2"), false);
+        c.fill(StreamKind::Audio, 0, "SamplingRate", Ztring::from("48000"), false);
+        c.fill(StreamKind::Audio, 0, "BitDepth", Ztring::from("16"), false);
+        c.fill(StreamKind::Audio, 0, "StreamSize", Ztring::from("286552"), false);
+        c.fill(StreamKind::Audio, 0, "SamplingCount", Ztring::from("71638"), false);
+        c.fill(StreamKind::Audio, 0, "Duration", Ztring::from("1492"), false);
         c
     }
 
@@ -510,16 +510,16 @@ mod tests {
     #[test]
     fn duration_is_emitted_as_decimal_seconds() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::Audio, 0, "Duration", Ztring::from("1492"), false);
+        c.fill(StreamKind::Audio, 0, "Duration", Ztring::from("1492"), false);
         let xml = to_xml(&c, "/tmp/x.wav", "26.05");
         assert!(xml.contains("<Duration>1.492</Duration>"));
 
         let mut c2 = StreamCollection::new();
-        c2.Fill(StreamKind::Audio, 0, "Duration", Ztring::from("60000"), false);
+        c2.fill(StreamKind::Audio, 0, "Duration", Ztring::from("60000"), false);
         assert!(to_xml(&c2, "x", "v").contains("<Duration>60.000</Duration>"));
 
         let mut c3 = StreamCollection::new();
-        c3.Fill(StreamKind::Audio, 0, "Duration", Ztring::from("7"), false);
+        c3.fill(StreamKind::Audio, 0, "Duration", Ztring::from("7"), false);
         assert!(to_xml(&c3, "x", "v").contains("<Duration>0.007</Duration>"));
     }
 
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn xml_escapes_special_chars_in_values() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", Ztring::from("A & B <C>"), false);
+        c.fill(StreamKind::General, 0, "Format", Ztring::from("A & B <C>"), false);
         let xml = to_xml(&c, "/x", "v");
         assert!(xml.contains("<Format>A &amp; B &lt;C&gt;</Format>"));
     }
@@ -589,9 +589,9 @@ mod tests {
     #[test]
     fn unknown_fields_fall_through_in_insertion_order() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", Ztring::from("Wave"), false);
-        c.Fill(StreamKind::General, 0, "ZZZ_Custom", Ztring::from("first"), false);
-        c.Fill(StreamKind::General, 0, "AAA_Custom", Ztring::from("second"), false);
+        c.fill(StreamKind::General, 0, "Format", Ztring::from("Wave"), false);
+        c.fill(StreamKind::General, 0, "ZZZ_Custom", Ztring::from("first"), false);
+        c.fill(StreamKind::General, 0, "AAA_Custom", Ztring::from("second"), false);
         let xml = to_xml(&c, "x", "v");
 
         let format_idx = xml.find("<Format>Wave</Format>").unwrap();

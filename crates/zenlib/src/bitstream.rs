@@ -325,7 +325,7 @@ mod tests {
         let mut bs = BitStream::new(&[0xFF]);
         assert_eq!(bs.Get(16), 0);
         assert!(bs.BufferUnderRun());
-        assert_eq!(bs.Remain(), 0);
+        assert_eq!(bs.remain(), 0);
     }
 
     #[test]
@@ -348,7 +348,7 @@ mod tests {
     fn skip_more_than_32() {
         let mut bs = BitStream::new(&[0; 8]);
         bs.Skip(40);
-        assert_eq!(bs.Remain(), 24);
+        assert_eq!(bs.remain(), 24);
     }
 
     #[test]

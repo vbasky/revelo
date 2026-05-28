@@ -30,7 +30,7 @@ const MAGIC: &[u8; 17] = b"Extended Module: ";
 const HEADER_MIN_BYTES: usize = 336;
 
 pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_MIN_BYTES {
+    if fa.remain() < HEADER_MIN_BYTES {
         return false;
     }
     let head = match fa.peek_raw(38) {
@@ -41,7 +41,7 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("Extended Module");
+    fa.element_begin("Extended Module");
 
     // Signature ("Extended Module: ").
     let _ = fa.read_raw(17);
@@ -49,7 +49,7 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
     // Module name: 20 bytes, then 0x1A sentinel.
     let module_name_bytes = fa.read_raw(20).to_vec();
     let module_name = trim_local_string(&module_name_bytes);
-    fa.Skip_L1("0x1A");
+    fa.skip_l1("0x1A");
 
     // Tracker name: 20 bytes.
     let tracker_name_bytes = fa.read_raw(20).to_vec();
@@ -57,15 +57,15 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
 
     let mut version_minor: int8u = 0;
     let mut version_major: int8u = 0;
-    fa.Get_L1(&mut version_minor, "Version (minor)");
-    fa.Get_L1(&mut version_major, "Version (major)");
+    fa.get_l1(&mut version_minor, "Version (minor)");
+    fa.get_l1(&mut version_major, "Version (major)");
 
     let mut header_size: int32u = 0;
-    fa.Get_L4(&mut header_size, "Header size");
+    fa.get_l4(&mut header_size, "Header size");
 
     let mut length: int16u = 0;
-    fa.Get_L2(&mut length, "Song Length");
-    fa.Skip_L2("Restart position");
+    fa.get_l2(&mut length, "Song Length");
+    fa.skip_l2("Restart position");
 
     let mut channels: int16u = 0;
     let mut patterns: int16u = 0;
@@ -73,15 +73,15 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
     let mut flags: int16u = 0;
     let mut tempo: int16u = 0;
     let mut bpm: int16u = 0;
-    fa.Get_L2(&mut channels, "Number of channels");
-    fa.Get_L2(&mut patterns, "Number of patterns");
-    fa.Get_L2(&mut instruments, "Number of instruments");
-    fa.Get_L2(&mut flags, "Flags");
-    fa.Get_L2(&mut tempo, "Tempo");
-    fa.Get_L2(&mut bpm, "BPM");
-    fa.Skip_Hexa(256, "Pattern order table");
+    fa.get_l2(&mut channels, "Number of channels");
+    fa.get_l2(&mut patterns, "Number of patterns");
+    fa.get_l2(&mut instruments, "Number of instruments");
+    fa.get_l2(&mut flags, "Flags");
+    fa.get_l2(&mut tempo, "Tempo");
+    fa.get_l2(&mut bpm, "BPM");
+    fa.skip_hexa(256, "Pattern order table");
 
-    fa.Element_End();
+    fa.element_end();
 
     // Version string mirrors C++: "<major>.<minor/10><minor%10>" so
     // version 1.04 prints as "1.04" (not "1.4").
@@ -92,24 +92,24 @@ pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
         version_minor % 10
     );
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Extended Module", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version_str, false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Extended Module", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", version_str, false);
     if !module_name.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Track", module_name, false);
+        fa.fill(StreamKind::General, 0, "Track", module_name, false);
     }
     if !tracker_name.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Encoded_Application", tracker_name, false);
+        fa.fill(StreamKind::General, 0, "Encoded_Application", tracker_name, false);
     }
-    fa.Fill(StreamKind::General, 0, "Tempo", tempo.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "BPM", bpm.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "Tempo", tempo.to_string(), false);
+    fa.fill(StreamKind::General, 0, "BPM", bpm.to_string(), false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Module", false);
-    fa.Fill(StreamKind::Audio, 0, "Sampler, Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Sampler, Patterns", patterns.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Sampler, Instruments", instruments.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
+    fa.fill(StreamKind::Audio, 0, "Sampler, Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Sampler, Patterns", patterns.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Sampler, Instruments", instruments.to_string(), false);
 
     let _ = (length, flags, header_size);
 
@@ -194,8 +194,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_extended_module(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Extended Module"));
         assert_eq!(g("Format_Version").as_deref(), Some("1.04"));
@@ -221,7 +221,7 @@ mod tests {
         );
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_extended_module(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format_Version").as_deref(), Some("2.23"));
         // Empty (all-spaces) names should not produce fields.
         assert!(g("Track").is_none());

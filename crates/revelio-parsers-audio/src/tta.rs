@@ -19,10 +19,10 @@ const MAGIC_TTA1: [u8; 4] = *b"TTA1";
 const HEADER_LEN: usize = 22;
 
 pub fn parse_tta(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_LEN {
+    if fa.remain() < HEADER_LEN {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(h) if h.len() == 4 => h,
         _ => return false,
     };
@@ -30,21 +30,21 @@ pub fn parse_tta(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("TTA");
+    fa.element_begin("TTA");
     let mut signature: int32u = 0;
-    fa.Get_C4(&mut signature, "Signature");
+    fa.get_c4(&mut signature, "Signature");
     let mut audio_format: int16u = 0;
-    fa.Get_L2(&mut audio_format, "AudioFormat");
+    fa.get_l2(&mut audio_format, "AudioFormat");
     let mut channels: int16u = 0;
-    fa.Get_L2(&mut channels, "NumChannels");
+    fa.get_l2(&mut channels, "NumChannels");
     let mut bits_per_sample: int16u = 0;
-    fa.Get_L2(&mut bits_per_sample, "BitsPerSample");
+    fa.get_l2(&mut bits_per_sample, "BitsPerSample");
     let mut sample_rate: int32u = 0;
-    fa.Get_L4(&mut sample_rate, "SampleRate");
+    fa.get_l4(&mut sample_rate, "SampleRate");
     let mut samples: int32u = 0;
-    fa.Get_L4(&mut samples, "DataLength");
-    fa.Skip_L4("CRC32");
-    fa.Element_End();
+    fa.get_l4(&mut samples, "DataLength");
+    fa.skip_l4("CRC32");
+    fa.element_end();
 
     // Reject obviously-broken headers: divisions below would panic and the
     // resulting metadata would be useless anyway.
@@ -56,20 +56,20 @@ pub fn parse_tta(fa: &mut FileAnalyze) -> bool {
     //   Duration = Samples * 1000 / SampleRate
     let duration_ms: u64 = (samples as u64) * 1000 / (sample_rate as u64);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "TTA", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "TTA", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "TTA", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "TTA ", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "TTA", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "TTA ", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
 
     true
 }
@@ -109,8 +109,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tta(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("TTA"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));

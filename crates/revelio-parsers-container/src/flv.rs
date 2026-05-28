@@ -27,7 +27,7 @@ pub fn parse_flv(fa: &mut FileAnalyze) -> bool {
     // Peek the smaller of the available bytes vs the fixed header size so
     // truncated inputs are rejected before any cursor movement, letting
     // sibling parsers try the same buffer.
-    let need = FLV_HEADER_SIZE.min(fa.Remain());
+    let need = FLV_HEADER_SIZE.min(fa.remain());
     let header = match fa.peek_raw(need) {
         Some(b) if b.len() == FLV_HEADER_SIZE => b,
         _ => return false,
@@ -36,36 +36,36 @@ pub fn parse_flv(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("FLV header");
+    fa.element_begin("FLV header");
     let mut sig0: int8u = 0;
     let mut sig1: int8u = 0;
     let mut sig2: int8u = 0;
-    fa.Get_B1(&mut sig0, "Signature[0]");
-    fa.Get_B1(&mut sig1, "Signature[1]");
-    fa.Get_B1(&mut sig2, "Signature[2]");
+    fa.get_b1(&mut sig0, "Signature[0]");
+    fa.get_b1(&mut sig1, "Signature[1]");
+    fa.get_b1(&mut sig2, "Signature[2]");
     let mut version: int8u = 0;
-    fa.Get_B1(&mut version, "Version");
+    fa.get_b1(&mut version, "Version");
     let mut type_flags: int8u = 0;
-    fa.Get_B1(&mut type_flags, "TypeFlags");
+    fa.get_b1(&mut type_flags, "TypeFlags");
     let mut data_offset: int32u = 0;
-    fa.Get_B4(&mut data_offset, "DataOffset");
-    fa.Element_End();
+    fa.get_b4(&mut data_offset, "DataOffset");
+    fa.element_end();
 
     let _ = (sig0, sig1, sig2, version, data_offset);
 
     let has_audio = (type_flags & TYPE_FLAG_AUDIO) != 0;
     let has_video = (type_flags & TYPE_FLAG_VIDEO) != 0;
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Flash Video", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Flash Video", false);
+    fa.fill(
         StreamKind::General,
         0,
         "VideoCount",
         if has_video { "1" } else { "0" },
         false,
     );
-    fa.Fill(
+    fa.fill(
         StreamKind::General,
         0,
         "AudioCount",
@@ -94,7 +94,7 @@ mod tests {
         let buf = make_flv(TYPE_FLAG_AUDIO | TYPE_FLAG_VIDEO);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_flv(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("Flash Video"));
         assert_eq!(g("VideoCount").as_deref(), Some("1"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -105,7 +105,7 @@ mod tests {
         let buf = make_flv(TYPE_FLAG_AUDIO);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_flv(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
         assert_eq!(g("VideoCount").as_deref(), Some("0"));
     }

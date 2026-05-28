@@ -23,7 +23,7 @@ const OPUS_CHANNEL_LAYOUT: [&str; 8] = [
 ];
 
 pub fn parse_opus(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -64,20 +64,20 @@ fn fill_opus_streams(
     sample_rate: u32,
     channel_map: u8,
 ) {
-    let pos = fa.Stream_Prepare(StreamKind::Audio);
+    let pos = fa.stream_prepare(StreamKind::Audio);
 
-    fa.Fill(StreamKind::Audio, pos, "Format", "Opus", false);
-    fa.Fill(StreamKind::Audio, pos, "Codec", "Opus", false);
-    fa.Fill(StreamKind::Audio, pos, "Channels", channel_count.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "Format", "Opus", false);
+    fa.fill(StreamKind::Audio, pos, "Codec", "Opus", false);
+    fa.fill(StreamKind::Audio, pos, "Channels", channel_count.to_string(), false);
 
     let sr = if sample_rate > 0 { sample_rate } else { 48000 };
-    fa.Fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
 
     if channel_map == 0 || channel_map == 1 {
         let ch = channel_count as usize;
         if ch > 0 && ch <= 8 {
-            fa.Fill(StreamKind::Audio, pos, "ChannelPositions", OPUS_CHANNEL_POSITIONS[ch - 1], false);
-            fa.Fill(StreamKind::Audio, pos, "ChannelLayout", OPUS_CHANNEL_LAYOUT[ch - 1], false);
+            fa.fill(StreamKind::Audio, pos, "ChannelPositions", OPUS_CHANNEL_POSITIONS[ch - 1], false);
+            fa.fill(StreamKind::Audio, pos, "ChannelLayout", OPUS_CHANNEL_LAYOUT[ch - 1], false);
         }
     }
 }
@@ -99,11 +99,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_opus(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("Opus".into())
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Channels").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Audio, 0, "Channels").map(|z| z.as_str().to_owned()),
             Some("2".into())
         );
     }

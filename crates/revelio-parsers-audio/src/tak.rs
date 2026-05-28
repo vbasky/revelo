@@ -42,10 +42,10 @@ struct StreamInfo {
 }
 
 pub fn parse_tak(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 4 {
+    if fa.remain() < 4 {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(h) if h.len() == 4 => h,
         _ => return false,
     };
@@ -53,50 +53,50 @@ pub fn parse_tak(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("TAK");
+    fa.element_begin("TAK");
     let mut signature: int32u = 0;
-    fa.Get_C4(&mut signature, "Signature");
+    fa.get_c4(&mut signature, "Signature");
 
     let mut streaminfo: Option<StreamInfo> = None;
 
     loop {
-        if fa.Remain() < 4 {
+        if fa.remain() < 4 {
             break;
         }
         let mut block_type: int8u = 0;
-        fa.Get_L1(&mut block_type, "Block Type");
+        fa.get_l1(&mut block_type, "Block Type");
         let mut block_length: int32u = 0;
-        fa.Get_L3(&mut block_length, "Block Length");
+        fa.get_l3(&mut block_length, "Block Length");
         let block_len = block_length as usize;
 
-        if fa.Remain() < block_len {
+        if fa.remain() < block_len {
             break;
         }
 
         match block_type {
             BLOCK_STREAMINFO => {
-                fa.Element_Begin("STREAMINFO");
-                let before = fa.Element_Offset();
+                fa.element_begin("STREAMINFO");
+                let before = fa.element_offset();
                 if let Some(info) = parse_streaminfo(fa, block_len) {
                     streaminfo = Some(info);
                 }
-                let consumed = fa.Element_Offset() - before;
+                let consumed = fa.element_offset() - before;
                 if consumed < block_len {
-                    fa.Skip_Hexa(block_len - consumed, "Trailer");
+                    fa.skip_hexa(block_len - consumed, "Trailer");
                 }
-                fa.Element_End();
+                fa.element_end();
             }
             BLOCK_ENDOFMETADATA => {
                 break;
             }
             _ => {
-                fa.Skip_Hexa(block_len, "MetadataBlock");
+                fa.skip_hexa(block_len, "MetadataBlock");
             }
         }
     }
 
-    let audio_stream_size = fa.Remain() as u64;
-    fa.Element_End();
+    let audio_stream_size = fa.remain() as u64;
+    fa.element_end();
 
     if let Some(info) = streaminfo {
         fill_streams(fa, &info, audio_stream_size);
@@ -112,27 +112,27 @@ fn parse_streaminfo(fa: &mut FileAnalyze, block_len: usize) -> Option<StreamInfo
     if block_len < 13 {
         return None;
     }
-    fa.Skip_L1("unknown");
-    fa.BS_Begin();
+    fa.skip_l1("unknown");
+    fa.bs_begin();
     let mut num_samples_lo: int8u = 0;
     let mut framesizecode: int8u = 0;
-    fa.Get_S1(2, &mut num_samples_lo, "num_samples (lo)");
-    fa.Get_S1(3, &mut framesizecode, "framesizecode");
-    fa.Skip_S1(2, "unknown");
-    fa.BS_End();
+    fa.get_s1(2, &mut num_samples_lo, "num_samples (lo)");
+    fa.get_s1(3, &mut framesizecode, "framesizecode");
+    fa.skip_s1(2, "unknown");
+    fa.bs_end();
     let mut num_samples_hi: int32u = 0;
-    fa.Get_L4(&mut num_samples_hi, "num_samples (hi)");
+    fa.get_l4(&mut num_samples_hi, "num_samples (hi)");
     let mut samplerate_packed: int32u = 0;
-    fa.Get_L3(&mut samplerate_packed, "samplerate");
-    fa.BS_Begin();
-    fa.Skip_S1(4, "unknown");
+    fa.get_l3(&mut samplerate_packed, "samplerate");
+    fa.bs_begin();
+    fa.skip_s1(4, "unknown");
     let mut channels_bit: int8u = 0;
     let mut samplesize_idx: int8u = 0;
-    fa.Get_S1(1, &mut channels_bit, "channels");
-    fa.Get_S1(2, &mut samplesize_idx, "samplesize");
-    fa.Skip_S1(1, "unknown");
-    fa.BS_End();
-    fa.Skip_L3("crc");
+    fa.get_s1(1, &mut channels_bit, "channels");
+    fa.get_s1(2, &mut samplesize_idx, "samplesize");
+    fa.skip_s1(1, "unknown");
+    fa.bs_end();
+    fa.skip_l3("crc");
 
     if samplerate_packed == 0 {
         return None;
@@ -152,29 +152,29 @@ fn parse_streaminfo(fa: &mut FileAnalyze, block_len: usize) -> Option<StreamInfo
 }
 
 fn fill_streams(fa: &mut FileAnalyze, info: &StreamInfo, audio_stream_size: u64) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "TAK", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "TAK", false);
     // Per File_Tak::ENDOFMETADATA: General StreamSize is reported as 0; the
     // audio frames region is reported as Audio StreamSize.
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "TAK", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "TAK", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", info.channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "TAK", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "TAK", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "Channels", info.channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string(), false);
     if info.bit_depth != 0 {
-        fa.Fill(StreamKind::Audio, 0, "BitDepth", info.bit_depth.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitDepth", info.bit_depth.to_string(), false);
     }
     if info.samples > 0 && info.sample_rate > 0 {
         let duration_ms = info.samples * 1000 / (info.sample_rate as u64);
-        fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-        fa.Fill(StreamKind::Audio, 0, "SamplingCount", info.samples.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "SamplingCount", info.samples.to_string(), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
 }
 
 #[cfg(test)]
@@ -238,8 +238,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tak(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("TAK"));
         assert_eq!(g("StreamSize").as_deref(), Some("0"));
@@ -263,7 +263,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tak(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channels").as_deref(), Some("1"));
         assert_eq!(a("BitDepth").as_deref(), Some("24"));
         assert_eq!(a("SamplingRate").as_deref(), Some("48000"));

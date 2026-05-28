@@ -47,7 +47,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
-    let avail = fa.Remain();
+    let avail = fa.remain();
     if avail < 4 {
         return false;
     }
@@ -247,54 +247,54 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
 
     let _ = (ga_width, ga_height);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Amiga Icon", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Amiga Icon", false);
     let profile = amiga_icon_type(icon_type);
     if !profile.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Format_Profile", profile, false);
+        fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
     }
 
     if let Some((w, h, d)) = classic {
         if gadget_render != 0 && w > 0 && h > 0 {
-            let pos = fa.Stream_Prepare(StreamKind::Image);
-            fa.Fill(StreamKind::Image, pos, "Format", "Raw", false);
-            fa.Fill(StreamKind::Image, pos, "Format_Profile", "Classic", false);
-            fa.Fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-            fa.Fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-            fa.Fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-            fa.Fill(StreamKind::Image, pos, "BitDepth", d.to_string(), false);
+            let pos = fa.stream_prepare(StreamKind::Image);
+            fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
+            fa.fill(StreamKind::Image, pos, "Format_Profile", "Classic", false);
+            fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
+            fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+            fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+            fa.fill(StreamKind::Image, pos, "BitDepth", d.to_string(), false);
         }
     }
 
     if let Some((w, h)) = new_icon {
         if w > 0 && h > 0 {
-            let pos = fa.Stream_Prepare(StreamKind::Image);
-            fa.Fill(StreamKind::Image, pos, "Format", "Raw", false);
-            fa.Fill(StreamKind::Image, pos, "Format_Profile", "NewIcon", false);
-            fa.Fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-            fa.Fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-            fa.Fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+            let pos = fa.stream_prepare(StreamKind::Image);
+            fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
+            fa.fill(StreamKind::Image, pos, "Format_Profile", "NewIcon", false);
+            fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
+            fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+            fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
         }
     }
 
     if let Some((w, h, depth, fmt)) = glow {
-        let pos = fa.Stream_Prepare(StreamKind::Image);
-        fa.Fill(StreamKind::Image, pos, "Format", if fmt == 1 { "RLE" } else { "Raw" }, false);
-        fa.Fill(StreamKind::Image, pos, "Format_Profile", "GlowIcon", false);
-        fa.Fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-        fa.Fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.Fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-        fa.Fill(StreamKind::Image, pos, "BitDepth", depth.to_string(), false);
+        let pos = fa.stream_prepare(StreamKind::Image);
+        fa.fill(StreamKind::Image, pos, "Format", if fmt == 1 { "RLE" } else { "Raw" }, false);
+        fa.fill(StreamKind::Image, pos, "Format_Profile", "GlowIcon", false);
+        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
+        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "BitDepth", depth.to_string(), false);
     }
 
     if let Some((w, h)) = argb {
-        let pos = fa.Stream_Prepare(StreamKind::Image);
-        fa.Fill(StreamKind::Image, pos, "Format", "Raw", false);
-        fa.Fill(StreamKind::Image, pos, "Format_Profile", "ARGB", false);
-        fa.Fill(StreamKind::Image, pos, "ColorSpace", "RGBA", false);
-        fa.Fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.Fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-        fa.Fill(StreamKind::Image, pos, "BitDepth", "32", false);
+        let pos = fa.stream_prepare(StreamKind::Image);
+        fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
+        fa.fill(StreamKind::Image, pos, "Format_Profile", "ARGB", false);
+        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGBA", false);
+        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "BitDepth", "32", false);
     }
 
     true
@@ -359,8 +359,8 @@ mod tests {
         append_classic_image(&mut buf, 40, 20, 2);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_amiga_icon(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("Amiga Icon"));
         assert_eq!(g("Format_Profile").as_deref(), Some("Tool"));
         assert_eq!(i("Format").as_deref(), Some("Raw"));
@@ -376,10 +376,10 @@ mod tests {
         let buf = build_header(2, 0, 0, 0, 0);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_amiga_icon(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("Amiga Icon"));
         assert_eq!(g("Format_Profile").as_deref(), Some("Drawer"));
-        assert!(fa.Retrieve(StreamKind::Image, 0, "Width").is_none());
+        assert!(fa.retrieve(StreamKind::Image, 0, "Width").is_none());
     }
 
     #[test]

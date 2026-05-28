@@ -18,7 +18,7 @@ const ASF_HEADER_GUID: [u8; 16] = [
 ];
 
 pub fn parse_wm(fa: &mut FileAnalyze) -> bool {
-    let head = match fa.peek_raw(fa.Remain().min(16)) {
+    let head = match fa.peek_raw(fa.remain().min(16)) {
         Some(b) if b.len() == 16 => b,
         _ => return false,
     };
@@ -26,8 +26,8 @@ pub fn parse_wm(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Windows Media", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Windows Media", true);
 
     true
 }
@@ -45,7 +45,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wm(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("Windows Media"),

@@ -14,10 +14,10 @@ const MAGIC_MTHD: [u8; 4] = *b"MThd";
 const HEADER_LEN: usize = 14;
 
 pub fn parse_midi(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_LEN {
+    if fa.remain() < HEADER_LEN {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(HEADER_LEN)) {
+    let head = match fa.peek_raw(fa.remain().min(HEADER_LEN)) {
         Some(h) if h.len() >= 4 => h,
         _ => return false,
     };
@@ -25,12 +25,12 @@ pub fn parse_midi(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "MIDI", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "MIDI", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "MIDI", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "MIDI", false);
 
     true
 }
@@ -55,8 +55,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_midi(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("MIDI"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));

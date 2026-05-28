@@ -19,19 +19,19 @@ pub fn parse_gif(fa: &mut FileAnalyze) -> bool {
     let width = u16::from_le_bytes([h[6], h[7]]);
     let height = u16::from_le_bytes([h[8], h[9]]);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "GIF", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "GIF", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "GIF", false);
-    fa.Fill(StreamKind::Image, 0, "Format_Profile", profile, false);
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "GIF", false);
+    fa.fill(StreamKind::Image, 0, "Format_Profile", profile, false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
     if width > 0 && height > 0 {
         let dar = (width as f64) / (height as f64);
-        fa.Fill(
+        fa.fill(
             StreamKind::Image,
             0,
             "DisplayAspectRatio",
@@ -39,7 +39,7 @@ pub fn parse_gif(fa: &mut FileAnalyze) -> bool {
             false,
         );
     }
-    fa.Fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
     true
 }
 

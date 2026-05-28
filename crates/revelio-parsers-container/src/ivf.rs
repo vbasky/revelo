@@ -26,7 +26,7 @@ const FOURCC_DKIF: int32u = u32::from_be_bytes(*b"DKIF");
 pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
     // Peek the signature so non-IVF buffers leave the cursor untouched
     // for sibling parsers to try.
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(b) if b.len() == 4 => b,
         _ => return false,
     };
@@ -36,14 +36,14 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
     }
 
     // Need at least the 32-byte v0 header to extract anything useful.
-    if fa.Remain() < 32 {
+    if fa.remain() < 32 {
         return false;
     }
 
-    fa.Element_Begin("IVF");
-    fa.Skip_C4("Signature");
+    fa.element_begin("IVF");
+    fa.skip_c4("Signature");
     let mut version: int16u = 0;
-    fa.Get_L2(&mut version, "Version");
+    fa.get_l2(&mut version, "Version");
 
     let mut header_size: int16u = 0;
     let mut fourcc: int32u = 0;
@@ -54,55 +54,55 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
     let mut frame_count: int32u = 0;
 
     if version == 0 {
-        fa.Get_L2(&mut header_size, "Header Size");
+        fa.get_l2(&mut header_size, "Header Size");
         if header_size >= 32 {
-            fa.Get_C4(&mut fourcc, "Fourcc");
-            fa.Get_L2(&mut width, "Width");
-            fa.Get_L2(&mut height, "Height");
-            fa.Get_L4(&mut frame_rate_num, "FrameRate Numerator");
-            fa.Get_L4(&mut frame_rate_den, "FrameRate Denominator");
-            fa.Get_L4(&mut frame_count, "Frame Count");
+            fa.get_c4(&mut fourcc, "Fourcc");
+            fa.get_l2(&mut width, "Width");
+            fa.get_l2(&mut height, "Height");
+            fa.get_l4(&mut frame_rate_num, "FrameRate Numerator");
+            fa.get_l4(&mut frame_rate_den, "FrameRate Denominator");
+            fa.get_l4(&mut frame_count, "Frame Count");
             let mut _unused: int32u = 0;
-            fa.Get_L4(&mut _unused, "Unused");
+            fa.get_l4(&mut _unused, "Unused");
             let extra = header_size as usize - 32;
-            if extra > 0 && fa.Remain() >= extra {
-                fa.Skip_Hexa(extra, "Unknown");
+            if extra > 0 && fa.remain() >= extra {
+                fa.skip_hexa(extra, "Unknown");
             }
         }
     }
 
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "IVF", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "IVF", false);
 
     if version == 0 && header_size >= 32 {
-        fa.Stream_Prepare(StreamKind::Video);
+        fa.stream_prepare(StreamKind::Video);
         let format = video_format_from_fourcc(fourcc);
         if !format.is_empty() {
-            fa.Fill(StreamKind::Video, 0, "Format", format, false);
+            fa.fill(StreamKind::Video, 0, "Format", format, false);
         }
         let cc = fourcc.to_be_bytes();
         let codec_id = String::from_utf8_lossy(&cc).into_owned();
-        fa.Fill(StreamKind::Video, 0, "CodecID", codec_id, false);
+        fa.fill(StreamKind::Video, 0, "CodecID", codec_id, false);
 
         if width > 0 {
-            fa.Fill(StreamKind::Video, 0, "Width", width.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
         }
         if height > 0 {
-            fa.Fill(StreamKind::Video, 0, "Height", height.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
         }
         if frame_rate_den != 0 {
             let fr = frame_rate_num as f64 / frame_rate_den as f64;
-            fa.Fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
-            fa.Fill(
+            fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
+            fa.fill(
                 StreamKind::Video,
                 0,
                 "FrameRate_Num",
                 frame_rate_num.to_string(),
                 false,
             );
-            fa.Fill(
+            fa.fill(
                 StreamKind::Video,
                 0,
                 "FrameRate_Den",
@@ -111,10 +111,10 @@ pub fn parse_ivf(fa: &mut FileAnalyze) -> bool {
             );
         }
         if frame_count > 0 {
-            fa.Fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
         }
 
-        fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+        fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
     }
 
     true
@@ -156,8 +156,8 @@ mod tests {
         let buf = make_ivf(b"VP90", 1920, 1080, 30, 1, 300);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ivf(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let v = |k: &str| fa.Retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("IVF"));
         assert_eq!(g("VideoCount").as_deref(), Some("1"));
         assert_eq!(v("Format").as_deref(), Some("VP9"));
@@ -174,7 +174,7 @@ mod tests {
         let buf = make_ivf(b"AV01", 640, 480, 30000, 1001, 0);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ivf(&mut fa));
-        let v = |k: &str| fa.Retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(v("Format").as_deref(), Some("AV1"));
         assert_eq!(v("FrameRate").as_deref(), Some("29.970"));
         assert_eq!(v("FrameRate_Num").as_deref(), Some("30000"));

@@ -43,65 +43,65 @@ struct FmtChunk {
 /// was recognized.
 pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     let mut magic: int32u = 0;
-    fa.Peek_B4(&mut magic);
+    fa.peek_b4(&mut magic);
     if magic != FOURCC_RIFF {
         return false;
     }
 
-    fa.Element_Begin("RIFF");
+    fa.element_begin("RIFF");
     let mut riff_id: int32u = 0;
-    fa.Get_C4(&mut riff_id, "ID");
+    fa.get_c4(&mut riff_id, "ID");
     let mut riff_size: int32u = 0;
-    fa.Get_L4(&mut riff_size, "Size");
+    fa.get_l4(&mut riff_size, "Size");
     let mut form_type: int32u = 0;
-    fa.Get_C4(&mut form_type, "Type");
+    fa.get_c4(&mut form_type, "Type");
 
     if form_type != FOURCC_WAVE {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
     let mut fmt: Option<FmtChunk> = None;
     let mut data_size: u32 = 0;
 
-    while fa.Remain() >= 8 {
+    while fa.remain() >= 8 {
         let mut chunk_id: int32u = 0;
-        fa.Get_C4(&mut chunk_id, "ChunkID");
+        fa.get_c4(&mut chunk_id, "ChunkID");
         let mut chunk_size: int32u = 0;
-        fa.Get_L4(&mut chunk_size, "ChunkSize");
+        fa.get_l4(&mut chunk_size, "ChunkSize");
 
         let chunk_size_usize = chunk_size as usize;
-        if fa.Remain() < chunk_size_usize {
+        if fa.remain() < chunk_size_usize {
             break;
         }
 
         match chunk_id {
             FOURCC_FMT => {
-                fa.Element_Begin("fmt");
+                fa.element_begin("fmt");
                 let mut audio_format: int16u = 0;
-                fa.Get_L2(&mut audio_format, "AudioFormat");
+                fa.get_l2(&mut audio_format, "AudioFormat");
                 let mut num_channels: int16u = 0;
-                fa.Get_L2(&mut num_channels, "NumChannels");
+                fa.get_l2(&mut num_channels, "NumChannels");
                 let mut sample_rate: int32u = 0;
-                fa.Get_L4(&mut sample_rate, "SampleRate");
+                fa.get_l4(&mut sample_rate, "SampleRate");
                 let mut byte_rate: int32u = 0;
-                fa.Get_L4(&mut byte_rate, "ByteRate");
+                fa.get_l4(&mut byte_rate, "ByteRate");
                 let mut block_align: int16u = 0;
-                fa.Get_L2(&mut block_align, "BlockAlign");
+                fa.get_l2(&mut block_align, "BlockAlign");
                 let mut bits_per_sample: int16u = 0;
-                fa.Get_L2(&mut bits_per_sample, "BitsPerSample");
+                fa.get_l2(&mut bits_per_sample, "BitsPerSample");
 
                 // Consume any trailing extension bytes within this chunk.
                 let consumed_in_fmt: usize = 16;
                 if chunk_size_usize > consumed_in_fmt {
-                    fa.Skip_Hexa(chunk_size_usize - consumed_in_fmt, "Extension");
+                    fa.skip_hexa(chunk_size_usize - consumed_in_fmt, "Extension");
                 }
                 if chunk_size_usize % 2 == 1 {
                     let mut _pad: int8u = 0;
-                    fa.Get_B1(&mut _pad, "Padding");
+                    fa.get_b1(&mut _pad, "Padding");
                 }
 
-                fa.Element_End();
+                fa.element_end();
                 fmt = Some(FmtChunk {
                     audio_format,
                     num_channels,
@@ -112,27 +112,27 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 });
             }
             FOURCC_DATA => {
-                fa.Element_Begin("data");
+                fa.element_begin("data");
                 data_size = chunk_size;
-                fa.Skip_Hexa(chunk_size_usize, "Samples");
+                fa.skip_hexa(chunk_size_usize, "Samples");
                 if chunk_size_usize % 2 == 1 {
                     let mut _pad: int8u = 0;
-                    fa.Get_B1(&mut _pad, "Padding");
+                    fa.get_b1(&mut _pad, "Padding");
                 }
-                fa.Element_End();
+                fa.element_end();
             }
             _ => {
                 // Unknown chunk — skip it, honoring word-alignment.
-                fa.Skip_Hexa(chunk_size_usize, "Unknown");
+                fa.skip_hexa(chunk_size_usize, "Unknown");
                 if chunk_size_usize % 2 == 1 {
                     let mut _pad: int8u = 0;
-                    fa.Get_B1(&mut _pad, "Padding");
+                    fa.get_b1(&mut _pad, "Padding");
                 }
             }
         }
     }
 
-    fa.Element_End();
+    fa.element_end();
 
     if let Some(fmt) = fmt {
         fill_streams(fa, &fmt, data_size);
@@ -143,23 +143,23 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
 }
 
 fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Wave", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Wave", false);
 
     if fmt.audio_format == WAVE_FORMAT_PCM {
-        fa.Fill(StreamKind::General, 0, "Format_Settings", "PcmWaveformat", false);
+        fa.fill(StreamKind::General, 0, "Format_Settings", "PcmWaveformat", false);
     }
 
-    fa.Stream_Prepare(StreamKind::Audio);
+    fa.stream_prepare(StreamKind::Audio);
     let (fmt_name, endianness, sign) = wav_format_descriptors(fmt);
-    fa.Fill(StreamKind::Audio, 0, "Format", fmt_name, false);
+    fa.fill(StreamKind::Audio, 0, "Format", fmt_name, false);
     if let Some(e) = endianness {
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", e, false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", e, false);
     }
     if let Some(s) = sign {
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Sign", s, false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Sign", s, false);
     }
-    fa.Fill(
+    fa.fill(
         StreamKind::Audio,
         0,
         "CodecID",
@@ -167,29 +167,29 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32) {
         false,
     );
 
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
 
     let bitrate = (fmt.sample_rate as u64) * (fmt.num_channels as u64) * (fmt.bits_per_sample as u64);
     if bitrate > 0 {
-        fa.Fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
     }
 
-    fa.Fill(StreamKind::Audio, 0, "Channels", fmt.num_channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", fmt.sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", fmt.bits_per_sample.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", data_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", fmt.num_channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", fmt.sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", fmt.bits_per_sample.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", data_size.to_string(), false);
 
     if fmt.block_align > 0 {
         let sample_count = data_size as u64 / fmt.block_align as u64;
-        fa.Fill(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string(), false);
         if fmt.sample_rate > 0 {
             // Duration in milliseconds, matching C++ output convention.
             let duration_ms = (sample_count * 1000) / fmt.sample_rate as u64;
-            fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+            fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
         }
     }
 
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 }
 
 fn wav_format_descriptors(fmt: &FmtChunk) -> (&'static str, Option<&'static str>, Option<&'static str>) {
@@ -247,8 +247,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wav(&mut fa));
 
-        let g = |key: &str| fa.Retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
-        let a = |key: &str| fa.Retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Wave"));
         assert_eq!(g("Format_Settings").as_deref(), Some("PcmWaveformat"));
@@ -273,7 +273,7 @@ mod tests {
         let buf = make_pcm_wav(2, 48000, 24, 48000); // 2ch, 48kHz, 24-bit, 1s
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wav(&mut fa));
-        let a = |key: &str| fa.Retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channels").as_deref(), Some("2"));
         assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
         assert_eq!(a("BitDepth").as_deref(), Some("24"));
@@ -287,7 +287,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wav(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format_Settings_Sign")
+            fa.retrieve(StreamKind::Audio, 0, "Format_Settings_Sign")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("Unsigned")
@@ -349,7 +349,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wav(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "SamplingCount")
+            fa.retrieve(StreamKind::Audio, 0, "SamplingCount")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("100")

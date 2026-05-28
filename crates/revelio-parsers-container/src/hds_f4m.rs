@@ -20,7 +20,7 @@ const F4M_NAMESPACE: &str = "http://ns.adobe.com/f4m/1.0";
 const SCAN_WINDOW: usize = 1024;
 
 pub fn parse_hds_f4m(fa: &mut FileAnalyze) -> bool {
-    let window = SCAN_WINDOW.min(fa.Remain());
+    let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {
         return false;
     };
@@ -68,8 +68,8 @@ pub fn parse_hds_f4m(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "HDS F4M", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "HDS F4M", true);
     true
 }
 
@@ -86,7 +86,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_hds_f4m(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("HDS F4M")

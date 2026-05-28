@@ -6,7 +6,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const SYNC_DTSUHD: u32 = 0x40411BF2;
 
 pub fn parse_dts_uhd(fa: &mut FileAnalyze) -> bool {
-    let n = fa.Remain().min(4);
+    let n = fa.remain().min(4);
     let head = fa.peek_raw(n);
     let Some(h) = head else { return false };
     if h.len() < 4 {
@@ -17,14 +17,14 @@ pub fn parse_dts_uhd(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DTS", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DTS", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "DTS", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Profile", "UHD", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "DTS", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Profile", "UHD", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
 
     true
 }
@@ -54,11 +54,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dts_uhd(&mut fa));
         let a = |k: &str| {
-            fa.Retrieve(StreamKind::Audio, 0, k)
+            fa.retrieve(StreamKind::Audio, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         let g = |k: &str| {
-            fa.Retrieve(StreamKind::General, 0, k)
+            fa.retrieve(StreamKind::General, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         assert_eq!(g("Format").as_deref(), Some("DTS"));

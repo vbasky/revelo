@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_timed_text(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -26,8 +26,8 @@ pub fn parse_timed_text(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let pos = fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, pos, "Format", "Timed Text", false);
+    let pos = fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, pos, "Format", "Timed Text", false);
 
     true
 }

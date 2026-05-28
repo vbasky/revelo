@@ -11,17 +11,17 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_n19(fa: &mut FileAnalyze) -> bool {
     // GSI block is 1024 bytes, but we only need the first 11 to identify.
-    let head = fa.peek_raw(fa.Remain().min(11));
+    let head = fa.peek_raw(fa.remain().min(11));
     let Some(h) = head else { return false };
     if h.len() < 11 || &h[3..6] != b"STL" {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "N19", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "N19", false);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "N19", false);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "N19", false);
 
     true
 }
@@ -43,8 +43,8 @@ mod tests {
         let buf = make_gsi(b"STL30.01");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_n19(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("N19"));
         assert_eq!(t("Format").as_deref(), Some("N19"));
     }

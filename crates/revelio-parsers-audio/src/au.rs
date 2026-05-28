@@ -46,8 +46,8 @@ fn map_encoding(enc: u32) -> Option<(&'static str, &'static str, u16, bool)> {
 }
 
 pub fn parse_au(fa: &mut FileAnalyze) -> bool {
-    let file_size = fa.Remain();
-    let head = fa.peek_raw(fa.Remain().min(24));
+    let file_size = fa.remain();
+    let head = fa.peek_raw(fa.remain().min(24));
     let Some(h) = head else { return false };
     if h.len() < 24 || h[..4] != AU_MAGIC {
         return false;
@@ -76,27 +76,27 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
         0
     };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AU", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AU", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", format, false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", format, false);
     if !codec.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "CodecID", codec, false);
-        fa.Fill(StreamKind::Audio, 0, "Codec", codec, false);
+        fa.fill(StreamKind::Audio, 0, "CodecID", codec, false);
+        fa.fill(StreamKind::Audio, 0, "Codec", codec, false);
     }
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
     if bit_depth > 0 {
-        fa.Fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
     }
     // AU PCM and companding codecs are big-endian by definition.
     if format == "PCM" || format == "ADPCM" {
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
     }
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.Fill(
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(
         StreamKind::Audio,
         0,
         "Compression_Mode",
@@ -109,17 +109,17 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
     // in the original Sun definition. Replicate exactly for byte parity.
     if sample_rate > 0 && effective_data_size > 0 {
         let duration_ms = effective_data_size * 1000 / sample_rate as u64;
-        fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
 
         // BitRate derivable for PCM where bit_depth & channels known.
         if bit_depth > 0 && channels > 0 {
             let bitrate = (sample_rate as u64) * (bit_depth as u64) * (channels as u64);
-            fa.Fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+            fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
         }
     }
 
     let stream_size = (file_size as u64).saturating_sub(data_offset as u64);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
 
     true
 }
@@ -155,8 +155,8 @@ mod tests {
         let buf = build_au(3, 44100, 2, &data);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_au(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("AU"));
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Channels").as_deref(), Some("2"));
@@ -175,11 +175,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&mu_buf);
         assert!(parse_au(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("ADPCM")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "CodecID").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "CodecID").map(|z| z.as_str().to_owned()).as_deref(),
             Some("8-bit mu-law")
         );
 
@@ -188,11 +188,11 @@ mod tests {
         let mut fa2 = FileAnalyze::new(&a_buf);
         assert!(parse_au(&mut fa2));
         assert_eq!(
-            fa2.Retrieve(StreamKind::Audio, 0, "CodecID").map(|z| z.as_str().to_owned()).as_deref(),
+            fa2.retrieve(StreamKind::Audio, 0, "CodecID").map(|z| z.as_str().to_owned()).as_deref(),
             Some("8-bit a-law")
         );
         assert_eq!(
-            fa2.Retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()).as_deref(),
+            fa2.retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()).as_deref(),
             Some("Lossy")
         );
     }

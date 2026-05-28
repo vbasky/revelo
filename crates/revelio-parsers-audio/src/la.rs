@@ -29,10 +29,10 @@ const MAGIC_LA: [u8; 2] = *b"LA";
 const HEADER_LEN: usize = 45;
 
 pub fn parse_la(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_LEN {
+    if fa.remain() < HEADER_LEN {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(2)) {
+    let head = match fa.peek_raw(fa.remain().min(2)) {
         Some(h) if h.len() == 2 => h,
         _ => return false,
     };
@@ -40,34 +40,34 @@ pub fn parse_la(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("LA");
+    fa.element_begin("LA");
     let mut signature: int16u = 0;
-    fa.Get_L2(&mut signature, "signature");
+    fa.get_l2(&mut signature, "signature");
     let mut major: int8u = 0;
     let mut minor: int8u = 0;
-    fa.Get_L1(&mut major, "major_version");
-    fa.Get_L1(&mut minor, "minor_version");
+    fa.get_l1(&mut major, "major_version");
+    fa.get_l1(&mut minor, "minor_version");
     let mut uncompressed_size: int32u = 0;
-    fa.Get_L4(&mut uncompressed_size, "uncompressed_size");
-    fa.Skip_L4("chunk");
-    fa.Skip_L4("fmt_size");
-    fa.Skip_L4("fmt_chunk");
-    fa.Skip_L4("fmt_size");
+    fa.get_l4(&mut uncompressed_size, "uncompressed_size");
+    fa.skip_l4("chunk");
+    fa.skip_l4("fmt_size");
+    fa.skip_l4("fmt_chunk");
+    fa.skip_l4("fmt_size");
     let mut raw_format: int16u = 0;
-    fa.Get_L2(&mut raw_format, "raw_format");
+    fa.get_l2(&mut raw_format, "raw_format");
     let mut channels: int16u = 0;
-    fa.Get_L2(&mut channels, "channels");
+    fa.get_l2(&mut channels, "channels");
     let mut sample_rate: int32u = 0;
-    fa.Get_L4(&mut sample_rate, "sample_rate");
-    fa.Skip_L4("bytes_per_second");
-    fa.Skip_L2("bytes_per_sample");
+    fa.get_l4(&mut sample_rate, "sample_rate");
+    fa.skip_l4("bytes_per_second");
+    fa.skip_l2("bytes_per_sample");
     let mut bits_per_sample: int16u = 0;
-    fa.Get_L2(&mut bits_per_sample, "bits_per_sample");
+    fa.get_l2(&mut bits_per_sample, "bits_per_sample");
     let mut samples: int32u = 0;
-    fa.Get_L4(&mut samples, "samples");
-    fa.Skip_L1("flags");
-    fa.Skip_L4("crc");
-    fa.Element_End();
+    fa.get_l4(&mut samples, "samples");
+    fa.skip_l1("flags");
+    fa.skip_l4("crc");
+    fa.element_end();
 
     if sample_rate == 0 || channels == 0 || bits_per_sample == 0 {
         return false;
@@ -87,21 +87,21 @@ pub fn parse_la(fa: &mut FileAnalyze) -> bool {
 
     let version_str = format!("{}.{}", major, minor);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "LA", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "LA", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "LA", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "LA", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "LA", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "LA", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
 
     true
 }
@@ -154,8 +154,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_la(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("LA"));
         assert_eq!(g("Format_Version").as_deref(), Some("0.4"));

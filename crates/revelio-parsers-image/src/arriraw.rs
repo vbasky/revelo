@@ -11,7 +11,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_arriraw(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(8));
+    let head = fa.peek_raw(fa.remain().min(8));
     let Some(h) = head else { return false };
     if h.len() < 8 {
         return false;
@@ -20,15 +20,15 @@ pub fn parse_arriraw(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Arri Raw", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Arri Raw", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "Arri Raw", false);
-    fa.Fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "Arri Raw", false);
+    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
     true
 }
 
@@ -68,8 +68,8 @@ mod tests {
         let expected_size = buf.len();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_arriraw(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("Arri Raw"));
         assert_eq!(i("Format").as_deref(), Some("Arri Raw"));
         assert_eq!(i("StreamSize").as_deref(), Some(expected_size.to_string().as_str()));

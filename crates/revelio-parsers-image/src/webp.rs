@@ -39,7 +39,7 @@ pub fn parse_webp(fa: &mut FileAnalyze) -> bool {
     if magic != FOURCC_RIFF || form != FOURCC_WEBP {
         return false;
     }
-    let total = fa.Remain();
+    let total = fa.remain();
     let body = match fa.peek_raw(total) {
         Some(b) => b,
         None => return false,
@@ -52,31 +52,31 @@ pub fn parse_webp(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "WebP", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "WebP", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", info.format, false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", info.format, false);
     if let Some(v) = info.version {
-        fa.Fill(StreamKind::Image, 0, "Format_Version", format!("Version {}", v), false);
+        fa.fill(StreamKind::Image, 0, "Format_Version", format!("Version {}", v), false);
     }
     if info.width > 0 {
-        fa.Fill(StreamKind::Image, 0, "Width", info.width.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Width", info.width.to_string(), false);
     }
     if info.height > 0 {
-        fa.Fill(StreamKind::Image, 0, "Height", info.height.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Height", info.height.to_string(), false);
     }
-    fa.Fill(StreamKind::Image, 0, "BitDepth", "8", false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", "8", false);
     if !info.compression.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "Compression_Mode", info.compression, false);
+        fa.fill(StreamKind::Image, 0, "Compression_Mode", info.compression, false);
     }
     let mut color_space = info.color_space.to_string();
     if info.has_alpha && !color_space.ends_with('A') {
         color_space.push('A');
     }
     if !color_space.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+        fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
     }
     let _ = info.is_animated;
     true
@@ -233,7 +233,7 @@ mod tests {
         let buf = build_riff(b"WEBP", &[(b"VP8L", payload)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_webp(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("WebP"));
         assert_eq!(i("Width").as_deref(), Some("320"));
         assert_eq!(i("Height").as_deref(), Some("240"));
@@ -250,7 +250,7 @@ mod tests {
         let buf = build_riff(b"WEBP", &[(b"VP8 ", payload)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_webp(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Compression_Mode").as_deref(), Some("Lossy"));
         assert_eq!(i("Width").as_deref(), Some("100"));
         assert_eq!(i("Height").as_deref(), Some("200"));

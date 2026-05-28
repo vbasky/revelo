@@ -3,12 +3,12 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_h263(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 4 {
+    if fa.remain() < 4 {
         return false;
     }
 
     let mut psc: u32 = 0;
-    fa.Peek_B4(&mut psc);
+    fa.peek_b4(&mut psc);
 
     if (psc >> 10) != 0x000080 {
         return false;
@@ -25,14 +25,14 @@ pub fn parse_h263(fa: &mut FileAnalyze) -> bool {
         _ => return false,
     };
 
-    fa.Skip_B4("picture start code");
+    fa.skip_b4("picture start code");
 
-    fa.Element_Begin("H.263");
-    fa.Element_End();
+    fa.element_begin("H.263");
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "H.263", false);
-    fa.Fill(StreamKind::Video, 0, "Width", w.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", h.to_string(), false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "H.263", false);
+    fa.fill(StreamKind::Video, 0, "Width", w.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", h.to_string(), false);
     true
 }

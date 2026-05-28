@@ -6,7 +6,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_sequence_info(fa: &mut FileAnalyze) -> bool {
-    let want = fa.Remain().min(1024);
+    let want = fa.remain().min(1024);
     if want < 8 {
         return false;
     }
@@ -22,8 +22,8 @@ pub fn parse_sequence_info(fa: &mut FileAnalyze) -> bool {
     if !root_matches(body, "SEQUENCEINFO") {
         return false;
     }
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "SequenceInfo", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "SequenceInfo", false);
     true
 }
 
@@ -57,7 +57,7 @@ mod tests {
         let mut fa = FileAnalyze::new(b"<?xml version=\"1.0\"?><SEQUENCEINFO><Frame n=\"1\"/></SEQUENCEINFO>");
         assert!(parse_sequence_info(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("SequenceInfo".into())
         );
     }

@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// HEIF files have major_brand "mif1", "msf1", "heic", "heix", "hevc",
 /// "heim", "heis", "hevm", "hevs".
 pub fn parse_heif(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.Remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 12 { return false; }
 
@@ -20,7 +20,7 @@ pub fn parse_heif(fa: &mut FileAnalyze) -> bool {
 
     if !heif_brands.contains(&major_brand) { return false; }
 
-    let pos = fa.Stream_Prepare(StreamKind::Image);
+    let pos = fa.stream_prepare(StreamKind::Image);
 
     let format = match major_brand {
         "heic" | "heix" | "heim" | "heis" => "HEIC",
@@ -28,8 +28,8 @@ pub fn parse_heif(fa: &mut FileAnalyze) -> bool {
         "mif1" | "msf1" => "HEIF",
         _ => "HEIF",
     };
-    fa.Fill(StreamKind::Image, pos, "Format", format, false);
-    fa.Fill(StreamKind::Image, pos, "Format_Profile", major_brand, false);
+    fa.fill(StreamKind::Image, pos, "Format", format, false);
+    fa.fill(StreamKind::Image, pos, "Format_Profile", major_brand, false);
 
     true
 }
@@ -46,7 +46,7 @@ mod tests {
         buf[8..12].copy_from_slice(b"heic");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_heif(&mut fa));
-        assert_eq!(fa.Retrieve(StreamKind::Image, 0, "Format").map(|z| z.as_str().to_owned()), Some("HEIC".into()));
+        assert_eq!(fa.retrieve(StreamKind::Image, 0, "Format").map(|z| z.as_str().to_owned()), Some("HEIC".into()));
     }
 
     #[test]

@@ -54,7 +54,7 @@ const DSF_CHANNEL_LAYOUT: [&str; 8] = [
 pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     // Need at least DSD chunk (28) + fmt chunk header (12) + fmt payload (40)
     // = 80 bytes to read fmt fields meaningfully.
-    let head = fa.peek_raw(fa.Remain().min(80));
+    let head = fa.peek_raw(fa.remain().min(80));
     let Some(h) = head else { return false };
     if h.len() < 80 || &h[0..4] != b"DSD " {
         return false;
@@ -91,7 +91,7 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
 
     // Try to read the data chunk header (at offset 80) for StreamSize.
     let mut audio_stream_size: u64 = 0;
-    if let Some(full) = fa.peek_raw(fa.Remain().min(92)) {
+    if let Some(full) = fa.peek_raw(fa.remain().min(92)) {
         if full.len() >= 92 && &full[80..84] == b"data" {
             let data_chunk_size = u64::from_le_bytes(full[84..92].try_into().unwrap());
             // data chunk_size includes the 12-byte chunk header per spec.
@@ -99,40 +99,40 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DSF", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DSF", false);
+    fa.fill(
         StreamKind::General,
         0,
         "Format_Version",
         format!("Version {}", format_version),
         false,
     );
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    let file_size_now = fa.Remain() as u64;
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    let file_size_now = fa.remain() as u64;
     if total_file_size != 0 && total_file_size != file_size_now {
-        fa.Fill(StreamKind::General, 0, "Truncated", "Yes", false);
+        fa.fill(StreamKind::General, 0, "Truncated", "Yes", false);
     }
 
-    fa.Stream_Prepare(StreamKind::Audio);
+    fa.stream_prepare(StreamKind::Audio);
     // FormatID 0 = DSD raw. C++ falls back to numeric for unknown IDs; we
     // do the same so non-standard files still get a Format value.
     if format_id == 0 {
-        fa.Fill(StreamKind::Audio, 0, "Format", "DSD", false);
+        fa.fill(StreamKind::Audio, 0, "Format", "DSD", false);
     } else {
-        fa.Fill(StreamKind::Audio, 0, "Format", format_id.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Format", format_id.to_string(), false);
     }
 
     let ct_idx = channel_type as usize;
     if ct_idx > 0 && ct_idx < DSF_CHANNEL_POSITIONS.len() {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "ChannelPositions",
             DSF_CHANNEL_POSITIONS[ct_idx],
             false,
         );
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "ChannelLayout",
@@ -140,27 +140,27 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
             false,
         );
     }
-    fa.Fill(StreamKind::Audio, 0, "Channels", channel_num.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sampling_frequency.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channel_num.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_frequency.to_string(), false);
     // bits_per_sample here is the byte-bit-order of the DSD stream (1=LE, 8=BE),
     // not the audio bit depth. Audio bit depth for DSD is always 1.
     match bits_per_sample {
         1 => {
-            fa.Fill(StreamKind::Audio, 0, "Format_Settings", "Little", false);
-            fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Little", false);
+            fa.fill(StreamKind::Audio, 0, "Format_Settings", "Little", false);
+            fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Little", false);
         }
         8 => {
-            fa.Fill(StreamKind::Audio, 0, "Format_Settings", "Big", false);
-            fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+            fa.fill(StreamKind::Audio, 0, "Format_Settings", "Big", false);
+            fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
         }
         _ => {}
     }
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", "1", false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", "1", false);
+    fa.fill(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
     if audio_stream_size > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "StreamSize",
@@ -176,7 +176,7 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     while mult <= 512 {
         let base = sr / mult;
         if base == 48000 || base == 44100 {
-            fa.Fill(
+            fa.fill(
                 StreamKind::Audio,
                 0,
                 "Format_Commercial_IfAny",
@@ -238,8 +238,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dsf(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("DSF"));
         assert_eq!(g("Format_Version").as_deref(), Some("Version 1"));
@@ -271,7 +271,7 @@ mod tests {
         let buf = make_dsf(7, 6, 5_644_800, 8, 200_000, 60_000);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dsf(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channels").as_deref(), Some("6"));
         assert_eq!(a("ChannelLayout").as_deref(), Some("L R C Ls Rs LFE"));
         assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Big"));

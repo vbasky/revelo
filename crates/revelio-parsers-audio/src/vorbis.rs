@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_vorbis(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -43,23 +43,23 @@ fn fill_vorbis_streams(
     bitrate_nominal: i32,
     bitrate_min: i32,
 ) {
-    let pos = fa.Stream_Prepare(StreamKind::Audio);
+    let pos = fa.stream_prepare(StreamKind::Audio);
 
-    fa.Fill(StreamKind::Audio, pos, "Format", "Vorbis", false);
-    fa.Fill(StreamKind::Audio, pos, "Codec", "Vorbis", false);
-    fa.Fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "Format", "Vorbis", false);
+    fa.fill(StreamKind::Audio, pos, "Codec", "Vorbis", false);
+    fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
 
     let brm = if bitrate_nominal > 0 && bitrate_max == bitrate_nominal && bitrate_nominal == bitrate_min {
         "CBR"
     } else {
         "VBR"
     };
-    fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", brm, false);
+    fa.fill(StreamKind::Audio, pos, "BitRate_Mode", brm, false);
 
     // A positive i32 is already < 2^31, so the upper bound is implicit.
     if bitrate_nominal > 0 {
-        fa.Fill(StreamKind::Audio, pos, "BitRate", bitrate_nominal.to_string(), false);
+        fa.fill(StreamKind::Audio, pos, "BitRate", bitrate_nominal.to_string(), false);
     }
 }
 
@@ -81,7 +81,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vorbis(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("Vorbis".into())
         );
     }

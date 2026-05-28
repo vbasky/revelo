@@ -17,7 +17,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const DETECT_WINDOW: usize = 512;
 
 pub fn parse_sub_rip(fa: &mut FileAnalyze) -> bool {
-    let want = fa.Remain().min(DETECT_WINDOW);
+    let want = fa.remain().min(DETECT_WINDOW);
     if want < 16 {
         return false;
     }
@@ -37,12 +37,12 @@ pub fn parse_sub_rip(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "SubRip", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "SubRip", false);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "SubRip", false);
-    fa.Fill(StreamKind::Text, 0, "Codec", "SubRip", false);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "SubRip", false);
+    fa.fill(StreamKind::Text, 0, "Codec", "SubRip", false);
 
     true
 }
@@ -155,8 +155,8 @@ mod tests {
         let mut fa = FileAnalyze::new(SAMPLE);
         assert!(parse_sub_rip(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("SubRip"));
         assert_eq!(t("Format").as_deref(), Some("SubRip"));
         assert_eq!(t("Codec").as_deref(), Some("SubRip"));
@@ -169,7 +169,7 @@ mod tests {
         buf.extend_from_slice(b"1\r\n00:00:01,000 --> 00:00:04,000\r\nHi\r\n");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_sub_rip(&mut fa));
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(t("Format").as_deref(), Some("SubRip"));
     }
 

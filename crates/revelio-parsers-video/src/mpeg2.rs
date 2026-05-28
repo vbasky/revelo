@@ -265,48 +265,48 @@ const ASPECT_RATIO_TABLE: [Option<(u16, u16)>; 16] = [
 ];
 
 pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
-    fa.Stream_Prepare(StreamKind::Video);
+    fa.stream_prepare(StreamKind::Video);
     
-    fa.Fill(StreamKind::Video, 0, "Format", "MPEG Video", false);
-    fa.Fill(StreamKind::Video, 0, "Format_Version", "Version 2", false);
+    fa.fill(StreamKind::Video, 0, "Format", "MPEG Video", false);
+    fa.fill(StreamKind::Video, 0, "Format_Version", "Version 2", false);
     
     if let Some(profile) = info.profile {
-        fa.Fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
     }
     
     if let Some(level) = info.level {
         if let Some(level_str) = level.as_str() {
-            fa.Fill(StreamKind::Video, 0, "Format_Level", level_str, false);
+            fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
         }
     }
     
     if info.width > 0 {
-        fa.Fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
     }
     
     if info.height > 0 {
-        fa.Fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
     }
     
     if let Some(fr) = info.frame_rate() {
-        fa.Fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
+        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
     }
     
     if let Some(bitrate) = info.bit_rate {
-        fa.Fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
     }
     
     if let Some((num, den)) = info.aspect_ratio {
         let dar = num as f64 / den as f64;
-        fa.Fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
-        fa.Fill(StreamKind::Video, 0, "DisplayAspectRatio/String", format!("{}:{}", num, den), false);
+        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio/String", format!("{}:{}", num, den), false);
     }
     
     if let Some(chroma) = info.chroma_format_str() {
-        fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
+        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
     }
     
-    fa.Fill(StreamKind::Video, 0, "ScanType", if info.progressive { "Progressive" } else { "Interlaced" }, false);
+    fa.fill(StreamKind::Video, 0, "ScanType", if info.progressive { "Progressive" } else { "Interlaced" }, false);
 }
 
 pub fn parse_mpeg2(fa: &mut FileAnalyze) -> bool {

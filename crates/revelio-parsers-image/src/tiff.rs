@@ -78,7 +78,7 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let first_ifd_offset = read_u32(h, 4, little_endian) as usize;
-    let total = fa.Remain();
+    let total = fa.remain();
     let buf = match fa.peek_raw(total) {
         Some(b) => b,
         None => return false,
@@ -89,59 +89,59 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         None => return false,
     };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "TIFF", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "TIFF", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
     if let Some(ref s) = ifd.software {
         // TIFF Software → both Encoded_Application_Name and the composed
         // Encoded_Application (oracle emits both, derived from the same
         // string when no version info is separately available).
-        fa.Fill(StreamKind::General, 0, "Encoded_Application", s.clone(), false);
-        fa.Fill(StreamKind::General, 0, "Encoded_Application_Name", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Encoded_Application", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Encoded_Application_Name", s.clone(), false);
     }
     if let Some(ref s) = ifd.make {
-        fa.Fill(StreamKind::General, 0, "Make", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Make", s.clone(), false);
     }
     if let Some(ref s) = ifd.model {
-        fa.Fill(StreamKind::General, 0, "Model", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Model", s.clone(), false);
     }
     if let Some(ref s) = ifd.artist {
-        fa.Fill(StreamKind::General, 0, "Artist", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Artist", s.clone(), false);
     }
     if let Some(ref s) = ifd.copyright {
-        fa.Fill(StreamKind::General, 0, "Copyright", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Copyright", s.clone(), false);
     }
     if let Some(ref s) = ifd.date_time {
-        fa.Fill(StreamKind::General, 0, "DateTime", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "DateTime", s.clone(), false);
     }
     if let Some(ref s) = ifd.image_description {
-        fa.Fill(StreamKind::General, 0, "Description", s.clone(), false);
+        fa.fill(StreamKind::General, 0, "Description", s.clone(), false);
     }
 
-    fa.Stream_Prepare(StreamKind::Image);
+    fa.stream_prepare(StreamKind::Image);
     let endianness = if little_endian { "Little" } else { "Big" };
-    fa.Fill(StreamKind::Image, 0, "Format", "TIFF", false);
-    fa.Fill(StreamKind::Image, 0, "Format_Settings_Endianness", endianness, false);
+    fa.fill(StreamKind::Image, 0, "Format", "TIFF", false);
+    fa.fill(StreamKind::Image, 0, "Format_Settings_Endianness", endianness, false);
     if ifd.is_thumbnail {
-        fa.Fill(StreamKind::Image, 0, "Type", "Thumbnail", false);
+        fa.fill(StreamKind::Image, 0, "Type", "Thumbnail", false);
     }
     if ifd.width > 0 {
-        fa.Fill(StreamKind::Image, 0, "Width", ifd.width.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Width", ifd.width.to_string(), false);
     }
     if ifd.height > 0 {
-        fa.Fill(StreamKind::Image, 0, "Height", ifd.height.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Height", ifd.height.to_string(), false);
     }
     if ifd.bits_per_sample > 0 {
-        fa.Fill(StreamKind::Image, 0, "BitDepth", ifd.bits_per_sample.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "BitDepth", ifd.bits_per_sample.to_string(), false);
     }
     if ifd.compression > 0 {
         let name = tiff_compression_name(ifd.compression);
         if !name.is_empty() {
-            fa.Fill(StreamKind::Image, 0, "Format", name, true);
+            fa.fill(StreamKind::Image, 0, "Format", name, true);
         }
         let cm = tiff_compression_mode(ifd.compression);
         if !cm.is_empty() {
-            fa.Fill(StreamKind::Image, 0, "Compression_Mode", cm, false);
+            fa.fill(StreamKind::Image, 0, "Compression_Mode", cm, false);
         }
     }
     if ifd.photometric > 0 {
@@ -150,7 +150,7 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
             cs.push('A');
         }
         if !cs.is_empty() {
-            fa.Fill(StreamKind::Image, 0, "ColorSpace", cs, false);
+            fa.fill(StreamKind::Image, 0, "ColorSpace", cs, false);
         }
     }
 
@@ -166,13 +166,13 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         if d == 0 { n.to_string() } else if n % d == 0 { (n / d).to_string() } else { format!("{:.3}", n as f64 / d as f64) }
     };
     if let Some(x) = ifd.x_resolution {
-        fa.Fill(StreamKind::Image, 0, "Density_X", format_rat(x), false);
+        fa.fill(StreamKind::Image, 0, "Density_X", format_rat(x), false);
     }
     if let Some(y) = ifd.y_resolution {
-        fa.Fill(StreamKind::Image, 0, "Density_Y", format_rat(y), false);
+        fa.fill(StreamKind::Image, 0, "Density_Y", format_rat(y), false);
     }
     if !unit_str.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "Density_Unit", unit_str, false);
+        fa.fill(StreamKind::Image, 0, "Density_Unit", unit_str, false);
     }
     if ifd.x_resolution.is_some() || ifd.y_resolution.is_some() {
         // Density_String mirrors the C++'s "Density/String" composed
@@ -181,7 +181,7 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         let ys = ifd.y_resolution.map(format_rat).unwrap_or_else(|| "?".into());
         let val_part = if xs == ys { xs.clone() } else { format!("{}x{}", xs, ys) };
         if !unit_str.is_empty() {
-            fa.Fill(
+            fa.fill(
                 StreamKind::Image,
                 0,
                 "Density_String",
@@ -462,7 +462,7 @@ mod tests {
         let buf = build_le_tiff_minimal();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tiff(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Width").as_deref(), Some("100"));
         assert_eq!(i("Height").as_deref(), Some("50"));
         assert_eq!(i("BitDepth").as_deref(), Some("8"));
@@ -500,7 +500,7 @@ mod tests {
         buf.extend_from_slice(&0u32.to_be_bytes());
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tiff(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Width").as_deref(), Some("200"));
         assert_eq!(i("Height").as_deref(), Some("150"));
         assert_eq!(i("BitDepth").as_deref(), Some("16"));

@@ -59,7 +59,7 @@ const MPC_PROFILE: [&str; 16] = [
 ];
 
 pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(4));
+    let head = fa.peek_raw(fa.remain().min(4));
     let Some(h) = head else { return false };
     if h.len() < 4 {
         return false;
@@ -67,62 +67,62 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
     if &h[0..3] != b"MP+" || (h[3] & 0x0F) != 7 {
         return false;
     }
-    if fa.Remain() < HEADER_SIZE as usize {
+    if fa.remain() < HEADER_SIZE as usize {
         return false;
     }
 
     // Capture total buffer size for BitRate denominator (matches C++ File_Size).
-    let file_size = fa.Remain() as u64;
+    let file_size = fa.remain() as u64;
 
-    fa.Element_Begin("SV7 header");
+    fa.element_begin("SV7 header");
 
     let _sig = fa.read_raw(3).to_vec();
 
-    fa.BS_Begin();
+    fa.bs_begin();
     let mut pns: int8u = 0;
     let mut version: int8u = 0;
-    fa.Get_S1(4, &mut pns, "PNS");
-    fa.Get_S1(4, &mut version, "Version");
-    fa.BS_End();
+    fa.get_s1(4, &mut pns, "PNS");
+    fa.get_s1(4, &mut version, "Version");
+    fa.bs_end();
 
     let mut frame_count: int32u = 0;
-    fa.Get_L4(&mut frame_count, "FrameCount");
+    fa.get_l4(&mut frame_count, "FrameCount");
 
-    fa.Skip_L2("MaxLevel");
+    fa.skip_l2("MaxLevel");
 
-    fa.BS_Begin();
+    fa.bs_begin();
     let mut profile: int8u = 0;
     let mut link: int8u = 0;
     let mut sample_freq_idx: int8u = 0;
-    fa.Get_S1(4, &mut profile, "Profile");
-    fa.Get_S1(2, &mut link, "Link");
-    fa.Get_S1(2, &mut sample_freq_idx, "SampleFreq");
-    fa.Skip_S1(1, "IntensityStereo");
-    fa.Skip_S1(1, "MidSideStereo");
-    fa.Skip_S1(6, "MaxBand");
-    fa.BS_End();
+    fa.get_s1(4, &mut profile, "Profile");
+    fa.get_s1(2, &mut link, "Link");
+    fa.get_s1(2, &mut sample_freq_idx, "SampleFreq");
+    fa.skip_s1(1, "IntensityStereo");
+    fa.skip_s1(1, "MidSideStereo");
+    fa.skip_s1(6, "MaxBand");
+    fa.bs_end();
 
-    fa.Skip_L2("TitlePeak");
+    fa.skip_l2("TitlePeak");
     let mut title_gain: int16u = 0;
-    fa.Get_L2(&mut title_gain, "TitleGain");
+    fa.get_l2(&mut title_gain, "TitleGain");
 
-    fa.Skip_L2("AlbumPeak");
+    fa.skip_l2("AlbumPeak");
     let mut album_gain: int16u = 0;
-    fa.Get_L2(&mut album_gain, "AlbumGain");
+    fa.get_l2(&mut album_gain, "AlbumGain");
 
-    fa.BS_Begin();
-    fa.Skip_S2(16, "unused");
-    fa.Skip_S1(4, "LastFrameLength (part 1)");
-    fa.Skip_S1(1, "FastSeekingSafe");
-    fa.Skip_S1(3, "unused");
-    fa.Skip_S1(1, "TrueGapless");
-    fa.Skip_S1(7, "LastFrameLength (part 2)");
-    fa.BS_End();
+    fa.bs_begin();
+    fa.skip_s2(16, "unused");
+    fa.skip_s1(4, "LastFrameLength (part 1)");
+    fa.skip_s1(1, "FastSeekingSafe");
+    fa.skip_s1(3, "unused");
+    fa.skip_s1(1, "TrueGapless");
+    fa.skip_s1(7, "LastFrameLength (part 2)");
+    fa.bs_end();
 
     let mut encoder_version: int8u = 0;
-    fa.Get_L1(&mut encoder_version, "EncoderVersion");
+    fa.get_l1(&mut encoder_version, "EncoderVersion");
 
-    fa.Element_End();
+    fa.element_end();
 
     let sample_rate = MPC_SAMPLE_FREQ[(sample_freq_idx as usize) & 0x03];
     if sample_rate == 0 || frame_count == 0 {
@@ -138,30 +138,30 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
 
     let encoder = format_encoder_version(encoder_version);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Musepack", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", "Version 7", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Musepack", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", "Version 7", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Musepack", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Version", "Version 7", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "SV7", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Musepack", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Version", "Version 7", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "SV7", false);
     let profile_name = MPC_PROFILE[(profile as usize) & 0x0F];
     if !profile_name.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Codec_Settings", profile_name, false);
+        fa.fill(StreamKind::Audio, 0, "Codec_Settings", profile_name, false);
     }
     if !encoder.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Encoded_Library", encoder, false);
+        fa.fill(StreamKind::Audio, 0, "Encoded_Library", encoder, false);
     }
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", "2", false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", "16", false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", "2", false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", "16", false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
 
     let _ = (pns, link, title_gain, album_gain);
     true
@@ -255,11 +255,11 @@ mod tests {
         assert!(parse_mpc(&mut fa));
 
         let g = |k: &str| {
-            fa.Retrieve(StreamKind::General, 0, k)
+            fa.retrieve(StreamKind::General, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         let a = |k: &str| {
-            fa.Retrieve(StreamKind::Audio, 0, k)
+            fa.retrieve(StreamKind::Audio, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
 
@@ -292,7 +292,7 @@ mod tests {
         assert!(parse_mpc(&mut fa));
 
         let a = |k: &str| {
-            fa.Retrieve(StreamKind::Audio, 0, k)
+            fa.retrieve(StreamKind::Audio, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         assert_eq!(a("SamplingRate").as_deref(), Some("48000"));

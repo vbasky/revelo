@@ -6,16 +6,16 @@ fn fill_tags(fa: &mut FileAnalyze, tags: &[TagEntry]) {
     if tags.is_empty() {
         return;
     }
-    let pos = fa.Stream_Prepare(StreamKind::General);
+    let pos = fa.stream_prepare(StreamKind::General);
     for (key, value) in tags {
-        fa.Fill(StreamKind::General, pos, key, value.as_str(), false);
+        fa.fill(StreamKind::General, pos, key, value.as_str(), false);
     }
 }
 
 // ---------- ID3v1 ----------
 
 pub fn parse_id3v1(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 128 {
         return None;
     }
@@ -169,7 +169,7 @@ fn id3v1_genre(idx: u8) -> &'static str {
 // ---------- ID3v2 ----------
 
 pub fn parse_id3v2(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 10 {
         return None;
     }
@@ -304,7 +304,7 @@ fn read_utf16(data: &[u8], big_endian: bool) -> String {
 // ---------- APE tag ----------
 
 pub fn parse_ape_tag(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 32 {
         return None;
     }
@@ -452,7 +452,7 @@ pub fn parse_vorbis_comment(fa: &mut FileAnalyze, offset: &mut usize, buf: &[u8]
 // ---------- Lyrics3 ----------
 
 pub fn parse_lyrics3(fa: &mut FileAnalyze) -> Option<u32> {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 20 {
         return None;
     }
@@ -555,7 +555,7 @@ mod tests {
 /// Parse a TIFF/EXIF IFD from raw bytes at the given byte offset.
 /// Returns the list of tag entries and the offset to the next IFD.
 pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 8 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -668,7 +668,7 @@ fn read_tiff_u32(data: &[u8], off: usize, bo: &str) -> u32 {
 // ---------- XMP ----------
 
 pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
@@ -716,7 +716,7 @@ fn extract_xml_element(xml: &str, tag: &str) -> Option<String> {
 // ---------- ICC profile ----------
 
 pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 128 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -764,7 +764,7 @@ fn read_icc_u32(data: &[u8], off: usize) -> u32 {
 // ---------- C2PA ----------
 
 pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 16 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -802,7 +802,7 @@ pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
 // ---------- IIM / IPTC ----------
 
 pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 4 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -847,7 +847,7 @@ pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
 // ---------- PropertyList (Apple plist) ----------
 
 pub fn parse_property_list(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     let text = std::str::from_utf8(&buf).unwrap_or("");
@@ -912,7 +912,7 @@ fn extract_plist_value(xml: &str, key: &str) -> Option<String> {
 // ---------- SphericalVideo ----------
 
 pub fn parse_spherical_video(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     let text = std::str::from_utf8(&buf).unwrap_or("");

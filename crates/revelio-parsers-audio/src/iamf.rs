@@ -17,10 +17,10 @@ use revelio_core::{FileAnalyze, StreamKind};
 const MIN_HEADER_LEN: usize = 6;
 
 pub fn parse_iamf(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < MIN_HEADER_LEN {
+    if fa.remain() < MIN_HEADER_LEN {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(MIN_HEADER_LEN)) {
+    let head = match fa.peek_raw(fa.remain().min(MIN_HEADER_LEN)) {
         Some(h) if h.len() >= 1 => h,
         _ => return false,
     };
@@ -30,13 +30,13 @@ pub fn parse_iamf(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "IAMF", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "IAMF", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "IAMF", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "IAMF", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
 
     true
 }
@@ -59,8 +59,8 @@ mod tests {
             let buf = make_iamf(b);
             let mut fa = FileAnalyze::new(&buf);
             assert!(parse_iamf(&mut fa), "first byte {:#X} should be accepted", b);
-            let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-            let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+            let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+            let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
             assert_eq!(g("Format").as_deref(), Some("IAMF"));
             assert_eq!(g("AudioCount").as_deref(), Some("1"));
             assert_eq!(a("Format").as_deref(), Some("IAMF"));

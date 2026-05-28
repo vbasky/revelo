@@ -1,12 +1,12 @@
 use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_avs(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.Remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
     if &buf[0..4] != b"AVS " { return false; }
-    let pos = fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, pos, "Format", "AVS", false);
-    fa.Fill(StreamKind::Video, pos, "Format_Info", "Chinese AVS standard", false);
+    let pos = fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, pos, "Format", "AVS", false);
+    fa.fill(StreamKind::Video, pos, "Format_Info", "Chinese AVS standard", false);
     true
 }
 #[cfg(test)] mod tests { use super::*;

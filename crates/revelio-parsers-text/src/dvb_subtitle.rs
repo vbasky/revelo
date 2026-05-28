@@ -12,7 +12,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_dvb_subtitle(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(3));
+    let head = fa.peek_raw(fa.remain().min(3));
     let Some(h) = head else { return false };
     if h.len() < 3 {
         return false;
@@ -26,11 +26,11 @@ pub fn parse_dvb_subtitle(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DVB Subtitle", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DVB Subtitle", false);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "DVB Subtitle", false);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "DVB Subtitle", false);
 
     true
 }

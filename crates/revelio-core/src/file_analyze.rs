@@ -6,7 +6,7 @@
 //!
 //! ```ignore
 //! let mut size: int32u = 0;
-//! fa.Get_B4(&mut size, "Size");
+//! fa.get_b4(&mut size, "Size");
 //! ```
 //!
 //! Each `Get_B*` consumes N bytes, sets the out-parameter to the value, and
@@ -76,11 +76,11 @@ impl<'a> FileAnalyze<'a> {
         &mut self.streams
     }
 
-    pub fn Stream_Prepare(&mut self, kind: StreamKind) -> usize {
-        self.streams.Stream_Prepare(kind)
+    pub fn stream_prepare(&mut self, kind: StreamKind) -> usize {
+        self.streams.stream_prepare(kind)
     }
 
-    pub fn Fill(
+    pub fn fill(
         &mut self,
         kind: StreamKind,
         pos: usize,
@@ -88,14 +88,14 @@ impl<'a> FileAnalyze<'a> {
         value: impl Into<Ztring>,
         replace: bool,
     ) {
-        self.streams.Fill(kind, pos, parameter, value, replace);
+        self.streams.fill(kind, pos, parameter, value, replace);
     }
 
     /// Fill into the stream's `<extra>` bucket instead of the standard
     /// field list. Used for tag-style metadata (ID3v2 comments, EXIF
     /// sub-IFD camera params, Apple QuickTime keys with no oracle-side
     /// canonical name) that oracle groups under `<extra>...</extra>`.
-    pub fn Fill_Extra(
+    pub fn fill_extra(
         &mut self,
         kind: StreamKind,
         pos: usize,
@@ -103,44 +103,44 @@ impl<'a> FileAnalyze<'a> {
         value: impl Into<Ztring>,
         replace: bool,
     ) {
-        self.streams.Fill_Extra(kind, pos, parameter, value, replace);
+        self.streams.fill_extra(kind, pos, parameter, value, replace);
     }
 
-    pub fn Retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {
-        self.streams.Retrieve(kind, pos, parameter)
+    pub fn retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {
+        self.streams.retrieve(kind, pos, parameter)
     }
 
-    pub fn Count_Get(&self, kind: StreamKind) -> usize {
-        self.streams.Count_Get(kind)
+    pub fn count_get(&self, kind: StreamKind) -> usize {
+        self.streams.count_get(kind)
     }
 
-    pub fn Element_Begin(&mut self, name: &str) {
-        self.tree.Element_Begin(name);
+    pub fn element_begin(&mut self, name: &str) {
+        self.tree.element_begin(name);
     }
-    pub fn Element_End(&mut self) {
-        self.tree.Element_End();
+    pub fn element_end(&mut self) {
+        self.tree.element_end();
     }
-    pub fn Element_Info(&mut self, value: impl Into<String>, measure: Option<&str>) {
-        self.tree.Element_Info(value, measure);
+    pub fn element_info(&mut self, value: impl Into<String>, measure: Option<&str>) {
+        self.tree.element_info(value, measure);
     }
-    pub fn Element_Name(&mut self, name: &str) {
-        self.tree.Element_Name(name);
+    pub fn element_name(&mut self, name: &str) {
+        self.tree.element_name(name);
     }
-    pub fn Element_Level(&self) -> usize {
-        self.tree.Element_Level()
+    pub fn element_level(&self) -> usize {
+        self.tree.element_level()
     }
 
     fn param<V: ToString>(&mut self, name: &str, value: V) {
         if self.trace_activated && !name.is_empty() {
-            self.tree.Param(name, value.to_string());
+            self.tree.param(name, value.to_string());
         }
     }
 
-    pub fn Element_Offset(&self) -> usize {
+    pub fn element_offset(&self) -> usize {
         self.element_offset
     }
 
-    pub fn Element_Size(&self) -> usize {
+    pub fn element_size(&self) -> usize {
         self.buffer.len()
     }
 
@@ -156,7 +156,7 @@ impl<'a> FileAnalyze<'a> {
         self.config.set_option(key, value)
     }
 
-    pub fn Remain(&self) -> usize {
+    pub fn remain(&self) -> usize {
         self.buffer.len().saturating_sub(self.element_offset)
     }
 
@@ -165,7 +165,7 @@ impl<'a> FileAnalyze<'a> {
     }
 
     fn read_be_u64(&mut self, n: usize) -> Option<u64> {
-        if self.Remain() < n {
+        if self.remain() < n {
             self.truncated = true;
             self.element_offset = self.buffer.len();
             return None;
@@ -179,7 +179,7 @@ impl<'a> FileAnalyze<'a> {
     }
 
     fn peek_be_u64(&self, n: usize) -> Option<u64> {
-        if self.Remain() < n {
+        if self.remain() < n {
             return None;
         }
         let mut v: u64 = 0;
@@ -193,40 +193,40 @@ impl<'a> FileAnalyze<'a> {
     // Big-endian — Get_B*
     // ----------------------------------------------------------------------
 
-    pub fn Get_B1(&mut self, info: &mut int8u, name: &str) {
+    pub fn get_b1(&mut self, info: &mut int8u, name: &str) {
         *info = self.read_be_u64(1).unwrap_or(0) as int8u;
         self.param(name, *info);
     }
-    pub fn Get_B2(&mut self, info: &mut int16u, name: &str) {
+    pub fn get_b2(&mut self, info: &mut int16u, name: &str) {
         *info = self.read_be_u64(2).unwrap_or(0) as int16u;
         self.param(name, *info);
     }
-    pub fn Get_B3(&mut self, info: &mut int32u, name: &str) {
+    pub fn get_b3(&mut self, info: &mut int32u, name: &str) {
         *info = self.read_be_u64(3).unwrap_or(0) as int32u;
         self.param(name, *info);
     }
-    pub fn Get_B4(&mut self, info: &mut int32u, name: &str) {
+    pub fn get_b4(&mut self, info: &mut int32u, name: &str) {
         *info = self.read_be_u64(4).unwrap_or(0) as int32u;
         self.param(name, *info);
     }
-    pub fn Get_B5(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_b5(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_be_u64(5).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_B6(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_b6(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_be_u64(6).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_B7(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_b7(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_be_u64(7).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_B8(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_b8(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_be_u64(8).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_B16(&mut self, info: &mut int128u, name: &str) {
-        if self.Remain() < 16 {
+    pub fn get_b16(&mut self, info: &mut int128u, name: &str) {
+        if self.remain() < 16 {
             *info = 0;
             self.truncated = true;
             self.element_offset = self.buffer.len();
@@ -245,32 +245,32 @@ impl<'a> FileAnalyze<'a> {
     // Big-endian — Peek_B*
     // ----------------------------------------------------------------------
 
-    pub fn Peek_B1(&self, info: &mut int8u) {
+    pub fn peek_b1(&self, info: &mut int8u) {
         *info = self.peek_be_u64(1).unwrap_or(0) as int8u;
     }
-    pub fn Peek_B2(&self, info: &mut int16u) {
+    pub fn peek_b2(&self, info: &mut int16u) {
         *info = self.peek_be_u64(2).unwrap_or(0) as int16u;
     }
-    pub fn Peek_B3(&self, info: &mut int32u) {
+    pub fn peek_b3(&self, info: &mut int32u) {
         *info = self.peek_be_u64(3).unwrap_or(0) as int32u;
     }
-    pub fn Peek_B4(&self, info: &mut int32u) {
+    pub fn peek_b4(&self, info: &mut int32u) {
         *info = self.peek_be_u64(4).unwrap_or(0) as int32u;
     }
-    pub fn Peek_B5(&self, info: &mut int64u) {
+    pub fn peek_b5(&self, info: &mut int64u) {
         *info = self.peek_be_u64(5).unwrap_or(0);
     }
-    pub fn Peek_B6(&self, info: &mut int64u) {
+    pub fn peek_b6(&self, info: &mut int64u) {
         *info = self.peek_be_u64(6).unwrap_or(0);
     }
-    pub fn Peek_B7(&self, info: &mut int64u) {
+    pub fn peek_b7(&self, info: &mut int64u) {
         *info = self.peek_be_u64(7).unwrap_or(0);
     }
-    pub fn Peek_B8(&self, info: &mut int64u) {
+    pub fn peek_b8(&self, info: &mut int64u) {
         *info = self.peek_be_u64(8).unwrap_or(0);
     }
-    pub fn Peek_B16(&self, info: &mut int128u) {
-        if self.Remain() < 16 {
+    pub fn peek_b16(&self, info: &mut int128u) {
+        if self.remain() < 16 {
             *info = 0;
             return;
         }
@@ -285,17 +285,17 @@ impl<'a> FileAnalyze<'a> {
     // Big-endian — Skip_B*
     // ----------------------------------------------------------------------
 
-    pub fn Skip_B1(&mut self, _name: &str) { self.skip(1) }
-    pub fn Skip_B2(&mut self, _name: &str) { self.skip(2) }
-    pub fn Skip_B3(&mut self, _name: &str) { self.skip(3) }
-    pub fn Skip_B4(&mut self, _name: &str) { self.skip(4) }
-    pub fn Skip_B5(&mut self, _name: &str) { self.skip(5) }
-    pub fn Skip_B6(&mut self, _name: &str) { self.skip(6) }
-    pub fn Skip_B7(&mut self, _name: &str) { self.skip(7) }
-    pub fn Skip_B8(&mut self, _name: &str) { self.skip(8) }
-    pub fn Skip_B16(&mut self, _name: &str) { self.skip(16) }
+    pub fn skip_b1(&mut self, _name: &str) { self.skip(1) }
+    pub fn skip_b2(&mut self, _name: &str) { self.skip(2) }
+    pub fn skip_b3(&mut self, _name: &str) { self.skip(3) }
+    pub fn skip_b4(&mut self, _name: &str) { self.skip(4) }
+    pub fn skip_b5(&mut self, _name: &str) { self.skip(5) }
+    pub fn skip_b6(&mut self, _name: &str) { self.skip(6) }
+    pub fn skip_b7(&mut self, _name: &str) { self.skip(7) }
+    pub fn skip_b8(&mut self, _name: &str) { self.skip(8) }
+    pub fn skip_b16(&mut self, _name: &str) { self.skip(16) }
 
-    pub fn Skip_Hexa(&mut self, bytes: usize, _name: &str) {
+    pub fn skip_hexa(&mut self, bytes: usize, _name: &str) {
         self.skip(bytes);
     }
 
@@ -304,7 +304,7 @@ impl<'a> FileAnalyze<'a> {
     /// Used by parsers reading variable-length payloads like the
     /// VORBIS_COMMENT vendor string.
     pub fn read_raw(&mut self, n: usize) -> &[u8] {
-        if self.Remain() < n {
+        if self.remain() < n {
             self.truncated = true;
             self.element_offset = self.buffer.len();
             return &[];
@@ -317,7 +317,7 @@ impl<'a> FileAnalyze<'a> {
     /// Non-advancing variant of `read_raw`. Returns `None` if fewer than
     /// `n` bytes are available.
     pub fn peek_raw(&self, n: usize) -> Option<&[u8]> {
-        if self.Remain() < n {
+        if self.remain() < n {
             return None;
         }
         Some(&self.buffer[self.element_offset..self.element_offset + n])
@@ -336,7 +336,7 @@ impl<'a> FileAnalyze<'a> {
     }
 
     fn skip(&mut self, n: usize) {
-        if self.Remain() < n {
+        if self.remain() < n {
             self.truncated = true;
             self.element_offset = self.buffer.len();
         } else {
@@ -349,7 +349,7 @@ impl<'a> FileAnalyze<'a> {
     // ----------------------------------------------------------------------
 
     fn read_le_u64(&mut self, n: usize) -> Option<u64> {
-        if self.Remain() < n {
+        if self.remain() < n {
             self.truncated = true;
             self.element_offset = self.buffer.len();
             return None;
@@ -363,7 +363,7 @@ impl<'a> FileAnalyze<'a> {
     }
 
     fn peek_le_u64(&self, n: usize) -> Option<u64> {
-        if self.Remain() < n {
+        if self.remain() < n {
             return None;
         }
         let mut v: u64 = 0;
@@ -373,40 +373,40 @@ impl<'a> FileAnalyze<'a> {
         Some(v)
     }
 
-    pub fn Get_L1(&mut self, info: &mut int8u, name: &str) {
+    pub fn get_l1(&mut self, info: &mut int8u, name: &str) {
         *info = self.read_le_u64(1).unwrap_or(0) as int8u;
         self.param(name, *info);
     }
-    pub fn Get_L2(&mut self, info: &mut int16u, name: &str) {
+    pub fn get_l2(&mut self, info: &mut int16u, name: &str) {
         *info = self.read_le_u64(2).unwrap_or(0) as int16u;
         self.param(name, *info);
     }
-    pub fn Get_L3(&mut self, info: &mut int32u, name: &str) {
+    pub fn get_l3(&mut self, info: &mut int32u, name: &str) {
         *info = self.read_le_u64(3).unwrap_or(0) as int32u;
         self.param(name, *info);
     }
-    pub fn Get_L4(&mut self, info: &mut int32u, name: &str) {
+    pub fn get_l4(&mut self, info: &mut int32u, name: &str) {
         *info = self.read_le_u64(4).unwrap_or(0) as int32u;
         self.param(name, *info);
     }
-    pub fn Get_L5(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_l5(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_le_u64(5).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_L6(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_l6(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_le_u64(6).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_L7(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_l7(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_le_u64(7).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_L8(&mut self, info: &mut int64u, name: &str) {
+    pub fn get_l8(&mut self, info: &mut int64u, name: &str) {
         *info = self.read_le_u64(8).unwrap_or(0);
         self.param(name, *info);
     }
-    pub fn Get_L16(&mut self, info: &mut int128u, name: &str) {
-        if self.Remain() < 16 {
+    pub fn get_l16(&mut self, info: &mut int128u, name: &str) {
+        if self.remain() < 16 {
             *info = 0;
             self.truncated = true;
             self.element_offset = self.buffer.len();
@@ -421,32 +421,32 @@ impl<'a> FileAnalyze<'a> {
         self.param(name, *info);
     }
 
-    pub fn Peek_L1(&self, info: &mut int8u) {
+    pub fn peek_l1(&self, info: &mut int8u) {
         *info = self.peek_le_u64(1).unwrap_or(0) as int8u;
     }
-    pub fn Peek_L2(&self, info: &mut int16u) {
+    pub fn peek_l2(&self, info: &mut int16u) {
         *info = self.peek_le_u64(2).unwrap_or(0) as int16u;
     }
-    pub fn Peek_L3(&self, info: &mut int32u) {
+    pub fn peek_l3(&self, info: &mut int32u) {
         *info = self.peek_le_u64(3).unwrap_or(0) as int32u;
     }
-    pub fn Peek_L4(&self, info: &mut int32u) {
+    pub fn peek_l4(&self, info: &mut int32u) {
         *info = self.peek_le_u64(4).unwrap_or(0) as int32u;
     }
-    pub fn Peek_L5(&self, info: &mut int64u) {
+    pub fn peek_l5(&self, info: &mut int64u) {
         *info = self.peek_le_u64(5).unwrap_or(0);
     }
-    pub fn Peek_L6(&self, info: &mut int64u) {
+    pub fn peek_l6(&self, info: &mut int64u) {
         *info = self.peek_le_u64(6).unwrap_or(0);
     }
-    pub fn Peek_L7(&self, info: &mut int64u) {
+    pub fn peek_l7(&self, info: &mut int64u) {
         *info = self.peek_le_u64(7).unwrap_or(0);
     }
-    pub fn Peek_L8(&self, info: &mut int64u) {
+    pub fn peek_l8(&self, info: &mut int64u) {
         *info = self.peek_le_u64(8).unwrap_or(0);
     }
-    pub fn Peek_L16(&self, info: &mut int128u) {
-        if self.Remain() < 16 {
+    pub fn peek_l16(&self, info: &mut int128u) {
+        if self.remain() < 16 {
             *info = 0;
             return;
         }
@@ -457,21 +457,21 @@ impl<'a> FileAnalyze<'a> {
         *info = v;
     }
 
-    pub fn Skip_L1(&mut self, _name: &str) { self.skip(1) }
-    pub fn Skip_L2(&mut self, _name: &str) { self.skip(2) }
-    pub fn Skip_L3(&mut self, _name: &str) { self.skip(3) }
-    pub fn Skip_L4(&mut self, _name: &str) { self.skip(4) }
-    pub fn Skip_L5(&mut self, _name: &str) { self.skip(5) }
-    pub fn Skip_L6(&mut self, _name: &str) { self.skip(6) }
-    pub fn Skip_L7(&mut self, _name: &str) { self.skip(7) }
-    pub fn Skip_L8(&mut self, _name: &str) { self.skip(8) }
-    pub fn Skip_L16(&mut self, _name: &str) { self.skip(16) }
+    pub fn skip_l1(&mut self, _name: &str) { self.skip(1) }
+    pub fn skip_l2(&mut self, _name: &str) { self.skip(2) }
+    pub fn skip_l3(&mut self, _name: &str) { self.skip(3) }
+    pub fn skip_l4(&mut self, _name: &str) { self.skip(4) }
+    pub fn skip_l5(&mut self, _name: &str) { self.skip(5) }
+    pub fn skip_l6(&mut self, _name: &str) { self.skip(6) }
+    pub fn skip_l7(&mut self, _name: &str) { self.skip(7) }
+    pub fn skip_l8(&mut self, _name: &str) { self.skip(8) }
+    pub fn skip_l16(&mut self, _name: &str) { self.skip(16) }
 
     // ----------------------------------------------------------------------
     // Floats — BF* (big-endian), LF* (little-endian)
     // ----------------------------------------------------------------------
 
-    pub fn Get_BF4(&mut self, info: &mut float32, name: &str) {
+    pub fn get_bf4(&mut self, info: &mut float32, name: &str) {
         if let Some(bits) = self.read_be_u64(4) {
             *info = f32::from_bits(bits as u32);
         } else {
@@ -479,7 +479,7 @@ impl<'a> FileAnalyze<'a> {
         }
         self.param(name, *info);
     }
-    pub fn Get_BF8(&mut self, info: &mut float64, name: &str) {
+    pub fn get_bf8(&mut self, info: &mut float64, name: &str) {
         if let Some(bits) = self.read_be_u64(8) {
             *info = f64::from_bits(bits);
         } else {
@@ -487,11 +487,11 @@ impl<'a> FileAnalyze<'a> {
         }
         self.param(name, *info);
     }
-    pub fn Get_BF10(&mut self, info: &mut float80, name: &str) {
+    pub fn get_bf10(&mut self, info: &mut float80, name: &str) {
         // 80-bit IEEE 754 extended precision, big-endian — used in AIFF.
         // Decode as a finite f64 approximation; matches the C++ side which
         // also narrows to float64 on storage.
-        if self.Remain() < 10 {
+        if self.remain() < 10 {
             *info = 0.0;
             self.truncated = true;
             self.element_offset = self.buffer.len();
@@ -503,7 +503,7 @@ impl<'a> FileAnalyze<'a> {
         self.param(name, *info);
     }
 
-    pub fn Get_LF4(&mut self, info: &mut float32, name: &str) {
+    pub fn get_lf4(&mut self, info: &mut float32, name: &str) {
         if let Some(bits) = self.read_le_u64(4) {
             *info = f32::from_bits(bits as u32);
         } else {
@@ -511,7 +511,7 @@ impl<'a> FileAnalyze<'a> {
         }
         self.param(name, *info);
     }
-    pub fn Get_LF8(&mut self, info: &mut float64, name: &str) {
+    pub fn get_lf8(&mut self, info: &mut float64, name: &str) {
         if let Some(bits) = self.read_le_u64(8) {
             *info = f64::from_bits(bits);
         } else {
@@ -520,28 +520,28 @@ impl<'a> FileAnalyze<'a> {
         self.param(name, *info);
     }
 
-    pub fn Peek_BF4(&self, info: &mut float32) {
+    pub fn peek_bf4(&self, info: &mut float32) {
         if let Some(bits) = self.peek_be_u64(4) {
             *info = f32::from_bits(bits as u32);
         } else {
             *info = 0.0;
         }
     }
-    pub fn Peek_BF8(&self, info: &mut float64) {
+    pub fn peek_bf8(&self, info: &mut float64) {
         if let Some(bits) = self.peek_be_u64(8) {
             *info = f64::from_bits(bits);
         } else {
             *info = 0.0;
         }
     }
-    pub fn Peek_LF4(&self, info: &mut float32) {
+    pub fn peek_lf4(&self, info: &mut float32) {
         if let Some(bits) = self.peek_le_u64(4) {
             *info = f32::from_bits(bits as u32);
         } else {
             *info = 0.0;
         }
     }
-    pub fn Peek_LF8(&self, info: &mut float64) {
+    pub fn peek_lf8(&self, info: &mut float64) {
         if let Some(bits) = self.peek_le_u64(8) {
             *info = f64::from_bits(bits);
         } else {
@@ -549,11 +549,11 @@ impl<'a> FileAnalyze<'a> {
         }
     }
 
-    pub fn Skip_BF4(&mut self, _name: &str) { self.skip(4) }
-    pub fn Skip_BF8(&mut self, _name: &str) { self.skip(8) }
-    pub fn Skip_BF10(&mut self, _name: &str) { self.skip(10) }
-    pub fn Skip_LF4(&mut self, _name: &str) { self.skip(4) }
-    pub fn Skip_LF8(&mut self, _name: &str) { self.skip(8) }
+    pub fn skip_bf4(&mut self, _name: &str) { self.skip(4) }
+    pub fn skip_bf8(&mut self, _name: &str) { self.skip(8) }
+    pub fn skip_bf10(&mut self, _name: &str) { self.skip(10) }
+    pub fn skip_lf4(&mut self, _name: &str) { self.skip(4) }
+    pub fn skip_lf8(&mut self, _name: &str) { self.skip(8) }
 
     // ----------------------------------------------------------------------
     // Bitstream mode — BS_Begin / Get_S* / BS_End
@@ -566,12 +566,12 @@ impl<'a> FileAnalyze<'a> {
     // the next byte boundary and clears the bit cursor.
     // ----------------------------------------------------------------------
 
-    pub fn BS_Begin(&mut self) {
+    pub fn bs_begin(&mut self) {
         self.bs_active = true;
         self.bs_bits_consumed = 0;
     }
 
-    pub fn BS_End(&mut self) {
+    pub fn bs_end(&mut self) {
         if self.bs_bits_consumed > 0 {
             self.element_offset += 1;
             self.bs_bits_consumed = 0;
@@ -628,43 +628,43 @@ impl<'a> FileAnalyze<'a> {
         value
     }
 
-    pub fn Get_S1(&mut self, n: usize, info: &mut int8u, name: &str) {
+    pub fn get_s1(&mut self, n: usize, info: &mut int8u, name: &str) {
         *info = self.read_bits_be(n) as int8u;
         self.param(name, *info);
     }
-    pub fn Get_S2(&mut self, n: usize, info: &mut int16u, name: &str) {
+    pub fn get_s2(&mut self, n: usize, info: &mut int16u, name: &str) {
         *info = self.read_bits_be(n) as int16u;
         self.param(name, *info);
     }
-    pub fn Get_S3(&mut self, n: usize, info: &mut int32u, name: &str) {
+    pub fn get_s3(&mut self, n: usize, info: &mut int32u, name: &str) {
         *info = self.read_bits_be(n) as int32u;
         self.param(name, *info);
     }
-    pub fn Get_S4(&mut self, n: usize, info: &mut int32u, name: &str) {
+    pub fn get_s4(&mut self, n: usize, info: &mut int32u, name: &str) {
         *info = self.read_bits_be(n) as int32u;
         self.param(name, *info);
     }
-    pub fn Get_S5(&mut self, n: usize, info: &mut int64u, name: &str) {
+    pub fn get_s5(&mut self, n: usize, info: &mut int64u, name: &str) {
         *info = self.read_bits_be(n);
         self.param(name, *info);
     }
-    pub fn Get_S8(&mut self, n: usize, info: &mut int64u, name: &str) {
+    pub fn get_s8(&mut self, n: usize, info: &mut int64u, name: &str) {
         *info = self.read_bits_be(n);
         self.param(name, *info);
     }
 
-    pub fn Skip_S1(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn Skip_S2(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn Skip_S3(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn Skip_S4(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn Skip_S5(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
-    pub fn Skip_S8(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s1(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s2(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s3(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s4(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s5(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
+    pub fn skip_s8(&mut self, n: usize, _name: &str) { self.read_bits_be(n); }
 
     // ----------------------------------------------------------------------
     // 4CC / Character codes (Get_C4 is used everywhere for MP4 atoms, RIFF)
     // ----------------------------------------------------------------------
 
-    pub fn Get_C4(&mut self, info: &mut int32u, name: &str) {
+    pub fn get_c4(&mut self, info: &mut int32u, name: &str) {
         // 4CCs are read as a big-endian u32 of 4 ASCII bytes. Display happens
         // via Ztring::From_CC4 elsewhere; for trace we render the printable
         // form when all bytes are ASCII printable, else fall back to u32.
@@ -677,15 +677,15 @@ impl<'a> FileAnalyze<'a> {
             } else {
                 info.to_string()
             };
-            self.tree.Param(name, value);
+            self.tree.param(name, value);
         }
     }
 
-    pub fn Peek_C4(&self, info: &mut int32u) {
-        self.Peek_B4(info)
+    pub fn peek_c4(&self, info: &mut int32u) {
+        self.peek_b4(info)
     }
 
-    pub fn Skip_C4(&mut self, _name: &str) {
+    pub fn skip_c4(&mut self, _name: &str) {
         self.skip(4)
     }
 }
@@ -732,14 +732,14 @@ mod tests {
         let mut a: int8u = 0;
         let mut b: int16u = 0;
         let mut c: int32u = 0;
-        fa.Get_B1(&mut a, "a");
-        fa.Get_B2(&mut b, "b");
-        fa.Get_B4(&mut c, "c");
+        fa.get_b1(&mut a, "a");
+        fa.get_b2(&mut b, "b");
+        fa.get_b4(&mut c, "c");
         assert_eq!(a, 0x12);
         assert_eq!(b, 0x3456);
         assert_eq!(c, 0x789A_BCDE);
-        assert_eq!(fa.Element_Offset(), 7);
-        assert_eq!(fa.Remain(), 1);
+        assert_eq!(fa.element_offset(), 7);
+        assert_eq!(fa.remain(), 1);
     }
 
     #[test]
@@ -748,8 +748,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         let mut a: int32u = 0;
         let mut b: int64u = 0;
-        fa.Get_B3(&mut a, "a");
-        fa.Get_B5(&mut b, "b");
+        fa.get_b3(&mut a, "a");
+        fa.get_b5(&mut b, "b");
         assert_eq!(a, 0x00_0102_03);
         assert_eq!(b, 0x00_0405_0607_08);
     }
@@ -759,7 +759,7 @@ mod tests {
         let buf: Vec<u8> = (0..16u8).collect();
         let mut fa = FileAnalyze::new(&buf);
         let mut v: int128u = 0;
-        fa.Get_B16(&mut v, "guid");
+        fa.get_b16(&mut v, "guid");
         assert_eq!(v, 0x0001_0203_0405_0607_0809_0A0B_0C0D_0E0F);
     }
 
@@ -768,10 +768,10 @@ mod tests {
         let buf = [0xAA, 0xBB];
         let mut fa = FileAnalyze::new(&buf);
         let mut v: int32u = 0;
-        fa.Get_B4(&mut v, "v");
+        fa.get_b4(&mut v, "v");
         assert_eq!(v, 0);
         assert!(fa.truncated());
-        assert_eq!(fa.Element_Offset(), 2);
+        assert_eq!(fa.element_offset(), 2);
     }
 
     #[test]
@@ -779,23 +779,23 @@ mod tests {
         let buf = [0x11, 0x22, 0x33, 0x44];
         let mut fa = FileAnalyze::new(&buf);
         let mut v: int32u = 0;
-        fa.Peek_B4(&mut v);
+        fa.peek_b4(&mut v);
         assert_eq!(v, 0x1122_3344);
-        assert_eq!(fa.Element_Offset(), 0);
+        assert_eq!(fa.element_offset(), 0);
         let mut w: int32u = 0;
-        fa.Get_B4(&mut w, "w");
+        fa.get_b4(&mut w, "w");
         assert_eq!(w, 0x1122_3344);
-        assert_eq!(fa.Element_Offset(), 4);
+        assert_eq!(fa.element_offset(), 4);
     }
 
     #[test]
     fn skip_advances() {
         let buf = [0; 16];
         let mut fa = FileAnalyze::new(&buf);
-        fa.Skip_B4("padding");
-        fa.Skip_Hexa(8, "header");
-        assert_eq!(fa.Element_Offset(), 12);
-        assert_eq!(fa.Remain(), 4);
+        fa.skip_b4("padding");
+        fa.skip_hexa(8, "header");
+        assert_eq!(fa.element_offset(), 12);
+        assert_eq!(fa.remain(), 4);
     }
 
     #[test]
@@ -804,7 +804,7 @@ mod tests {
         let buf = [b'f', b't', b'y', b'p'];
         let mut fa = FileAnalyze::new(&buf);
         let mut code: int32u = 0;
-        fa.Get_C4(&mut code, "Type");
+        fa.get_c4(&mut code, "Type");
         assert_eq!(code, 0x6674_7970);
     }
 
@@ -815,15 +815,15 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         let mut a: int8u = 0;
         let mut b: int16u = 0;
-        fa.Get_L1(&mut a, "a");
-        fa.Get_L2(&mut b, "b");
+        fa.get_l1(&mut a, "a");
+        fa.get_l2(&mut b, "b");
         assert_eq!(a, 0x12);
         assert_eq!(b, 0x5634);
 
         let buf2 = [0x12, 0x34, 0x56, 0x78];
         let mut fa2 = FileAnalyze::new(&buf2);
         let mut c: int32u = 0;
-        fa2.Get_L4(&mut c, "c");
+        fa2.get_l4(&mut c, "c");
         assert_eq!(c, 0x7856_3412);
     }
 
@@ -836,7 +836,7 @@ mod tests {
         ];
         let mut fa = FileAnalyze::new(&buf);
         let mut v: int128u = 0;
-        fa.Get_L16(&mut v, "uuid");
+        fa.get_l16(&mut v, "uuid");
         assert_eq!(v, 0x1122_3344_5566_7788_1234_5678_90AB_CDEF);
     }
 
@@ -846,7 +846,7 @@ mod tests {
         let buf = v.to_be_bytes();
         let mut fa = FileAnalyze::new(&buf);
         let mut out: float32 = 0.0;
-        fa.Get_BF4(&mut out, "pi");
+        fa.get_bf4(&mut out, "pi");
         assert_eq!(out, v);
     }
 
@@ -856,7 +856,7 @@ mod tests {
         let buf = v.to_be_bytes();
         let mut fa = FileAnalyze::new(&buf);
         let mut out: float64 = 0.0;
-        fa.Get_BF8(&mut out, "e");
+        fa.get_bf8(&mut out, "e");
         assert_eq!(out, v);
     }
 
@@ -870,8 +870,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         let mut a: float32 = 0.0;
         let mut b: float64 = 0.0;
-        fa.Get_LF4(&mut a, "a");
-        fa.Get_LF8(&mut b, "b");
+        fa.get_lf4(&mut a, "a");
+        fa.get_lf8(&mut b, "b");
         assert_eq!(a, f4);
         assert_eq!(b, f8);
     }
@@ -884,7 +884,7 @@ mod tests {
         let buf: [u8; 10] = [0x40, 0x0E, 0xAC, 0x44, 0, 0, 0, 0, 0, 0];
         let mut fa = FileAnalyze::new(&buf);
         let mut hz: float80 = 0.0;
-        fa.Get_BF10(&mut hz, "SampleRate");
+        fa.get_bf10(&mut hz, "SampleRate");
         assert!((hz - 44100.0).abs() < 1e-9, "got {hz}");
     }
 
@@ -893,7 +893,7 @@ mod tests {
         let buf = [0u8; 10];
         let mut fa = FileAnalyze::new(&buf);
         let mut v: float80 = 1.0;
-        fa.Get_BF10(&mut v, "zero");
+        fa.get_bf10(&mut v, "zero");
         assert_eq!(v, 0.0);
     }
 
@@ -901,10 +901,10 @@ mod tests {
     fn get_b4_records_field_on_current_element() {
         let buf = [0xDE, 0xAD, 0xBE, 0xEF];
         let mut fa = FileAnalyze::new(&buf);
-        fa.Element_Begin("header");
+        fa.element_begin("header");
         let mut v: int32u = 0;
-        fa.Get_B4(&mut v, "Magic");
-        fa.Element_End();
+        fa.get_b4(&mut v, "Magic");
+        fa.element_end();
 
         let header = &fa.tree().root().children[0];
         assert_eq!(header.name, "header");
@@ -918,10 +918,10 @@ mod tests {
     fn get_c4_records_atom_name_as_printable_string() {
         let buf = [b'f', b't', b'y', b'p'];
         let mut fa = FileAnalyze::new(&buf);
-        fa.Element_Begin("atom");
+        fa.element_begin("atom");
         let mut code: int32u = 0;
-        fa.Get_C4(&mut code, "Type");
-        fa.Element_End();
+        fa.get_c4(&mut code, "Type");
+        fa.element_end();
 
         let atom = &fa.tree().root().children[0];
         assert_eq!(atom.infos.len(), 1);
@@ -943,16 +943,16 @@ mod tests {
             0, 0, 0, 0,
         ];
         let mut fa = FileAnalyze::new(&buf);
-        fa.Element_Begin("moov");
-            fa.Element_Begin("mvhd");
+        fa.element_begin("moov");
+            fa.element_begin("mvhd");
                 let mut ver: int8u = 0;
-                fa.Get_B1(&mut ver, "Version");
+                fa.get_b1(&mut ver, "Version");
                 let mut flags: int32u = 0;
-                fa.Get_B3(&mut flags, "Flags");
-            fa.Element_End();
-            fa.Element_Begin("trak");
-            fa.Element_End();
-        fa.Element_End();
+                fa.get_b3(&mut flags, "Flags");
+            fa.element_end();
+            fa.element_begin("trak");
+            fa.element_end();
+        fa.element_end();
 
         let moov = &fa.tree().root().children[0];
         assert_eq!(moov.name, "moov");
@@ -976,10 +976,10 @@ mod tests {
         let buf = [0x12, 0x34, 0x56, 0x78];
         let mut fa = FileAnalyze::new(&buf);
         fa.trace_activated = false;
-        fa.Element_Begin("silent");
+        fa.element_begin("silent");
         let mut v: int32u = 0;
-        fa.Get_B4(&mut v, "Value");
-        fa.Element_End();
+        fa.get_b4(&mut v, "Value");
+        fa.element_end();
         assert_eq!(v, 0x1234_5678);
         assert!(fa.tree().root().children[0].infos.is_empty());
     }
@@ -988,14 +988,14 @@ mod tests {
     fn file_analyze_fills_streams_directly() {
         let buf = [0; 4];
         let mut fa = FileAnalyze::new(&buf);
-        let pos = fa.Stream_Prepare(StreamKind::Audio);
-        fa.Fill(StreamKind::Audio, pos, "Format", "FLAC", false);
-        fa.Fill(StreamKind::Audio, pos, "BitDepth", "24", false);
+        let pos = fa.stream_prepare(StreamKind::Audio);
+        fa.fill(StreamKind::Audio, pos, "Format", "FLAC", false);
+        fa.fill(StreamKind::Audio, pos, "BitDepth", "24", false);
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, pos, "Format").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Audio, pos, "Format").map(|z| z.as_str()),
             Some("FLAC")
         );
-        assert_eq!(fa.Count_Get(StreamKind::Audio), 1);
+        assert_eq!(fa.count_get(StreamKind::Audio), 1);
     }
 
     #[test]
@@ -1004,18 +1004,18 @@ mod tests {
         // Read: 4 bits (1010 = 0xA), 4 bits (1011 = 0xB), 8 bits (1100 1101 = 0xCD)
         let buf = [0xAB, 0xCD];
         let mut fa = FileAnalyze::new(&buf);
-        fa.BS_Begin();
+        fa.bs_begin();
         let mut a: int8u = 0;
         let mut b: int8u = 0;
         let mut c: int8u = 0;
-        fa.Get_S1(4, &mut a, "a");
-        fa.Get_S1(4, &mut b, "b");
-        fa.Get_S1(8, &mut c, "c");
-        fa.BS_End();
+        fa.get_s1(4, &mut a, "a");
+        fa.get_s1(4, &mut b, "b");
+        fa.get_s1(8, &mut c, "c");
+        fa.bs_end();
         assert_eq!(a, 0xA);
         assert_eq!(b, 0xB);
         assert_eq!(c, 0xCD);
-        assert_eq!(fa.Element_Offset(), 2);
+        assert_eq!(fa.element_offset(), 2);
     }
 
     #[test]
@@ -1039,36 +1039,36 @@ mod tests {
         let buf = packed.to_be_bytes();
 
         let mut fa = FileAnalyze::new(&buf);
-        fa.BS_Begin();
+        fa.bs_begin();
         let mut sr: int32u = 0;
         let mut ch: int8u = 0;
         let mut bps: int8u = 0;
         let mut samp: int64u = 0;
-        fa.Get_S3(20, &mut sr, "SampleRate");
-        fa.Get_S1(3, &mut ch, "Channels");
-        fa.Get_S1(5, &mut bps, "BitsPerSample");
-        fa.Get_S5(36, &mut samp, "Samples");
-        fa.BS_End();
+        fa.get_s3(20, &mut sr, "SampleRate");
+        fa.get_s1(3, &mut ch, "Channels");
+        fa.get_s1(5, &mut bps, "BitsPerSample");
+        fa.get_s5(36, &mut samp, "Samples");
+        fa.bs_end();
         assert_eq!(sr, 48000);
         assert_eq!(ch + 1, 2);
         assert_eq!(bps + 1, 16);
         assert_eq!(samp, 71638);
-        assert_eq!(fa.Element_Offset(), 8);
+        assert_eq!(fa.element_offset(), 8);
     }
 
     #[test]
     fn bs_end_byte_aligns_when_partially_consumed() {
         let buf = [0xFF, 0x12];
         let mut fa = FileAnalyze::new(&buf);
-        fa.BS_Begin();
+        fa.bs_begin();
         let mut a: int8u = 0;
-        fa.Get_S1(3, &mut a, "a");
+        fa.get_s1(3, &mut a, "a");
         assert_eq!(a, 0b111);
-        fa.BS_End();
+        fa.bs_end();
         // Aligned: should now be at byte index 1
-        assert_eq!(fa.Element_Offset(), 1);
+        assert_eq!(fa.element_offset(), 1);
         let mut b: int8u = 0;
-        fa.Get_B1(&mut b, "b");
+        fa.get_b1(&mut b, "b");
         assert_eq!(b, 0x12);
     }
 
@@ -1076,22 +1076,22 @@ mod tests {
     fn bs_end_no_op_when_already_aligned() {
         let buf = [0xAA, 0xBB];
         let mut fa = FileAnalyze::new(&buf);
-        fa.BS_Begin();
+        fa.bs_begin();
         let mut a: int8u = 0;
-        fa.Get_S1(8, &mut a, "a");
-        fa.BS_End();
+        fa.get_s1(8, &mut a, "a");
+        fa.bs_end();
         assert_eq!(a, 0xAA);
-        assert_eq!(fa.Element_Offset(), 1);
+        assert_eq!(fa.element_offset(), 1);
     }
 
     #[test]
     fn empty_name_does_not_record_param() {
         let buf = [0xAA, 0xBB];
         let mut fa = FileAnalyze::new(&buf);
-        fa.Element_Begin("e");
+        fa.element_begin("e");
         let mut v: int16u = 0;
-        fa.Get_B2(&mut v, "");
-        fa.Element_End();
+        fa.get_b2(&mut v, "");
+        fa.element_end();
         assert!(fa.tree().root().children[0].infos.is_empty());
     }
 }

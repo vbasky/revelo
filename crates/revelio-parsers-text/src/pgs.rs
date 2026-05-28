@@ -40,7 +40,7 @@ fn is_valid_segment_type(t: u8) -> bool {
 }
 
 pub fn parse_pgs(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(13));
+    let head = fa.peek_raw(fa.remain().min(13));
     let Some(h) = head else { return false };
     if h.len() < 13 {
         return false;
@@ -53,12 +53,12 @@ pub fn parse_pgs(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "PGS", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "PGS", false);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "PGS", false);
-    fa.Fill(StreamKind::Text, 0, "Codec", "PGS", false);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "PGS", false);
+    fa.fill(StreamKind::Text, 0, "Codec", "PGS", false);
 
     true
 }
@@ -82,8 +82,8 @@ mod tests {
         let buf = make_segment(SEG_PRESENTATION_COMPOSITION);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pgs(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("PGS"));
         assert_eq!(t("Format").as_deref(), Some("PGS"));
         assert_eq!(t("Codec").as_deref(), Some("PGS"));

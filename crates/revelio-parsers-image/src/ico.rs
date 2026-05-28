@@ -32,7 +32,7 @@ pub fn parse_ico(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let header_size = 6 + (count as usize) * 16;
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     let entries: Vec<(u32, u32, u16, u32)>;
     let mut total_data: u64 = 0;
     {
@@ -60,21 +60,21 @@ pub fn parse_ico(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", if kind == 1 { "ICO" } else { "CUR" }, false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", count.to_string(), false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", if kind == 1 { "ICO" } else { "CUR" }, false);
+    fa.fill(StreamKind::General, 0, "ImageCount", count.to_string(), false);
     // General.StreamSize = file overhead = file_size − total bitmap data.
     let overhead = file_size as u64 - total_data;
-    fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
+    fa.fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
 
     for (w, h_, bpp, size) in entries {
-        let pos = fa.Stream_Prepare(StreamKind::Image);
-        fa.Fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.Fill(StreamKind::Image, pos, "Height", h_.to_string(), false);
+        let pos = fa.stream_prepare(StreamKind::Image);
+        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "Height", h_.to_string(), false);
         if kind == 1 {
-            fa.Fill(StreamKind::Image, pos, "BitDepth", bpp.to_string(), false);
+            fa.fill(StreamKind::Image, pos, "BitDepth", bpp.to_string(), false);
         }
-        fa.Fill(StreamKind::Image, pos, "StreamSize", size.to_string(), false);
+        fa.fill(StreamKind::Image, pos, "StreamSize", size.to_string(), false);
     }
     true
 }
@@ -118,8 +118,8 @@ mod tests {
         let buf = build_minimal_ico(&[(32, 32, 32, 100)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ico(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("ICO"));
         assert_eq!(g("ImageCount").as_deref(), Some("1"));
         assert_eq!(i("Width").as_deref(), Some("32"));
@@ -133,7 +133,7 @@ mod tests {
         let buf = build_minimal_ico(&[(0, 0, 32, 100)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ico(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Width").as_deref(), Some("256"));
         assert_eq!(i("Height").as_deref(), Some("256"));
     }
@@ -143,6 +143,6 @@ mod tests {
         let buf = build_minimal_ico(&[(16, 16, 8, 50), (32, 32, 32, 100), (48, 48, 32, 200)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ico(&mut fa));
-        assert_eq!(fa.Count_Get(StreamKind::Image), 3);
+        assert_eq!(fa.count_get(StreamKind::Image), 3);
     }
 }

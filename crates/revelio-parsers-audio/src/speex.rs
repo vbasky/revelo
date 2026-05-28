@@ -30,26 +30,26 @@ const SPEEX_MAGIC: &[u8; 8] = b"Speex   ";
 const IDENTIFICATION_MIN_SIZE: usize = 80;
 
 pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(8));
+    let head = fa.peek_raw(fa.remain().min(8));
     let Some(h) = head else { return false };
     if h.len() < 8 || h != SPEEX_MAGIC {
         return false;
     }
-    if fa.Remain() < IDENTIFICATION_MIN_SIZE {
+    if fa.remain() < IDENTIFICATION_MIN_SIZE {
         return false;
     }
 
-    fa.Element_Begin("Speex");
-    fa.Skip_Hexa(8, "speex_string");
+    fa.element_begin("Speex");
+    fa.skip_hexa(8, "speex_string");
 
     let version_bytes = fa.read_raw(20).to_vec();
     let speex_version = parse_nul_terminated_utf8(&version_bytes);
 
     let mut speex_version_id: int32u = 0;
-    fa.Get_L4(&mut speex_version_id, "Speex_version_id");
+    fa.get_l4(&mut speex_version_id, "Speex_version_id");
 
     if speex_version_id != 1 {
-        fa.Element_End();
+        fa.element_end();
         fill_streams(fa, &speex_version, None, None, None);
         return true;
     }
@@ -67,20 +67,20 @@ pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
     let mut _reserved1: int32u = 0;
     let mut _reserved2: int32u = 0;
 
-    fa.Get_L4(&mut header_size, "header_size");
-    fa.Get_L4(&mut rate, "rate");
-    fa.Get_L4(&mut _mode, "mode");
-    fa.Get_L4(&mut _mode_bs_ver, "mode_bitstream_version");
-    fa.Get_L4(&mut nb_channels, "nb_channels");
-    fa.Get_L4(&mut bitrate, "bitrate");
-    fa.Get_L4(&mut _frame_size, "frame_size");
-    fa.Get_L4(&mut vbr, "vbr");
-    fa.Get_L4(&mut _frames_per_packet, "frames_per_packet");
-    fa.Get_L4(&mut _extra_headers, "extra_headers");
-    fa.Get_L4(&mut _reserved1, "reserved1");
-    fa.Get_L4(&mut _reserved2, "reserved2");
+    fa.get_l4(&mut header_size, "header_size");
+    fa.get_l4(&mut rate, "rate");
+    fa.get_l4(&mut _mode, "mode");
+    fa.get_l4(&mut _mode_bs_ver, "mode_bitstream_version");
+    fa.get_l4(&mut nb_channels, "nb_channels");
+    fa.get_l4(&mut bitrate, "bitrate");
+    fa.get_l4(&mut _frame_size, "frame_size");
+    fa.get_l4(&mut vbr, "vbr");
+    fa.get_l4(&mut _frames_per_packet, "frames_per_packet");
+    fa.get_l4(&mut _extra_headers, "extra_headers");
+    fa.get_l4(&mut _reserved1, "reserved1");
+    fa.get_l4(&mut _reserved2, "reserved2");
 
-    fa.Element_End();
+    fa.element_end();
 
     let bitrate_opt = if bitrate == u32::MAX { None } else { Some(bitrate) };
     fill_streams(
@@ -94,7 +94,7 @@ pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
     // because fill_streams defaults BitRate_Mode to VBR (task spec); override
     // here when the header explicitly says CBR.
     if vbr == 0 {
-        fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", true);
+        fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", true);
     }
     true
 }
@@ -111,27 +111,27 @@ fn fill_streams(
     channels: Option<u32>,
     bitrate: Option<u32>,
 ) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Speex", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Speex", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Speex", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "Speex", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Speex", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "Speex", false);
     if !speex_version.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Encoded_Library", speex_version, false);
+        fa.fill(StreamKind::Audio, 0, "Encoded_Library", speex_version, false);
     }
     if let Some(r) = rate {
-        fa.Fill(StreamKind::Audio, 0, "SamplingRate", r.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "SamplingRate", r.to_string(), false);
     }
     if let Some(c) = channels {
-        fa.Fill(StreamKind::Audio, 0, "Channels", c.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Channels", c.to_string(), false);
     }
     if let Some(b) = bitrate {
-        fa.Fill(StreamKind::Audio, 0, "BitRate", b.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitRate", b.to_string(), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
 }
 
 #[cfg(test)]
@@ -181,8 +181,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_speex(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Speex"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -203,7 +203,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_speex(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("SamplingRate").as_deref(), Some("16000"));
         assert_eq!(a("Channels").as_deref(), Some("2"));
         assert_eq!(a("BitRate"), None);

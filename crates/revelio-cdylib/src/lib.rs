@@ -96,7 +96,7 @@ pub unsafe extern "C" fn MediaInfo_Count_Get(
         Some(k) => k,
         None => return 0,
     };
-    streams.Count_Get(kind) as c_int
+    streams.count_get(kind) as c_int
 }
 
 #[unsafe(no_mangle)]

@@ -26,31 +26,31 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let file_size = fa.Remain();
-    fa.Skip_Hexa(8, "signature");
+    let file_size = fa.remain();
+    fa.skip_hexa(8, "signature");
 
     // First chunk must be IHDR.
-    if fa.Remain() < 8 {
+    if fa.remain() < 8 {
         return false;
     }
     let mut length: int32u = 0;
-    fa.Get_B4(&mut length, "IHDR_length");
+    fa.get_b4(&mut length, "IHDR_length");
     let mut chunk_type: int32u = 0;
-    fa.Get_C4(&mut chunk_type, "chunk_type");
+    fa.get_c4(&mut chunk_type, "chunk_type");
     if chunk_type != u32::from_be_bytes(*b"IHDR") || length < 13 {
         return false;
     }
     let mut width: int32u = 0;
-    fa.Get_B4(&mut width, "Width");
+    fa.get_b4(&mut width, "Width");
     let mut height: int32u = 0;
-    fa.Get_B4(&mut height, "Height");
+    fa.get_b4(&mut height, "Height");
     let mut bit_depth: zenlib::int8u = 0;
-    fa.Get_B1(&mut bit_depth, "BitDepth");
+    fa.get_b1(&mut bit_depth, "BitDepth");
     let mut color_type: zenlib::int8u = 0;
-    fa.Get_B1(&mut color_type, "ColorType");
+    fa.get_b1(&mut color_type, "ColorType");
     // Skip rest of IHDR (compression, filter, interlace) + 4-byte CRC.
     let ihdr_consumed = 10; // already consumed 10 IHDR body bytes
-    fa.Skip_Hexa((length as usize).saturating_sub(ihdr_consumed) + 4, "ihdr_tail_crc");
+    fa.skip_hexa((length as usize).saturating_sub(ihdr_consumed) + 4, "ihdr_tail_crc");
 
     // Walk remaining chunks. Oracle's General.StreamSize counts ONLY
     // the textual-metadata chunks (tEXt/iTXt/zTXt) — the bookkeeping
@@ -65,13 +65,13 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     let mut creation_time: Option<String> = None;
     let mut comment: Option<String> = None;
     
-    while fa.Remain() >= 12 {
+    while fa.remain() >= 12 {
         let mut len: int32u = 0;
-        fa.Get_B4(&mut len, "chunk_length");
+        fa.get_b4(&mut len, "chunk_length");
         let mut ty: int32u = 0;
-        fa.Get_C4(&mut ty, "chunk_type");
+        fa.get_c4(&mut ty, "chunk_type");
         let payload_len = len as usize;
-        if fa.Remain() < payload_len + 4 {
+        if fa.remain() < payload_len + 4 {
             break;
         }
         let chunk_total_bytes = 4 + 4 + payload_len as u64 + 4;
@@ -86,7 +86,7 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
             text_metadata_bytes += chunk_total_bytes;
             // Extract keywords from tEXt/iTXt for metadata fields.
             let payload = fa.read_raw(payload_len).to_vec();
-            fa.Skip_Hexa(4, "crc");
+            fa.skip_hexa(4, "crc");
             
             // Parse tEXt chunk: keyword\0text
             if ty == u32::from_be_bytes(*b"tEXt") {
@@ -143,7 +143,7 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
             }
             // zTXt is compressed text, skip for now
         } else {
-            fa.Skip_Hexa(payload_len + 4, "chunk_payload_crc");
+            fa.skip_hexa(payload_len + 4, "chunk_payload_crc");
         }
         if is_iend {
             break;
@@ -189,45 +189,45 @@ fn fill_streams(
     creation_time: Option<String>,
     comment: Option<String>,
 ) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "PNG", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "PNG", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
     // General.StreamSize = total bytes of text-metadata chunks
     // (tEXt/iTXt/zTXt) including their headers and CRCs. Other chunks
     // (IHDR/IDAT/IEND/pHYs/sBIT/...) are folded into Image.StreamSize.
-    fa.Fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
+    fa.fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
     if let Some(app) = encoded_application {
-        fa.Fill(StreamKind::General, 0, "Encoded_Application", app, false);
+        fa.fill(StreamKind::General, 0, "Encoded_Application", app, false);
     }
     if let Some(t) = title {
-        fa.Fill(StreamKind::General, 0, "Title", t, false);
+        fa.fill(StreamKind::General, 0, "Title", t, false);
     }
     if let Some(a) = author {
-        fa.Fill(StreamKind::General, 0, "Performer", a, false);
+        fa.fill(StreamKind::General, 0, "Performer", a, false);
     }
     if let Some(d) = description {
-        fa.Fill(StreamKind::General, 0, "Description", d, false);
+        fa.fill(StreamKind::General, 0, "Description", d, false);
     }
     if let Some(c) = copyright {
-        fa.Fill(StreamKind::General, 0, "Copyright", c, false);
+        fa.fill(StreamKind::General, 0, "Copyright", c, false);
     }
     if let Some(ct) = creation_time {
-        fa.Fill(StreamKind::General, 0, "Recorded_Date", ct, false);
+        fa.fill(StreamKind::General, 0, "Recorded_Date", ct, false);
     }
     if let Some(c) = comment {
-        fa.Fill(StreamKind::General, 0, "Comment", c, false);
+        fa.fill(StreamKind::General, 0, "Comment", c, false);
     }
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "PNG", false);
-    fa.Fill(StreamKind::Image, 0, "Format_Compression", "Deflate", false);
-    fa.Fill(StreamKind::Image, 0, "Format_Settings_Packing", "Linear", false);
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "PNG", false);
+    fa.fill(StreamKind::Image, 0, "Format_Compression", "Deflate", false);
+    fa.fill(StreamKind::Image, 0, "Format_Settings_Packing", "Linear", false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
     if width > 0 && height > 0 {
         let dar = (width as f64) / (height as f64);
-        fa.Fill(
+        fa.fill(
             StreamKind::Image,
             0,
             "DisplayAspectRatio",
@@ -243,14 +243,14 @@ fn fill_streams(
         6 => "RGBA",
         _ => "Unknown",
     };
-    fa.Fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
-    fa.Fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
     // Image.StreamSize = file_size - text-metadata bytes. Includes IDAT
     // payloads plus all non-text-chunk overhead (signature, IHDR/IEND,
     // CRCs, pHYs/sBIT/gAMA/...).
     let image_size = (file_size as u64).saturating_sub(overhead);
-    fa.Fill(StreamKind::Image, 0, "StreamSize", image_size.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "StreamSize", image_size.to_string(), false);
     let _ = idat_total;
 }
 

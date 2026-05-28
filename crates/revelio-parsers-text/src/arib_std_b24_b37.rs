@@ -68,7 +68,7 @@ fn crc_ccit_xmodem(bytes: &[u8]) -> u16 {
 }
 
 pub fn parse_arib_std_b24_b37(fa: &mut FileAnalyze) -> bool {
-    let peek_len = fa.Remain().min(PEEK_LIMIT);
+    let peek_len = fa.remain().min(PEEK_LIMIT);
     if peek_len < HEADER_LEN + CRC_LEN {
         return false;
     }
@@ -95,11 +95,11 @@ pub fn parse_arib_std_b24_b37(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "ARIB STD B24/B37", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "ARIB STD B24/B37", true);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "ARIB STD B24/B37", true);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "ARIB STD B24/B37", true);
     true
 }
 
@@ -127,13 +127,13 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_arib_std_b24_b37(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("ARIB STD B24/B37")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Text, 0, "Format")
+            fa.retrieve(StreamKind::Text, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("ARIB STD B24/B37")

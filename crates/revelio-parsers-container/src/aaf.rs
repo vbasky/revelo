@@ -23,7 +23,7 @@ const AAF_SIG: [u8; 16] = [
 
 pub fn parse_aaf(fa: &mut FileAnalyze) -> bool {
     // Need the 8-byte CDF header + 16-byte AAF signature = 24 bytes minimum.
-    let buf = match fa.peek_raw(fa.Remain().min(24)) {
+    let buf = match fa.peek_raw(fa.remain().min(24)) {
         Some(b) => b,
         None => return false,
     };
@@ -37,8 +37,8 @@ pub fn parse_aaf(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AAF", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AAF", true);
     true
 }
 
@@ -78,7 +78,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aaf(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("AAF".to_owned())
         );
     }

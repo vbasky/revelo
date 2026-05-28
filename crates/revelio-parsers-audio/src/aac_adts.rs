@@ -52,7 +52,7 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
     };
 
     // Scan frames to count and sum bytes.
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     let mut frame_count: u64 = 0;
     let mut pos = 0usize;
     let buf_view = match fa.peek_raw(file_size) {
@@ -73,15 +73,15 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
         pos += frame_length;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "ADTS", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
-    fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "ADTS", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "AAC", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Version", if id == 0 { "4" } else { "2" }, false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "AAC", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Version", if id == 0 { "4" } else { "2" }, false);
     let profile_name = match profile {
         0 => Some("Main"),
         1 => Some("LC"),
@@ -90,27 +90,27 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
         _ => None,
     };
     if let Some(p) = profile_name {
-        fa.Fill(StreamKind::Audio, 0, "Format_AdditionalFeatures", p, false);
+        fa.fill(StreamKind::Audio, 0, "Format_AdditionalFeatures", p, false);
     }
     // CodecID = AOT (profile + 1)
-    fa.Fill(StreamKind::Audio, 0, "CodecID", (profile + 1).to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "CodecID", (profile + 1).to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
     if channels_count > 0 {
-        fa.Fill(StreamKind::Audio, 0, "Channels", channels_count.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Channels", channels_count.to_string(), false);
         let (positions, layout) = channel_layout(channels_count);
         if let Some(p) = positions {
-            fa.Fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
+            fa.fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
         }
         if let Some(l) = layout {
-            fa.Fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
+            fa.fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
         }
     }
-    fa.Fill(StreamKind::Audio, 0, "SamplesPerFrame", "1024", false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", "1024", false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
     if frame_count > 0 {
-        fa.Fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
         let frame_rate = (sample_rate as f64) / 1024.0;
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "FrameRate",
@@ -118,8 +118,8 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
             false,
         );
     }
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
     true
 }
 

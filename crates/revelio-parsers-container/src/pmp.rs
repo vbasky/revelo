@@ -44,7 +44,7 @@ fn pmp_audio_format(audio_format: int32u) -> &'static str {
 }
 
 pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
-    let peek_len = fa.Remain().min(PMP_V1_HEADER_SIZE);
+    let peek_len = fa.remain().min(PMP_V1_HEADER_SIZE);
     let header = match fa.peek_raw(peek_len) {
         Some(b) => b,
         None => return false,
@@ -56,11 +56,11 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("PMP");
+    fa.element_begin("PMP");
     let mut _signature: int32u = 0;
-    fa.Get_C4(&mut _signature, "Signature");
+    fa.get_c4(&mut _signature, "Signature");
     let mut version: int32u = 0;
-    fa.Get_L4(&mut version, "Version");
+    fa.get_l4(&mut version, "Version");
 
     let mut video_format: int32u = 0;
     let mut nb_frames: int32u = 0;
@@ -72,40 +72,40 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
     let mut channels: int32u = 0;
     let mut sample_rate: int32u = 0;
 
-    if version == 1 && fa.Remain() >= PMP_V1_HEADER_SIZE - 8 {
-        fa.Get_L4(&mut video_format, "video_format");
-        fa.Get_L4(&mut nb_frames, "number of frames");
-        fa.Get_L4(&mut video_width, "video_width");
-        fa.Get_L4(&mut video_height, "video_height");
-        fa.Get_L4(&mut time_base_num, "time_base_num");
-        fa.Get_L4(&mut time_base_den, "time_base_den");
+    if version == 1 && fa.remain() >= PMP_V1_HEADER_SIZE - 8 {
+        fa.get_l4(&mut video_format, "video_format");
+        fa.get_l4(&mut nb_frames, "number of frames");
+        fa.get_l4(&mut video_width, "video_width");
+        fa.get_l4(&mut video_height, "video_height");
+        fa.get_l4(&mut time_base_num, "time_base_num");
+        fa.get_l4(&mut time_base_den, "time_base_den");
         let mut _nb_audio: int32u = 0;
-        fa.Get_L4(&mut _nb_audio, "number of audio streams");
-        fa.Get_L4(&mut audio_format, "audio_format");
-        fa.Get_L4(&mut channels, "channels");
+        fa.get_l4(&mut _nb_audio, "number of audio streams");
+        fa.get_l4(&mut audio_format, "audio_format");
+        fa.get_l4(&mut channels, "channels");
         let mut _unknown: int32u = 0;
-        fa.Get_L4(&mut _unknown, "unknown");
-        fa.Get_L4(&mut sample_rate, "sample_rate");
+        fa.get_l4(&mut _unknown, "unknown");
+        fa.get_l4(&mut sample_rate, "sample_rate");
     }
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "PMP", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "PMP", false);
 
     if version == 1 {
-        fa.Stream_Prepare(StreamKind::Video);
+        fa.stream_prepare(StreamKind::Video);
         let vfmt = pmp_video_format(video_format);
         if !vfmt.is_empty() {
-            fa.Fill(StreamKind::Video, 0, "Format", vfmt, false);
+            fa.fill(StreamKind::Video, 0, "Format", vfmt, false);
         }
         if nb_frames > 0 {
-            fa.Fill(StreamKind::Video, 0, "FrameCount", nb_frames.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "FrameCount", nb_frames.to_string(), false);
         }
         if video_width > 0 {
-            fa.Fill(StreamKind::Video, 0, "Width", video_width.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "Width", video_width.to_string(), false);
         }
         if video_height > 0 {
-            fa.Fill(StreamKind::Video, 0, "Height", video_height.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "Height", video_height.to_string(), false);
         }
         // The reference C++ uses `(float)time_base_den / 100` directly; we
         // mirror it verbatim — the `time_base_num` field is parsed but not
@@ -113,7 +113,7 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
         let _ = time_base_num;
         if time_base_den > 0 {
             let frame_rate = (time_base_den as f64) / 100.0;
-            fa.Fill(
+            fa.fill(
                 StreamKind::Video,
                 0,
                 "FrameRate",
@@ -121,18 +121,18 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
                 false,
             );
         }
-        fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+        fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
-        fa.Stream_Prepare(StreamKind::Audio);
+        fa.stream_prepare(StreamKind::Audio);
         let afmt = pmp_audio_format(audio_format);
         if !afmt.is_empty() {
-            fa.Fill(StreamKind::Audio, 0, "Format", afmt, false);
+            fa.fill(StreamKind::Audio, 0, "Format", afmt, false);
         }
         if channels > 0 {
-            fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+            fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
         }
         if sample_rate > 0 {
-            fa.Fill(
+            fa.fill(
                 StreamKind::Audio,
                 0,
                 "SamplingRate",
@@ -140,7 +140,7 @@ pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
                 false,
             );
         }
-        fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+        fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
     }
 
     true
@@ -187,15 +187,15 @@ mod tests {
         assert!(parse_pmp(&mut fa));
 
         let g = |k: &str| {
-            fa.Retrieve(StreamKind::General, 0, k)
+            fa.retrieve(StreamKind::General, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         let v = |k: &str| {
-            fa.Retrieve(StreamKind::Video, 0, k)
+            fa.retrieve(StreamKind::Video, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         let a = |k: &str| {
-            fa.Retrieve(StreamKind::Audio, 0, k)
+            fa.retrieve(StreamKind::Audio, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
 
@@ -220,20 +220,20 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pmp(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format")
+            fa.retrieve(StreamKind::Video, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("MPEG-4 Visual")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format")
+            fa.retrieve(StreamKind::Audio, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("MPEG Audio")
         );
         // 2997 / 100 = 29.97
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "FrameRate")
+            fa.retrieve(StreamKind::Video, 0, "FrameRate")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("29.970")

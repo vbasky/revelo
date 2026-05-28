@@ -17,19 +17,19 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_adpcm(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() == 0 {
+    if fa.remain() == 0 {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "ADPCM", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "ADPCM", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "ADPCM", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "ADPCM", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "ADPCM", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "ADPCM", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
     true
 }
 
@@ -47,8 +47,8 @@ mod tests {
     fn accepts_any_non_empty_buffer() {
         let mut fa = FileAnalyze::new(&[0x00, 0x01, 0x02, 0x03]);
         assert!(parse_adpcm(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("ADPCM"));
         assert_eq!(a("Format").as_deref(), Some("ADPCM"));
         assert_eq!(a("Codec").as_deref(), Some("ADPCM"));
@@ -60,8 +60,8 @@ mod tests {
     fn fills_one_audio_stream() {
         let mut fa = FileAnalyze::new(&[0xAAu8; 64]);
         assert!(parse_adpcm(&mut fa));
-        assert_eq!(fa.Count_Get(StreamKind::Audio), 1);
-        assert_eq!(fa.Count_Get(StreamKind::General), 1);
-        assert_eq!(fa.Count_Get(StreamKind::Video), 0);
+        assert_eq!(fa.count_get(StreamKind::Audio), 1);
+        assert_eq!(fa.count_get(StreamKind::General), 1);
+        assert_eq!(fa.count_get(StreamKind::Video), 0);
     }
 }

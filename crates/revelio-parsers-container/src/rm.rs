@@ -19,7 +19,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const SIGNATURE: &[u8; 4] = b".RMF";
 
 pub fn parse_rm(fa: &mut FileAnalyze) -> bool {
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(b) if b.len() == 4 => b,
         _ => return false,
     };
@@ -27,12 +27,12 @@ pub fn parse_rm(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("RM");
-    fa.Skip_B4("Signature");
-    fa.Element_End();
+    fa.element_begin("RM");
+    fa.skip_b4("Signature");
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "RealMedia", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "RealMedia", false);
 
     true
 }
@@ -49,7 +49,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_rm(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("RealMedia"),

@@ -30,7 +30,7 @@ const DAT_QUANTIZATION: [u8; 4] = [16, 12, 0, 0];
 const DAT_EMPHASIS: [Option<&str>; 4] = [Some("off"), Some("50/15 ms"), None, None];
 
 pub fn parse_dat(fa: &mut FileAnalyze) -> bool {
-    let total = fa.Remain();
+    let total = fa.remain();
     if total < DAT_FRAME_SIZE {
         return false;
     }
@@ -73,28 +73,28 @@ pub fn parse_dat(fa: &mut FileAnalyze) -> bool {
     let channels = DAT_NUMCHANS[numchans as usize];
     let bit_depth = DAT_QUANTIZATION[quantization as usize];
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DAT", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DAT", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "PCM", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "PCM", false);
     // BitRate = 1536000 × 441 / 480 = 1411200; replicates the C++ literal.
-    fa.Fill(StreamKind::Audio, 0, "BitRate", "1411200", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sampling_rate_hz.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate", "1411200", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_rate_hz.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
     if let Some(e) = DAT_EMPHASIS[emphasis as usize] {
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Emphasis", e, false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Emphasis", e, false);
     }
 
     // StreamSize: C++ computes (FileSize / 5822) × 5760 × 441 / 480 ≈ audio
     // payload retimed to the nominal 1411200 bps. Replicate exactly.
     let file_size = total as u64;
     let stream_size = ((file_size / DAT_FRAME_SIZE as u64) * DAT_AUDIO_SIZE as u64) * 441 / 480;
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
 
     true
 }
@@ -153,8 +153,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dat(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("DAT"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -175,7 +175,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&frame);
         assert!(parse_dat(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("SamplingRate").as_deref(), Some("44100"));
         assert_eq!(a("Channels").as_deref(), Some("4"));
         assert_eq!(a("BitDepth").as_deref(), Some("12"));

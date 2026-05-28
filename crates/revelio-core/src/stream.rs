@@ -123,20 +123,20 @@ impl StreamCollection {
 
     /// Allocate a new stream of `kind`, return its `StreamPos`.
     /// Matches `File__Analyze::Stream_Prepare`.
-    pub fn Stream_Prepare(&mut self, kind: StreamKind) -> usize {
+    pub fn stream_prepare(&mut self, kind: StreamKind) -> usize {
         let v = self.by_kind.entry(kind).or_default();
         v.push(Stream::new());
         v.len() - 1
     }
 
-    pub fn Count_Get(&self, kind: StreamKind) -> usize {
+    pub fn count_get(&self, kind: StreamKind) -> usize {
         self.by_kind.get(&kind).map(|v| v.len()).unwrap_or(0)
     }
 
     /// `Fill(StreamKind, StreamPos, Parameter, Value, Replace)`. If the
     /// stream doesn't exist yet it is auto-created — matches the C++
     /// behavior where Fill at pos=0 implicitly prepares a stream.
-    pub fn Fill(
+    pub fn fill(
         &mut self,
         kind: StreamKind,
         pos: usize,
@@ -153,7 +153,7 @@ impl StreamCollection {
 
     /// `Fill_Extra` — like `Fill`, but the parameter ends up in the
     /// stream's `<extra>` block instead of the main field list.
-    pub fn Fill_Extra(
+    pub fn fill_extra(
         &mut self,
         kind: StreamKind,
         pos: usize,
@@ -168,7 +168,7 @@ impl StreamCollection {
         v[pos].set_extra(parameter, value.into(), replace);
     }
 
-    pub fn Retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {
+    pub fn retrieve(&self, kind: StreamKind, pos: usize, parameter: &str) -> Option<&Ztring> {
         self.by_kind.get(&kind)?.get(pos)?.get(parameter)
     }
 
@@ -190,38 +190,38 @@ mod tests {
     #[test]
     fn stream_prepare_returns_sequential_indices() {
         let mut c = StreamCollection::new();
-        assert_eq!(c.Stream_Prepare(StreamKind::Audio), 0);
-        assert_eq!(c.Stream_Prepare(StreamKind::Audio), 1);
-        assert_eq!(c.Stream_Prepare(StreamKind::Video), 0);
-        assert_eq!(c.Count_Get(StreamKind::Audio), 2);
-        assert_eq!(c.Count_Get(StreamKind::Video), 1);
-        assert_eq!(c.Count_Get(StreamKind::Text), 0);
+        assert_eq!(c.stream_prepare(StreamKind::Audio), 0);
+        assert_eq!(c.stream_prepare(StreamKind::Audio), 1);
+        assert_eq!(c.stream_prepare(StreamKind::Video), 0);
+        assert_eq!(c.count_get(StreamKind::Audio), 2);
+        assert_eq!(c.count_get(StreamKind::Video), 1);
+        assert_eq!(c.count_get(StreamKind::Text), 0);
     }
 
     #[test]
     fn fill_and_retrieve_round_trip() {
         let mut c = StreamCollection::new();
-        c.Stream_Prepare(StreamKind::Audio);
-        c.Fill(StreamKind::Audio, 0, "Format", "FLAC", false);
-        c.Fill(StreamKind::Audio, 0, "SamplingRate", "48000", false);
+        c.stream_prepare(StreamKind::Audio);
+        c.fill(StreamKind::Audio, 0, "Format", "FLAC", false);
+        c.fill(StreamKind::Audio, 0, "SamplingRate", "48000", false);
         assert_eq!(
-            c.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()),
+            c.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()),
             Some("FLAC")
         );
         assert_eq!(
-            c.Retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
+            c.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
             Some("48000")
         );
-        assert_eq!(c.Retrieve(StreamKind::Audio, 0, "Missing"), None);
+        assert_eq!(c.retrieve(StreamKind::Audio, 0, "Missing"), None);
     }
 
     #[test]
     fn fill_without_replace_keeps_first_value() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", "MP4", false);
-        c.Fill(StreamKind::General, 0, "Format", "MOV", false);
+        c.fill(StreamKind::General, 0, "Format", "MP4", false);
+        c.fill(StreamKind::General, 0, "Format", "MOV", false);
         assert_eq!(
-            c.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
+            c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
             Some("MP4")
         );
     }
@@ -229,10 +229,10 @@ mod tests {
     #[test]
     fn fill_with_replace_overwrites() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", "MP4", false);
-        c.Fill(StreamKind::General, 0, "Format", "MOV", true);
+        c.fill(StreamKind::General, 0, "Format", "MP4", false);
+        c.fill(StreamKind::General, 0, "Format", "MOV", true);
         assert_eq!(
-            c.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
+            c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
             Some("MOV")
         );
     }
@@ -240,22 +240,22 @@ mod tests {
     #[test]
     fn fill_auto_creates_stream_if_pos_unset() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::Audio, 2, "Format", "AAC", false);
-        assert_eq!(c.Count_Get(StreamKind::Audio), 3);
+        c.fill(StreamKind::Audio, 2, "Format", "AAC", false);
+        assert_eq!(c.count_get(StreamKind::Audio), 3);
         assert_eq!(
-            c.Retrieve(StreamKind::Audio, 2, "Format").map(|z| z.as_str()),
+            c.retrieve(StreamKind::Audio, 2, "Format").map(|z| z.as_str()),
             Some("AAC")
         );
         // The auto-created earlier streams are empty
-        assert_eq!(c.Retrieve(StreamKind::Audio, 0, "Format"), None);
+        assert_eq!(c.retrieve(StreamKind::Audio, 0, "Format"), None);
     }
 
     #[test]
     fn iter_preserves_insertion_order_within_stream() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::Video, 0, "Format", "AVC", false);
-        c.Fill(StreamKind::Video, 0, "Width", "1920", false);
-        c.Fill(StreamKind::Video, 0, "Height", "1080", false);
+        c.fill(StreamKind::Video, 0, "Format", "AVC", false);
+        c.fill(StreamKind::Video, 0, "Width", "1920", false);
+        c.fill(StreamKind::Video, 0, "Height", "1080", false);
         let s = c.stream(StreamKind::Video, 0).unwrap();
         let order: Vec<&str> = s.iter().map(|(k, _)| k).collect();
         assert_eq!(order, vec!["Format", "Width", "Height"]);
@@ -264,10 +264,10 @@ mod tests {
     #[test]
     fn iter_walks_all_streams_grouped_by_kind() {
         let mut c = StreamCollection::new();
-        c.Fill(StreamKind::General, 0, "Format", "MP4", false);
-        c.Fill(StreamKind::Video, 0, "Format", "AVC", false);
-        c.Fill(StreamKind::Audio, 0, "Format", "AAC", false);
-        c.Fill(StreamKind::Audio, 1, "Format", "AC3", false);
+        c.fill(StreamKind::General, 0, "Format", "MP4", false);
+        c.fill(StreamKind::Video, 0, "Format", "AVC", false);
+        c.fill(StreamKind::Audio, 0, "Format", "AAC", false);
+        c.fill(StreamKind::Audio, 1, "Format", "AC3", false);
         let pairs: Vec<(StreamKind, usize)> = c.iter().map(|(k, i, _)| (k, i)).collect();
         assert_eq!(
             pairs,

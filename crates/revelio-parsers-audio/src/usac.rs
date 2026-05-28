@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_usac(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -47,18 +47,18 @@ pub fn parse_usac(fa: &mut FileAnalyze) -> bool {
 }
 
 fn fill_usac_streams(fa: &mut FileAnalyze, channels: u8, sample_rate: u32, profile: u8) {
-    let pos = fa.Stream_Prepare(StreamKind::Audio);
+    let pos = fa.stream_prepare(StreamKind::Audio);
 
-    fa.Fill(StreamKind::Audio, pos, "Format", "USAC", false);
-    fa.Fill(StreamKind::Audio, pos, "Codec", "xHE-AAC", false);
-    fa.Fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "Format", "USAC", false);
+    fa.fill(StreamKind::Audio, pos, "Codec", "xHE-AAC", false);
+    fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
 
     match profile {
-        0 => fa.Fill(StreamKind::Audio, pos, "Format_Profile", "LC", false),
-        1 => fa.Fill(StreamKind::Audio, pos, "Format_Profile", "HE-AAC", false),
-        2 => fa.Fill(StreamKind::Audio, pos, "Format_Profile", "HE-AACv2", false),
-        3 => fa.Fill(StreamKind::Audio, pos, "Format_Profile", "xHE-AAC", false),
+        0 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "LC", false),
+        1 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "HE-AAC", false),
+        2 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "HE-AACv2", false),
+        3 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "xHE-AAC", false),
         _ => {}
     }
 }

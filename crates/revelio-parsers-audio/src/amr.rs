@@ -12,7 +12,7 @@ const AMR_PREFIX: &[u8; 5] = b"#!AMR";
 const MC_TAIL: &[u8; 7] = b"_MC1.0\n";
 
 pub fn parse_amr(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(16));
+    let head = fa.peek_raw(fa.remain().min(16));
     let Some(h) = head else { return false };
     if h.len() < 6 || &h[0..5] != AMR_PREFIX {
         return false;
@@ -35,8 +35,8 @@ pub fn parse_amr(fa: &mut FileAnalyze) -> bool {
         return false;
     };
 
-    let file_size = fa.Remain();
-    fa.Skip_Hexa(header_size, "AMR_Magic");
+    let file_size = fa.remain();
+    fa.skip_hexa(header_size, "AMR_Magic");
 
     fill_streams(fa, is_wb, channels, header_size, file_size);
     true
@@ -49,30 +49,30 @@ fn fill_streams(
     header_size: usize,
     file_size: usize,
 ) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AMR", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", header_size.to_string(), true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AMR", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "StreamSize", header_size.to_string(), true);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "AMR", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "AMR", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "AMR", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "AMR", false);
     if is_wb {
-        fa.Fill(StreamKind::Audio, 0, "Format_Profile", "Wide band", false);
-        fa.Fill(StreamKind::Audio, 0, "SamplingRate", "16000", false);
-        fa.Fill(StreamKind::Audio, 0, "BitDepth", "14", false);
+        fa.fill(StreamKind::Audio, 0, "Format_Profile", "Wide band", false);
+        fa.fill(StreamKind::Audio, 0, "SamplingRate", "16000", false);
+        fa.fill(StreamKind::Audio, 0, "BitDepth", "14", false);
     } else {
-        fa.Fill(StreamKind::Audio, 0, "Format_Profile", "Narrow band", false);
-        fa.Fill(StreamKind::Audio, 0, "SamplingRate", "8000", false);
-        fa.Fill(StreamKind::Audio, 0, "BitDepth", "13", false);
+        fa.fill(StreamKind::Audio, 0, "Format_Profile", "Narrow band", false);
+        fa.fill(StreamKind::Audio, 0, "SamplingRate", "8000", false);
+        fa.fill(StreamKind::Audio, 0, "BitDepth", "13", false);
     }
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
     // AMR uses variable per-frame mode codes; bitrate varies frame-to-frame
     // unless every frame happens to share the same mode (not detected here).
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
     let audio_bytes = file_size.saturating_sub(header_size);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", audio_bytes.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_bytes.to_string(), false);
 }
 
 #[cfg(test)]
@@ -94,19 +94,19 @@ mod tests {
         assert!(parse_amr(&mut fa));
         let s = fa.streams();
         assert_eq!(
-            s.Retrieve(StreamKind::Audio, 0, "Format_Profile").map(|z| z.as_str()),
+            s.retrieve(StreamKind::Audio, 0, "Format_Profile").map(|z| z.as_str()),
             Some("Narrow band")
         );
         assert_eq!(
-            s.Retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
+            s.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
             Some("8000")
         );
         assert_eq!(
-            s.Retrieve(StreamKind::Audio, 0, "Channels").map(|z| z.as_str()),
+            s.retrieve(StreamKind::Audio, 0, "Channels").map(|z| z.as_str()),
             Some("1")
         );
         assert_eq!(
-            s.Retrieve(StreamKind::Audio, 0, "BitRate_Mode").map(|z| z.as_str()),
+            s.retrieve(StreamKind::Audio, 0, "BitRate_Mode").map(|z| z.as_str()),
             Some("VBR")
         );
     }
@@ -120,11 +120,11 @@ mod tests {
         assert!(parse_amr(&mut fa));
         let s = fa.streams();
         assert_eq!(
-            s.Retrieve(StreamKind::Audio, 0, "Format_Profile").map(|z| z.as_str()),
+            s.retrieve(StreamKind::Audio, 0, "Format_Profile").map(|z| z.as_str()),
             Some("Wide band")
         );
         assert_eq!(
-            s.Retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
+            s.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
             Some("16000")
         );
     }

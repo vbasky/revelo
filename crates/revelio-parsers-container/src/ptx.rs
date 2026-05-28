@@ -14,7 +14,7 @@ const PTX_MAGIC: [u8; 17] = [
 ];
 
 pub fn parse_ptx(fa: &mut FileAnalyze) -> bool {
-    let want = fa.Remain().min(17);
+    let want = fa.remain().min(17);
     if want < 17 {
         return false;
     }
@@ -22,9 +22,9 @@ pub fn parse_ptx(fa: &mut FileAnalyze) -> bool {
     if buf != PTX_MAGIC {
         return false;
     }
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Pro Tools Session", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", "Version 10", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Pro Tools Session", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", "Version 10", false);
     true
 }
 
@@ -45,11 +45,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ptx(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("Pro Tools Session".into())
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Version").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format_Version").map(|z| z.as_str().to_owned()),
             Some("Version 10".into())
         );
     }

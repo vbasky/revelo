@@ -32,7 +32,7 @@ pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let data = match fa.peek_raw(fa.Remain() as usize) {
+    let data = match fa.peek_raw(fa.remain() as usize) {
         Some(d) => d.to_vec(),
         None => return false,
     };
@@ -232,21 +232,21 @@ fn read_ue(data: &[u8], offset: &mut usize) -> Option<u64> {
 }
 
 fn fill_vvc_streams(fa: &mut FileAnalyze, info: &VvcInfo) {
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "VVC", false);
-    fa.Fill(StreamKind::Video, 0, "Format_Version", "Version 1", false);
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", vvc_profile_name(info.profile_idc), false);
-    fa.Fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "VVC", false);
+    fa.fill(StreamKind::Video, 0, "Format_Version", "Version 1", false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", vvc_profile_name(info.profile_idc), false);
+    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
     if info.chroma_format_idc == 0 {
-        fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", "4:0:0", false);
+        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:0:0", false);
     } else if info.chroma_format_idc == 1 {
-        fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:0", false);
+        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:0", false);
     } else if info.chroma_format_idc == 2 {
-        fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:2", false);
+        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:2", false);
     } else if info.chroma_format_idc == 3 {
-        fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", "4:4:4", false);
+        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:4:4", false);
     }
 }
 

@@ -79,10 +79,10 @@ fn channel_layout(code: u8) -> &'static str {
 }
 
 pub fn parse_open_mg(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 3 {
+    if fa.remain() < 3 {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(3)) {
+    let head = match fa.peek_raw(fa.remain().min(3)) {
         Some(h) if h.len() == 3 => h,
         _ => return false,
     };
@@ -93,75 +93,75 @@ pub fn parse_open_mg(fa: &mut FileAnalyze) -> bool {
     }
     // Minimum header is 3 + 1 + 2 + 26 + 1 = 33 bytes before the optional
     // ATRAC3 sub-header.
-    if fa.Remain() < 33 {
+    if fa.remain() < 33 {
         return false;
     }
 
-    let file_size = fa.Remain() as u64;
+    let file_size = fa.remain() as u64;
 
-    fa.Element_Begin("OpenMG");
-    fa.Skip_Hexa(3, "Code");
-    fa.Skip_B1("Flags");
+    fa.element_begin("OpenMG");
+    fa.skip_hexa(3, "Code");
+    fa.skip_b1("Flags");
     let mut size: int16u = 0;
-    fa.Get_B2(&mut size, "Size");
-    fa.Skip_Hexa(26, "Unknown");
+    fa.get_b2(&mut size, "Size");
+    fa.skip_hexa(26, "Unknown");
     let mut codec_id: int8u = 0;
-    fa.Get_B1(&mut codec_id, "CodecID");
+    fa.get_b1(&mut codec_id, "CodecID");
 
     let mut joint_stereo: u8 = 0;
     let mut sr_code: u8 = 0;
     let mut ch_code: u8 = 0;
     let mut frame_size_raw: int16u = 0;
     if codec_id <= 1 {
-        fa.BS_Begin();
-        fa.Skip_S1(7, "Unknown");
-        fa.Get_S1(1, &mut joint_stereo, "Joint Stereo");
-        fa.Get_S1(3, &mut sr_code, "Sampling Rate");
-        fa.Get_S1(3, &mut ch_code, "Channels");
-        fa.Get_S2(10, &mut frame_size_raw, "Frame size");
-        fa.BS_End();
+        fa.bs_begin();
+        fa.skip_s1(7, "Unknown");
+        fa.get_s1(1, &mut joint_stereo, "Joint Stereo");
+        fa.get_s1(3, &mut sr_code, "Sampling Rate");
+        fa.get_s1(3, &mut ch_code, "Channels");
+        fa.get_s2(10, &mut frame_size_raw, "Frame size");
+        fa.bs_end();
     }
-    let consumed = fa.Element_Offset();
+    let consumed = fa.element_offset();
     let header_size = size as usize;
-    if header_size > consumed && fa.Remain() >= header_size - consumed {
-        fa.Skip_Hexa(header_size - consumed, "Unknown");
+    if header_size > consumed && fa.remain() >= header_size - consumed {
+        fa.skip_hexa(header_size - consumed, "Unknown");
     }
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "OpenMG", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "OpenMG", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
+    fa.stream_prepare(StreamKind::Audio);
     let fmt = codec_format(codec_id);
     if !fmt.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Format", fmt, false);
+        fa.fill(StreamKind::Audio, 0, "Format", fmt, false);
     }
     let enc = codec_encryption(codec_id);
     if !enc.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Encryption", enc, false);
+        fa.fill(StreamKind::Audio, 0, "Encryption", enc, false);
     }
 
     let header_consumed = (size as u64).max(consumed as u64);
     let stream_size = file_size.saturating_sub(header_consumed);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
 
     if codec_id <= 1 {
         let ch = channels(ch_code);
-        fa.Fill(StreamKind::Audio, 0, "Channels", ch.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Channels", ch.to_string(), false);
         let positions = channel_positions(ch_code);
         if !positions.is_empty() {
-            fa.Fill(StreamKind::Audio, 0, "ChannelPositions", positions, false);
+            fa.fill(StreamKind::Audio, 0, "ChannelPositions", positions, false);
         }
         let layout = channel_layout(ch_code);
         if !layout.is_empty() {
-            fa.Fill(StreamKind::Audio, 0, "ChannelLayout", layout, false);
+            fa.fill(StreamKind::Audio, 0, "ChannelLayout", layout, false);
         }
         if ch_code == 1 && joint_stereo != 0 {
-            fa.Fill(StreamKind::Audio, 0, "Format_Settings_Mode", "Joint Stereo", false);
+            fa.fill(StreamKind::Audio, 0, "Format_Settings_Mode", "Joint Stereo", false);
         }
         let sr = sampling_rate(sr_code);
         if sr != 0 {
-            fa.Fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
+            fa.fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
         }
         // C++: codec_id==1 (SDMI) adds 1 to FrameSize before the <<3.
         let mut fs = frame_size_raw as u32;
@@ -171,10 +171,10 @@ pub fn parse_open_mg(fa: &mut FileAnalyze) -> bool {
         let frame_size_bytes = fs << 3;
         if sr != 0 && frame_size_bytes != 0 {
             let bitrate = (sr as u64) * (frame_size_bytes as u64) / 256;
-            fa.Fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+            fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
             if bitrate != 0 {
                 let duration_ms = stream_size * 8 * 1000 / bitrate;
-                fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+                fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
             }
         }
     }
@@ -233,8 +233,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_open_mg(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("OpenMG"));
         assert_eq!(a("Format").as_deref(), Some("ATRAC3"));
@@ -253,7 +253,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_open_mg(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format").as_deref(), Some("ATRAC3"));
         assert_eq!(a("Encryption").as_deref(), Some("SDMI"));
         assert_eq!(a("Format_Settings_Mode").as_deref(), Some("Joint Stereo"));
@@ -267,7 +267,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_open_mg(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
+            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("ATRAC3")
         );
     }

@@ -324,17 +324,17 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
 
 /// Parse AV1 from raw OBU stream (Annex B or low-overhead format).
 pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
-    fa.Element_Begin("AV1");
+    fa.element_begin("AV1");
     
-    let data = if let Some(d) = fa.peek_raw(fa.Remain() as usize) {
+    let data = if let Some(d) = fa.peek_raw(fa.remain() as usize) {
         d.to_vec()
     } else {
-        fa.Element_End();
+        fa.element_end();
         return false;
     };
     
     if data.len() < 2 {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
@@ -347,7 +347,7 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     match parse_obu_header(&data) {
         Some((t, _, _, _)) if t == OBU_TEMPORAL_DELIMITER || t == OBU_SEQUENCE_HEADER => {}
         _ => {
-            fa.Element_End();
+            fa.element_end();
             return false;
         }
     }
@@ -400,17 +400,17 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     let info = match seq_header_info {
         Some(i) => i,
         None => {
-            fa.Element_End();
+            fa.element_end();
             return false;
         }
     };
     
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "AV1", false);
-    fa.Fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", info.chroma_subsampling, false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "AV1", false);
+    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", info.chroma_subsampling, false);
     
     let profile_name = match info.profile {
         0 => "Main",
@@ -418,17 +418,17 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         2 => "Professional",
         _ => "Unknown",
     };
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile_name, false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", profile_name, false);
     
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
-    fa.Fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
     
     // General stream
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AV1", false);
-    fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AV1", false);
+    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
     
-    fa.Element_End();
+    fa.element_end();
     true
 }
 

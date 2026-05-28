@@ -17,68 +17,68 @@ use zenlib::{int16u, int32u};
 const VP8_START_CODE: int32u = 0x9D012A;
 
 pub fn parse_vp8(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 10 {
+    if fa.remain() < 10 {
         return false;
     }
 
-    fa.Element_Begin("VP8");
+    fa.element_begin("VP8");
 
     // VP8 bitstream header (LE bit-packed)
-    fa.BS_Begin();
+    fa.bs_begin();
 
     let mut frame_type: u8 = 0;
-    fa.Get_S1(1, &mut frame_type, "frame type");
+    fa.get_s1(1, &mut frame_type, "frame type");
 
-    fa.Skip_S1(3, "version number");
-    fa.Skip_S1(1, "show_frame flag");
-    fa.Skip_S4(19, "size of the first data partition");
-    fa.BS_End();
+    fa.skip_s1(3, "version number");
+    fa.skip_s1(1, "show_frame flag");
+    fa.skip_s4(19, "size of the first data partition");
+    fa.bs_end();
 
     if frame_type == 0 {
         // I-Frame
         let mut start_code: int32u = 0;
-        fa.Get_B3(&mut start_code, "start code");
+        fa.get_b3(&mut start_code, "start code");
 
         if start_code != VP8_START_CODE {
-            fa.Element_End();
+            fa.element_end();
             return false;
         }
 
         let mut width: int16u = 0;
         let mut height: int16u = 0;
-        fa.Get_L2(&mut width, "width");
-        fa.Get_L2(&mut height, "height");
+        fa.get_l2(&mut width, "width");
+        fa.get_l2(&mut height, "height");
 
         let w = (width & 0x3FFF) as u32;
         let h = (height & 0x3FFF) as u32;
 
-        fa.Element_End();
+        fa.element_end();
 
-        fa.Stream_Prepare(StreamKind::Video);
-        fa.Fill(StreamKind::Video, 0, "Format", "VP8", false);
-        fa.Fill(StreamKind::Video, 0, "Codec", "VP8", false);
-        fa.Fill(StreamKind::Video, 0, "BitDepth", "8", false);
-        fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
-        fa.Fill(StreamKind::Video, 0, "Width", w.to_string(), false);
-        fa.Fill(StreamKind::Video, 0, "Height", h.to_string(), false);
+        fa.stream_prepare(StreamKind::Video);
+        fa.fill(StreamKind::Video, 0, "Format", "VP8", false);
+        fa.fill(StreamKind::Video, 0, "Codec", "VP8", false);
+        fa.fill(StreamKind::Video, 0, "BitDepth", "8", false);
+        fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+        fa.fill(StreamKind::Video, 0, "Width", w.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Height", h.to_string(), false);
 
-        fa.Stream_Prepare(StreamKind::General);
-        fa.Fill(StreamKind::General, 0, "Format", "VP8", false);
+        fa.stream_prepare(StreamKind::General);
+        fa.fill(StreamKind::General, 0, "Format", "VP8", false);
 
         return true;
     }
 
     // P-Frame (no resolution info)
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "VP8", false);
-    fa.Fill(StreamKind::Video, 0, "Codec", "VP8", false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", "8", false);
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "VP8", false);
+    fa.fill(StreamKind::Video, 0, "Codec", "VP8", false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", "8", false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "VP8", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "VP8", false);
 
     true
 }
@@ -132,19 +132,19 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp8(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
             Some("VP8")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
             Some("1920")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
             Some("1080")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()),
             Some("8")
         );
     }

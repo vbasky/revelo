@@ -54,12 +54,12 @@ pub fn parse_dpx(fa: &mut FileAnalyze) -> bool {
     if !is_dpx {
         // Cineon path: provide a minimal stream entry; the file
         // information layout differs from DPX and we don't decode it.
-        fa.Stream_Prepare(StreamKind::General);
-        fa.Fill(StreamKind::General, 0, "Format", "Cineon", false);
-        fa.Stream_Prepare(StreamKind::Image);
-        fa.Fill(StreamKind::Image, 0, "Format", "Cineon", false);
+        fa.stream_prepare(StreamKind::General);
+        fa.fill(StreamKind::General, 0, "Format", "Cineon", false);
+        fa.stream_prepare(StreamKind::Image);
+        fa.fill(StreamKind::Image, 0, "Format", "Cineon", false);
         let endian_str = if le { "Little" } else { "Big" };
-        fa.Fill(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str, false);
+        fa.fill(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str, false);
         return true;
     }
 
@@ -82,64 +82,64 @@ pub fn parse_dpx(fa: &mut FileAnalyze) -> bool {
         if s.is_empty() { None } else { Some(s) }
     } else { None };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DPX", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DPX", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
     let version_fmt = format_version(&version_raw);
     if !version_fmt.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Format_Version", version_fmt.clone(), false);
+        fa.fill(StreamKind::General, 0, "Format_Version", version_fmt.clone(), false);
     }
     if let Some(ref c) = creator {
-        fa.Fill(StreamKind::General, 0, "Encoded_Library", c.clone(), false);
+        fa.fill(StreamKind::General, 0, "Encoded_Library", c.clone(), false);
     }
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "DPX", false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "DPX", false);
     if !version_fmt.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "Format_Version", version_fmt, false);
+        fa.fill(StreamKind::Image, 0, "Format_Version", version_fmt, false);
     }
     let endian_str = if le { "Little" } else { "Big" };
-    fa.Fill(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str, false);
+    fa.fill(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str, false);
     if let Some(pack) = dpx_packing(packing_method) {
-        fa.Fill(StreamKind::Image, 0, "Format_Settings_Packing", pack, false);
+        fa.fill(StreamKind::Image, 0, "Format_Settings_Packing", pack, false);
     }
     if let Some(enc) = dpx_encoding(encoding_method) {
-        fa.Fill(StreamKind::Image, 0, "Format_Compression", enc, false);
+        fa.fill(StreamKind::Image, 0, "Format_Compression", enc, false);
     }
     if width > 0 {
-        fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
     }
     if height > 0 {
-        fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
     }
     if width > 0 && height > 0 {
-        fa.Fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
+        fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
         let dar = width as f64 / height as f64;
-        fa.Fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
     }
     let cs = dpx_descriptor_color_space(descriptor);
     if !cs.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "ColorSpace", cs, false);
+        fa.fill(StreamKind::Image, 0, "ColorSpace", cs, false);
     }
     let cm = dpx_descriptor_chroma(descriptor);
     if !cm.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
+        fa.fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
     }
-    fa.Fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
     // DPX is uncompressed → lossless.
-    fa.Fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
     // Image.StreamSize = file size (whole file is image data + header,
     // but oracle reports the file size as the image's StreamSize). General
     // StreamSize = 0 (no separately-tracked overhead in this model).
-    let file_size = fa.Remain();
-    fa.Fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
+    let file_size = fa.remain();
+    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
     // Oracle marks colour_description_present whenever colorimetric/
     // transfer fields are present in the image element header (always
     // present in DPX, so always emit "Yes").
-    fa.Fill(StreamKind::Image, 0, "colour_description_present", "Yes", false);
+    fa.fill(StreamKind::Image, 0, "colour_description_present", "Yes", false);
     if let Some(c) = creator {
-        fa.Fill(StreamKind::Image, 0, "Encoded_Library", c, false);
+        fa.fill(StreamKind::Image, 0, "Encoded_Library", c, false);
     }
     true
 }
@@ -244,7 +244,7 @@ mod tests {
         let buf = build_minimal_dpx(2048, 1556, 10, 50); // 2K, 10-bit RGB
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dpx(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("DPX"));
         assert_eq!(i("Format_Version").as_deref(), Some("2.0"));
         assert_eq!(i("Width").as_deref(), Some("2048"));

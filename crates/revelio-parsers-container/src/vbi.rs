@@ -13,7 +13,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const PEEK_BYTES: usize = 1;
 
 pub fn parse_vbi(fa: &mut FileAnalyze) -> bool {
-    let n = fa.Remain().min(PEEK_BYTES);
+    let n = fa.remain().min(PEEK_BYTES);
     let buf = match fa.peek_raw(n) {
         Some(b) => b,
         None => return false,
@@ -22,8 +22,8 @@ pub fn parse_vbi(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "VBI", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "VBI", true);
     true
 }
 
@@ -40,7 +40,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&data);
         assert!(parse_vbi(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("VBI".to_owned())
         );
     }
@@ -56,8 +56,8 @@ mod tests {
         let data = [0xAAu8; 8];
         let mut fa = FileAnalyze::new(&data);
         assert!(parse_vbi(&mut fa));
-        assert_eq!(fa.Count_Get(StreamKind::General), 1);
-        assert_eq!(fa.Count_Get(StreamKind::Video), 0);
-        assert_eq!(fa.Count_Get(StreamKind::Audio), 0);
+        assert_eq!(fa.count_get(StreamKind::General), 1);
+        assert_eq!(fa.count_get(StreamKind::Video), 0);
+        assert_eq!(fa.count_get(StreamKind::Audio), 0);
     }
 }

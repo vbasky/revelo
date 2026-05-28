@@ -41,7 +41,7 @@ struct AudioDesc {
 }
 
 pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(8));
+    let head = fa.peek_raw(fa.remain().min(8));
     let Some(h) = head else { return false };
     if h.len() < 8 {
         return false;
@@ -52,52 +52,52 @@ pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
     }
     let file_version = u16::from_be_bytes([h[4], h[5]]);
 
-    fa.Element_Begin("CAF");
+    fa.element_begin("CAF");
     let mut magic_consume: u32 = 0;
-    fa.Get_C4(&mut magic_consume, "FileType");
+    fa.get_c4(&mut magic_consume, "FileType");
     let mut ver: u16 = 0;
-    fa.Get_B2(&mut ver, "FileVersion");
+    fa.get_b2(&mut ver, "FileVersion");
     let mut flags: u16 = 0;
-    fa.Get_B2(&mut flags, "FileFlags");
+    fa.get_b2(&mut flags, "FileFlags");
 
     let mut desc: Option<AudioDesc> = None;
 
     // Only Version 1 is supported by MediaInfoLib; for other versions we
     // still emit General.Format=CAF and stop parsing chunks.
     if file_version == 1 {
-        while fa.Remain() >= 12 {
+        while fa.remain() >= 12 {
             let mut chunk_type: u32 = 0;
-            fa.Get_C4(&mut chunk_type, "ChunkType");
+            fa.get_c4(&mut chunk_type, "ChunkType");
             let mut chunk_size: u64 = 0;
-            fa.Get_B8(&mut chunk_size, "ChunkSize");
+            fa.get_b8(&mut chunk_size, "ChunkSize");
             let csize = chunk_size as usize;
             // The `data` chunk may declare size=-1 (to EOF) — clamp to remaining bytes.
-            let effective = if chunk_size as i64 == -1 || csize > fa.Remain() {
-                fa.Remain()
+            let effective = if chunk_size as i64 == -1 || csize > fa.remain() {
+                fa.remain()
             } else {
                 csize
             };
 
             if chunk_type == CHUNK_DESC && effective >= 32 {
-                fa.Element_Begin("desc");
+                fa.element_begin("desc");
                 desc = Some(parse_desc(fa));
-                fa.Element_End();
+                fa.element_end();
                 if effective > 32 {
-                    fa.Skip_Hexa(effective - 32, "Extension");
+                    fa.skip_hexa(effective - 32, "Extension");
                 }
             } else {
                 if effective > 0 {
-                    fa.Skip_Hexa(effective, "Chunk");
+                    fa.skip_hexa(effective, "Chunk");
                 }
             }
         }
     }
 
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "CAF", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "CAF", false);
+    fa.fill(
         StreamKind::General,
         0,
         "Format_Version",
@@ -105,30 +105,30 @@ pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
         false,
     );
 
-    fa.Stream_Prepare(StreamKind::Audio);
+    fa.stream_prepare(StreamKind::Audio);
     if let Some(d) = desc {
         fill_audio(fa, &d);
     }
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
     true
 }
 
 fn parse_desc(fa: &mut FileAnalyze) -> AudioDesc {
     let mut sample_rate: f64 = 0.0;
-    fa.Get_BF8(&mut sample_rate, "SampleRate");
+    fa.get_bf8(&mut sample_rate, "SampleRate");
     let mut format_id: u32 = 0;
-    fa.Get_C4(&mut format_id, "FormatID");
+    fa.get_c4(&mut format_id, "FormatID");
     let mut format_flags: u32 = 0;
-    fa.Get_B4(&mut format_flags, "FormatFlags");
+    fa.get_b4(&mut format_flags, "FormatFlags");
     let mut bytes_per_packet: u32 = 0;
-    fa.Get_B4(&mut bytes_per_packet, "BytesPerPacket");
+    fa.get_b4(&mut bytes_per_packet, "BytesPerPacket");
     let mut frames_per_packet: u32 = 0;
-    fa.Get_B4(&mut frames_per_packet, "FramesPerPacket");
+    fa.get_b4(&mut frames_per_packet, "FramesPerPacket");
     let mut channels_per_frame: u32 = 0;
-    fa.Get_B4(&mut channels_per_frame, "ChannelsPerFrame");
+    fa.get_b4(&mut channels_per_frame, "ChannelsPerFrame");
     let mut bits_per_channel: u32 = 0;
-    fa.Get_B4(&mut bits_per_channel, "BitsPerChannel");
+    fa.get_b4(&mut bits_per_channel, "BitsPerChannel");
 
     AudioDesc {
         sample_rate,
@@ -146,7 +146,7 @@ fn fill_audio(fa: &mut FileAnalyze, d: &AudioDesc) {
     // here and let downstream codec-id mapping (when added) refine it.
     let fourcc = format_id_to_string(d.format_id);
     if !fourcc.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Format", fourcc.as_str(), false);
+        fa.fill(StreamKind::Audio, 0, "Format", fourcc.as_str(), false);
     }
 
     if d.sample_rate > 0.0 {
@@ -157,17 +157,17 @@ fn fill_audio(fa: &mut FileAnalyze, d: &AudioDesc) {
         } else {
             format!("{}", sr)
         };
-        fa.Fill(StreamKind::Audio, 0, "SamplingRate", sr_str, false);
+        fa.fill(StreamKind::Audio, 0, "SamplingRate", sr_str, false);
     }
     if d.channels_per_frame > 0 {
-        fa.Fill(StreamKind::Audio, 0, "Channels", d.channels_per_frame.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Channels", d.channels_per_frame.to_string(), false);
     }
     if d.bits_per_channel > 0 {
-        fa.Fill(StreamKind::Audio, 0, "BitDepth", d.bits_per_channel.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitDepth", d.bits_per_channel.to_string(), false);
     }
     if d.bytes_per_packet > 0 && d.frames_per_packet > 0 && d.sample_rate > 0.0 {
         let bitrate = d.sample_rate * (d.bytes_per_packet as f64) * 8.0 / (d.frames_per_packet as f64);
-        fa.Fill(StreamKind::Audio, 0, "BitRate", (bitrate.round() as u64).to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitRate", (bitrate.round() as u64).to_string(), false);
     }
 }
 
@@ -215,8 +215,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_caf(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("CAF"));
         assert_eq!(g("Format_Version").as_deref(), Some("Version 1"));
@@ -241,7 +241,7 @@ mod tests {
         let buf = make_caf(b"aac ", 44100.0, 2, 0);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_caf(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format").as_deref(), Some("aac"));
         assert_eq!(a("SamplingRate").as_deref(), Some("44100"));
         assert_eq!(a("Channels").as_deref(), Some("2"));

@@ -47,7 +47,7 @@ fn detect_signature(buf: &[u8]) -> Option<Signature> {
 
 pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
     let sig = {
-        let peek = match fa.peek_raw(fa.Remain().min(HEADER_LEN)) {
+        let peek = match fa.peek_raw(fa.remain().min(HEADER_LEN)) {
             Some(p) if p.len() >= HEADER_LEN => p,
             _ => return false,
         };
@@ -57,64 +57,64 @@ pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
         }
     };
 
-    fa.Element_Begin("SWF header");
+    fa.element_begin("SWF header");
     // Consume the 8-byte fixed header in trace-friendly steps.
-    fa.Skip_Hexa(MAGIC_LEN, "Signature");
+    fa.skip_hexa(MAGIC_LEN, "Signature");
 
     let mut version: int8u = 0;
-    fa.Get_L1(&mut version, "Version");
+    fa.get_l1(&mut version, "Version");
     let mut file_length: int32u = 0;
-    fa.Get_L4(&mut file_length, "FileLength");
-    fa.Element_End();
+    fa.get_l4(&mut file_length, "FileLength");
+    fa.element_end();
 
     // General fields are filled for every recognized signature.
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Flash", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version.to_string(), false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Flash", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", version.to_string(), false);
     if file_length > 0 {
-        fa.Fill(StreamKind::General, 0, "FileSize", file_length.to_string(), false);
+        fa.fill(StreamKind::General, 0, "FileSize", file_length.to_string(), false);
     }
     match sig {
         Signature::Cws => {
-            fa.Fill(StreamKind::General, 0, "Format_Profile", "Compressed (zlib)", false);
+            fa.fill(StreamKind::General, 0, "Format_Profile", "Compressed (zlib)", false);
             return true;
         }
         Signature::Zws => {
-            fa.Fill(StreamKind::General, 0, "Format_Profile", "Compressed (LZMA)", false);
+            fa.fill(StreamKind::General, 0, "Format_Profile", "Compressed (LZMA)", false);
             return true;
         }
         Signature::Fws => {
-            fa.Fill(StreamKind::General, 0, "Format_Profile", "Uncompressed", false);
+            fa.fill(StreamKind::General, 0, "Format_Profile", "Uncompressed", false);
         }
     }
 
     // Body parse — RECT (bit-packed) + frame_rate + frame_count.
-    fa.Element_Begin("Movie header");
-    fa.BS_Begin();
+    fa.element_begin("Movie header");
+    fa.bs_begin();
     let mut nbits: int8u = 0;
-    fa.Get_S1(5, &mut nbits, "Nbits");
+    fa.get_s1(5, &mut nbits, "Nbits");
     let nbits_usize = nbits as usize;
     // Nbits >32 would overflow our u32 accumulators; treat as malformed.
     if nbits_usize == 0 || nbits_usize > 32 {
-        fa.BS_End();
-        fa.Element_End();
+        fa.bs_end();
+        fa.element_end();
         return true;
     }
     let mut xmin: int32u = 0;
     let mut xmax: int32u = 0;
     let mut ymin: int32u = 0;
     let mut ymax: int32u = 0;
-    fa.Get_S4(nbits_usize, &mut xmin, "Xmin");
-    fa.Get_S4(nbits_usize, &mut xmax, "Xmax");
-    fa.Get_S4(nbits_usize, &mut ymin, "Ymin");
-    fa.Get_S4(nbits_usize, &mut ymax, "Ymax");
-    fa.BS_End();
+    fa.get_s4(nbits_usize, &mut xmin, "Xmin");
+    fa.get_s4(nbits_usize, &mut xmax, "Xmax");
+    fa.get_s4(nbits_usize, &mut ymin, "Ymin");
+    fa.get_s4(nbits_usize, &mut ymax, "Ymax");
+    fa.bs_end();
 
     let mut frame_rate_raw: int16u = 0;
-    fa.Get_L2(&mut frame_rate_raw, "FrameRate");
+    fa.get_l2(&mut frame_rate_raw, "FrameRate");
     let mut frame_count: int16u = 0;
-    fa.Get_L2(&mut frame_count, "FrameCount");
-    fa.Element_End();
+    fa.get_l2(&mut frame_count, "FrameCount");
+    fa.element_end();
 
     // Twips → pixels (20 twips per pixel). RECT values are unsigned in the
     // SWF spec for Xmax/Ymax >= Xmin/Ymin so wrapping is unlikely, but use
@@ -127,20 +127,20 @@ pub fn parse_swf(fa: &mut FileAnalyze) -> bool {
     // way the encoded value matches frame_rate_raw / 256.0.
     let frame_rate = (frame_rate_raw as f64) / 256.0;
 
-    fa.Stream_Prepare(StreamKind::Video);
+    fa.stream_prepare(StreamKind::Video);
     if width > 0 {
-        fa.Fill(StreamKind::Video, 0, "Width", width.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
     }
     if height > 0 {
-        fa.Fill(StreamKind::Video, 0, "Height", height.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
     }
     if frame_rate > 0.0 {
-        fa.Fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
     }
     if frame_count > 0 {
-        fa.Fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
     }
-    fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
     true
 }
@@ -215,8 +215,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_swf(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let v = |k: &str| fa.Retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Flash"));
         assert_eq!(g("Format_Version").as_deref(), Some("10"));
@@ -240,11 +240,11 @@ mod tests {
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_swf(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("Flash"));
         assert_eq!(g("Format_Version").as_deref(), Some("8"));
         assert_eq!(g("Format_Profile").as_deref(), Some("Compressed (zlib)"));
         // No Video stream — body wasn't parsed.
-        assert_eq!(fa.Count_Get(StreamKind::Video), 0);
+        assert_eq!(fa.count_get(StreamKind::Video), 0);
     }
 }

@@ -20,7 +20,7 @@ const NS_DCP_SMPTE: &str = "http://www.smpte-ra.org/schemas/429-8/2007/PKL";
 const NS_IMF_2016: &str = "http://www.smpte-ra.org/schemas/2067-2/2016/PKL";
 
 pub fn parse_dcp_pkl(fa: &mut FileAnalyze) -> bool {
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     let window = SCAN_WINDOW.min(file_size);
     let Some(buf) = fa.peek_raw(window) else {
         return false;
@@ -61,11 +61,11 @@ pub fn parse_dcp_pkl(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DCP PKL", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DCP PKL", true);
     // The oracle reports General.StreamSize == FileSize for these
     // reference XML files (the whole file is the elementary stream).
-    fa.Fill(StreamKind::General, 0, "StreamSize", file_size.to_string(), true);
+    fa.fill(StreamKind::General, 0, "StreamSize", file_size.to_string(), true);
     true
 }
 
@@ -82,7 +82,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_pkl(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("DCP PKL")

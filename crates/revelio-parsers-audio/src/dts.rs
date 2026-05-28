@@ -144,7 +144,7 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
     let frame_rate = sample_rate as f64 / samples_per_frame as f64;
 
     // Count frames by scanning successive syncs.
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     let buf = match fa.peek_raw(file_size) {
         Some(b) => b,
         None => return false,
@@ -164,26 +164,26 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
         pos += step;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DTS", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.Fill(StreamKind::General, 0, "OverallBitRate_Mode", "CBR", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DTS", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "CBR", false);
     if bit_rate > 0 {
         // Pre-fill OverallBitRate with the exact CBR value; the harness'
         // generic filesize/duration estimator would round it inaccurately.
-        fa.Fill(StreamKind::General, 0, "OverallBitRate", bit_rate.to_string(), true);
+        fa.fill(StreamKind::General, 0, "OverallBitRate", bit_rate.to_string(), true);
     }
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "DTS", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "DTS", false);
     // Sync 0x7FFE8001 means 16-bit big-endian Core (the only variant we parse).
-    fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Settings_Mode", "16", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Settings_Mode", "16", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
     if bit_rate > 0 {
-        fa.Fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
     let pos_layout = (amode_idx).min(15);
     let mut positions = DTS_CHANNEL_POSITIONS[pos_layout].to_string();
     let mut layout = DTS_CHANNEL_LAYOUT[pos_layout].to_string();
@@ -191,26 +191,26 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
         positions.push_str(", LFE");
         layout.push_str(" LFE");
     }
-    fa.Fill(StreamKind::Audio, 0, "ChannelPositions", positions, false);
-    fa.Fill(StreamKind::Audio, 0, "ChannelLayout", layout, false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+    fa.fill(StreamKind::Audio, 0, "ChannelPositions", positions, false);
+    fa.fill(StreamKind::Audio, 0, "ChannelLayout", layout, false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
     // Oracle computes Duration = round(FileSize×8000/BitRate) ms for DTS
     // Core (it's CBR, so byte-accounting is authoritative). SamplingCount
     // and StreamSize derive from that Duration, not from frame counting.
     if bit_rate > 0 && sample_rate > 0 {
         let duration_ms = ((file_size as f64 * 8000.0) / bit_rate as f64).round() as u64;
-        fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-        fa.Fill(StreamKind::General, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::General, 0, "Duration", duration_ms.to_string(), false);
         let sampling_count = ((duration_ms as f64) * sample_rate as f64 / 1000.0).round() as u64;
-        fa.Fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
         let stream_size = ((bit_rate as u64) * duration_ms + 4000) / 8000;
-        fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
     } else {
-        fa.Fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
     }
     let _ = frame_count;
 
@@ -296,7 +296,7 @@ mod tests {
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dts(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format").as_deref(), Some("DTS"));
         assert_eq!(a("Channels").as_deref(), Some("2"));
         assert_eq!(a("SamplingRate").as_deref(), Some("48000"));

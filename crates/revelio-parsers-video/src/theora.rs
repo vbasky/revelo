@@ -27,16 +27,16 @@ use zenlib::int32u;
 
 pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
     // Need at least signature(1) + "theora"(6) + version(3) = 10 bytes
-    if fa.Remain() < 10 {
+    if fa.remain() < 10 {
         return false;
     }
 
-    fa.Element_Begin("Theora");
+    fa.element_begin("Theora");
 
     let mut signature: u8 = 0;
-    fa.Get_B1(&mut signature, "Signature");
+    fa.get_b1(&mut signature, "Signature");
     if signature != 0x80 {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
@@ -44,64 +44,64 @@ pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
     let sig_bytes = match fa.peek_raw(6) {
         Some(b) => b,
         None => {
-            fa.Element_End();
+            fa.element_end();
             return false;
         }
     };
     if sig_bytes != b"theora" {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
-    fa.Skip_Hexa(6, "Signature");
+    fa.skip_hexa(6, "Signature");
 
     let mut version: int32u = 0;
-    fa.Get_B3(&mut version, "Version");
+    fa.get_b3(&mut version, "Version");
 
     if (version & 0x030200) == 0x030200 {
         // Version 3.2.x
-        fa.Skip_B2("FMBW");
-        fa.Skip_B2("FMBH");
+        fa.skip_b2("FMBW");
+        fa.skip_b2("FMBH");
 
         let mut picw: int32u = 0;
         let mut pich: int32u = 0;
-        fa.Get_B3(&mut picw, "PICW");
-        fa.Get_B3(&mut pich, "PICH");
+        fa.get_b3(&mut picw, "PICW");
+        fa.get_b3(&mut pich, "PICH");
 
-        fa.Skip_B1("PICX");
-        fa.Skip_B1("PICY");
+        fa.skip_b1("PICX");
+        fa.skip_b1("PICY");
 
         let mut frn: int32u = 0;
         let mut frd: int32u = 0;
-        fa.Get_B4(&mut frn, "FRN");
-        fa.Get_B4(&mut frd, "FRD");
+        fa.get_b4(&mut frn, "FRN");
+        fa.get_b4(&mut frd, "FRD");
 
         let mut parn: int32u = 0;
         let mut pard: int32u = 0;
-        fa.Get_B3(&mut parn, "PARN");
-        fa.Get_B3(&mut pard, "PARD");
+        fa.get_b3(&mut parn, "PARN");
+        fa.get_b3(&mut pard, "PARD");
 
-        fa.Skip_B1("CS"); // color space: 0=4:2:0, 2=4:2:2, 3=4:4:4
+        fa.skip_b1("CS"); // color space: 0=4:2:0, 2=4:2:2, 3=4:4:4
 
         let mut nombr: int32u = 0;
-        fa.Get_B3(&mut nombr, "NOMBR"); // nominal bitrate
+        fa.get_b3(&mut nombr, "NOMBR"); // nominal bitrate
 
-        fa.BS_Begin();
-        fa.Skip_S1(6, "QUAL");
-        fa.Skip_S1(5, "KFGSHIFT");
-        fa.Skip_S1(2, "PF"); // pixel format
-        fa.Skip_S1(3, "Reserved");
-        fa.BS_End();
+        fa.bs_begin();
+        fa.skip_s1(6, "QUAL");
+        fa.skip_s1(5, "KFGSHIFT");
+        fa.skip_s1(2, "PF"); // pixel format
+        fa.skip_s1(3, "Reserved");
+        fa.bs_end();
 
-        fa.Element_End();
+        fa.element_end();
 
         // Fill streams
-        fa.Stream_Prepare(StreamKind::Video);
-        fa.Fill(StreamKind::Video, 0, "Format", "Theora", false);
-        fa.Fill(StreamKind::Video, 0, "Codec", "Theora", false);
+        fa.stream_prepare(StreamKind::Video);
+        fa.fill(StreamKind::Video, 0, "Format", "Theora", false);
+        fa.fill(StreamKind::Video, 0, "Codec", "Theora", false);
 
         if frn > 0 && frd > 0 {
             let frame_rate = frn as f64 / frd as f64;
-            fa.Fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+            fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
         }
 
         let pixel_ratio = if parn > 0 && pard > 0 {
@@ -110,31 +110,31 @@ pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
             1.0
         };
 
-        fa.Fill(StreamKind::Video, 0, "Width", picw.to_string(), false);
-        fa.Fill(StreamKind::Video, 0, "Height", pich.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Width", picw.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Height", pich.to_string(), false);
 
         if picw > 0 && pich > 0 {
             let dar = picw as f64 / pich as f64 * pixel_ratio;
-            fa.Fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+            fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
         }
 
         if nombr > 0 {
-            fa.Fill(StreamKind::Video, 0, "BitRate_Nominal", nombr.to_string(), false);
+            fa.fill(StreamKind::Video, 0, "BitRate_Nominal", nombr.to_string(), false);
         }
 
-        fa.Stream_Prepare(StreamKind::General);
-        fa.Fill(StreamKind::General, 0, "Format", "Theora", false);
+        fa.stream_prepare(StreamKind::General);
+        fa.fill(StreamKind::General, 0, "Format", "Theora", false);
 
         return true;
     }
 
     // Version not 3.2.x — still accept minimal
-    fa.Element_End();
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "Theora", false);
-    fa.Fill(StreamKind::Video, 0, "Codec", "Theora", false);
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Theora", false);
+    fa.element_end();
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "Theora", false);
+    fa.fill(StreamKind::Video, 0, "Codec", "Theora", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Theora", false);
 
     true
 }
@@ -205,15 +205,15 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_theora(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
             Some("Theora")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
             Some("640")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
             Some("480")
         );
     }
@@ -223,7 +223,7 @@ mod tests {
         let buf = make_theora_identification();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_theora(&mut fa));
-        let fr = fa.Retrieve(StreamKind::Video, 0, "FrameRate").map(|z| z.as_str().to_owned());
+        let fr = fa.retrieve(StreamKind::Video, 0, "FrameRate").map(|z| z.as_str().to_owned());
         // 30000/1001 ≈ 29.970
         assert!(fr.is_some() && fr.unwrap().starts_with("29.970"));
     }

@@ -19,7 +19,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const SIGNATURE: &[u8; 5] = b"DMSKM";
 
 pub fn parse_skm(fa: &mut FileAnalyze) -> bool {
-    let head = match fa.peek_raw(fa.Remain().min(5)) {
+    let head = match fa.peek_raw(fa.remain().min(5)) {
         Some(b) if b.len() == 5 => b,
         _ => return false,
     };
@@ -27,12 +27,12 @@ pub fn parse_skm(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("SKM");
-    fa.Skip_B5("Signature");
-    fa.Element_End();
+    fa.element_begin("SKM");
+    fa.skip_b5("Signature");
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "SKM", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "SKM", false);
 
     true
 }
@@ -49,7 +49,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_skm(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("SKM"),

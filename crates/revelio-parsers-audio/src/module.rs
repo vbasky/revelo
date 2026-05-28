@@ -32,10 +32,10 @@ fn is_valid_signature(sig: &[u8]) -> bool {
 }
 
 pub fn parse_module(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_MIN_BYTES {
+    if fa.remain() < HEADER_MIN_BYTES {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(HEADER_MIN_BYTES)) {
+    let head = match fa.peek_raw(fa.remain().min(HEADER_MIN_BYTES)) {
         Some(h) => h,
         None => return false,
     };
@@ -43,37 +43,37 @@ pub fn parse_module(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("Module");
+    fa.element_begin("Module");
 
     let module_name_bytes = fa.read_raw(20).to_vec();
     let module_name = trim_local_string(&module_name_bytes);
 
     for _ in 0..31 {
-        fa.Element_Begin("Sample");
+        fa.element_begin("Sample");
         let _ = fa.read_raw(22);
-        fa.Skip_B2("Sample length");
-        fa.Skip_B1("Finetune value for the sample");
-        fa.Skip_B1("Volume of the sample");
-        fa.Skip_B2("Start of sample repeat offset");
-        fa.Skip_B2("Length of sample repeat");
-        fa.Element_End();
+        fa.skip_b2("Sample length");
+        fa.skip_b1("Finetune value for the sample");
+        fa.skip_b1("Volume of the sample");
+        fa.skip_b2("Start of sample repeat offset");
+        fa.skip_b2("Length of sample repeat");
+        fa.element_end();
     }
-    fa.Skip_B1("Number of song positions");
-    fa.Skip_B1("0x7F");
-    fa.Skip_Hexa(128, "Pattern table");
-    fa.Skip_C4("Signature");
+    fa.skip_b1("Number of song positions");
+    fa.skip_b1("0x7F");
+    fa.skip_hexa(128, "Pattern table");
+    fa.skip_c4("Signature");
 
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Module", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Module", false);
     if !module_name.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Track", module_name, false);
+        fa.fill(StreamKind::General, 0, "Track", module_name, false);
     }
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Module", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
 
     true
 }
@@ -123,8 +123,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_module(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Module"));
         assert_eq!(g("Track").as_deref(), Some("My Mod Tune"));

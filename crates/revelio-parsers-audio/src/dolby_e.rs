@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Detection: looks for 0x078E sync word (SMPTE 337M preamble) followed by
 /// Dolby E guard band pattern.
 pub fn parse_dolby_e(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.Remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
 
@@ -15,10 +15,10 @@ pub fn parse_dolby_e(fa: &mut FileAnalyze) -> bool {
     if preamble != 0x9669 && preamble != 0x966A { return false; }
     if sync != 0x078E { return false; }
 
-    let pos = fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, pos, "Format", "Dolby E", false);
-    fa.Fill(StreamKind::Audio, pos, "Format_Info", "Professional Dolby E", false);
-    fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossless", false);
+    let pos = fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, pos, "Format", "Dolby E", false);
+    fa.fill(StreamKind::Audio, pos, "Format_Info", "Professional Dolby E", false);
+    fa.fill(StreamKind::Audio, pos, "Compression_Mode", "Lossless", false);
     true
 }
 
@@ -31,7 +31,7 @@ mod tests {
         let buf: Vec<u8> = vec![0x96, 0x69, 0x07, 0x8E];
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dolby_e(&mut fa));
-        assert_eq!(fa.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()), Some("Dolby E".into()));
+        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()), Some("Dolby E".into()));
     }
 
     #[test]

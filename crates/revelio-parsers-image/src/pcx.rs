@@ -51,22 +51,22 @@ pub fn parse_pcx(fa: &mut FileAnalyze) -> bool {
     let width = (x_max - x_min) as u32;
     let height = (y_max - y_min) as u32;
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "PCX", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "PCX", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "PCX", false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "PCX", false);
     let v = pcx_version_info(version);
     if !v.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "Format_Version", v, false);
+        fa.fill(StreamKind::Image, 0, "Format_Version", v, false);
     }
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "BitDepth", bits_per_pixel.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", bits_per_pixel.to_string(), false);
     // PCX uses RLE (encoding byte = 1) — always lossless.
-    fa.Fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(
+    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(
         StreamKind::Image,
         0,
         "DPI",
@@ -118,7 +118,7 @@ mod tests {
         let buf = build_pcx(5, 24, 320, 240, 96, 96);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pcx(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("PCX"));
         assert_eq!(i("Format_Version").as_deref(), Some("Paintbrush v3.0+"));
         assert_eq!(i("Width").as_deref(), Some("320"));

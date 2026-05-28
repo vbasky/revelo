@@ -104,7 +104,7 @@ pub fn find_duplicate_streams(
     let kinds = [StreamKind::Video, StreamKind::Audio, StreamKind::Text];
 
     for kind in &kinds {
-        let n = streams.Count_Get(*kind);
+        let n = streams.count_get(*kind);
         for i in 0..n {
             let s1 = streams.stream(*kind, i);
             for j in (i + 1)..n {
@@ -136,14 +136,14 @@ pub fn find_duplicate_streams(
     #[test] fn test_duplicate_detection() {
         use super::super::{StreamCollection, StreamKind}; use zenlib::Ztring;
         let mut sc = StreamCollection::new();
-        sc.Stream_Prepare(StreamKind::Video);
-        sc.Fill(StreamKind::Video, 0, "Format", Ztring::from("AVC"), false);
-        sc.Fill(StreamKind::Video, 0, "Language", Ztring::from("eng"), false);
-        sc.Fill(StreamKind::Video, 0, "Width", Ztring::from("1920"), false);
-        sc.Stream_Prepare(StreamKind::Video);
-        sc.Fill(StreamKind::Video, 1, "Format", Ztring::from("AVC"), false);
-        sc.Fill(StreamKind::Video, 1, "Language", Ztring::from("eng"), false);
-        sc.Fill(StreamKind::Video, 1, "Width", Ztring::from("1920"), false);
+        sc.stream_prepare(StreamKind::Video);
+        sc.fill(StreamKind::Video, 0, "Format", Ztring::from("AVC"), false);
+        sc.fill(StreamKind::Video, 0, "Language", Ztring::from("eng"), false);
+        sc.fill(StreamKind::Video, 0, "Width", Ztring::from("1920"), false);
+        sc.stream_prepare(StreamKind::Video);
+        sc.fill(StreamKind::Video, 1, "Format", Ztring::from("AVC"), false);
+        sc.fill(StreamKind::Video, 1, "Language", Ztring::from("eng"), false);
+        sc.fill(StreamKind::Video, 1, "Width", Ztring::from("1920"), false);
         let dups = find_duplicate_streams(&sc);
         assert_eq!(dups.len(), 1);
         assert_eq!(dups[0], (StreamKind::Video, 1));
@@ -151,14 +151,14 @@ pub fn find_duplicate_streams(
     #[test] fn test_no_duplicate_different_lang() {
         use super::super::{StreamCollection, StreamKind}; use zenlib::Ztring;
         let mut sc = StreamCollection::new();
-        sc.Stream_Prepare(StreamKind::Audio);
-        sc.Fill(StreamKind::Audio, 0, "Format", Ztring::from("AAC"), false);
-        sc.Fill(StreamKind::Audio, 0, "Language", Ztring::from("eng"), false);
-        sc.Fill(StreamKind::Audio, 0, "Channels", Ztring::from("2"), false);
-        sc.Stream_Prepare(StreamKind::Audio);
-        sc.Fill(StreamKind::Audio, 1, "Format", Ztring::from("AAC"), false);
-        sc.Fill(StreamKind::Audio, 1, "Language", Ztring::from("jpn"), false);
-        sc.Fill(StreamKind::Audio, 1, "Channels", Ztring::from("2"), false);
+        sc.stream_prepare(StreamKind::Audio);
+        sc.fill(StreamKind::Audio, 0, "Format", Ztring::from("AAC"), false);
+        sc.fill(StreamKind::Audio, 0, "Language", Ztring::from("eng"), false);
+        sc.fill(StreamKind::Audio, 0, "Channels", Ztring::from("2"), false);
+        sc.stream_prepare(StreamKind::Audio);
+        sc.fill(StreamKind::Audio, 1, "Format", Ztring::from("AAC"), false);
+        sc.fill(StreamKind::Audio, 1, "Language", Ztring::from("jpn"), false);
+        sc.fill(StreamKind::Audio, 1, "Channels", Ztring::from("2"), false);
         let dups = find_duplicate_streams(&sc);
         assert_eq!(dups.len(), 0);
     }

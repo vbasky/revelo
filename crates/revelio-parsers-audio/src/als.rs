@@ -17,7 +17,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const ALS_MAGIC: [u8; 4] = [b'A', b'L', b'S', 0x00];
 
 pub fn parse_als(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(16));
+    let head = fa.peek_raw(fa.remain().min(16));
     let Some(h) = head else { return false };
     if h.len() < 16 || h[..4] != ALS_MAGIC {
         return false;
@@ -42,20 +42,20 @@ pub fn parse_als(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "ALS", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "ALS", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "ALS", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "ALS", false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "ALS", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "ALS", false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
 
     true
 }
@@ -89,8 +89,8 @@ mod tests {
         let buf = build_als(44100, 44100, 2, 1);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_als(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("ALS"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
         assert_eq!(a("Format").as_deref(), Some("ALS"));
@@ -109,7 +109,7 @@ mod tests {
         let buf = build_als(48000, 96000, 6, 2);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_als(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channels").as_deref(), Some("6"));
         assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
         assert_eq!(a("BitDepth").as_deref(), Some("24"));

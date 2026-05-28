@@ -3,7 +3,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// TrueHD (MLP) parser. Detects the sync code 0xF8726FBA for
 /// TrueHD or 0xF8726FBB for AC-3 core + TrueHD substream.
 pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.Remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 4 { return false; }
 
@@ -12,9 +12,9 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let pos = fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, pos, "Format", "TrueHD", false);
-    fa.Fill(StreamKind::Audio, pos, "Format_Profile", "MLP FBA", false);
+    let pos = fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, pos, "Format", "TrueHD", false);
+    fa.fill(StreamKind::Audio, pos, "Format_Profile", "MLP FBA", false);
 
     // Parse sampling rate from bits[12-15] of the sync word + following nibble
     if buf.len() >= 5 {
@@ -28,12 +28,12 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
             5 => 176400,
             _ => 48000,
         };
-        fa.Fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
+        fa.fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
 
         // Channel assignment from bits[3-0] of byte 4
         let ch_code = (buf[4] & 0x0F) as u8;
         let channels = if ch_code <= 7 { ch_code + 1 } else { 2 };
-        fa.Fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
+        fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
 
         // Bit depth from byte 5
         if buf.len() >= 6 {
@@ -43,12 +43,12 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
                 3 => 24,
                 _ => 24,
             };
-            fa.Fill(StreamKind::Audio, pos, "BitDepth", bd.to_string(), false);
+            fa.fill(StreamKind::Audio, pos, "BitDepth", bd.to_string(), false);
         }
     }
 
-    fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, pos, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, pos, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, pos, "Compression_Mode", "Lossless", false);
     true
 }
 
@@ -61,8 +61,8 @@ mod tests {
         let buf: Vec<u8> = vec![0xF8, 0x72, 0x6F, 0xBA, 0x12, 0x34];
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_truehd(&mut fa));
-        assert_eq!(fa.Retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()), Some("TrueHD".into()));
-        assert_eq!(fa.Retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()), Some("Lossless".into()));
+        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()), Some("TrueHD".into()));
+        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "Compression_Mode").map(|z| z.as_str().to_owned()), Some("Lossless".into()));
     }
 
     #[test]

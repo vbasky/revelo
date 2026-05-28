@@ -18,7 +18,7 @@ pub fn parse_nsv(fa: &mut FileAnalyze) -> bool {
     // Only the first four bytes are load-bearing for recognition; the
     // NSVf header coherency checks done by File_Nsv.cpp need >=28 bytes,
     // but matching the magic alone is sufficient for Format identification.
-    let header = match fa.peek_raw(fa.Remain().min(4)) {
+    let header = match fa.peek_raw(fa.remain().min(4)) {
         Some(b) if b.len() >= 4 => b,
         _ => return false,
     };
@@ -27,8 +27,8 @@ pub fn parse_nsv(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "NSV", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "NSV", false);
     true
 }
 
@@ -46,7 +46,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_nsv(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("NSV")

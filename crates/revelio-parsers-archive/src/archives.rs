@@ -1,17 +1,17 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 fn fill_archive(fa: &mut FileAnalyze, format: &str, extra: &[(&str, &str)]) {
-    let pos = fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, pos, "Format", format, false);
+    let pos = fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, pos, "Format", format, false);
     for (k, v) in extra {
-        fa.Fill(StreamKind::General, pos, k, *v, false);
+        fa.fill(StreamKind::General, pos, k, *v, false);
     }
 }
 
 // ---------- ZIP ----------
 
 pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 4 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -35,7 +35,7 @@ pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
 // ---------- RAR ----------
 
 pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 7 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -49,7 +49,7 @@ pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
 // ---------- 7-Zip ----------
 
 pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 6 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -64,7 +64,7 @@ pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
 // ---------- TAR ----------
 
 pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 512 { return true; } // partial, accept tentative
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -93,7 +93,7 @@ pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
 // ---------- GZIP ----------
 
 pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 2 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -111,7 +111,7 @@ pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
 // ---------- BZIP2 ----------
 
 pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 3 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -125,7 +125,7 @@ pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
 // ---------- ISO 9660 ----------
 
 pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 0x8000 + 6 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -149,7 +149,7 @@ pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
 // ---------- ELF ----------
 
 pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 16 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -180,7 +180,7 @@ pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
 // ---------- Mach-O ----------
 
 pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 4 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -206,7 +206,7 @@ pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
 // ---------- MZ / PE EXE ----------
 
 pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 2 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
@@ -232,7 +232,7 @@ pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
 // ---------- ACE ----------
 
 pub fn parse_ace(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.Remain() as usize;
+    let remain = fa.remain() as usize;
     if remain < 7 { return false; }
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };

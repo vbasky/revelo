@@ -20,7 +20,7 @@ const MIXML_NAMESPACE: &str = "https://mediaarea.net/mediainfo";
 const SCAN_WINDOW: usize = 1024;
 
 pub fn parse_mi_xml(fa: &mut FileAnalyze) -> bool {
-    let window = SCAN_WINDOW.min(fa.Remain());
+    let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {
         return false;
     };
@@ -64,8 +64,8 @@ pub fn parse_mi_xml(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "MediaInfo XML", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "MediaInfo XML", true);
     true
 }
 
@@ -84,7 +84,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_mi_xml(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("MediaInfo XML")

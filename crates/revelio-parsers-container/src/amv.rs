@@ -39,19 +39,19 @@ pub fn parse_amv(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("RIFF");
+    fa.element_begin("RIFF");
     let mut riff_id: int32u = 0;
-    fa.Get_C4(&mut riff_id, "ID");
+    fa.get_c4(&mut riff_id, "ID");
     let mut riff_size: int32u = 0;
-    fa.Get_L4(&mut riff_size, "Size");
+    fa.get_l4(&mut riff_size, "Size");
     let mut form_type: int32u = 0;
-    fa.Get_C4(&mut form_type, "Type");
-    fa.Element_End();
+    fa.get_c4(&mut form_type, "Type");
+    fa.element_end();
 
     let _ = riff_size;
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AMV", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AMV", false);
 
     true
 }
@@ -77,7 +77,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_amv(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("AMV")

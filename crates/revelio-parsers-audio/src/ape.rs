@@ -47,10 +47,10 @@ const MAGIC_MAC_SPACE: u32 = u32::from_be_bytes(*b"MAC ");
 const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
 
 pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 8 {
+    if fa.remain() < 8 {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(h) if h.len() == 4 => h,
         _ => return false,
     };
@@ -59,11 +59,11 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("APE");
+    fa.element_begin("APE");
     let mut identifier: int32u = 0;
-    fa.Get_C4(&mut identifier, "Identifier");
+    fa.get_c4(&mut identifier, "Identifier");
     let mut version: int16u = 0;
-    fa.Get_L2(&mut version, "Version");
+    fa.get_l2(&mut version, "Version");
 
     let mut sample_rate: int32u = 0;
     let mut total_frames: int32u = 0;
@@ -85,7 +85,7 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
             &mut final_frame_samples,
             &mut samples_per_frame,
         ) {
-            fa.Element_End();
+            fa.element_end();
             return false;
         }
     } else if !parse_modern_header(
@@ -98,11 +98,11 @@ pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
         &mut final_frame_samples,
         &mut samples_per_frame,
     ) {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
-    fa.Element_End();
+    fa.element_end();
 
     if total_frames == 0 || sample_rate == 0 || channels == 0 || resolution == 0 {
         return false;
@@ -138,12 +138,12 @@ fn parse_legacy_header(
     samples_per_frame: &mut int32u,
 ) -> bool {
     // Legacy header is 26 bytes after Version (+ optional 44-byte RIFF + seek table).
-    if fa.Remain() < 32 {
+    if fa.remain() < 32 {
         return false;
     }
-    fa.Get_L2(compression_level, "CompressionLevel");
+    fa.get_l2(compression_level, "CompressionLevel");
     let mut flags: int16u = 0;
-    fa.Get_L2(&mut flags, "FormatFlags");
+    fa.get_l2(&mut flags, "FormatFlags");
     let resolution8 = (flags & 0x0001) != 0;
     let resolution24 = (flags & 0x0008) != 0;
     let no_wav_header = (flags & 0x0020) != 0;
@@ -154,27 +154,27 @@ fn parse_legacy_header(
     } else {
         16
     };
-    fa.Get_L2(channels, "Channels");
-    fa.Get_L4(sample_rate, "SampleRate");
-    fa.Skip_L4("WavHeaderDataBytes");
-    fa.Skip_L4("WavTerminatingBytes");
-    fa.Get_L4(total_frames, "TotalFrames");
-    fa.Get_L4(final_frame_samples, "FinalFrameSamples");
+    fa.get_l2(channels, "Channels");
+    fa.get_l4(sample_rate, "SampleRate");
+    fa.skip_l4("WavHeaderDataBytes");
+    fa.skip_l4("WavTerminatingBytes");
+    fa.get_l4(total_frames, "TotalFrames");
+    fa.get_l4(final_frame_samples, "FinalFrameSamples");
     *samples_per_frame = ape_samples_per_frame(version, *compression_level);
-    fa.Skip_L4("PeakLevel");
+    fa.skip_l4("PeakLevel");
     let mut seek_elements: int32u = 0;
-    fa.Get_L4(&mut seek_elements, "SeekElements");
+    fa.get_l4(&mut seek_elements, "SeekElements");
     if !no_wav_header {
-        if fa.Remain() < 44 {
+        if fa.remain() < 44 {
             return false;
         }
-        fa.Skip_Hexa(44, "RIFF header");
+        fa.skip_hexa(44, "RIFF header");
     }
     let seek_bytes = (seek_elements as usize) * 4;
-    if fa.Remain() < seek_bytes {
+    if fa.remain() < seek_bytes {
         return false;
     }
-    fa.Skip_Hexa(seek_bytes, "Seek table");
+    fa.skip_hexa(seek_bytes, "Seek table");
     true
 }
 
@@ -189,28 +189,28 @@ fn parse_modern_header(
     samples_per_frame: &mut int32u,
 ) -> bool {
     // Descriptor (46) + header (24) bytes after the version field.
-    if fa.Remain() < 70 {
+    if fa.remain() < 70 {
         return false;
     }
-    fa.Skip_L2("Version_High");
-    fa.Skip_L4("DescriptorBytes");
-    fa.Skip_L4("HeaderBytes");
-    fa.Skip_L4("SeekTableBytes");
-    fa.Skip_L4("WavHeaderDataBytes");
-    fa.Skip_L4("APEFrameDataBytes");
-    fa.Skip_L4("APEFrameDataBytesHigh");
-    fa.Skip_L4("WavTerminatingDataBytes");
+    fa.skip_l2("Version_High");
+    fa.skip_l4("DescriptorBytes");
+    fa.skip_l4("HeaderBytes");
+    fa.skip_l4("SeekTableBytes");
+    fa.skip_l4("WavHeaderDataBytes");
+    fa.skip_l4("APEFrameDataBytes");
+    fa.skip_l4("APEFrameDataBytesHigh");
+    fa.skip_l4("WavTerminatingDataBytes");
     let mut _md5: int128u = 0;
-    fa.Get_L16(&mut _md5, "FileMD5");
-    fa.Get_L2(compression_level, "CompressionLevel");
+    fa.get_l16(&mut _md5, "FileMD5");
+    fa.get_l2(compression_level, "CompressionLevel");
     let mut _flags: int16u = 0;
-    fa.Get_L2(&mut _flags, "FormatFlags");
-    fa.Get_L4(samples_per_frame, "BlocksPerFrame");
-    fa.Get_L4(final_frame_samples, "FinalFrameBlocks");
-    fa.Get_L4(total_frames, "TotalFrames");
-    fa.Get_L2(resolution, "BitsPerSample");
-    fa.Get_L2(channels, "Channels");
-    fa.Get_L4(sample_rate, "SampleRate");
+    fa.get_l2(&mut _flags, "FormatFlags");
+    fa.get_l4(samples_per_frame, "BlocksPerFrame");
+    fa.get_l4(final_frame_samples, "FinalFrameBlocks");
+    fa.get_l4(total_frames, "TotalFrames");
+    fa.get_l2(resolution, "BitsPerSample");
+    fa.get_l2(channels, "Channels");
+    fa.get_l4(sample_rate, "SampleRate");
     true
 }
 
@@ -251,31 +251,31 @@ fn fill_streams(
     let uncompressed_size: u64 = samples * (channels as u64) * (resolution as u64 / 8);
     let version_str = format!("{:.3}", (version as f64) / 1000.0);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Monkey's Audio", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Monkey's Audio", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Monkey's Audio", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Monkey's Audio", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
     // "MACF" magic indicates floating-point samples.
     if identifier == MAGIC_MAC_F {
-        fa.Fill(StreamKind::Audio, 0, "Format_Profile", "Float", false);
+        fa.fill(StreamKind::Audio, 0, "Format_Profile", "Float", false);
     }
     let settings = ape_codec_settings(compression_level);
     if !settings.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Encoded_Library_Settings", settings, false);
+        fa.fill(StreamKind::Audio, 0, "Encoded_Library_Settings", settings, false);
     }
-    fa.Fill(StreamKind::Audio, 0, "Codec", "APE", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", resolution.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "APE", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", resolution.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
     let _ = uncompressed_size;
 }
 
@@ -355,8 +355,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ape(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Monkey's Audio"));
         assert_eq!(g("Format_Version").as_deref(), Some("3.990"));
@@ -382,7 +382,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ape(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format_Profile").as_deref(), Some("Float"));
         assert_eq!(a("BitDepth").as_deref(), Some("24"));
         assert_eq!(a("Encoded_Library_Settings").as_deref(), Some("High"));
@@ -396,8 +396,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ape(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format_Version").as_deref(), Some("3.800"));
         assert_eq!(a("BitDepth").as_deref(), Some("16"));
         assert_eq!(a("Channels").as_deref(), Some("2"));

@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -76,21 +76,21 @@ fn fill_vc3_streams(
     level: &str,
     bit_depth: u8,
 ) {
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "VC-3", false);
-    fa.Fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", version), false);
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", format!("{}@{}", profile, level), false);
-    fa.Fill(StreamKind::Video, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "VC-3", false);
+    fa.fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", version), false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", format!("{}@{}", profile, level), false);
+    fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
 
     let scan = if sst == 0 { "Progressive" } else { "Interlaced" };
-    fa.Fill(StreamKind::Video, 0, "ScanType", scan, false);
+    fa.fill(StreamKind::Video, 0, "ScanType", scan, false);
 
     let chroma = if cid == 1256 || cid == 1270 { "4:4:4" } else { "4:2:2" };
-    fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
-    fa.Fill(StreamKind::Video, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.fill(StreamKind::Video, 0, "BitRate_Mode", "CBR", false);
 }
 
 #[cfg(test)]
@@ -115,11 +115,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vc3(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("VC-3".into())
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str().to_owned()),
             Some("HD@HQX".into())
         );
     }

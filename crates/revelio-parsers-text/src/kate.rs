@@ -33,17 +33,17 @@ const KATE_MAGIC: &[u8; 8] = b"\x80kate\x00\x00\x00";
 const IDENTIFICATION_MIN_SIZE: usize = 64;
 
 pub fn parse_kate(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.Remain().min(8));
+    let head = fa.peek_raw(fa.remain().min(8));
     let Some(h) = head else { return false };
     if h.len() < 8 || h != KATE_MAGIC {
         return false;
     }
-    if fa.Remain() < IDENTIFICATION_MIN_SIZE {
+    if fa.remain() < IDENTIFICATION_MIN_SIZE {
         return false;
     }
 
-    fa.Element_Begin("Kate");
-    fa.Skip_Hexa(8, "Signature");
+    fa.element_begin("Kate");
+    fa.skip_hexa(8, "Signature");
 
     let mut _reserved0: int8u = 0;
     let mut _version_major: int8u = 0;
@@ -58,26 +58,26 @@ pub fn parse_kate(fa: &mut FileAnalyze) -> bool {
     let mut _gr_num: int32u = 0;
     let mut _gr_den: int32u = 0;
 
-    fa.Get_L1(&mut _reserved0, "Reserved");
-    fa.Get_L1(&mut _version_major, "version major");
-    fa.Get_L1(&mut _version_minor, "version minor");
-    fa.Get_L1(&mut _num_headers, "num headers");
-    fa.Get_L1(&mut _text_encoding, "text encoding");
-    fa.Get_L1(&mut _directionality, "directionality");
-    fa.Get_L1(&mut _reserved1, "Reserved");
-    fa.Get_L1(&mut _granule_shift, "granule shift");
-    fa.Skip_L4("Reserved");
-    fa.Get_L2(&mut _width, "cw sh + canvas width");
-    fa.Get_L2(&mut _height, "ch sh + canvas height");
-    fa.Get_L4(&mut _gr_num, "granule rate numerator");
-    fa.Get_L4(&mut _gr_den, "granule rate denominator");
+    fa.get_l1(&mut _reserved0, "Reserved");
+    fa.get_l1(&mut _version_major, "version major");
+    fa.get_l1(&mut _version_minor, "version minor");
+    fa.get_l1(&mut _num_headers, "num headers");
+    fa.get_l1(&mut _text_encoding, "text encoding");
+    fa.get_l1(&mut _directionality, "directionality");
+    fa.get_l1(&mut _reserved1, "Reserved");
+    fa.get_l1(&mut _granule_shift, "granule shift");
+    fa.skip_l4("Reserved");
+    fa.get_l2(&mut _width, "cw sh + canvas width");
+    fa.get_l2(&mut _height, "ch sh + canvas height");
+    fa.get_l4(&mut _gr_num, "granule rate numerator");
+    fa.get_l4(&mut _gr_den, "granule rate denominator");
 
     let lang_bytes = fa.read_raw(16).to_vec();
     let cat_bytes = fa.read_raw(16).to_vec();
     let language = parse_nul_terminated_utf8(&lang_bytes);
     let category = parse_nul_terminated_utf8(&cat_bytes);
 
-    fa.Element_End();
+    fa.element_end();
 
     fill_streams(fa, &language, &category);
     true
@@ -111,18 +111,18 @@ fn map_category(category: &str) -> &str {
 }
 
 fn fill_streams(fa: &mut FileAnalyze, language: &str, category: &str) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Kate", false);
-    fa.Fill(StreamKind::General, 0, "TextCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Kate", false);
+    fa.fill(StreamKind::General, 0, "TextCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "Kate", false);
-    fa.Fill(StreamKind::Text, 0, "Codec", "Kate", false);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "Kate", false);
+    fa.fill(StreamKind::Text, 0, "Codec", "Kate", false);
     if !language.is_empty() {
-        fa.Fill(StreamKind::Text, 0, "Language", language, false);
+        fa.fill(StreamKind::Text, 0, "Language", language, false);
     }
     if !category.is_empty() {
-        fa.Fill(StreamKind::Text, 0, "Language_More", map_category(category), false);
+        fa.fill(StreamKind::Text, 0, "Language_More", map_category(category), false);
     }
 }
 
@@ -174,8 +174,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_kate(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Kate"));
         assert_eq!(g("TextCount").as_deref(), Some("1"));
@@ -190,14 +190,14 @@ mod tests {
         let buf = build_kate_header("ja", "KTV");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_kate(&mut fa));
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(t("Language").as_deref(), Some("ja"));
         assert_eq!(t("Language_More").as_deref(), Some("Karaoke"));
 
         let buf2 = build_kate_header("", "ZZZ-CUSTOM");
         let mut fa2 = FileAnalyze::new(&buf2);
         assert!(parse_kate(&mut fa2));
-        let t2 = |k: &str| fa2.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let t2 = |k: &str| fa2.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(t2("Language"), None);
         assert_eq!(t2("Language_More").as_deref(), Some("ZZZ-CUSTOM"));
     }

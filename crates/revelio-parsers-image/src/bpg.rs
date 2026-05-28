@@ -30,7 +30,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 pub fn parse_bpg(fa: &mut FileAnalyze) -> bool {
     // Peek the smaller of (16, remaining bytes) — the BPG header is
     // very short and tests build minimal buffers (often <16 bytes).
-    let want = fa.Remain().min(16);
+    let want = fa.remain().min(16);
     if want < 6 {
         return false;
     }
@@ -52,23 +52,23 @@ pub fn parse_bpg(fa: &mut FileAnalyze) -> bool {
     let (width, w_used) = read_vsi(&h[6..]);
     let (height, _) = read_vsi(&h[6 + w_used..]);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "BPG", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "BPG", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "BPG", false);
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "BPG", false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
     let cs = bpg_color_space(color_space);
     if !cs.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "ColorSpace", cs, false);
+        fa.fill(StreamKind::Image, 0, "ColorSpace", cs, false);
     }
     let cm = bpg_pixel_format(pixel_format);
     if !cm.is_empty() && pixel_format != 0 {
-        fa.Fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
+        fa.fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
     }
-    fa.Fill(
+    fa.fill(
         StreamKind::Image,
         0,
         "BitDepth",
@@ -77,7 +77,7 @@ pub fn parse_bpg(fa: &mut FileAnalyze) -> bool {
     );
     let cp = bpg_colour_primaries(color_space);
     if !cp.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "colour_primaries", cp, false);
+        fa.fill(StreamKind::Image, 0, "colour_primaries", cp, false);
     }
     true
 }
@@ -183,7 +183,7 @@ mod tests {
         let buf = build_bpg(1, false, 8, 0, 1920, 1080);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bpg(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("BPG"));
         assert_eq!(i("Width").as_deref(), Some("1920"));
         assert_eq!(i("Height").as_deref(), Some("1080"));
@@ -198,7 +198,7 @@ mod tests {
         let buf = build_bpg(0, false, 10, 1, 64, 64); // grayscale 10-bit RGB
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bpg(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Width").as_deref(), Some("64"));
         assert_eq!(i("Height").as_deref(), Some("64"));
         assert_eq!(i("BitDepth").as_deref(), Some("10"));

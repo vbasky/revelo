@@ -4,7 +4,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Then 20 bytes for Track Gain/Peak, and optionally 20 bytes for Album Gain/Peak.
 /// ref: http://wiki.hydrogenaud.io/index.php?title=LAME
 pub fn extract_replay_gain(fa: &mut FileAnalyze, data: &[u8]) {
-    let pos = fa.Count_Get(StreamKind::Audio);
+    let pos = fa.count_get(StreamKind::Audio);
     if pos == 0 { return; }
     let idx = pos - 1;
     if data.len() < 20 { return; }
@@ -12,12 +12,12 @@ pub fn extract_replay_gain(fa: &mut FileAnalyze, data: &[u8]) {
     let gain = i16::from_le_bytes([data[0], data[1]]) as f64 * 0.01;
     let peak_bits = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
     let peak = f32::from_bits(peak_bits);
-    fa.Fill(StreamKind::Audio, idx, "ReplayGain_Gain", format!("{:.2} dB", gain), false);
-    fa.Fill(StreamKind::Audio, idx, "ReplayGain_Peak", format!("{:.6}", peak), false);
+    fa.fill(StreamKind::Audio, idx, "ReplayGain_Gain", format!("{:.2} dB", gain), false);
+    fa.fill(StreamKind::Audio, idx, "ReplayGain_Peak", format!("{:.6}", peak), false);
 }
 
 pub fn fill_id3_replay_gain(fa: &mut FileAnalyze, tags: &[(String, String)]) {
-    let pos = fa.Count_Get(StreamKind::Audio);
+    let pos = fa.count_get(StreamKind::Audio);
     if pos == 0 { return; }
     let idx = pos - 1;
     for (key, val) in tags {
@@ -28,7 +28,7 @@ pub fn fill_id3_replay_gain(fa: &mut FileAnalyze, tags: &[(String, String)]) {
             "REPLAYGAIN_ALBUM_PEAK" => "ReplayGain_Peak",
             _ => continue,
         };
-        fa.Fill(StreamKind::Audio, idx, field, val.clone(), false);
+        fa.fill(StreamKind::Audio, idx, field, val.clone(), false);
     }
 }
 

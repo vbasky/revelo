@@ -14,7 +14,7 @@ const HEADER_SIZE: usize = 0x5C;
 const ASCII_REGION: usize = 60 + 8 + 7;
 
 pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_SIZE {
+    if fa.remain() < HEADER_SIZE {
         return false;
     }
     let head = match fa.peek_raw(HEADER_SIZE) {
@@ -87,40 +87,40 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
     let duration_ms = (end_ms - start_ms) as i64;
 
     // Consume the header now that validation passed.
-    fa.Element_Begin("APT-X100");
-    fa.Skip_Hexa(HEADER_SIZE, "Header");
-    let stream_size = fa.Remain() as u64;
-    fa.Element_End();
+    fa.element_begin("APT-X100");
+    fa.skip_hexa(HEADER_SIZE, "Header");
+    let stream_size = fa.remain() as u64;
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "aptX-100", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "aptX-100", false);
     if !title.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Movie", title.as_str(), false);
-        fa.Fill(StreamKind::General, 0, "Title", title.as_str(), false);
+        fa.fill(StreamKind::General, 0, "Movie", title.as_str(), false);
+        fa.fill(StreamKind::General, 0, "Title", title.as_str(), false);
     }
     if studio == "none" {
         studio.clear();
     }
     if !studio.is_empty() {
-        fa.Fill(StreamKind::General, 0, "ProductionStudio", studio.as_str(), false);
+        fa.fill(StreamKind::General, 0, "ProductionStudio", studio.as_str(), false);
     }
     if disc_number != 0 {
-        fa.Fill(StreamKind::General, 0, "Part_Position", ((disc_number >> 7) + 1).to_string(), false);
+        fa.fill(StreamKind::General, 0, "Part_Position", ((disc_number >> 7) + 1).to_string(), false);
     }
     if reel_number != 0 {
-        fa.Fill(StreamKind::General, 0, "Reel_Position", reel_number.to_string(), false);
+        fa.fill(StreamKind::General, 0, "Reel_Position", reel_number.to_string(), false);
     }
     if serial != 0 {
-        fa.Fill(StreamKind::General, 0, "CatalogNumber", serial.to_string(), false);
+        fa.fill(StreamKind::General, 0, "CatalogNumber", serial.to_string(), false);
     }
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "aptX-100", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "aptX-100", false);
     // 44100 Hz × 4 bit/channel (16-bit @ 1:4 compression) × channels.
     // Computed before matrixed-channel additions below, per the C++.
     let bit_rate = 44100u32 * 4 * channel_count as u32;
-    fa.Fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
 
     let mut channel_layout = String::new();
     let mut settings = String::new();
@@ -159,30 +159,30 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
         }
         _ => "DTS Special Venue",
     };
-    fa.Fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
+    fa.fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
+    fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
     if !settings.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings", settings.as_str(), false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings", settings.as_str(), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "Channel(s)", channel_count.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channel(s)", channel_count.to_string(), false);
     if !channel_layout.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "ChannelLayout", channel_layout.as_str(), false);
+        fa.fill(StreamKind::Audio, 0, "ChannelLayout", channel_layout.as_str(), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", "44100", false);
-    fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "TimeCode_FirstFrame", format_timecode(start_hh, start_mm, start_ss, start_ff), false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", "44100", false);
+    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "TimeCode_FirstFrame", format_timecode(start_hh, start_mm, start_ss, start_ff), false);
     // C++ does `End--` before printing; subtract one frame (1/100 s, since 99fps).
     let (e_hh, e_mm, e_ss, e_ff) = decrement_frame(end_hh, end_mm, end_ss, end_ff);
-    fa.Fill(StreamKind::Audio, 0, "TimeCode_LastFrame", format_timecode(e_hh, e_mm, e_ss, e_ff), false);
+    fa.fill(StreamKind::Audio, 0, "TimeCode_LastFrame", format_timecode(e_hh, e_mm, e_ss, e_ff), false);
 
     let language_out = map_language(&language);
     if !language_out.is_empty() {
-        fa.Fill(StreamKind::Audio, 0, "Language", language_out.as_str(), false);
+        fa.fill(StreamKind::Audio, 0, "Language", language_out.as_str(), false);
     }
 
     if stream_size > 0 {
-        fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
     }
 
     true
@@ -327,8 +327,8 @@ mod tests {
         );
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aptx100(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("aptX-100"));
         assert_eq!(g("Title").as_deref(), Some("TestMovie"));
         assert_eq!(g("ProductionStudio").as_deref(), Some("Studio1"));
@@ -358,8 +358,8 @@ mod tests {
         );
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aptx100(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channel(s)").as_deref(), Some("6"));
         assert_eq!(a("ChannelLayout").as_deref(), Some("L LS C RS R SW"));
         assert_eq!(a("Format_Commercial_IfAny").as_deref(), Some("DTS 70 mm"));

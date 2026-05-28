@@ -44,32 +44,32 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
 
     let version_digit = header[3] - b'0';
 
-    fa.Element_Begin("DPG");
+    fa.element_begin("DPG");
     let mut _signature: int32u = 0;
-    fa.Get_C4(&mut _signature, "Signature");
+    fa.get_c4(&mut _signature, "Signature");
     let mut frame_count: int32u = 0;
-    fa.Get_L4(&mut frame_count, "Frame count");
+    fa.get_l4(&mut frame_count, "Frame count");
     let mut frame_rate_fp: int32u = 0;
-    fa.Get_L4(&mut frame_rate_fp, "Frame rate");
+    fa.get_l4(&mut frame_rate_fp, "Frame rate");
     let mut sampling_rate: int32u = 0;
-    fa.Get_L4(&mut sampling_rate, "Sampling rate");
+    fa.get_l4(&mut sampling_rate, "Sampling rate");
     let mut _zero: int32u = 0;
-    fa.Get_L4(&mut _zero, "0x00000000");
+    fa.get_l4(&mut _zero, "0x00000000");
     let mut audio_offset: int32u = 0;
-    fa.Get_L4(&mut audio_offset, "Audio Offset");
+    fa.get_l4(&mut audio_offset, "Audio Offset");
     let mut audio_size: int32u = 0;
-    fa.Get_L4(&mut audio_size, "Audio Size");
+    fa.get_l4(&mut audio_size, "Audio Size");
     let mut video_offset: int32u = 0;
-    fa.Get_L4(&mut video_offset, "Video Offset");
+    fa.get_l4(&mut video_offset, "Video Offset");
     let mut video_size: int32u = 0;
-    fa.Get_L4(&mut video_size, "Video Size");
-    fa.Element_End();
+    fa.get_l4(&mut video_size, "Video Size");
+    fa.element_end();
 
     let _ = (audio_offset, video_offset);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DPG", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DPG", false);
+    fa.fill(
         StreamKind::General,
         0,
         "Format_Version",
@@ -78,13 +78,13 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
     );
 
     // Video stream — mirrors the C++ `Stream_Prepare(Stream_Video)` block.
-    fa.Stream_Prepare(StreamKind::Video);
+    fa.stream_prepare(StreamKind::Video);
     // FrameRate is stored as a 16.8 fixed-point value: integer fps in the
     // high 24 bits and a /256 fractional part in the low 8.
     let frame_rate = (frame_rate_fp as f64) / 256.0;
     if frame_rate > 0.0 {
         // Three decimal places match the C++ `Fill(..., FrameRate, ..., 3)`.
-        fa.Fill(
+        fa.fill(
             StreamKind::Video,
             0,
             "FrameRate",
@@ -93,7 +93,7 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
         );
     }
     if frame_count > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Video,
             0,
             "FrameCount",
@@ -102,7 +102,7 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
         );
     }
     if video_size > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Video,
             0,
             "StreamSize",
@@ -110,12 +110,12 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
             false,
         );
     }
-    fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
     // Audio stream — DPG always carries one MPEG audio track.
-    fa.Stream_Prepare(StreamKind::Audio);
+    fa.stream_prepare(StreamKind::Audio);
     if sampling_rate > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "SamplingRate",
@@ -124,7 +124,7 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
         );
     }
     if audio_size > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "StreamSize",
@@ -132,7 +132,7 @@ pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
             false,
         );
     }
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
     // Reference the int8u import explicitly so a future header byte read
     // (e.g. inspecting the DPG4 GOP table) keeps the use statement honest.
@@ -177,15 +177,15 @@ mod tests {
         assert!(parse_dpg(&mut fa));
 
         let g = |k: &str| {
-            fa.Retrieve(StreamKind::General, 0, k)
+            fa.retrieve(StreamKind::General, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         let v = |k: &str| {
-            fa.Retrieve(StreamKind::Video, 0, k)
+            fa.retrieve(StreamKind::Video, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         let a = |k: &str| {
-            fa.Retrieve(StreamKind::Audio, 0, k)
+            fa.retrieve(StreamKind::Audio, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
 
@@ -207,14 +207,14 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dpg(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Version")
+            fa.retrieve(StreamKind::General, 0, "Format_Version")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("4")
         );
         // 6138/256 = 23.9765625 → formatted to 3 places = "23.977".
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "FrameRate")
+            fa.retrieve(StreamKind::Video, 0, "FrameRate")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("23.977")

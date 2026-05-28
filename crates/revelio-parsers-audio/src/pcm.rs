@@ -3,7 +3,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// Generic raw PCM audio descriptor. Detects WAVEFORMATEX structure
 /// (0xFFFE magic or reasonable PCM format tag) and fills basic PCM fields.
 pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.Remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 16 { return false; }
 
@@ -14,13 +14,13 @@ pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
     let sample_rate = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
     let bits_per_sample = if buf.len() >= 16 { u16::from_le_bytes([buf[14], buf[15]]) } else { 16 };
 
-    let pos = fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, pos, "Format", "PCM", false);
-    fa.Fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-    fa.Fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
-    fa.Fill(StreamKind::Audio, pos, "BitDepth", bits_per_sample.to_string(), false);
-    fa.Fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little", false);
-    fa.Fill(StreamKind::Audio, pos, "Format_Settings_Sign", "Signed", false);
+    let pos = fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, pos, "Format", "PCM", false);
+    fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "BitDepth", bits_per_sample.to_string(), false);
+    fa.fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little", false);
+    fa.fill(StreamKind::Audio, pos, "Format_Settings_Sign", "Signed", false);
     true
 }
 

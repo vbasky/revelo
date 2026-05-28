@@ -831,27 +831,27 @@ fn level_name(level: u8) -> String {
 }
 
 pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
-    fa.Element_Begin("HEVC");
+    fa.element_begin("HEVC");
 
     let head = fa.peek_raw(4);
     let Some(h) = head else {
-        fa.Element_End();
+        fa.element_end();
         return false;
     };
 
     if h != ANNEX_B_START_CODE_LONG && &h[1..] != ANNEX_B_START_CODE {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
-    let data = if let Some(d) = fa.peek_raw(fa.Remain() as usize) {
+    let data = if let Some(d) = fa.peek_raw(fa.remain() as usize) {
         d.to_vec()
     } else {
-        fa.Element_End();
+        fa.element_end();
         return false;
     };
 
-    fa.Element_Info("Format", Some("HEVC"));
+    fa.element_info("Format", Some("HEVC"));
 
     let mut vps_found = false;
     let mut sps_info = None;
@@ -899,7 +899,7 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
     }
 
     if !vps_found || sps_info.is_none() {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
@@ -911,29 +911,29 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
     // Extract encoder info from SEI user_data_unregistered
     let encoder_info = extract_encoder_from_sei_nalus(&sei_nalus);
 
-    fa.Stream_Prepare(StreamKind::Video);
+    fa.stream_prepare(StreamKind::Video);
 
-    fa.Fill(StreamKind::Video, 0, "Format", "HEVC", false);
+    fa.fill(StreamKind::Video, 0, "Format", "HEVC", false);
     let profile = if bit_depth <= 8 { "Main" } else { profile_name(profile_idc) };
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile, false);
-    fa.Fill(StreamKind::Video, 0, "Format_Level", level_name(level_idc), false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", profile, false);
+    fa.fill(StreamKind::Video, 0, "Format_Level", level_name(level_idc), false);
 
     if tier_flag {
-        fa.Fill(StreamKind::Video, 0, "Format_Tier", "High", false);
+        fa.fill(StreamKind::Video, 0, "Format_Tier", "High", false);
     } else {
-        fa.Fill(StreamKind::Video, 0, "Format_Tier", "Main", false);
+        fa.fill(StreamKind::Video, 0, "Format_Tier", "Main", false);
     }
 
-    fa.Fill(StreamKind::Video, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Sampled_Width", width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Sampled_Height", height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Sampled_Width", width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Sampled_Height", height.to_string(), false);
 
     if height > 0 {
         let dar = width as f64 / height as f64;
-        fa.Fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
     }
-    fa.Fill(StreamKind::Video, 0, "PixelAspectRatio", "1.000", false);
+    fa.fill(StreamKind::Video, 0, "PixelAspectRatio", "1.000", false);
 
     let chroma_sub = match chroma_format_idc {
         0 => "4:0:0",
@@ -942,15 +942,15 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         3 => "4:4:4",
         _ => "4:2:0",
     };
-    fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
 
     // Fill HDR metadata if present
     if let Some((mastering, light_level)) = hdr_metadata {
         if let Some((primaries, white_point, max_lum, min_lum)) = mastering {
-            fa.Fill(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2086", false);
-            fa.Fill(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10", false);
+            fa.fill(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2086", false);
+            fa.fill(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10", false);
             // Mastering display primaries (convert from 0.00002 units)
             let r_x = primaries[0].0 as f64 * 0.00002;
             let r_y = primaries[0].1 as f64 * 0.00002;
@@ -960,41 +960,41 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
             let b_y = primaries[2].1 as f64 * 0.00002;
             let w_x = white_point.0 as f64 * 0.00002;
             let w_y = white_point.1 as f64 * 0.00002;
-            fa.Fill(StreamKind::Video, 0, "MasteringDisplay_ColorPrimaries", 
+            fa.fill(StreamKind::Video, 0, "MasteringDisplay_ColorPrimaries", 
                 format!("Red: ({:.5}, {:.5}), Green: ({:.5}, {:.5}), Blue: ({:.5}, {:.5}), White: ({:.5}, {:.5})", 
                     r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y), false);
             // Luminance in cd/m^2 (convert from 0.0001 units)
             let max_lum_cd = max_lum as f64 * 0.0001;
             let min_lum_cd = min_lum as f64 * 0.0001;
-            fa.Fill(StreamKind::Video, 0, "MasteringDisplay_Luminance", 
+            fa.fill(StreamKind::Video, 0, "MasteringDisplay_Luminance", 
                 format!("min: {:.4} cd/m², max: {:.0} cd/m²", min_lum_cd, max_lum_cd), false);
         }
         if let Some((max_content, max_frame_avg)) = light_level {
-            fa.Fill(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content), false);
-            fa.Fill(StreamKind::Video, 0, "MaxFALL", format!("{} cd/m²", max_frame_avg), false);
+            fa.fill(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content), false);
+            fa.fill(StreamKind::Video, 0, "MaxFALL", format!("{} cd/m²", max_frame_avg), false);
         }
     }
 
     // Encoder info from SEI user_data_unregistered
     if let Some(ref enc) = encoder_info {
-        fa.Fill(StreamKind::Video, 0, "Encoded_Library", enc.library.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Encoded_Library", enc.library.as_str(), false);
         if let Some(ref name) = enc.name {
-            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
+            fa.fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
         }
         if let Some(ref ver) = enc.version {
-            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
+            fa.fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
         }
         if let Some(ref settings) = enc.settings {
-            fa.Fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
+            fa.fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
         }
     }
 
     // General stream
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "HEVC", false);
-    fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "HEVC", false);
+    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
-    fa.Element_End();
+    fa.element_end();
     true
 }
 
@@ -1026,13 +1026,13 @@ mod tests {
         let mut fa = FileAnalyze::new(&data);
         assert!(parse_hevc(&mut fa));
 
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("HEVC"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("Main"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("2"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Tier").map(|z| z.as_str()), Some("Main"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("320"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("240"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()), Some("4:2:0"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("HEVC"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("Main"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("2"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Tier").map(|z| z.as_str()), Some("Main"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("320"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("240"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()), Some("4:2:0"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
     }
 }

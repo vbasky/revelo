@@ -16,59 +16,59 @@ const VP9_CHROMA_SUBSAMPLING_OOB: [u8; 4] = [3, 3, 2, 0];
 const VP9_COLOR_RANGE: [&str; 2] = ["Limited", "Full"];
 
 pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 6 {
+    if fa.remain() < 6 {
         return false;
     }
 
-    fa.Element_Begin("VP9");
+    fa.element_begin("VP9");
 
     // Attempt to detect VP9 by checking the frame marker + key frame sync code
     // FFmpeg/WebM convention: the first frame starts with 0x82 (frame_marker=2,
     // version_lsb=0, version_msb=0 -> profile 0).
     let mut first_byte: u8 = 0;
-    fa.Peek_B1(&mut first_byte);
+    fa.peek_b1(&mut first_byte);
     if (first_byte >> 6) != 0x02 {
         // Frame marker must be 0b10 (top 2 bits)
         // Could also be an IVF or other container — let the caller decide
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
-    fa.BS_Begin();
+    fa.bs_begin();
     let mut marker: u8 = 0;
-    fa.Get_S1(2, &mut marker, "FRAME_MARKER");
+    fa.get_s1(2, &mut marker, "FRAME_MARKER");
 
     if marker != 0x02 {
-        fa.BS_End();
-        fa.Element_End();
+        fa.bs_end();
+        fa.element_end();
         return false;
     }
 
     let mut version0: u8 = 0;
     let mut version1: u8 = 0;
-    fa.Get_S1(1, &mut version0, "version");
-    fa.Get_S1(1, &mut version1, "high");
+    fa.get_s1(1, &mut version0, "version");
+    fa.get_s1(1, &mut version1, "high");
 
     let profile = (version1 << 1) | version0;
 
     if profile >= 3 {
         let mut version2: u8 = 0;
-        fa.Get_S1(1, &mut version2, "RESERVED_ZERO");
+        fa.get_s1(1, &mut version2, "RESERVED_ZERO");
         let profile_ext = (version2 << 2) | profile;
         if profile_ext > 3 {
-            fa.BS_End();
-            fa.Element_End();
+            fa.bs_end();
+            fa.element_end();
             return false;
         }
     }
 
     let mut show_existing_frame: u8 = 0;
-    fa.Get_S1(1, &mut show_existing_frame, "show_existing_frame");
+    fa.get_s1(1, &mut show_existing_frame, "show_existing_frame");
 
     if show_existing_frame != 0 {
-        fa.Skip_S1(3, "index_of_frame_to_show");
-        fa.BS_End();
-        fa.Element_End();
+        fa.skip_s1(3, "index_of_frame_to_show");
+        fa.bs_end();
+        fa.element_end();
         return false;
     }
 
@@ -76,9 +76,9 @@ pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
     let mut show_frame: u8 = 0;
     let mut error_resilient_mode: u8 = 0;
 
-    fa.Get_S1(1, &mut frame_type, "frame_type");
-    fa.Get_S1(1, &mut show_frame, "show_frame");
-    fa.Get_S1(1, &mut error_resilient_mode, "error_resilient_mode");
+    fa.get_s1(1, &mut frame_type, "frame_type");
+    fa.get_s1(1, &mut show_frame, "show_frame");
+    fa.get_s1(1, &mut error_resilient_mode, "error_resilient_mode");
 
     let has_sync_code_color_refresh: u8;
     if frame_type == 0 {
@@ -87,14 +87,14 @@ pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
     } else {
         let mut intra_only: u8 = 0;
         if show_frame != 0 {
-            fa.Get_S1(1, &mut intra_only, "intra_only");
+            fa.get_s1(1, &mut intra_only, "intra_only");
             if intra_only != 0 {
                 has_sync_code_color_refresh = if profile > 0 { 7 } else { 5 };
             } else {
                 has_sync_code_color_refresh = 0;
             }
             if error_resilient_mode == 0 {
-                fa.Skip_S1(1, "reset_frame_context");
+                fa.skip_s1(1, "reset_frame_context");
             }
         } else {
             has_sync_code_color_refresh = 0;
@@ -111,112 +111,112 @@ pub fn parse_vp9(fa: &mut FileAnalyze) -> bool {
 
     if has_sync_code_color_refresh != 0 {
         let mut sync_code: int32u = 0;
-        fa.Get_S3(24, &mut sync_code, "SYNC_CODE");
+        fa.get_s3(24, &mut sync_code, "SYNC_CODE");
 
         if sync_code != 0x498342 {
-            fa.BS_End();
-            fa.Element_End();
+            fa.bs_end();
+            fa.element_end();
             return false;
         }
 
         if (has_sync_code_color_refresh & 2) != 0 {
             if profile > 1 {
                 let mut bit_depth_flag: u8 = 0;
-                fa.Get_S1(1, &mut bit_depth_flag, "bit_depth_flag");
+                fa.get_s1(1, &mut bit_depth_flag, "bit_depth_flag");
                 bit_depth = if bit_depth_flag != 0 { 12 } else { 10 };
             } else {
                 bit_depth = 8;
             }
 
             let mut cs: u8 = 0;
-            fa.Get_S1(3, &mut cs, "colorspace");
+            fa.get_s1(3, &mut cs, "colorspace");
             colorspace = VP9_COLORSPACE_MAP[cs as usize];
 
             if colorspace != 0 {
                 // not sRGB
-                fa.Get_S1(1, &mut yuv_range_flag, "yuv_range_flag");
+                fa.get_s1(1, &mut yuv_range_flag, "yuv_range_flag");
                 match profile {
                     1 | 3 => {
                         let mut subsampling_x: u8 = 0;
                         let mut subsampling_y: u8 = 0;
-                        fa.Get_S1(1, &mut subsampling_x, "subsampling_x");
-                        fa.Get_S1(1, &mut subsampling_y, "subsampling_y");
+                        fa.get_s1(1, &mut subsampling_x, "subsampling_x");
+                        fa.get_s1(1, &mut subsampling_y, "subsampling_y");
                         subsampling = (subsampling_x << 1) + subsampling_y;
-                        fa.Skip_S1(1, "reserved");
+                        fa.skip_s1(1, "reserved");
                     }
                     _ => {
                         subsampling = 3;
                     }
                 }
             } else {
-                fa.Skip_S1(1, "reserved");
+                fa.skip_s1(1, "reserved");
             }
         } else {
-            fa.Skip_S1(1, "reserved");
+            fa.skip_s1(1, "reserved");
         }
 
         if (has_sync_code_color_refresh & 4) != 0 {
-            fa.Skip_S1(8, "refresh_frame_flags");
+            fa.skip_s1(8, "refresh_frame_flags");
         }
 
         if has_sync_code_color_refresh != 0 {
-            fa.Element_Begin("frame_size");
+            fa.element_begin("frame_size");
             let mut w: u16 = 0;
             let mut h: u16 = 0;
-            fa.Get_S2(16, &mut w, "width_minus_one");
-            fa.Get_S2(16, &mut h, "height_minus_one");
+            fa.get_s2(16, &mut w, "width_minus_one");
+            fa.get_s2(16, &mut h, "height_minus_one");
             width_minus_one = w;
             height_minus_one = h;
             let mut has_scaling: u8 = 0;
-            fa.Get_S1(1, &mut has_scaling, "has_scaling");
+            fa.get_s1(1, &mut has_scaling, "has_scaling");
             if has_scaling != 0 {
-                fa.Get_S2(16, &mut w, "render_width_minus_one");
-                fa.Get_S2(16, &mut h, "render_height_minus_one");
+                fa.get_s2(16, &mut w, "render_width_minus_one");
+                fa.get_s2(16, &mut h, "render_height_minus_one");
                 width_minus_one = w;
                 height_minus_one = h;
             }
             has_size = true;
-            fa.Element_End();
+            fa.element_end();
         }
     }
 
-    fa.BS_End();
-    fa.Element_End();
+    fa.bs_end();
+    fa.element_end();
 
     // Fill streams
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "VP9", false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "VP9", false);
 
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", profile.to_string(), false);
 
-    fa.Fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
 
     if has_size {
-        fa.Fill(StreamKind::Video, 0, "Width", (width_minus_one as u32 + 1).to_string(), false);
-        fa.Fill(StreamKind::Video, 0, "Height", (height_minus_one as u32 + 1).to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Width", (width_minus_one as u32 + 1).to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Height", (height_minus_one as u32 + 1).to_string(), false);
     }
 
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
 
     if colorspace > 0 && has_sync_code_color_refresh != 0 {
         let chroma_idx = VP9_CHROMA_SUBSAMPLING_OOB[subsampling.min(3) as usize];
-        fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", VP9_CHROMA_SUBSAMPLING[chroma_idx as usize], false);
-        fa.Fill(StreamKind::Video, 0, "colour_range", VP9_COLOR_RANGE[(yuv_range_flag as usize) & 1], false);
+        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", VP9_CHROMA_SUBSAMPLING[chroma_idx as usize], false);
+        fa.fill(StreamKind::Video, 0, "colour_range", VP9_COLOR_RANGE[(yuv_range_flag as usize) & 1], false);
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "VP9", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "VP9", false);
 
     true
 }
 
 /// Parse VP9 codec configuration record from an MP4 container (codecprivate).
 pub fn parse_vp9_codec_config(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 8 {
+    if fa.remain() < 8 {
         return false;
     }
 
-    fa.Element_Begin("VPCodecConfigurationRecord");
+    fa.element_begin("VPCodecConfigurationRecord");
 
     let mut profile: u8 = 0;
     let mut level: u8 = 0;
@@ -227,37 +227,37 @@ pub fn parse_vp9_codec_config(fa: &mut FileAnalyze) -> bool {
     let mut transfer_characteristics: u8 = 0;
     let mut matrix_coefficients: u8 = 0;
 
-    fa.Get_B1(&mut profile, "profile");
-    fa.Get_B1(&mut level, "level");
+    fa.get_b1(&mut profile, "profile");
+    fa.get_b1(&mut level, "level");
 
-    fa.BS_Begin();
-    fa.Get_S1(4, &mut bit_depth, "bitDepth");
-    fa.Get_S1(3, &mut chroma_subsampling, "chromaSubsampling");
-    fa.Get_S1(1, &mut video_full_range_flag, "videoFullRangeFlag");
-    fa.BS_End();
+    fa.bs_begin();
+    fa.get_s1(4, &mut bit_depth, "bitDepth");
+    fa.get_s1(3, &mut chroma_subsampling, "chromaSubsampling");
+    fa.get_s1(1, &mut video_full_range_flag, "videoFullRangeFlag");
+    fa.bs_end();
 
-    fa.Get_B1(&mut colour_primaries, "colourPrimaries");
-    fa.Get_B1(&mut transfer_characteristics, "transferCharacteristics");
-    fa.Get_B1(&mut matrix_coefficients, "matrixCoefficients");
+    fa.get_b1(&mut colour_primaries, "colourPrimaries");
+    fa.get_b1(&mut transfer_characteristics, "transferCharacteristics");
+    fa.get_b1(&mut matrix_coefficients, "matrixCoefficients");
 
     let mut codec_init_data_size: u16 = 0;
-    fa.Get_B2(&mut codec_init_data_size, "codecInitializationDataSize");
-    fa.Skip_Hexa(codec_init_data_size as usize, "codecInitializationData");
+    fa.get_b2(&mut codec_init_data_size, "codecInitializationDataSize");
+    fa.skip_hexa(codec_init_data_size as usize, "codecInitializationData");
 
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::Video);
-    fa.Fill(StreamKind::Video, 0, "Format", "VP9", false);
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Format_Level", format!("{:.1}", level as f64 / 10.0), false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.stream_prepare(StreamKind::Video);
+    fa.fill(StreamKind::Video, 0, "Format", "VP9", false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", profile.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Format_Level", format!("{:.1}", level as f64 / 10.0), false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
 
     let oob_idx = VP9_CHROMA_SUBSAMPLING_OOB[(chroma_subsampling.min(3)) as usize];
-    fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", VP9_CHROMA_SUBSAMPLING[oob_idx as usize], false);
-    fa.Fill(StreamKind::Video, 0, "colour_range", VP9_COLOR_RANGE[(video_full_range_flag as usize) & 1], false);
+    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", VP9_CHROMA_SUBSAMPLING[oob_idx as usize], false);
+    fa.fill(StreamKind::Video, 0, "colour_range", VP9_COLOR_RANGE[(video_full_range_flag as usize) & 1], false);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "VP9", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "VP9", false);
 
     true
 }
@@ -330,7 +330,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp9(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()),
             Some("VP9")
         );
     }
@@ -341,11 +341,11 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp9(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()),
             Some("3840")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()),
             Some("2160")
         );
     }
@@ -366,7 +366,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_vp9_codec_config(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()),
             Some("0")
         );
     }

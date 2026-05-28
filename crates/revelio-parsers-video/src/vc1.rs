@@ -192,37 +192,37 @@ pub fn parse_vc1_codec_private(data: &[u8]) -> Option<Vc1Info> {
 }
 
 pub fn fill_vc1_streams(fa: &mut FileAnalyze, info: &Vc1Info) {
-    fa.Stream_Prepare(StreamKind::Video);
+    fa.stream_prepare(StreamKind::Video);
     
-    fa.Fill(StreamKind::Video, 0, "Format", "VC-1", false);
+    fa.fill(StreamKind::Video, 0, "Format", "VC-1", false);
     
     if let Some(profile) = info.profile {
-        fa.Fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
     }
     
     if let Some(level) = info.level {
         if let Some(level_str) = level.as_str() {
-            fa.Fill(StreamKind::Video, 0, "Format_Level", level_str, false);
+            fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
         }
     }
     
     if info.width > 0 {
-        fa.Fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
     }
     
     if info.height > 0 {
-        fa.Fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
     }
     
     if let Some(fr) = info.frame_rate() {
-        fa.Fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
+        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
     }
     
     if let Some(bitrate) = info.bit_rate {
-        fa.Fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
     }
     
-    fa.Fill(StreamKind::Video, 0, "ScanType", if info.interlace { "Interlaced" } else { "Progressive" }, false);
+    fa.fill(StreamKind::Video, 0, "ScanType", if info.interlace { "Interlaced" } else { "Progressive" }, false);
 }
 
 pub fn parse_vc1(fa: &mut FileAnalyze) -> bool {

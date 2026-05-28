@@ -53,11 +53,11 @@ impl ElementTree {
         }
     }
 
-    pub fn Element_Begin(&mut self, name: impl Into<String>) {
+    pub fn element_begin(&mut self, name: impl Into<String>) {
         self.stack.push(ElementNode::new(name));
     }
 
-    pub fn Element_End(&mut self) {
+    pub fn element_end(&mut self) {
         if self.stack.len() <= 1 {
             return;
         }
@@ -69,13 +69,13 @@ impl ElementTree {
             .push(child);
     }
 
-    pub fn Element_Name(&mut self, name: impl Into<String>) {
+    pub fn element_name(&mut self, name: impl Into<String>) {
         if let Some(last) = self.stack.last_mut() {
             last.name = name.into();
         }
     }
 
-    pub fn Element_Info(&mut self, value: impl Into<String>, measure: Option<&str>) {
+    pub fn element_info(&mut self, value: impl Into<String>, measure: Option<&str>) {
         if let Some(last) = self.stack.last_mut() {
             let value = value.into();
             // Match the C++ heuristic: value="NOK" or measure="Error" flags
@@ -92,7 +92,7 @@ impl ElementTree {
     }
 
     /// Record a field read (called by `Get_B*` / `Get_L*` / etc).
-    pub fn Param(&mut self, name: impl Into<String>, value: impl Into<String>) {
+    pub fn param(&mut self, name: impl Into<String>, value: impl Into<String>) {
         if let Some(last) = self.stack.last_mut() {
             last.infos.push(ElementInfo {
                 name: Some(name.into()),
@@ -102,7 +102,7 @@ impl ElementTree {
         }
     }
 
-    pub fn Element_Level(&self) -> usize {
+    pub fn element_level(&self) -> usize {
         // C++ defines level 0 as "the implicit root", so depth = stack.len() - 1.
         self.stack.len().saturating_sub(1)
     }
@@ -141,17 +141,17 @@ mod tests {
     #[test]
     fn new_tree_has_root_at_level_0() {
         let t = ElementTree::new();
-        assert_eq!(t.Element_Level(), 0);
+        assert_eq!(t.element_level(), 0);
         assert_eq!(t.root().children.len(), 0);
     }
 
     #[test]
     fn begin_end_pair_appends_child_to_root() {
         let mut t = ElementTree::new();
-        t.Element_Begin("atom");
-        assert_eq!(t.Element_Level(), 1);
-        t.Element_End();
-        assert_eq!(t.Element_Level(), 0);
+        t.element_begin("atom");
+        assert_eq!(t.element_level(), 1);
+        t.element_end();
+        assert_eq!(t.element_level(), 0);
         assert_eq!(t.root().children.len(), 1);
         assert_eq!(t.root().children[0].name, "atom");
     }
@@ -159,14 +159,14 @@ mod tests {
     #[test]
     fn nested_begin_end_builds_tree() {
         let mut t = ElementTree::new();
-        t.Element_Begin("moov");
-        t.Element_Begin("trak");
-        t.Element_Begin("tkhd");
-        t.Element_End();
-        t.Element_Begin("mdia");
-        t.Element_End();
-        t.Element_End();
-        t.Element_End();
+        t.element_begin("moov");
+        t.element_begin("trak");
+        t.element_begin("tkhd");
+        t.element_end();
+        t.element_begin("mdia");
+        t.element_end();
+        t.element_end();
+        t.element_end();
 
         let root = t.root();
         assert_eq!(root.children.len(), 1);
@@ -182,10 +182,10 @@ mod tests {
     #[test]
     fn element_info_records_value_and_measure() {
         let mut t = ElementTree::new();
-        t.Element_Begin("tkhd");
-        t.Element_Info("1000", Some("ms"));
-        t.Element_Info("42", None);
-        t.Element_End();
+        t.element_begin("tkhd");
+        t.element_info("1000", Some("ms"));
+        t.element_info("42", None);
+        t.element_end();
         let tkhd = &t.root().children[0];
         assert_eq!(tkhd.infos.len(), 2);
         assert_eq!(tkhd.infos[0].name, None);
@@ -197,10 +197,10 @@ mod tests {
     #[test]
     fn param_records_named_field_read() {
         let mut t = ElementTree::new();
-        t.Element_Begin("mvhd");
-        t.Param("Version", "0");
-        t.Param("Flags", "0x000000");
-        t.Element_End();
+        t.element_begin("mvhd");
+        t.param("Version", "0");
+        t.param("Flags", "0x000000");
+        t.element_end();
         let mvhd = &t.root().children[0];
         assert_eq!(mvhd.infos.len(), 2);
         assert_eq!(mvhd.infos[0].name.as_deref(), Some("Version"));
@@ -211,35 +211,35 @@ mod tests {
     #[test]
     fn nok_marks_element_as_error() {
         let mut t = ElementTree::new();
-        t.Element_Begin("bad");
-        t.Element_Info("NOK", None);
-        t.Element_End();
+        t.element_begin("bad");
+        t.element_info("NOK", None);
+        t.element_end();
         assert!(t.root().children[0].has_error);
     }
 
     #[test]
     fn measure_error_marks_element_as_error() {
         let mut t = ElementTree::new();
-        t.Element_Begin("bad");
-        t.Element_Info("0x1234", Some("Error"));
-        t.Element_End();
+        t.element_begin("bad");
+        t.element_info("0x1234", Some("Error"));
+        t.element_end();
         assert!(t.root().children[0].has_error);
     }
 
     #[test]
     fn element_name_renames_current_frame() {
         let mut t = ElementTree::new();
-        t.Element_Begin("");
-        t.Element_Name("renamed");
-        t.Element_End();
+        t.element_begin("");
+        t.element_name("renamed");
+        t.element_end();
         assert_eq!(t.root().children[0].name, "renamed");
     }
 
     #[test]
     fn extra_element_end_is_noop() {
         let mut t = ElementTree::new();
-        t.Element_End();
-        t.Element_End();
-        assert_eq!(t.Element_Level(), 0);
+        t.element_end();
+        t.element_end();
+        assert_eq!(t.element_level(), 0);
     }
 }

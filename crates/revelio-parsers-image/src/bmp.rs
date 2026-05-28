@@ -19,17 +19,17 @@ pub fn parse_bmp(fa: &mut FileAnalyze) -> bool {
     let height = i32::from_le_bytes([h[22], h[23], h[24], h[25]]).unsigned_abs();
     let bit_count = u16::from_le_bytes([h[28], h[29]]);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Bitmap", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Bitmap", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "Raw", false);
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "Raw", false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
     let color_space = if bit_count <= 8 { "Palette" } else { "RGB" };
-    fa.Fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
-    fa.Fill(StreamKind::Image, 0, "BitDepth", bit_count.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", bit_count.to_string(), false);
     true
 }
 

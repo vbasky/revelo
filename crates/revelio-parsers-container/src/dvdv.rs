@@ -27,7 +27,7 @@ pub fn parse_dvdv(fa: &mut FileAnalyze) -> bool {
     // length exceeds Remain(); clamping lets the magic test still run on
     // buffers that are exactly the header-and-a-bit (and lets the length
     // check below cleanly reject anything shorter than the 12-byte magic).
-    let buf = match fa.peek_raw(fa.Remain().min(MAGIC_LEN)) {
+    let buf = match fa.peek_raw(fa.remain().min(MAGIC_LEN)) {
         Some(b) => b,
         None => return false,
     };
@@ -42,8 +42,8 @@ pub fn parse_dvdv(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DVDV", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DVDV", true);
     true
 }
 
@@ -60,7 +60,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dvdv(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("DVDV".to_owned())
         );
     }
@@ -73,7 +73,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dvdv(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("DVDV".to_owned())
         );
     }

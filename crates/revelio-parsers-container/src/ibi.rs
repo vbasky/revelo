@@ -19,7 +19,7 @@ pub fn parse_ibi(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     let mut doc_type: Option<String> = None;
 
     walk_elements(fa, file_size, &mut |fa, id, size, _| {
@@ -30,11 +30,11 @@ pub fn parse_ibi(fa: &mut FileAnalyze) -> bool {
                     let bytes = fa.read_raw(sz).to_vec();
                     doc_type = Some(strip_nuls(&bytes));
                 } else {
-                    fa.Skip_Hexa(sz, "ebml_child");
+                    fa.skip_hexa(sz, "ebml_child");
                 }
             });
         } else {
-            fa.Skip_Hexa(size, "top_level");
+            fa.skip_hexa(size, "top_level");
         }
     });
 
@@ -42,8 +42,8 @@ pub fn parse_ibi(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Ibi", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Ibi", false);
     true
 }
 
@@ -101,20 +101,20 @@ fn walk_elements(
     region_size: usize,
     visit: &mut dyn FnMut(&mut FileAnalyze, u64, usize, usize),
 ) {
-    let region_end = fa.Element_Offset() + region_size;
-    while fa.Element_Offset() < region_end && fa.Remain() > 0 {
-        let elem_start = fa.Element_Offset();
+    let region_end = fa.element_offset() + region_size;
+    while fa.element_offset() < region_end && fa.remain() > 0 {
+        let elem_start = fa.element_offset();
         let Some(id) = read_vint_id(fa) else { break };
         let Some(size) = read_vint_size(fa) else { break };
         let body_size = size as usize;
-        if fa.Element_Offset() + body_size > region_end {
+        if fa.element_offset() + body_size > region_end {
             break;
         }
-        let body_end = fa.Element_Offset() + body_size;
+        let body_end = fa.element_offset() + body_size;
         visit(fa, id, body_size, elem_start);
-        if fa.Element_Offset() < body_end {
-            fa.Skip_Hexa(body_end - fa.Element_Offset(), "element_tail");
-        } else if fa.Element_Offset() > body_end {
+        if fa.element_offset() < body_end {
+            fa.skip_hexa(body_end - fa.element_offset(), "element_tail");
+        } else if fa.element_offset() > body_end {
             break;
         }
     }
@@ -147,7 +147,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ibi(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("Ibi")

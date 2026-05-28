@@ -537,28 +537,28 @@ pub fn gop_detect(frame_types: &[u8]) -> Option<String> {
 }
 
 pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
-    fa.Element_Begin("AVC");
+    fa.element_begin("AVC");
 
     let head = fa.peek_raw(4);
     let Some(h) = head else {
-        fa.Element_End();
+        fa.element_end();
         return false;
     };
 
     // Check for Annex B start code
     if h != ANNEX_B_START_CODE_LONG && &h[1..] != ANNEX_B_START_CODE {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
-    let data = if let Some(d) = fa.peek_raw(fa.Remain() as usize) {
+    let data = if let Some(d) = fa.peek_raw(fa.remain() as usize) {
         d.to_vec()
     } else {
-        fa.Element_End();
+        fa.element_end();
         return false;
     };
 
-    fa.Element_Info("Format", Some("AVC"));
+    fa.element_info("Format", Some("AVC"));
 
     let mut sps_found = None;
     let mut frame_count = 0u32;
@@ -635,7 +635,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
     }
 
     if sps_found.is_none() {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
@@ -652,9 +652,9 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
         info.gop_detect = Some(gop);
     }
 
-    fa.Stream_Prepare(StreamKind::Video);
+    fa.stream_prepare(StreamKind::Video);
 
-    fa.Fill(StreamKind::Video, 0, "Format", "AVC", false);
+    fa.fill(StreamKind::Video, 0, "Format", "AVC", false);
 
     // Determine profile string
     let prof = profile_name(info.profile);
@@ -677,41 +677,41 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
         134 => "Constrained Baseline",
         _ => prof,
     };
-    fa.Fill(StreamKind::Video, 0, "Format_Profile", profile_str, false);
-    fa.Fill(StreamKind::Video, 0, "Format_Level", level_name(info.level), false);
+    fa.fill(StreamKind::Video, 0, "Format_Profile", profile_str, false);
+    fa.fill(StreamKind::Video, 0, "Format_Level", level_name(info.level), false);
 
     if info.cabac {
-        fa.Fill(StreamKind::Video, 0, "Format_Settings_CABAC", "Yes", false);
+        fa.fill(StreamKind::Video, 0, "Format_Settings_CABAC", "Yes", false);
     } else {
-        fa.Fill(StreamKind::Video, 0, "Format_Settings_CABAC", "No", false);
+        fa.fill(StreamKind::Video, 0, "Format_Settings_CABAC", "No", false);
     }
-    fa.Fill(StreamKind::Video, 0, "Format_Settings_RefFrames", info.ref_frames.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Format_Settings_RefFrames", info.ref_frames.to_string(), false);
 
-    fa.Fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Sampled_Width", info.width.to_string(), false);
-    fa.Fill(StreamKind::Video, 0, "Sampled_Height", info.height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Sampled_Width", info.width.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "Sampled_Height", info.height.to_string(), false);
 
-    fa.Fill(StreamKind::Video, 0, "PixelAspectRatio", "1.000", false);
+    fa.fill(StreamKind::Video, 0, "PixelAspectRatio", "1.000", false);
     if info.height > 0 {
         let dar = info.width as f64 / info.height as f64;
-        fa.Fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
     }
 
-    fa.Fill(StreamKind::Video, 0, "FrameRate_Mode", "CFR", false);
+    fa.fill(StreamKind::Video, 0, "FrameRate_Mode", "CFR", false);
     if info.frame_rate_num > 0 && info.frame_rate_den > 0 {
-        fa.Fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", info.frame_rate_num as f64 / info.frame_rate_den as f64), false);
-        fa.Fill(StreamKind::Video, 0, "FrameRate_Num", info.frame_rate_num.to_string(), false);
-        fa.Fill(StreamKind::Video, 0, "FrameRate_Den", info.frame_rate_den.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", info.frame_rate_num as f64 / info.frame_rate_den as f64), false);
+        fa.fill(StreamKind::Video, 0, "FrameRate_Num", info.frame_rate_num.to_string(), false);
+        fa.fill(StreamKind::Video, 0, "FrameRate_Den", info.frame_rate_den.to_string(), false);
     }
-    fa.Fill(StreamKind::Video, 0, "FrameCount", info.frame_count.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "FrameCount", info.frame_count.to_string(), false);
 
     let chroma_str = match info.chroma_format {
         0 => "YUV",
         1 | 2 | 3 => "YUV",
         _ => "YUV",
     };
-    fa.Fill(StreamKind::Video, 0, "ColorSpace", chroma_str, false);
+    fa.fill(StreamKind::Video, 0, "ColorSpace", chroma_str, false);
 
     let chroma_sub = match info.chroma_format {
         0 => "4:0:0",
@@ -720,8 +720,8 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
         3 => "4:4:4",
         _ => "4:2:0",
     };
-    fa.Fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
-    fa.Fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
+    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
+    fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
     
     // Emit color information from VUI if present
     if info.colour_description_present {
@@ -744,7 +744,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
                 _ => "Unknown",
             };
             if primaries > 0 {
-                fa.Fill(StreamKind::Video, 0, "colour_primaries", primaries_str.to_string(), false);
+                fa.fill(StreamKind::Video, 0, "colour_primaries", primaries_str.to_string(), false);
             }
         }
         if let Some(transfer) = info.transfer_characteristics {
@@ -771,7 +771,7 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
                 _ => "Unknown",
             };
             if transfer > 0 {
-                fa.Fill(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string(), false);
+                fa.fill(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string(), false);
             }
         }
         if let Some(matrix) = info.matrix_coefficients {
@@ -793,48 +793,48 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
                 _ => "Unknown",
             };
             if matrix > 0 {
-                fa.Fill(StreamKind::Video, 0, "matrix_coefficients", matrix_str.to_string(), false);
+                fa.fill(StreamKind::Video, 0, "matrix_coefficients", matrix_str.to_string(), false);
             }
         }
     }
     
-    fa.Fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
+    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
 
     if let Some(ref enc) = info.encoder_string {
-        fa.Fill(StreamKind::Video, 0, "Encoded_Library", enc.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Encoded_Library", enc.as_str(), false);
     }
     if let Some(ref name) = info.encoder_name {
-        fa.Fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
     }
     if let Some(ref ver) = info.encoder_version {
-        fa.Fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
     }
     if let Some(ref settings) = info.encoder_settings {
-        fa.Fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
     }
     if let Some(ref gop) = info.gop_detect {
-        fa.Fill(StreamKind::Video, 0, "GOP_Detect", gop.as_str(), false);
+        fa.fill(StreamKind::Video, 0, "GOP_Detect", gop.as_str(), false);
     }
 
     // Fill General stream
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AVC", false);
-    fa.Fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AVC", false);
+    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
 
     if info.frame_rate_num > 0 && info.frame_rate_den > 0 {
         let fr = info.frame_rate_num as f64 / info.frame_rate_den as f64;
-        fa.Fill(StreamKind::General, 0, "FrameRate", format!("{:.3}", fr), false);
+        fa.fill(StreamKind::General, 0, "FrameRate", format!("{:.3}", fr), false);
     }
-    fa.Fill(StreamKind::General, 0, "FrameCount", info.frame_count.to_string(), false);
+    fa.fill(StreamKind::General, 0, "FrameCount", info.frame_count.to_string(), false);
 
     if let Some(ref enc) = info.encoder_string {
-        fa.Fill(StreamKind::General, 0, "Encoded_Library", enc.as_str(), false);
+        fa.fill(StreamKind::General, 0, "Encoded_Library", enc.as_str(), false);
     }
     if let Some(ref settings) = info.encoder_settings {
-        fa.Fill(StreamKind::General, 0, "Encoded_Library_Settings", settings.as_str(), false);
+        fa.fill(StreamKind::General, 0, "Encoded_Library_Settings", settings.as_str(), false);
     }
 
-    fa.Element_End();
+    fa.element_end();
     true
 }
 
@@ -961,13 +961,13 @@ mod tests {
         let mut fa = FileAnalyze::new(&data);
         assert!(parse_avc(&mut fa));
 
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("AVC"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("Constrained Baseline"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("1.3"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Settings_CABAC").map(|z| z.as_str()), Some("No"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("320"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("240"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("AVC"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("Constrained Baseline"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("1.3"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Settings_CABAC").map(|z| z.as_str()), Some("No"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("320"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("240"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "BitDepth").map(|z| z.as_str()), Some("8"));
     }
 
     #[test]
@@ -980,12 +980,12 @@ mod tests {
         let mut fa = FileAnalyze::new(&data);
         assert!(parse_avc(&mut fa));
 
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("AVC"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("High"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("3"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("640"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("480"));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()), Some("4:2:0"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str()), Some("AVC"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Profile").map(|z| z.as_str()), Some("High"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Format_Level").map(|z| z.as_str()), Some("3"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Width").map(|z| z.as_str()), Some("640"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str()), Some("480"));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()), Some("4:2:0"));
     }
 
     #[test]

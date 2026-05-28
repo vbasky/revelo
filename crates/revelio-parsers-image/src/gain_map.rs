@@ -40,7 +40,7 @@ pub fn parse_gain_map(fa: &mut FileAnalyze) -> bool {
     let alt_hdr: Option<f32>;
     let mut channels: Vec<Channel> = Vec::new();
     {
-        let head = fa.peek_raw(fa.Remain().min(258));
+        let head = fa.peek_raw(fa.remain().min(258));
         let Some(h) = head else { return false };
         if h.len() < 5 {
             return false;
@@ -101,26 +101,26 @@ pub fn parse_gain_map(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Gain Map", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Gain Map", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", "Gain Map", false);
-    fa.Fill(StreamKind::Image, 0, "Format_Version", minimum_version.to_string(), false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", "Gain Map", false);
+    fa.fill(StreamKind::Image, 0, "Format_Version", minimum_version.to_string(), false);
 
     if !have_body {
         return true;
     }
 
-    fa.Fill(StreamKind::Image, 0, "WriterVersion", writer_version.to_string(), false);
-    fa.Fill(
+    fa.fill(StreamKind::Image, 0, "WriterVersion", writer_version.to_string(), false);
+    fa.fill(
         StreamKind::Image,
         0,
         "IsMultichannel",
         if is_multichannel { "Yes" } else { "No" },
         false,
     );
-    fa.Fill(
+    fa.fill(
         StreamKind::Image,
         0,
         "UseBaseColourSpace",
@@ -128,10 +128,10 @@ pub fn parse_gain_map(fa: &mut FileAnalyze) -> bool {
         false,
     );
     if let Some(v) = base_hdr {
-        fa.Fill(StreamKind::Image, 0, "BaseHdrHeadroom", format!("{:.6}", v), false);
+        fa.fill(StreamKind::Image, 0, "BaseHdrHeadroom", format!("{:.6}", v), false);
     }
     if let Some(v) = alt_hdr {
-        fa.Fill(StreamKind::Image, 0, "AlternateHdrHeadroom", format!("{:.6}", v), false);
+        fa.fill(StreamKind::Image, 0, "AlternateHdrHeadroom", format!("{:.6}", v), false);
     }
 
     for (idx, ch) in channels.iter().enumerate() {
@@ -141,19 +141,19 @@ pub fn parse_gain_map(fa: &mut FileAnalyze) -> bool {
             String::new()
         };
         if let Some(v) = ch.gmin {
-            fa.Fill(StreamKind::Image, 0, &format!("GainMapMin{}", suffix), format!("{:.6}", v), false);
+            fa.fill(StreamKind::Image, 0, &format!("GainMapMin{}", suffix), format!("{:.6}", v), false);
         }
         if let Some(v) = ch.gmax {
-            fa.Fill(StreamKind::Image, 0, &format!("GainMapMax{}", suffix), format!("{:.6}", v), false);
+            fa.fill(StreamKind::Image, 0, &format!("GainMapMax{}", suffix), format!("{:.6}", v), false);
         }
         if let Some(v) = ch.gamma {
-            fa.Fill(StreamKind::Image, 0, &format!("Gamma{}", suffix), format!("{:.6}", v), false);
+            fa.fill(StreamKind::Image, 0, &format!("Gamma{}", suffix), format!("{:.6}", v), false);
         }
         if let Some(v) = ch.base_off {
-            fa.Fill(StreamKind::Image, 0, &format!("BaseOffset{}", suffix), format!("{:.6}", v), false);
+            fa.fill(StreamKind::Image, 0, &format!("BaseOffset{}", suffix), format!("{:.6}", v), false);
         }
         if let Some(v) = ch.alt_off {
-            fa.Fill(StreamKind::Image, 0, &format!("AlternateOffset{}", suffix), format!("{:.6}", v), false);
+            fa.fill(StreamKind::Image, 0, &format!("AlternateOffset{}", suffix), format!("{:.6}", v), false);
         }
     }
     true
@@ -221,7 +221,7 @@ mod tests {
         add_channel(&mut buf, (0, 64), (8, 1), (1, 1));
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_gain_map(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("Gain Map"));
         assert_eq!(i("IsMultichannel").as_deref(), Some("No"));
         assert_eq!(i("UseBaseColourSpace").as_deref(), Some("No"));
@@ -239,7 +239,7 @@ mod tests {
         add_channel(&mut buf, (0, 64), (8, 1), (1, 1));
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_gain_map(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("Gain Map"));
         assert_eq!(i("IsMultichannel").as_deref(), Some("Yes"));
         assert_eq!(i("UseBaseColourSpace").as_deref(), Some("Yes"));

@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_dolby_vision(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -85,38 +85,38 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
 }
 
 fn fill_dv_streams(fa: &mut FileAnalyze, info: &DolbyVisionInfo) {
-    let pos = fa.Stream_Prepare(StreamKind::Video);
+    let pos = fa.stream_prepare(StreamKind::Video);
 
-    fa.Fill(StreamKind::Video, pos, "Format", "Dolby Vision", false);
-    fa.Fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
+    fa.fill(StreamKind::Video, pos, "Format", "Dolby Vision", false);
+    fa.fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
 
     if !info.profile.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "HDR_Format_Profile", info.profile.clone(), false);
+        fa.fill(StreamKind::Video, pos, "HDR_Format_Profile", info.profile.clone(), false);
     }
     if !info.level.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "HDR_Format_Level", info.level.clone(), false);
+        fa.fill(StreamKind::Video, pos, "HDR_Format_Level", info.level.clone(), false);
     }
     if !info.version_major.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "HDR_Format_Version",
+        fa.fill(StreamKind::Video, pos, "HDR_Format_Version",
             format!("{}.{}", info.version_major, info.version_minor), false);
     }
     if info.bl_present && !info.bl_compatibility_id.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "HDR_Format_Compatibility", format!("BL:{}", info.bl_compatibility_id), false);
+        fa.fill(StreamKind::Video, pos, "HDR_Format_Compatibility", format!("BL:{}", info.bl_compatibility_id), false);
     }
     if !info.max_luminance.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "MasteringDisplay_Luminance_Max", info.max_luminance.clone(), false);
+        fa.fill(StreamKind::Video, pos, "MasteringDisplay_Luminance_Max", info.max_luminance.clone(), false);
     }
     if !info.min_luminance.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "MasteringDisplay_Luminance_Min", info.min_luminance.clone(), false);
+        fa.fill(StreamKind::Video, pos, "MasteringDisplay_Luminance_Min", info.min_luminance.clone(), false);
     }
     if !info.color_primaries.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "MasteringDisplay_ColorPrimaries", info.color_primaries.clone(), false);
+        fa.fill(StreamKind::Video, pos, "MasteringDisplay_ColorPrimaries", info.color_primaries.clone(), false);
     }
     if !info.max_cll.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "MaxCLL", info.max_cll.clone(), false);
+        fa.fill(StreamKind::Video, pos, "MaxCLL", info.max_cll.clone(), false);
     }
     if !info.max_fall.is_empty() {
-        fa.Fill(StreamKind::Video, pos, "MaxFALL", info.max_fall.clone(), false);
+        fa.fill(StreamKind::Video, pos, "MaxFALL", info.max_fall.clone(), false);
     }
 }
 
@@ -142,7 +142,7 @@ mod tests {
 
         let mut fa = FileAnalyze::new(xml.as_bytes());
         assert!(parse_dolby_vision(&mut fa));
-        assert_eq!(fa.Retrieve(StreamKind::Video, 0, "HDR_Format_Profile").map(|z| z.as_str().to_owned()), Some("8.1".into()));
+        assert_eq!(fa.retrieve(StreamKind::Video, 0, "HDR_Format_Profile").map(|z| z.as_str().to_owned()), Some("8.1".into()));
     }
 
     #[test]

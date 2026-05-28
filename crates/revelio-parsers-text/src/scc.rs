@@ -1,7 +1,7 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_scc(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain() as usize) {
+    let buf = match fa.peek_raw(fa.remain() as usize) {
         Some(b) => b,
         None => return false,
     };
@@ -15,9 +15,9 @@ pub fn parse_scc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let pos = fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, pos, "Format", "SCC", false);
-    fa.Fill(StreamKind::Text, pos, "MuxingMode", "SCC", false);
+    let pos = fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, pos, "Format", "SCC", false);
+    fa.fill(StreamKind::Text, pos, "MuxingMode", "SCC", false);
 
     true
 }
@@ -33,7 +33,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_scc(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("SCC".into())
         );
     }

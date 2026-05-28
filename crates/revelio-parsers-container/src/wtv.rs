@@ -12,7 +12,7 @@ const WTV_MAGIC: [u8; 16] = [
 ];
 
 pub fn parse_wtv(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.Remain().min(16)) {
+    let buf = match fa.peek_raw(fa.remain().min(16)) {
         Some(b) => b,
         None => return false,
     };
@@ -23,8 +23,8 @@ pub fn parse_wtv(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "WTV", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "WTV", true);
     true
 }
 
@@ -60,7 +60,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wtv(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("WTV".to_owned())
         );
     }

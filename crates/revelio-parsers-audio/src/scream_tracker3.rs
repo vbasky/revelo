@@ -31,12 +31,12 @@ const SCRM_OFFSET: usize = 0x2C;
 const SENTINEL_OFFSET: usize = 28;
 
 pub fn parse_scream_tracker3(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_MIN_BYTES {
+    if fa.remain() < HEADER_MIN_BYTES {
         return false;
     }
     // peek_raw(min(N, Remain)) per requirements — head is at least
     // HEADER_MIN_BYTES from the early-out above.
-    let head = match fa.peek_raw(fa.Remain().min(HEADER_MIN_BYTES)) {
+    let head = match fa.peek_raw(fa.remain().min(HEADER_MIN_BYTES)) {
         Some(h) => h,
         None => return false,
     };
@@ -44,61 +44,61 @@ pub fn parse_scream_tracker3(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Element_Begin("Scream Tracker 3");
+    fa.element_begin("Scream Tracker 3");
 
     let song_name_bytes = fa.read_raw(28).to_vec();
     let song_name = trim_local_string(&song_name_bytes);
-    fa.Skip_L1("0x1A");
-    fa.Skip_L1("Type");
-    fa.Skip_L1("Unknown");
-    fa.Skip_L1("Unknown");
+    fa.skip_l1("0x1A");
+    fa.skip_l1("Type");
+    fa.skip_l1("Unknown");
+    fa.skip_l1("Unknown");
 
     let mut ord_num: int16u = 0;
     let mut ins_num: int16u = 0;
     let mut pat_num: int16u = 0;
     let mut flags: int16u = 0;
-    fa.Get_L2(&mut ord_num, "Orders count");
-    fa.Get_L2(&mut ins_num, "Instruments count");
-    fa.Get_L2(&mut pat_num, "Paterns count");
-    fa.Get_L2(&mut flags, "Flags");
+    fa.get_l2(&mut ord_num, "Orders count");
+    fa.get_l2(&mut ins_num, "Instruments count");
+    fa.get_l2(&mut pat_num, "Paterns count");
+    fa.get_l2(&mut flags, "Flags");
 
     let mut sw_major: int8u = 0;
     let mut sw_minor: int8u = 0;
-    fa.Get_L1(&mut sw_major, "Cwt/v (Major)");
-    fa.Get_L1(&mut sw_minor, "Cwt/v (Minor)");
-    fa.Skip_L2("File format information");
-    fa.Skip_B4("Signature");
-    fa.Skip_L1("global volume");
+    fa.get_l1(&mut sw_major, "Cwt/v (Major)");
+    fa.get_l1(&mut sw_minor, "Cwt/v (Minor)");
+    fa.skip_l2("File format information");
+    fa.skip_b4("Signature");
+    fa.skip_l1("global volume");
 
     let mut initial_speed: int8u = 0;
     let mut initial_tempo: int8u = 0;
-    fa.Get_L1(&mut initial_speed, "Initial Speed");
-    fa.Get_L1(&mut initial_tempo, "Initial Temp");
-    fa.Skip_L1("master volume");
-    fa.Skip_L1("ultra click removal");
-    fa.Skip_L1("Default channel pan positions are present");
+    fa.get_l1(&mut initial_speed, "Initial Speed");
+    fa.get_l1(&mut initial_tempo, "Initial Temp");
+    fa.skip_l1("master volume");
+    fa.skip_l1("ultra click removal");
+    fa.skip_l1("Default channel pan positions are present");
     for _ in 0..8 {
-        fa.Skip_L1("Unknown");
+        fa.skip_l1("Unknown");
     }
     let mut special: int16u = 0;
-    fa.Get_L2(&mut special, "Special");
-    fa.Skip_Hexa(32, "Channel settings");
+    fa.get_l2(&mut special, "Special");
+    fa.skip_hexa(32, "Channel settings");
 
     // Skip variable-length tail — bounded by Remain so a truncated
     // buffer still completes filling without panicking.
-    let orders_len = (ord_num as usize).min(fa.Remain());
-    fa.Skip_Hexa(orders_len, "Orders");
-    let ins_len = (ins_num as usize * 2).min(fa.Remain());
-    fa.Skip_Hexa(ins_len, "Instruments");
-    let pat_len = (pat_num as usize * 2).min(fa.Remain());
-    fa.Skip_Hexa(pat_len, "Patterns");
+    let orders_len = (ord_num as usize).min(fa.remain());
+    fa.skip_hexa(orders_len, "Orders");
+    let ins_len = (ins_num as usize * 2).min(fa.remain());
+    fa.skip_hexa(ins_len, "Instruments");
+    let pat_len = (pat_num as usize * 2).min(fa.remain());
+    fa.skip_hexa(pat_len, "Patterns");
 
-    fa.Element_End();
+    fa.element_end();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Scream Tracker 3", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Scream Tracker 3", false);
     if !song_name.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Track", song_name, false);
+        fa.fill(StreamKind::General, 0, "Track", song_name, false);
     }
     // C++ only emits Encoded_Application when major nibble == 0x1
     // (Scream Tracker family); other trackers (Impulse Tracker, etc.)
@@ -110,13 +110,13 @@ pub fn parse_scream_tracker3(fa: &mut FileAnalyze) -> bool {
             sw_minor / 16,
             sw_minor % 16
         );
-        fa.Fill(StreamKind::General, 0, "Encoded_Application", app, false);
+        fa.fill(StreamKind::General, 0, "Encoded_Application", app, false);
     }
-    fa.Fill(StreamKind::General, 0, "BPM", initial_tempo.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "BPM", initial_tempo.to_string(), false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Module", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
 
     let _ = (flags, special, initial_speed);
 
@@ -199,8 +199,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_scream_tracker3(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Scream Tracker 3"));
         assert_eq!(g("Track").as_deref(), Some("My S3M Song"));

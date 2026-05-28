@@ -13,16 +13,16 @@
 use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_rle(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() == 0 {
+    if fa.remain() == 0 {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "RLE", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "RLE", false);
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", "RLE", false);
-    fa.Fill(StreamKind::Text, 0, "Codec", "RLE", false);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", "RLE", false);
+    fa.fill(StreamKind::Text, 0, "Codec", "RLE", false);
     true
 }
 
@@ -40,8 +40,8 @@ mod tests {
     fn accepts_any_non_empty_buffer() {
         let mut fa = FileAnalyze::new(&[0x00, 0x01, 0x02, 0x03]);
         assert!(parse_rle(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("RLE"));
         assert_eq!(t("Format").as_deref(), Some("RLE"));
         assert_eq!(t("Codec").as_deref(), Some("RLE"));
@@ -51,8 +51,8 @@ mod tests {
     fn fills_one_text_stream() {
         let mut fa = FileAnalyze::new(&[0xFFu8; 32]);
         assert!(parse_rle(&mut fa));
-        assert_eq!(fa.Count_Get(StreamKind::Text), 1);
-        assert_eq!(fa.Count_Get(StreamKind::General), 1);
-        assert_eq!(fa.Count_Get(StreamKind::Image), 0);
+        assert_eq!(fa.count_get(StreamKind::Text), 1);
+        assert_eq!(fa.count_get(StreamKind::General), 1);
+        assert_eq!(fa.count_get(StreamKind::Image), 0);
     }
 }

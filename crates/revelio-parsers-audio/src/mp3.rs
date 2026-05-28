@@ -200,7 +200,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // this so by the time we're here it's not been claimed.
     let (id3v2_size, _id3_metadata) = parse_id3v2(fa);
     if id3v2_size > 0 {
-        fa.Skip_Hexa(id3v2_size, "ID3v2");
+        fa.skip_hexa(id3v2_size, "ID3v2");
     }
 
     let head = fa.peek_raw(4);
@@ -222,7 +222,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
         None => return false,
     };
 
-    fa.Element_Begin("MPEG Audio");
+    fa.element_begin("MPEG Audio");
 
     // Read the first frame (info frame, if present) up front so we can
     // capture the magic + Xing/LAME fields without holding a borrow of
@@ -254,7 +254,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     // branding (e.g. "Lavc..."), so relying on the Info frame alone
     // misses it. The "LAME" magic + digit at byte 4 is distinctive.
     let mut lame_version: Option<String> = None;
-    if let Some(scan_buf) = fa.peek_raw(fa.Remain().min(32 * 1024)) {
+    if let Some(scan_buf) = fa.peek_raw(fa.remain().min(32 * 1024)) {
         for i in 0..scan_buf.len().saturating_sub(9) {
             if &scan_buf[i..i + 4] == b"LAME"
                 && scan_buf[i + 4].is_ascii_digit()
@@ -271,26 +271,26 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     let audio_frame_start;
     let audio_frame_header;
     if is_info_frame {
-        fa.Skip_Hexa(first_header.frame_size as usize, "InfoFrame");
-        audio_frame_start = fa.Element_Offset();
+        fa.skip_hexa(first_header.frame_size as usize, "InfoFrame");
+        audio_frame_start = fa.element_offset();
         let next_bytes = fa.peek_raw(4);
         let Some(b) = next_bytes else {
-            fa.Element_End();
+            fa.element_end();
             return false;
         };
         let Some(h) = parse_frame_header(b) else {
-            fa.Element_End();
+            fa.element_end();
             return false;
         };
         audio_frame_header = h;
     } else {
-        audio_frame_start = fa.Element_Offset();
+        audio_frame_start = fa.element_offset();
         audio_frame_header = first_header;
     }
 
     // Walk frames to count them + detect VBR.
     let (frame_count, audio_bytes, is_vbr_frames) = scan_frames(fa, audio_frame_start);
-    fa.Element_End();
+    fa.element_end();
 
     // Xing magic = VBR header; Info magic = CBR-LAME header. VBRI also
     // = VBR. Treat the file as VBR if either the header says so OR
@@ -589,7 +589,7 @@ fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64, boo
     let mut frame_count: u32 = 0;
     let mut first_bitrate: Option<u16> = None;
     let mut is_vbr = false;
-    let starting_remain = fa.Remain();
+    let starting_remain = fa.remain();
     loop {
         let header_bytes = fa.peek_raw(4);
         let Some(b) = header_bytes else { break };
@@ -598,7 +598,7 @@ fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64, boo
             // terminate the scan cleanly.
             break;
         };
-        if h.frame_size == 0 || fa.Remain() < h.frame_size as usize {
+        if h.frame_size == 0 || fa.remain() < h.frame_size as usize {
             break;
         }
         if let Some(fb) = first_bitrate {
@@ -608,10 +608,10 @@ fn scan_frames(fa: &mut FileAnalyze, audio_frame_start: usize) -> (u32, u64, boo
         } else {
             first_bitrate = Some(h.bitrate_kbps);
         }
-        fa.Skip_Hexa(h.frame_size as usize, "Frame");
+        fa.skip_hexa(h.frame_size as usize, "Frame");
         frame_count += 1;
     }
-    let consumed = starting_remain.saturating_sub(fa.Remain()) as u64;
+    let consumed = starting_remain.saturating_sub(fa.remain()) as u64;
     let _ = audio_frame_start;
     (frame_count, consumed, is_vbr)
 }
@@ -629,24 +629,24 @@ fn fill_streams(
     _xing_delay: Option<u32>,
     _xing_padding: Option<u32>,
 ) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "MPEG Audio", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "MPEG Audio", false);
     if let Some(lv) = lame_version {
-        fa.Fill(StreamKind::General, 0, "Encoded_Library", lv, false);
+        fa.fill(StreamKind::General, 0, "Encoded_Library", lv, false);
     }
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "MPEG Audio", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "MPEG Audio", false);
     if let Some(lv) = lame_version {
-        fa.Fill(StreamKind::Audio, 0, "Encoded_Library", lv, false);
+        fa.fill(StreamKind::Audio, 0, "Encoded_Library", lv, false);
     }
-    fa.Fill(StreamKind::Audio, 0, "Format_Version", VERSION_NAMES[h.version as usize], false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Profile", LAYER_NAMES[h.layer as usize], false);
+    fa.fill(StreamKind::Audio, 0, "Format_Version", VERSION_NAMES[h.version as usize], false);
+    fa.fill(StreamKind::Audio, 0, "Format_Profile", LAYER_NAMES[h.layer as usize], false);
     // Oracle suppresses Format_Settings_Mode for single-channel (mono)
     // MP3 — the redundant "Single channel" string is omitted when
     // Channels=1 already implies mono.
     if h.channel_mode != 3 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "Format_Settings_Mode",
@@ -657,10 +657,10 @@ fn fill_streams(
     if h.channel_mode == 1 {
         let ext = mode_extension_name(h.layer, h.mode_ext);
         if !ext.is_empty() {
-            fa.Fill(StreamKind::Audio, 0, "Format_Settings_ModeExtension", ext, false);
+            fa.fill(StreamKind::Audio, 0, "Format_Settings_ModeExtension", ext, false);
         }
     }
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", if is_vbr { "VBR" } else { "CBR" }, false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", if is_vbr { "VBR" } else { "CBR" }, false);
     // BitRate selection:
     //   CBR: use the (constant) frame bitrate.
     //   VBR: prefer the Xing/LAME nominal-bitrate byte (matches oracle
@@ -684,16 +684,16 @@ fn fill_streams(
     } else {
         (h.bitrate_kbps as u32) * 1000
     };
-    fa.Fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
-    fa.Fill(
+    fa.fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
+    fa.fill(
         StreamKind::Audio,
         0,
         "Channels",
         channel_mode_to_count(h.channel_mode).to_string(),
         false,
     );
-    fa.Fill(StreamKind::Audio, 0, "SamplesPerFrame", h.samples_per_frame.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", h.sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", h.samples_per_frame.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", h.sample_rate.to_string(), false);
 
     // VBR (Xing/VBRI): info frame is a TOC carrier with no audio samples,
     // so it doesn't count toward SamplingCount/FrameCount.
@@ -703,35 +703,35 @@ fn fill_streams(
     let total_frame_count = audio_frame_count + info_frame_addend;
     let sampling_count = (total_frame_count as u64) * (h.samples_per_frame as u64);
     if sampling_count > 0 {
-        fa.Fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
     }
 
     // FrameRate = sample_rate / samples_per_frame, 3 decimal places.
     if h.samples_per_frame > 0 {
         let frame_rate = (h.sample_rate as f64) / (h.samples_per_frame as f64);
-        fa.Fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "FrameCount", total_frame_count.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", audio_bytes_consumed.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "FrameCount", total_frame_count.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_bytes_consumed.to_string(), false);
 
     // Audio Duration: frames-based.
     if h.sample_rate > 0 && sampling_count > 0 {
         let duration_ms = (sampling_count * 1000) / (h.sample_rate as u64);
-        fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
     }
 
     // General-stream fields that aren't file-level but need the parser's
     // knowledge of ID3v2/audio_bytes vs the harness's FileSize-Audio.StreamSize
     // fallback. Use replace=true so the harness can't overwrite.
-    fa.Fill(StreamKind::General, 0, "StreamSize", id3v2_size.to_string(), true);
+    fa.fill(StreamKind::General, 0, "StreamSize", id3v2_size.to_string(), true);
     if bitrate_bps > 0 {
         // General Duration = Audio.StreamSize * 8000 / BitRate_bps — gives a
         // round duration like 1.536s for a 24576-byte/128kbps stream, which
         // is what the oracle reports.
         let general_duration_ms =
             (audio_bytes_consumed * 8 * 1000) / (bitrate_bps as u64);
-        fa.Fill(
+        fa.fill(
             StreamKind::General,
             0,
             "Duration",
@@ -741,7 +741,7 @@ fn fill_streams(
         // OverallBitRate for CBR MPEG Audio is the audio bitrate itself —
         // the C++ side bypasses the FileSize/Duration computation in this
         // case. replace=true to override the harness fallback.
-        fa.Fill(
+        fa.fill(
             StreamKind::General,
             0,
             "OverallBitRate",
@@ -749,7 +749,7 @@ fn fill_streams(
             true,
         );
     }
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ const SMPTE_NAMESPACE: &str = "http://www.smpte-ra.org/schemas/429-9/2007/AM";
 const SCAN_WINDOW: usize = 1024;
 
 pub fn parse_dcp_am(fa: &mut FileAnalyze) -> bool {
-    let window = SCAN_WINDOW.min(fa.Remain());
+    let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {
         return false;
     };
@@ -73,9 +73,9 @@ pub fn parse_dcp_am(fa: &mut FileAnalyze) -> bool {
         return false;
     };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DCP AM", true);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version, true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DCP AM", true);
+    fa.fill(StreamKind::General, 0, "Format_Version", version, true);
     true
 }
 
@@ -92,13 +92,13 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_am(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("DCP AM")
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Version")
+            fa.retrieve(StreamKind::General, 0, "Format_Version")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("SMPTE")
@@ -111,7 +111,7 @@ mod tests {
         let mut fa = FileAnalyze::new(xml);
         assert!(parse_dcp_am(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Version")
+            fa.retrieve(StreamKind::General, 0, "Format_Version")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("Interop")

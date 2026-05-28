@@ -26,11 +26,11 @@ struct Match {
 pub fn parse_other_text(fa: &mut FileAnalyze) -> bool {
     // C++ requires Buffer_Size>=0x200 before attempting detection; mirror
     // that to avoid false positives on tiny fragments.
-    if fa.Remain() < 0x200 {
+    if fa.remain() < 0x200 {
         return false;
     }
 
-    let window = SCAN_WINDOW.min(fa.Remain());
+    let window = SCAN_WINDOW.min(fa.remain());
     let Some(buf) = fa.peek_raw(window) else {
         return false;
     };
@@ -60,15 +60,15 @@ pub fn parse_other_text(fa: &mut FileAnalyze) -> bool {
         return false;
     };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", m.format, true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", m.format, true);
     if let Some(info) = m.format_info {
-        fa.Fill(StreamKind::General, 0, "Format_Info", info, true);
+        fa.fill(StreamKind::General, 0, "Format_Info", info, true);
     }
 
-    fa.Stream_Prepare(StreamKind::Text);
-    fa.Fill(StreamKind::Text, 0, "Format", m.format, true);
-    fa.Fill(StreamKind::Text, 0, "Codec", m.codec, true);
+    fa.stream_prepare(StreamKind::Text);
+    fa.fill(StreamKind::Text, 0, "Format", m.format, true);
+    fa.fill(StreamKind::Text, 0, "Codec", m.codec, true);
     true
 }
 
@@ -225,8 +225,8 @@ mod tests {
         let buf = pad("<SAMI>\n<HEAD></HEAD>\n<BODY></BODY>\n</SAMI>\n");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_other_text(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("SAMI"));
         assert_eq!(t("Format").as_deref(), Some("SAMI"));
         assert_eq!(t("Codec").as_deref(), Some("SAMI"));
@@ -237,7 +237,7 @@ mod tests {
         let buf = pad("[Script Info]\nScriptType: v4.00\n[V4 Styles]\nFormat: Name\n");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_other_text(&mut fa));
-        let t = |k: &str| fa.Retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
+        let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(t("Format").as_deref(), Some("SSA"));
         assert_eq!(t("Codec").as_deref(), Some("SSA"));
     }

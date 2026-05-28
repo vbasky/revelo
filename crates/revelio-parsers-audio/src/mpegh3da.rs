@@ -3,7 +3,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 /// MPEG-H 3D Audio parser. Detects mhm1/mha1 box in MP4 or raw
 /// AudioSpecificConfig with audioObjectType 30 for MPEG-H.
 pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.Remain() as usize).map(|b| b.to_vec());
+    let buf = fa.peek_raw(fa.remain() as usize).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
     if buf.len() < 5 { return false; }
 
@@ -12,9 +12,9 @@ pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
         let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
         let box_type = std::str::from_utf8(&buf[4..8]).unwrap_or("");
         if (box_type == "mhm1" || box_type == "mha1") && size >= 12 {
-            let pos = fa.Stream_Prepare(StreamKind::Audio);
-            fa.Fill(StreamKind::Audio, pos, "Format", "MPEG-H 3D Audio", false);
-            fa.Fill(StreamKind::Audio, pos, "Format_Info", "Immersive 3D Audio", false);
+            let pos = fa.stream_prepare(StreamKind::Audio);
+            fa.fill(StreamKind::Audio, pos, "Format", "MPEG-H 3D Audio", false);
+            fa.fill(StreamKind::Audio, pos, "Format_Info", "Immersive 3D Audio", false);
             return true;
         }
     }

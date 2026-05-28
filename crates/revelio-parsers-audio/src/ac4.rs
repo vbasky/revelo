@@ -11,26 +11,26 @@ const AC4_SYNC_0: [u8; 2] = [0xAC, 0x40];
 const AC4_SYNC_1: [u8; 2] = [0xAC, 0x41];
 
 pub fn parse_ac4(fa: &mut FileAnalyze) -> bool {
-    let n = fa.Remain().min(2);
+    let n = fa.remain().min(2);
     let head = fa.peek_raw(n);
     let Some(h) = head else { return false };
     if h.len() < 2 || (h != AC4_SYNC_0 && h != AC4_SYNC_1) {
         return false;
     }
 
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "AC-4", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "AC-4", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "AC-4", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "AC-4", false);
     // BitRate_Mode=VBR — AC-4 frames are variable-length by design.
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
 
     true
 }

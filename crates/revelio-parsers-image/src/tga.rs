@@ -23,7 +23,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const V2_SIGNATURE: &[u8; 18] = b"TRUEVISION-XFILE.\0";
 
 pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     if file_size < 18 {
         return false;
     }
@@ -79,33 +79,33 @@ pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
         1
     };
 
-    fa.Stream_Prepare(StreamKind::Image);
+    fa.stream_prepare(StreamKind::Image);
     let _pos = 0usize;
     let format = tga_image_type_compression(image_type);
     let color_space = tga_image_type_color_space(image_type);
 
     // General is filled after Image so Format_Version (via Streams_Finish in C++) lands at the end.
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "TGA", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "TGA", false);
     if !image_id.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Title", image_id, false);
+        fa.fill(StreamKind::General, 0, "Title", image_id, false);
     }
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
     // Oracle only emits Format_Version when the v2 footer signature is
     // present (mirrors C++: `if (Version) Fill(...)` where Version stays
     // at 0 for files without the trailing TRUEVISION-XFILE marker).
     if version == 2 {
-        fa.Fill(StreamKind::General, 0, "Format_Version", "Version 2", false);
+        fa.fill(StreamKind::General, 0, "Format_Version", "Version 2", false);
     }
 
-    fa.Fill(StreamKind::Image, 0, "Format", format, false);
-    fa.Fill(StreamKind::Image, 0, "CodecID", image_type.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Format", format, false);
+    fa.fill(StreamKind::Image, 0, "CodecID", image_type.to_string(), false);
     if !color_space.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+        fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
     }
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "BitDepth", pixel_depth.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", pixel_depth.to_string(), false);
     true
 }
 
@@ -161,8 +161,8 @@ mod tests {
         let buf = build_tga(2, 0, 320, 240, 24);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tga(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("TGA"));
         // V1 TGA has no footer signature → no Format_Version emitted.
         assert!(g("Format_Version").is_none());
@@ -184,7 +184,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_tga(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Version")
+            fa.retrieve(StreamKind::General, 0, "Format_Version")
                 .map(|z| z.as_str().to_owned()).as_deref(),
             Some("Version 2")
         );

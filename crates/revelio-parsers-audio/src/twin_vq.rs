@@ -37,10 +37,10 @@ fn samplerate_from_code(code: int32u) -> Option<u32> {
 }
 
 pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < HEADER_LEN {
+    if fa.remain() < HEADER_LEN {
         return false;
     }
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(h) if h.len() == 4 => h,
         _ => return false,
     };
@@ -49,14 +49,14 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let file_size = fa.Remain() as u64;
+    let file_size = fa.remain() as u64;
 
-    fa.Element_Begin("TwinVQ");
+    fa.element_begin("TwinVQ");
     let mut magic_consume: int32u = 0;
-    fa.Get_C4(&mut magic_consume, "magic");
-    fa.Skip_Hexa(8, "version");
+    fa.get_c4(&mut magic_consume, "magic");
+    fa.skip_hexa(8, "version");
     let mut subchunks_size: int32u = 0;
-    fa.Get_B4(&mut subchunks_size, "subchunks_size");
+    fa.get_b4(&mut subchunks_size, "subchunks_size");
 
     let mut channel_mode: Option<int32u> = None;
     let mut bitrate_kbps: Option<int32u> = None;
@@ -65,20 +65,20 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
     // Walk chunks until DATA (or buffer exhausted). DATA terminates the
     // header per the C++ reference — its payload format is not parsed.
     loop {
-        if fa.Remain() < 8 {
+        if fa.remain() < 8 {
             break;
         }
         let mut id: int32u = 0;
         let mut size: int32u = 0;
-        fa.Get_C4(&mut id, "id");
-        fa.Get_B4(&mut size, "size");
+        fa.get_c4(&mut id, "id");
+        fa.get_b4(&mut size, "size");
 
         if id == CHUNK_DATA {
             break;
         }
 
         let size_usize = size as usize;
-        if fa.Remain() < size_usize {
+        if fa.remain() < size_usize {
             break;
         }
 
@@ -86,21 +86,21 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
             let mut cm: int32u = 0;
             let mut br: int32u = 0;
             let mut sr: int32u = 0;
-            fa.Get_B4(&mut cm, "channel_mode");
-            fa.Get_B4(&mut br, "bitrate");
-            fa.Get_B4(&mut sr, "samplerate");
-            fa.Skip_B4("security_level");
+            fa.get_b4(&mut cm, "channel_mode");
+            fa.get_b4(&mut br, "bitrate");
+            fa.get_b4(&mut sr, "samplerate");
+            fa.skip_b4("security_level");
             channel_mode = Some(cm);
             bitrate_kbps = Some(br);
             samplerate = samplerate_from_code(sr);
             if size_usize > 16 {
-                fa.Skip_Hexa(size_usize - 16, "Extension");
+                fa.skip_hexa(size_usize - 16, "Extension");
             }
         } else {
-            fa.Skip_Hexa(size_usize, "ChunkData");
+            fa.skip_hexa(size_usize, "ChunkData");
         }
     }
-    fa.Element_End();
+    fa.element_end();
 
     // COMM is the only chunk we need to surface stream params; bail if missing.
     let (cm, br, sr) = match (channel_mode, bitrate_kbps, samplerate) {
@@ -108,19 +108,19 @@ pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
         _ => return false,
     };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "TwinVQ", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "TwinVQ", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "TwinVQ", false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "TwinVQ", false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "TwinVQ", false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "TwinVQ", false);
     // C++ stores channel_mode+1: 0→mono, 1→stereo.
-    fa.Fill(StreamKind::Audio, 0, "Channels", (cm + 1).to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate", (br as u64 * 1000).to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", (cm + 1).to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "BitRate", (br as u64 * 1000).to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
 
     true
 }
@@ -163,8 +163,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_twin_vq(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("TwinVQ"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -183,7 +183,7 @@ mod tests {
         let buf = make_twinvq(0, 32, 22, 50);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_twin_vq(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channels").as_deref(), Some("1"));
         assert_eq!(a("BitRate").as_deref(), Some("32000"));
         assert_eq!(a("SamplingRate").as_deref(), Some("22050"));

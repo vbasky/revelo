@@ -38,7 +38,7 @@ const WVPK_SAMPLING_RATE: [u32; 16] = [
 ];
 
 pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
-    let n = fa.Remain().min(BLOCK_HEADER_SIZE);
+    let n = fa.remain().min(BLOCK_HEADER_SIZE);
     if n < BLOCK_HEADER_SIZE {
         return false;
     }
@@ -107,30 +107,30 @@ pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
     // is encountered).
     let compression_mode = if hybrid { "Lossy" } else { "Lossless" };
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "WavPack", false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "WavPack", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "WavPack", false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Profile", version_profile, false);
-    fa.Fill(StreamKind::Audio, 0, "Codec", "Wavpack", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", compression_mode, false);
-    fa.Fill(StreamKind::Audio, 0, "Codec_Settings", compression_mode, false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "WavPack", false);
+    fa.fill(StreamKind::Audio, 0, "Format_Profile", version_profile, false);
+    fa.fill(StreamKind::Audio, 0, "Codec", "Wavpack", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", compression_mode, false);
+    fa.fill(StreamKind::Audio, 0, "Codec_Settings", compression_mode, false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
     // For DSD (dsf=1) the effective audio rate is 8× the index value.
     let effective_rate: u64 = if dsf {
         (sample_rate as u64) * 8
     } else {
         sample_rate as u64
     };
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", effective_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", effective_rate.to_string(), false);
     if !dsf {
-        fa.Fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
     } else {
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings_Mode", "DSD", false);
-        fa.Fill(StreamKind::Audio, 0, "Format_Settings", "DSD", false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings_Mode", "DSD", false);
+        fa.fill(StreamKind::Audio, 0, "Format_Settings", "DSD", false);
     }
 
     // Duration from total_samples in the first block — only trustworthy if
@@ -138,7 +138,7 @@ pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
     // C++'s `if (block_index==0)` guard.
     if _block_index == 0 && total_samples != 0 && total_samples != u32::MAX && sample_rate != 0 {
         let duration_ms = (total_samples as u64) * 1000 / (sample_rate as u64);
-        fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
     }
 
     let _ = ck_size;
@@ -189,8 +189,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wvpk(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("WavPack"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -216,7 +216,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_wvpk(&mut fa));
 
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format_Profile").as_deref(), Some("4.16"));
         assert_eq!(a("Channels").as_deref(), Some("1"));
         assert_eq!(a("BitDepth").as_deref(), Some("24"));

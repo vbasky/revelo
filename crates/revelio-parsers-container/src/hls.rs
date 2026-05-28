@@ -34,7 +34,7 @@ const MAX_SIZE: usize = 1024 * 1024;
 const MIN_SIZE: usize = 10;
 
 pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
-    let size = fa.Remain();
+    let size = fa.remain();
     if size < MIN_SIZE || size > MAX_SIZE {
         return false;
     }
@@ -65,8 +65,8 @@ pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "HLS", true);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "HLS", true);
 
     let mut is_master = false;
     let mut saw_segment = false;
@@ -102,7 +102,7 @@ pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
         // No variants and no segments — C++ falls through to "Master".
         "Master"
     };
-    fa.Fill(StreamKind::General, 0, "Format_Profile", profile, false);
+    fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
 
     true
 }
@@ -118,12 +118,12 @@ fn parse_ext_x_key(fa: &mut FileAnalyze, attrs: &str) {
         if key == "METHOD" {
             if value.starts_with("AES-128") {
                 // Match the exact set of fields C++ fills for AES-128.
-                fa.Fill(StreamKind::General, 0, "Encryption_Format", "AES", false);
-                fa.Fill(StreamKind::General, 0, "Encryption_Length", "128", false);
-                fa.Fill(StreamKind::General, 0, "Encryption_Method", "Segment", false);
-                fa.Fill(StreamKind::General, 0, "Encryption_Mode", "CBC", false);
-                fa.Fill(StreamKind::General, 0, "Encryption_Padding", "PKCS7", false);
-                fa.Fill(
+                fa.fill(StreamKind::General, 0, "Encryption_Format", "AES", false);
+                fa.fill(StreamKind::General, 0, "Encryption_Length", "128", false);
+                fa.fill(StreamKind::General, 0, "Encryption_Method", "Segment", false);
+                fa.fill(StreamKind::General, 0, "Encryption_Mode", "CBC", false);
+                fa.fill(StreamKind::General, 0, "Encryption_Padding", "PKCS7", false);
+                fa.fill(
                     StreamKind::General,
                     0,
                     "Encryption_InitializationVector",
@@ -131,7 +131,7 @@ fn parse_ext_x_key(fa: &mut FileAnalyze, attrs: &str) {
                     false,
                 );
             }
-            fa.Fill(StreamKind::General, 0, "Encryption", value, false);
+            fa.fill(StreamKind::General, 0, "Encryption", value, false);
         }
     }
 }
@@ -145,7 +145,7 @@ mod tests {
         let m3u8 = b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000\nlow/index.m3u8\n";
         let mut fa = FileAnalyze::new(m3u8);
         assert!(parse_hls(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("HLS"));
         assert_eq!(g("Format_Profile").as_deref(), Some("Master"));
     }
@@ -155,7 +155,7 @@ mod tests {
         let m3u8 = b"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:9.009,\nseg1.ts\n#EXTINF:9.009,\nseg2.ts\n#EXT-X-ENDLIST\n";
         let mut fa = FileAnalyze::new(m3u8);
         assert!(parse_hls(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("HLS"));
         assert_eq!(g("Format_Profile").as_deref(), Some("Media"));
     }
@@ -165,7 +165,7 @@ mod tests {
         let m3u8 = b"#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:9,\na.ts\n";
         let mut fa = FileAnalyze::new(m3u8);
         assert!(parse_hls(&mut fa));
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Encryption_Format").as_deref(), Some("AES"));
         assert_eq!(g("Encryption_Length").as_deref(), Some("128"));
         assert_eq!(g("Encryption_Method").as_deref(), Some("Segment"));

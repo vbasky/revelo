@@ -16,7 +16,7 @@ use revelio_core::{FileAnalyze, StreamKind};
 const SIGNATURE: &[u8; 8] = b"LEITCH\0\0";
 
 pub fn parse_lxf(fa: &mut FileAnalyze) -> bool {
-    let head = match fa.peek_raw(fa.Remain().min(8)) {
+    let head = match fa.peek_raw(fa.remain().min(8)) {
         Some(b) if b.len() == 8 => b,
         _ => return false,
     };
@@ -24,8 +24,8 @@ pub fn parse_lxf(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "LXF", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "LXF", false);
 
     true
 }
@@ -42,7 +42,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_lxf(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format")
+            fa.retrieve(StreamKind::General, 0, "Format")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("LXF"),

@@ -42,65 +42,65 @@ const MAGIC: &[u8; 4] = b"IMPM";
 const FIXED_HEADER_BYTES: usize = 192;
 
 pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
-    let head = match fa.peek_raw(fa.Remain().min(4)) {
+    let head = match fa.peek_raw(fa.remain().min(4)) {
         Some(h) if h.len() >= 4 => h,
         _ => return false,
     };
     if &head[..4] != MAGIC {
         return false;
     }
-    if fa.Remain() < FIXED_HEADER_BYTES {
+    if fa.remain() < FIXED_HEADER_BYTES {
         return false;
     }
 
-    fa.Element_Begin("Impulse Tracker");
+    fa.element_begin("Impulse Tracker");
 
-    fa.Skip_B4("Signature");
+    fa.skip_b4("Signature");
 
     let song_name_bytes = fa.read_raw(26).to_vec();
     let song_name = trim_local_string(&song_name_bytes);
-    fa.Skip_L1("Unknown");
-    fa.Skip_L1("Unknown");
+    fa.skip_l1("Unknown");
+    fa.skip_l1("Unknown");
 
     let mut ord_num: int16u = 0;
     let mut ins_num: int16u = 0;
     let mut smp_num: int16u = 0;
     let mut pat_num: int16u = 0;
-    fa.Get_L2(&mut ord_num, "Orders count");
-    fa.Get_L2(&mut ins_num, "Instruments count");
-    fa.Get_L2(&mut smp_num, "Samples count");
-    fa.Get_L2(&mut pat_num, "Paterns count");
+    fa.get_l2(&mut ord_num, "Orders count");
+    fa.get_l2(&mut ins_num, "Instruments count");
+    fa.get_l2(&mut smp_num, "Samples count");
+    fa.get_l2(&mut pat_num, "Paterns count");
 
     let mut sw_version_minor: int8u = 0;
     let mut sw_version_major: int8u = 0;
     let mut version_minor: int8u = 0;
     let mut version_major: int8u = 0;
-    fa.Get_L1(&mut sw_version_minor, "Cwt/v (Minor)");
-    fa.Get_L1(&mut sw_version_major, "Cwt/v (Major)");
-    fa.Get_L1(&mut version_minor, "Cwt (Minor)");
-    fa.Get_L1(&mut version_major, "Cwt (Major)");
+    fa.get_l1(&mut sw_version_minor, "Cwt/v (Minor)");
+    fa.get_l1(&mut sw_version_major, "Cwt/v (Major)");
+    fa.get_l1(&mut version_minor, "Cwt (Minor)");
+    fa.get_l1(&mut version_major, "Cwt (Major)");
 
     let mut flags: int16u = 0;
-    fa.Get_L2(&mut flags, "Flags");
+    fa.get_l2(&mut flags, "Flags");
     let stereo = (flags & 0x0001) != 0;
-    fa.Skip_L2("Special");
-    fa.Skip_L1("Global volume");
-    fa.Skip_L1("Mix volume");
+    fa.skip_l2("Special");
+    fa.skip_l1("Global volume");
+    fa.skip_l1("Mix volume");
     let mut initial_speed: int8u = 0;
     let mut initial_tempo: int8u = 0;
-    fa.Get_L1(&mut initial_speed, "Initial Speed");
-    fa.Get_L1(&mut initial_tempo, "Initial Temp");
-    fa.Skip_L1("Panning separation between channels");
-    fa.Skip_L1("0");
-    fa.Skip_L2("Message Length");
-    fa.Skip_L4("Message Offset");
-    fa.Skip_L1("Unknown");
-    fa.Skip_L1("Unknown");
-    fa.Skip_L1("Unknown");
-    fa.Skip_L1("Unknown");
-    fa.Skip_L1("Unknown");
-    fa.Skip_Hexa(64, "Chnl Pan");
-    fa.Skip_Hexa(64, "Chnl Vol");
+    fa.get_l1(&mut initial_speed, "Initial Speed");
+    fa.get_l1(&mut initial_tempo, "Initial Temp");
+    fa.skip_l1("Panning separation between channels");
+    fa.skip_l1("0");
+    fa.skip_l2("Message Length");
+    fa.skip_l4("Message Offset");
+    fa.skip_l1("Unknown");
+    fa.skip_l1("Unknown");
+    fa.skip_l1("Unknown");
+    fa.skip_l1("Unknown");
+    fa.skip_l1("Unknown");
+    fa.skip_hexa(64, "Chnl Pan");
+    fa.skip_hexa(64, "Chnl Vol");
 
     // Variable tables: skip only what the buffer still holds, mirroring
     // the C++ reference which calls Skip_XX past the fixed header.
@@ -108,20 +108,20 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
     let ins_bytes = (ins_num as usize) * 4;
     let smp_bytes = (smp_num as usize) * 4;
     let pat_bytes = (pat_num as usize) * 4;
-    if fa.Remain() >= ord_bytes {
-        fa.Skip_Hexa(ord_bytes, "Orders");
+    if fa.remain() >= ord_bytes {
+        fa.skip_hexa(ord_bytes, "Orders");
     }
-    if fa.Remain() >= ins_bytes {
-        fa.Skip_Hexa(ins_bytes, "Instruments");
+    if fa.remain() >= ins_bytes {
+        fa.skip_hexa(ins_bytes, "Instruments");
     }
-    if fa.Remain() >= smp_bytes {
-        fa.Skip_Hexa(smp_bytes, "Samples");
+    if fa.remain() >= smp_bytes {
+        fa.skip_hexa(smp_bytes, "Samples");
     }
-    if fa.Remain() >= pat_bytes {
-        fa.Skip_Hexa(pat_bytes, "Patterns");
+    if fa.remain() >= pat_bytes {
+        fa.skip_hexa(pat_bytes, "Patterns");
     }
 
-    fa.Element_End();
+    fa.element_end();
 
     // Version strings mirror C++: minor is split as minor/16 . minor%16
     // (the high nibble is the decimal tens digit, low nibble the ones),
@@ -139,19 +139,19 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
         sw_version_minor % 16
     );
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "Impulse Tracker", false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", format_version, false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "Impulse Tracker", false);
+    fa.fill(StreamKind::General, 0, "Format_Version", format_version, false);
     if !song_name.is_empty() {
-        fa.Fill(StreamKind::General, 0, "Track", song_name, false);
+        fa.fill(StreamKind::General, 0, "Track", song_name, false);
     }
-    fa.Fill(StreamKind::General, 0, "Encoded_Application", encoded_app, false);
-    fa.Fill(StreamKind::General, 0, "BPM", initial_tempo.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "Encoded_Application", encoded_app, false);
+    fa.fill(StreamKind::General, 0, "BPM", initial_tempo.to_string(), false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", "Module", false);
-    fa.Fill(
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
+    fa.fill(
         StreamKind::Audio,
         0,
         "Channels",
@@ -260,8 +260,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_impulse_tracker(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("Impulse Tracker"));
         // 0x14 = 20 → 20/16=1, 20%16=4 → "1.4"
@@ -288,8 +288,8 @@ mod tests {
         );
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_impulse_tracker(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Channels").as_deref(), Some("1"));
         // Empty/NUL song name should not produce a Track field.
         assert!(g("Track").is_none());

@@ -46,25 +46,25 @@ struct DsdiffInfo {
 }
 
 pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
-    if fa.Remain() < 16 {
+    if fa.remain() < 16 {
         return false;
     }
     let mut magic: int32u = 0;
-    fa.Peek_B4(&mut magic);
+    fa.peek_b4(&mut magic);
     if magic != FOURCC_FRM8 {
         return false;
     }
 
-    fa.Element_Begin("FRM8");
+    fa.element_begin("FRM8");
     let mut frm8_id: int32u = 0;
-    fa.Get_C4(&mut frm8_id, "ID");
+    fa.get_c4(&mut frm8_id, "ID");
     let mut form_size: int64u = 0;
-    fa.Get_B8(&mut form_size, "Size");
+    fa.get_b8(&mut form_size, "Size");
     let mut form_type: int32u = 0;
-    fa.Get_C4(&mut form_type, "FormType");
+    fa.get_c4(&mut form_type, "FormType");
 
     if form_type != FOURCC_DSD_FORMTYPE {
-        fa.Element_End();
+        fa.element_end();
         return false;
     }
 
@@ -73,7 +73,7 @@ pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
     // Top-level chunks under the DSD form.
     walk_chunks(fa, &mut info, /*inside_prop=*/ false);
 
-    fa.Element_End();
+    fa.element_end();
 
     // If CMPR was absent, MediaInfoLib leaves Audio.Format empty; we
     // default to "DSD" because the form type IS "DSD " — that's the
@@ -92,130 +92,130 @@ pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
 /// sub-chunks rather than top-level FRM8 children — same on-disk
 /// shape, different semantics on a few IDs.
 fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
-    while fa.Remain() >= 12 {
+    while fa.remain() >= 12 {
         let mut chunk_id: int32u = 0;
-        fa.Get_C4(&mut chunk_id, "ChunkID");
+        fa.get_c4(&mut chunk_id, "ChunkID");
         let mut chunk_size: int64u = 0;
-        fa.Get_B8(&mut chunk_size, "ChunkSize");
+        fa.get_b8(&mut chunk_size, "ChunkSize");
 
         // Guard against malformed sizes that exceed the buffer.
-        let body_len = if (chunk_size as usize) > fa.Remain() {
-            fa.Remain()
+        let body_len = if (chunk_size as usize) > fa.remain() {
+            fa.remain()
         } else {
             chunk_size as usize
         };
-        let body_start = fa.Element_Offset();
+        let body_start = fa.element_offset();
         let body_end = body_start + body_len;
 
         if !inside_prop {
             match chunk_id {
                 FOURCC_PROP => {
-                    fa.Element_Begin("PROP");
+                    fa.element_begin("PROP");
                     // PROP starts with the 4-byte propType ("SND ").
-                    if fa.Remain() >= 4 {
+                    if fa.remain() >= 4 {
                         let mut prop_type: int32u = 0;
-                        fa.Get_C4(&mut prop_type, "propType");
+                        fa.get_c4(&mut prop_type, "propType");
                         if prop_type == FOURCC_SND {
                             // Recurse into sub-chunks until the PROP body ends.
                             let sub_end = body_end;
-                            while fa.Element_Offset() + 12 <= sub_end {
+                            while fa.element_offset() + 12 <= sub_end {
                                 parse_prop_subchunk(fa, info, sub_end);
                             }
                         }
                     }
                     // Skip any trailing bytes inside PROP we didn't consume.
-                    if fa.Element_Offset() < body_end {
-                        fa.Skip_Hexa(body_end - fa.Element_Offset(), "Unknown");
+                    if fa.element_offset() < body_end {
+                        fa.skip_hexa(body_end - fa.element_offset(), "Unknown");
                     }
-                    fa.Element_End();
+                    fa.element_end();
                 }
                 FOURCC_DSD_DATA => {
-                    fa.Element_Begin("DSD");
+                    fa.element_begin("DSD");
                     info.audio_stream_size = body_len as int64u;
-                    fa.Skip_Hexa(body_len, "DSDsoundData");
-                    fa.Element_End();
+                    fa.skip_hexa(body_len, "DSDsoundData");
+                    fa.element_end();
                 }
                 FOURCC_DST_DATA => {
-                    fa.Element_Begin("DST");
+                    fa.element_begin("DST");
                     info.audio_stream_size = body_len as int64u;
-                    fa.Skip_Hexa(body_len, "DSTsoundData");
-                    fa.Element_End();
+                    fa.skip_hexa(body_len, "DSTsoundData");
+                    fa.element_end();
                 }
                 FOURCC_FVER => {
-                    fa.Skip_Hexa(body_len, "FVER");
+                    fa.skip_hexa(body_len, "FVER");
                 }
                 _ => {
-                    fa.Skip_Hexa(body_len, "Unknown");
+                    fa.skip_hexa(body_len, "Unknown");
                 }
             }
         }
 
         // Realign past any malformed gap (defensive — body parsers above
         // should always advance to body_end exactly).
-        if fa.Element_Offset() < body_end {
-            fa.Skip_Hexa(body_end - fa.Element_Offset(), "Trailer");
+        if fa.element_offset() < body_end {
+            fa.skip_hexa(body_end - fa.element_offset(), "Trailer");
         }
 
         // Per-spec 1-byte pad when chunk size is odd.
-        if chunk_size % 2 == 1 && fa.Remain() >= 1 {
+        if chunk_size % 2 == 1 && fa.remain() >= 1 {
             let mut _pad: int8u = 0;
-            fa.Get_B1(&mut _pad, "pad");
+            fa.get_b1(&mut _pad, "pad");
         }
     }
 }
 
 fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usize) {
     let mut sub_id: int32u = 0;
-    fa.Get_C4(&mut sub_id, "ChunkID");
+    fa.get_c4(&mut sub_id, "ChunkID");
     let mut sub_size: int64u = 0;
-    fa.Get_B8(&mut sub_size, "ChunkSize");
+    fa.get_b8(&mut sub_size, "ChunkSize");
 
-    let max_body = sub_end.saturating_sub(fa.Element_Offset());
+    let max_body = sub_end.saturating_sub(fa.element_offset());
     let body_len = (sub_size as usize).min(max_body);
-    let body_start = fa.Element_Offset();
+    let body_start = fa.element_offset();
     let body_end = body_start + body_len;
 
     match sub_id {
         FOURCC_FS => {
             if body_len >= 4 {
                 let mut sr: int32u = 0;
-                fa.Get_B4(&mut sr, "sampleRate");
+                fa.get_b4(&mut sr, "sampleRate");
                 info.sample_rate = sr;
                 if body_len > 4 {
-                    fa.Skip_Hexa(body_len - 4, "Extra");
+                    fa.skip_hexa(body_len - 4, "Extra");
                 }
             } else {
-                fa.Skip_Hexa(body_len, "FS_truncated");
+                fa.skip_hexa(body_len, "FS_truncated");
             }
         }
         FOURCC_CHNL => {
             if body_len >= 2 {
                 let mut num_channels: int16u = 0;
-                fa.Get_B2(&mut num_channels, "numChannels");
+                fa.get_b2(&mut num_channels, "numChannels");
                 info.num_channels = num_channels;
                 // chID list follows (4 bytes each). We don't need them
                 // for the minimum-viable fields — skip to chunk end.
                 let consumed = 2usize;
                 if body_len > consumed {
-                    fa.Skip_Hexa(body_len - consumed, "chIDs");
+                    fa.skip_hexa(body_len - consumed, "chIDs");
                 }
             } else {
-                fa.Skip_Hexa(body_len, "CHNL_truncated");
+                fa.skip_hexa(body_len, "CHNL_truncated");
             }
         }
         FOURCC_CMPR => {
             if body_len >= 5 {
                 let mut compression_type: int32u = 0;
-                fa.Get_B4(&mut compression_type, "compressionType");
+                fa.get_b4(&mut compression_type, "compressionType");
                 let mut name_count: int8u = 0;
-                fa.Get_B1(&mut name_count, "Count");
+                fa.get_b1(&mut name_count, "Count");
                 let name_take = (name_count as usize).min(body_len.saturating_sub(5));
                 if name_take > 0 {
-                    fa.Skip_Hexa(name_take, "compressionName");
+                    fa.skip_hexa(name_take, "compressionName");
                 }
                 let consumed = 5 + name_take;
                 if body_len > consumed {
-                    fa.Skip_Hexa(body_len - consumed, "Extra");
+                    fa.skip_hexa(body_len - consumed, "Extra");
                 }
                 info.format = Some(match compression_type {
                     CMPR_DSD => "DSD",
@@ -223,36 +223,36 @@ fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usi
                     _ => "DSD",
                 });
             } else {
-                fa.Skip_Hexa(body_len, "CMPR_truncated");
+                fa.skip_hexa(body_len, "CMPR_truncated");
             }
         }
         _ => {
-            fa.Skip_Hexa(body_len, "Unknown");
+            fa.skip_hexa(body_len, "Unknown");
         }
     }
 
     // Defensive: ensure we land on body_end.
-    if fa.Element_Offset() < body_end {
-        fa.Skip_Hexa(body_end - fa.Element_Offset(), "Trailer");
+    if fa.element_offset() < body_end {
+        fa.skip_hexa(body_end - fa.element_offset(), "Trailer");
     }
 
     // Pad if odd-sized sub-chunk.
-    if sub_size % 2 == 1 && fa.Element_Offset() < sub_end {
+    if sub_size % 2 == 1 && fa.element_offset() < sub_end {
         let mut _pad: int8u = 0;
-        fa.Get_B1(&mut _pad, "pad");
+        fa.get_b1(&mut _pad, "pad");
     }
 }
 
 fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DSDIFF", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DSDIFF", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
+    fa.stream_prepare(StreamKind::Audio);
     if let Some(fmt) = info.format {
-        fa.Fill(StreamKind::Audio, 0, "Format", fmt, false);
+        fa.fill(StreamKind::Audio, 0, "Format", fmt, false);
     }
     if info.sample_rate > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "SamplingRate",
@@ -261,7 +261,7 @@ fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
         );
     }
     if info.num_channels > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "Channels",
@@ -272,12 +272,12 @@ fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
     // DSD is by construction 1-bit-per-sample-per-channel; this is the
     // defining property of Direct Stream Digital and the reason MediaInfo
     // doesn't carry a BitDepth field in CMPR.
-    fa.Fill(StreamKind::Audio, 0, "BitDepth", "1", false);
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitDepth", "1", false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
 
     if info.audio_stream_size > 0 {
-        fa.Fill(
+        fa.fill(
             StreamKind::Audio,
             0,
             "StreamSize",
@@ -286,7 +286,7 @@ fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
         );
     }
 
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 }
 
 #[cfg(test)]
@@ -356,8 +356,8 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dsdiff(&mut fa));
 
-        let g = |k: &str| fa.Retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
 
         assert_eq!(g("Format").as_deref(), Some("DSDIFF"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -392,7 +392,7 @@ mod tests {
         let buf = make_dsdiff(2_822_400, 2, &[b"SLFT", b"SRGT"], b"DST ", 512);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dsdiff(&mut fa));
-        let a = |k: &str| fa.Retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("Format").as_deref(), Some("DST"));
     }
 }

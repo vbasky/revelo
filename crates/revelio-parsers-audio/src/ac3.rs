@@ -31,7 +31,7 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
     let Some(fb_slice) = fa.peek_raw(8) else { return false };
     if fb_slice.len() < 8 {
         return false;
@@ -55,33 +55,33 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
     }
 
     // Bit-level read for the BSI fields after frmsizecod.
-    fa.Skip_Hexa(5, "sync_crc_fscod_frmsize");
-    fa.BS_Begin();
+    fa.skip_hexa(5, "sync_crc_fscod_frmsize");
+    fa.bs_begin();
     let mut bsid: zenlib::int8u = 0;
-    fa.Get_S1(5, &mut bsid, "bsid");
+    fa.get_s1(5, &mut bsid, "bsid");
     let mut bsmod: zenlib::int8u = 0;
-    fa.Get_S1(3, &mut bsmod, "bsmod");
+    fa.get_s1(3, &mut bsmod, "bsmod");
     let mut acmod: zenlib::int8u = 0;
-    fa.Get_S1(3, &mut acmod, "acmod");
+    fa.get_s1(3, &mut acmod, "acmod");
     // Conditional cmixlev (when center channel present).
     if (acmod & 0x01) != 0 && acmod != 0x01 {
         let mut _cmixlev: zenlib::int8u = 0;
-        fa.Get_S1(2, &mut _cmixlev, "");
+        fa.get_s1(2, &mut _cmixlev, "");
     }
     // Conditional surmixlev (when surround channel present).
     if (acmod & 0x04) != 0 {
         let mut _surmixlev: zenlib::int8u = 0;
-        fa.Get_S1(2, &mut _surmixlev, "");
+        fa.get_s1(2, &mut _surmixlev, "");
     }
     let mut dsurmod: zenlib::int8u = 0;
     if acmod == 0x02 {
-        fa.Get_S1(2, &mut dsurmod, "dsurmod");
+        fa.get_s1(2, &mut dsurmod, "dsurmod");
     }
     let mut lfeon: zenlib::int8u = 0;
-    fa.Get_S1(1, &mut lfeon, "lfeon");
+    fa.get_s1(1, &mut lfeon, "lfeon");
     let mut dialnorm: zenlib::int8u = 0;
-    fa.Get_S1(5, &mut dialnorm, "dialnorm");
-    fa.BS_End();
+    fa.get_s1(5, &mut dialnorm, "dialnorm");
+    fa.bs_end();
     let _ = bsmod;
 
     let sample_rate = FSCOD_TO_SAMPLE_RATE[fscod as usize];
@@ -214,24 +214,24 @@ fn fill_streams(
     lfeon: u8,
     dialnorm: u8,
 ) {
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", format, false);
-    fa.Fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.Fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", format, false);
+    fa.fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
+    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Audio);
-    fa.Fill(StreamKind::Audio, 0, "Format", format, false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.Fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.Fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.stream_prepare(StreamKind::Audio);
+    fa.fill(StreamKind::Audio, 0, "Format", format, false);
+    fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
+    fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
     if let Some((p, l)) = channel_layout {
-        fa.Fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
-        fa.Fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
+        fa.fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
+        fa.fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
     }
-    fa.Fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
 
     // MediaInfo derives the time/size fields in a chain rooted at a
     // millisecond Duration: Duration_ms = round(file_size·8000 / BitRate),
@@ -245,52 +245,52 @@ fn fill_streams(
         let frame_bytes = (bitrate_bps as u64) * samples_per_frame as u64 / (8 * sample_rate as u64);
         if frame_bytes > 0 {
             let frame_count = (file_size as u64) / frame_bytes;
-            fa.Fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
+            fa.fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
         }
         let duration_ms =
             ((file_size as f64) * 8000.0 / (bitrate_bps as f64)).round() as u64;
         let sampling_count = duration_ms * sample_rate as u64 / 1000;
         let stream_size =
             ((duration_ms as f64) * (bitrate_bps as f64) / 8000.0).round() as u64;
-        fa.Fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
         let frame_rate = (sample_rate as f64) / (samples_per_frame as f64);
-        fa.Fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
-        fa.Fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-        fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-        fa.Fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
         // General StreamSize = container overhead = file_size − elementary.
         // Only emitted when non-negative (the oracle omits it when the
         // derived StreamSize already exceeds the file, as for E-AC-3).
         if stream_size <= file_size as u64 {
-            fa.Fill(StreamKind::General, 0, "StreamSize",
+            fa.fill(StreamKind::General, 0, "StreamSize",
                 (file_size as u64 - stream_size).to_string(), true);
         }
         return fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
     }
-    fa.Fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.Fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
     fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
 }
 
 fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8, dialnorm: u8) {
     // ServiceKind defaults to "CM" (Complete Main) for typical AC-3 —
     // bsmod=0 means main service, complete description.
-    fa.Fill(StreamKind::Audio, 0, "ServiceKind", "CM", false);
+    fa.fill(StreamKind::Audio, 0, "ServiceKind", "CM", false);
     // <extra> section: BSI fields straight from the frame header.
     // dialnorm stored as the encoded 5-bit value, displayed as a
     // negative dBFS level.
-    fa.Fill(StreamKind::Audio, 0, "bsid", bsid.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "bsid", bsid.to_string(), false);
     let dialnorm_display = if dialnorm == 0 { -31i32 } else { -(dialnorm as i32) };
-    fa.Fill(StreamKind::Audio, 0, "dialnorm", dialnorm_display.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "dialnorm", dialnorm_display.to_string(), false);
     // dsurmod (Dolby Surround mode) is only present in the bitstream for
     // 2/0 stereo (acmod==2); the oracle omits it otherwise.
     if acmod == 0x02 {
-        fa.Fill(StreamKind::Audio, 0, "dsurmod", dsurmod.to_string(), false);
+        fa.fill(StreamKind::Audio, 0, "dsurmod", dsurmod.to_string(), false);
     }
-    fa.Fill(StreamKind::Audio, 0, "acmod", acmod.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "lfeon", lfeon.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "dialnorm_Average", dialnorm_display.to_string(), false);
-    fa.Fill(StreamKind::Audio, 0, "dialnorm_Minimum", dialnorm_display.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "acmod", acmod.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "lfeon", lfeon.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "dialnorm_Average", dialnorm_display.to_string(), false);
+    fa.fill(StreamKind::Audio, 0, "dialnorm_Minimum", dialnorm_display.to_string(), false);
 }
 
 #[cfg(test)]

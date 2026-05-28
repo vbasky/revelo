@@ -31,20 +31,20 @@ pub fn parse_psd(fa: &mut FileAnalyze) -> bool {
     let format = if version == 1 { "PSD" } else { "PSB" };
     let color_space = psd_color_mode(color_mode);
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", format, false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", format, false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
-    fa.Fill(StreamKind::Image, 0, "Format", format, false);
-    fa.Fill(StreamKind::Image, 0, "Format_Version", version.to_string(), false);
+    fa.stream_prepare(StreamKind::Image);
+    fa.fill(StreamKind::Image, 0, "Format", format, false);
+    fa.fill(StreamKind::Image, 0, "Format_Version", version.to_string(), false);
     if !color_space.is_empty() {
-        fa.Fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+        fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
     }
-    fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "BitDepth", bits.to_string(), false);
-    fa.Fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "BitDepth", bits.to_string(), false);
+    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
     true
 }
 
@@ -90,7 +90,7 @@ mod tests {
         let buf = make_psd_header(1, 800, 600, 8, 3, 3); // PSD, 800x600x8 RGB 3ch
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_psd(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("PSD"));
         assert_eq!(i("Format_Version").as_deref(), Some("1"));
         assert_eq!(i("Width").as_deref(), Some("800"));
@@ -104,7 +104,7 @@ mod tests {
         let buf = make_psd_header(2, 100, 50, 16, 4, 4);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_psd(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("PSB"));
         assert_eq!(i("ColorSpace").as_deref(), Some("CMYK"));
         assert_eq!(i("BitDepth").as_deref(), Some("16"));

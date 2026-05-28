@@ -32,7 +32,7 @@ const TYPE_MPLS: u32 = u32::from_be_bytes(*b"MPLS");
 const TYPE_CLPI: u32 = u32::from_be_bytes(*b"HDMV");
 
 pub fn parse_bdmv(fa: &mut FileAnalyze) -> bool {
-    let header = match fa.peek_raw(fa.Remain().min(HEADER_SIZE)) {
+    let header = match fa.peek_raw(fa.remain().min(HEADER_SIZE)) {
         Some(b) if b.len() >= HEADER_SIZE => b,
         _ => return false,
     };
@@ -63,10 +63,10 @@ pub fn parse_bdmv(fa: &mut FileAnalyze) -> bool {
         version_bytes[3] as char,
     );
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "BDMV", false);
-    fa.Fill(StreamKind::General, 0, "Format_Profile", profile, false);
-    fa.Fill(StreamKind::General, 0, "Format_Version", version, false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "BDMV", false);
+    fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
+    fa.fill(StreamKind::General, 0, "Format_Version", version, false);
     true
 }
 
@@ -87,7 +87,7 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bdmv(&mut fa));
         let g = |k: &str| {
-            fa.Retrieve(StreamKind::General, 0, k)
+            fa.retrieve(StreamKind::General, 0, k)
                 .map(|z| z.as_str().to_owned())
         };
         assert_eq!(g("Format").as_deref(), Some("BDMV"));
@@ -102,13 +102,13 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_bdmv(&mut fa));
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Profile")
+            fa.retrieve(StreamKind::General, 0, "Format_Profile")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("ClipInfo"),
         );
         assert_eq!(
-            fa.Retrieve(StreamKind::General, 0, "Format_Version")
+            fa.retrieve(StreamKind::General, 0, "Format_Version")
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("01.00"),

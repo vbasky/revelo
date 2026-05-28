@@ -49,33 +49,33 @@ pub fn parse_dds(fa: &mut FileAnalyze) -> bool {
         (0u32, [0u8; 4])
     };
 
-    let file_size = fa.Remain();
+    let file_size = fa.remain();
 
-    fa.Stream_Prepare(StreamKind::General);
-    fa.Fill(StreamKind::General, 0, "Format", "DDS", false);
-    fa.Fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.stream_prepare(StreamKind::General);
+    fa.fill(StreamKind::General, 0, "Format", "DDS", false);
+    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
 
-    fa.Stream_Prepare(StreamKind::Image);
+    fa.stream_prepare(StreamKind::Image);
     if (pf_flags & 0x4) != 0 {
         // FourCC-compressed: oracle uses the RIFF codec map which
         // resolves DXT1/DXT3/DXT5/DX10/etc to "DirectX TC".
-        fa.Fill(StreamKind::Image, 0, "Format", "DirectX TC", false);
+        fa.fill(StreamKind::Image, 0, "Format", "DirectX TC", false);
         let fcc_str: String = fourcc.iter().map(|&b| b as char).collect();
-        fa.Fill(StreamKind::Image, 0, "CodecID", fcc_str, false);
+        fa.fill(StreamKind::Image, 0, "CodecID", fcc_str, false);
     } else {
-        fa.Fill(StreamKind::Image, 0, "Format", "DDS", false);
+        fa.fill(StreamKind::Image, 0, "Format", "DDS", false);
     }
     if (flags & 0x4) != 0 {
-        fa.Fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
     }
     if (flags & 0x2) != 0 {
-        fa.Fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
     }
     if (flags & 0x800000) != 0 {
-        fa.Fill(StreamKind::Image, 0, "BitDepth", depth.to_string(), false);
+        fa.fill(StreamKind::Image, 0, "BitDepth", depth.to_string(), false);
     }
-    fa.Fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.Fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
+    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
     true
 }
 
@@ -110,7 +110,7 @@ mod tests {
         let buf = build_dds(256, 256, b"DXT1", true);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dds(&mut fa));
-        let i = |k: &str| fa.Retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
+        let i = |k: &str| fa.retrieve(StreamKind::Image, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(i("Format").as_deref(), Some("DirectX TC"));
         assert_eq!(i("Width").as_deref(), Some("256"));
         assert_eq!(i("Height").as_deref(), Some("256"));
@@ -122,6 +122,6 @@ mod tests {
         let buf = build_dds(64, 64, b"\0\0\0\0", false);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dds(&mut fa));
-        assert!(fa.Retrieve(StreamKind::Image, 0, "CodecID").is_none());
+        assert!(fa.retrieve(StreamKind::Image, 0, "CodecID").is_none());
     }
 }
