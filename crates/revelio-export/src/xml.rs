@@ -258,10 +258,15 @@ pub(crate) fn canonical_field_order(kind: StreamKind) -> &'static [&'static str]
             "DataSize",
             "FooterSize",
             "IsStreamable",
-            "File_Modified_Date",
-            "File_Modified_Date_Local",
+            // Oracle emits the content dates (Encoded/Tagged) before the
+            // filesystem modification dates, then the writing library /
+            // application.
             "Encoded_Date",
             "Tagged_Date",
+            "File_Modified_Date",
+            "File_Modified_Date_Local",
+            "Encoded_Library",
+            "Encoded_Library_String",
             "Encoded_Application",
             "Encoded_Application_Name",
         ],
