@@ -1193,7 +1193,7 @@ fn parse_mp4a_entry(fa: &mut FileAnalyze, entry_total: usize, track: &mut TrackI
         fa.Skip_Hexa(36, "sdv2_extra");
         consumed += 36;
     }
-    let mut remaining = start_remain.saturating_sub(consumed);
+    let remaining = start_remain.saturating_sub(consumed);
 
     // Audio sample entry "extension" region. The basic layout above is
     // an ISO BMFF V0/V1/V2 audio header; everything after is supposed
@@ -2537,11 +2537,13 @@ fn fill_streams(
                         false,
                     );
                 }
-                // Format_Settings_SBR: oracle only emits this when the
-                // bitstream carries an explicit SBR signal (AOT 5 = SBR,
-                // 29 = PS). Plain AAC LC (AOT 2) defaults to no-SBR
-                // implicitly and oracle omits the field.
-                let _ = aot;
+                // Format_Settings_SBR: AAC LC (AOT 2) is explicitly
+                // signalled as no-SBR — the oracle emits "No (Explicit)".
+                // (HE-AAC AOT 5/29 would be "Yes (Explicit)", but there's no
+                // sample to verify against, so only the LC case is emitted.)
+                if aot == 2 {
+                    fa.Fill(StreamKind::Audio, pos, "Format_Settings_SBR", "No (Explicit)", false);
+                }
             }
             // CodecID from esds: "mp4a-{OTI:hex lowercase}-{AOT}".
             if let (Some(oti), Some(aot)) = (track.object_type_indication, track.audio_object_type)
@@ -2595,10 +2597,12 @@ fn fill_streams(
                 };
                 fa.Fill(StreamKind::Audio, pos, "BitRate_Mode", br_mode, false);
                 fa.Fill(StreamKind::Audio, pos, "BitRate", br.to_string(), false);
-                if is_aac && track.avg_bitrate_bps.is_some() {
-                    // BitRate_Maximum = esds.maxBitrate field. Only
-                    // emit when esds was populated — when we computed
-                    // from stsz the max is meaningless.
+                // BitRate_Maximum = esds.maxBitrate, emitted only for VBR
+                // (avg != max). For CBR (avg == max) the oracle omits it.
+                if is_aac
+                    && matches!((track.avg_bitrate_bps, track.max_bitrate_bps),
+                        (Some(avg), Some(max)) if avg != max)
+                {
                     let max = track.max_bitrate_bps.unwrap_or(br);
                     fa.Fill(
                         StreamKind::Audio,
@@ -2790,11 +2794,13 @@ fn fill_streams(
                     false,
                 );
             }
-            // Default: oracle only emits this when the track is
-            // explicitly disabled (track_enabled flag = 0, typical for
-            // hint/sub tracks). The "enabled" default-case is implicit.
+            // Default: the oracle emits this for tracks in an alternate
+            // group — "Yes" for the enabled track, "No" when the
+            // track_enabled flag is clear (typical for hint/sub tracks).
             if track.track_enabled == Some(false) {
                 fa.Fill(StreamKind::Audio, pos, "Default", "No", false);
+            } else if track.alternate_group.unwrap_or(0) != 0 {
+                fa.Fill(StreamKind::Audio, pos, "Default", "Yes", false);
             }
             if let Some(group) = track.alternate_group {
                 if group != 0 {
