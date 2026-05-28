@@ -39,7 +39,7 @@ fn main() -> process::ExitCode {
     });
 
     if args.is_empty() {
-        eprintln!("Usage: revelio [--text|--json] <file-path>");
+        eprintln!("Usage: revelio [--xml|--json] <file-path>");
         return process::ExitCode::from(2);
     }
 
@@ -98,9 +98,9 @@ fn main() -> process::ExitCode {
             let output = if json_mode {
                 to_json(fa.streams(), path, env!("CARGO_PKG_VERSION"))
             } else if text_mode {
-                to_text(fa.streams(), path)
-            } else {
                 to_xml(fa.streams(), path, env!("CARGO_PKG_VERSION"))
+            } else {
+                to_text(fa.streams(), path)
             };
             println!("{output}");
             break;
