@@ -5,6 +5,7 @@ members = [
     "crates/revelio-cli",
     "crates/revelio-core",
     "crates/revelio-export",
+    "crates/revelio-parsers-archive",
     "crates/revelio-parsers-audio",
     "crates/revelio-parsers-container",
     "crates/revelio-parsers-image",

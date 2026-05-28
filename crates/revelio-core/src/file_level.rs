@@ -85,6 +85,30 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
         }
     }
 
+    // Propagate the primary video stream's frame rate + total frame
+    // count up to the General stream — MediaInfo surfaces them at the
+    // container level (e.g. big_buck_bunny General FrameRate=24.000,
+    // FrameCount=1440). Only when a video track exists and the parser
+    // hasn't already set them on General.
+    if fa.Count_Get(StreamKind::Video) > 0 {
+        if fa.Retrieve(StreamKind::General, 0, "FrameRate").is_none() {
+            if let Some(fr) = fa
+                .Retrieve(StreamKind::Video, 0, "FrameRate")
+                .map(|z| z.as_str().to_owned())
+            {
+                fa.Fill(StreamKind::General, 0, "FrameRate", fr, false);
+            }
+        }
+        if fa.Retrieve(StreamKind::General, 0, "FrameCount").is_none() {
+            if let Some(fc) = fa
+                .Retrieve(StreamKind::Video, 0, "FrameCount")
+                .map(|z| z.as_str().to_owned())
+            {
+                fa.Fill(StreamKind::General, 0, "FrameCount", fc, false);
+            }
+        }
+    }
+
     // General StreamSize = container overhead = FileSize − elementary
     // stream sizes. Skipped when elementary ≥ file_size (e.g. Ogg/Vorbis
     // reports a bitrate-derived StreamSize larger than the file).
