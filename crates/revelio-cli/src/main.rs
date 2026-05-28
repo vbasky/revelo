@@ -96,7 +96,7 @@ fn main() -> process::ExitCode {
             fill_file_level_fields(&mut fa, &info);
 
             let output = if json_mode {
-                to_json(fa.streams(), path)
+                to_json(fa.streams(), path, env!("CARGO_PKG_VERSION"))
             } else if text_mode {
                 to_text(fa.streams(), path)
             } else {

@@ -8,6 +8,7 @@ members = [
     "crates/revelio-parsers-audio",
     "crates/revelio-parsers-container",
     "crates/revelio-parsers-image",
+    "crates/revelio-parsers-tag",
     "crates/revelio-parsers-text",
     "crates/revelio-parsers-video",
     "crates/zenlib",

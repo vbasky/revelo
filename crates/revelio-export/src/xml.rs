@@ -125,7 +125,7 @@ fn push_field(out: &mut String, name: &str, raw_value: &str) {
 /// Per-field value transform. Most fields pass through; Duration-family
 /// fields are stored as integer milliseconds but emitted as decimal
 /// seconds with 3 fraction digits.
-fn render_field_value(name: &str, raw: &str) -> String {
+pub(crate) fn render_field_value(name: &str, raw: &str) -> String {
     if is_duration_field(name) {
         if let Ok(ms) = raw.parse::<i64>() {
             return format_milliseconds_as_seconds(ms);
@@ -180,7 +180,7 @@ fn xml_escape_attr(s: &str) -> String {
 /// Fields that get wrapped in `<extra>...</extra>` when present on a
 /// stream. Mirrors MediaInfoLib's `InfoOption_ShowInXml` flagging that
 /// segregates secondary / side-channel fields from the main schema.
-fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
+pub(crate) fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
     match kind {
         StreamKind::General => &["ErrorDetectionType"],
         StreamKind::Audio => &[
@@ -203,7 +203,7 @@ fn extra_field_order(kind: StreamKind) -> &'static [&'static str] {
 /// Canonical field order per stream kind. Mirrors MediaInfoLib's
 /// `MediaInfo_Config_PerPackage` order for the subset of fields we
 /// currently fill. Unknown fields fall through in insertion order.
-fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
+pub(crate) fn canonical_field_order(kind: StreamKind) -> &'static [&'static str] {
     match kind {
         StreamKind::General => &[
             "Count",
