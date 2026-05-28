@@ -82,3 +82,22 @@ cargo build -p revelio-cdylib --release
 **Container infrastructure:** RIFF/Ogg element tree depth wiring into parsers
 
 **Core:** Config option dispatch wiring (Config->Demux/Trace level activation), multi-file concatenation pipeline, duplicate/reference resolution in output
+
+**Blocked — unverifiable against the oracle:** `File_Apv` (APV), `File_Av2`
+(AV2), `File_Ancillary` (SMPTE 436 VANC), and `File_Umf` (Ikegami UMF) are
+intentionally **not** ported. Correctness here is defined as output-match
+against `mediainfo` v26.05, and none of these can produce a sample *and*
+oracle output to diff against:
+
+- **APV** — ffmpeg 8.x ships only a raw APV muxer, no encoder; mediainfo
+  v26.05 doesn't surface APV, so there's no oracle target.
+- **AV2** — no encoder exists anywhere yet; not in the v26.05 oracle.
+- **Ancillary** — only exists embedded in MXF (no standalone sample), and
+  is a ~1000-line VANC/CDP/AFD parser.
+- **Umf** — proprietary Ikegami format with no obtainable sample.
+
+Porting these would mean translating ~3.7k lines of C++ blind, with no way
+to run the differential harness — contrary to the project's
+harness-validated workflow. They become tractable only with real sample
+files (and, for APV/AV2, a newer mediainfo). DCP PKL, the one validatable
+holdout, is implemented (BYTE-EQUAL).
