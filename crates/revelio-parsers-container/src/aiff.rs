@@ -20,7 +20,7 @@
 //! 10 decimal digits.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Float80, Int16u, Int32u, Int8u};
+use zenlib::{Float80, Int8u, Int16u, Int32u};
 
 const FOURCC_FORM: Int32u = u32::from_be_bytes(*b"FORM");
 const FOURCC_AIFF: Int32u = u32::from_be_bytes(*b"AIFF");
@@ -240,13 +240,25 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
         fa.fill(StreamKind::Audio, 0, "Format", codec.format, false);
     }
     if let Some(end) = codec.endianness {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", end, false);
+        fa.fill(
+            StreamKind::Audio,
+            0,
+            "Format_Settings_Endianness",
+            end,
+            false,
+        );
     }
     if let Some(sign) = codec.sign {
         fa.fill(StreamKind::Audio, 0, "Format_Settings_Sign", sign, false);
     }
     if codec.is_float {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Floating", "Yes", false);
+        fa.fill(
+            StreamKind::Audio,
+            0,
+            "Format_Settings_Floating",
+            "Yes",
+            false,
+        );
     }
 
     // Duration as integer milliseconds, matching the C++ AfterComma=0 fill
@@ -291,7 +303,13 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
     // Sample rate stored as integer if it's whole; matches oracle's "48000"
     // not "48000.000" for typical AIFF.
     let sr_int: i64 = comm.sample_rate.round() as i64;
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sr_int.to_string(), false);
+    fa.fill(
+        StreamKind::Audio,
+        0,
+        "SamplingRate",
+        sr_int.to_string(),
+        false,
+    );
     fa.fill(
         StreamKind::Audio,
         0,
@@ -329,7 +347,8 @@ mod tests {
         let ssnd_chunk_size = 8 + data_size;
         let comm_chunk_size = 18u32;
 
-        let mut buf = Vec::with_capacity(12 + 8 + comm_chunk_size as usize + 8 + ssnd_chunk_size as usize);
+        let mut buf =
+            Vec::with_capacity(12 + 8 + comm_chunk_size as usize + 8 + ssnd_chunk_size as usize);
         buf.extend_from_slice(b"FORM");
         let form_size = 4 + (8 + comm_chunk_size) + (8 + ssnd_chunk_size);
         buf.extend_from_slice(&form_size.to_be_bytes());
@@ -376,8 +395,14 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
 
-        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
-        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let g = |key: &str| {
+            fa.retrieve(StreamKind::General, 0, key)
+                .map(|z| z.as_str().to_owned())
+        };
+        let a = |key: &str| {
+            fa.retrieve(StreamKind::Audio, 0, key)
+                .map(|z| z.as_str().to_owned())
+        };
 
         assert_eq!(g("Format").as_deref(), Some("AIFF"));
         assert_eq!(g("AudioCount").as_deref(), Some("1"));
@@ -458,8 +483,14 @@ mod tests {
         let buf = make_aifc(2, 48000, 16, 48000, b"sowt");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
-        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
-        let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| {
+            fa.retrieve(StreamKind::Audio, 0, key)
+                .map(|z| z.as_str().to_owned())
+        };
+        let g = |key: &str| {
+            fa.retrieve(StreamKind::General, 0, key)
+                .map(|z| z.as_str().to_owned())
+        };
         assert_eq!(g("Format").as_deref(), Some("AIFF"));
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Little"));
@@ -474,7 +505,10 @@ mod tests {
         let buf = make_aifc(1, 44100, 32, 44100, b"fl32");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
-        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| {
+            fa.retrieve(StreamKind::Audio, 0, key)
+                .map(|z| z.as_str().to_owned())
+        };
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Format_Settings_Floating").as_deref(), Some("Yes"));
         // No Endianness/Sign fills for float per task spec.
@@ -489,7 +523,10 @@ mod tests {
         let buf = make_aifc(2, 48000, 24, 48000, b"NONE");
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_aiff(&mut fa));
-        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        let a = |key: &str| {
+            fa.retrieve(StreamKind::Audio, 0, key)
+                .map(|z| z.as_str().to_owned())
+        };
         assert_eq!(a("Format").as_deref(), Some("PCM"));
         assert_eq!(a("Format_Settings_Endianness").as_deref(), Some("Big"));
         assert_eq!(a("Format_Settings_Sign").as_deref(), Some("Signed"));

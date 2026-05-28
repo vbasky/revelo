@@ -10,14 +10,38 @@ use crate::types::{Int8u, Int16u, Int32u, Int64u};
 
 const MASK: [u32; 33] = [
     0x0000_0000,
-    0x0000_0001, 0x0000_0003, 0x0000_0007, 0x0000_000f,
-    0x0000_001f, 0x0000_003f, 0x0000_007f, 0x0000_00ff,
-    0x0000_01ff, 0x0000_03ff, 0x0000_07ff, 0x0000_0fff,
-    0x0000_1fff, 0x0000_3fff, 0x0000_7fff, 0x0000_ffff,
-    0x0001_ffff, 0x0003_ffff, 0x0007_ffff, 0x000f_ffff,
-    0x001f_ffff, 0x003f_ffff, 0x007f_ffff, 0x00ff_ffff,
-    0x01ff_ffff, 0x03ff_ffff, 0x07ff_ffff, 0x0fff_ffff,
-    0x1fff_ffff, 0x3fff_ffff, 0x7fff_ffff, 0xffff_ffff,
+    0x0000_0001,
+    0x0000_0003,
+    0x0000_0007,
+    0x0000_000f,
+    0x0000_001f,
+    0x0000_003f,
+    0x0000_007f,
+    0x0000_00ff,
+    0x0000_01ff,
+    0x0000_03ff,
+    0x0000_07ff,
+    0x0000_0fff,
+    0x0000_1fff,
+    0x0000_3fff,
+    0x0000_7fff,
+    0x0000_ffff,
+    0x0001_ffff,
+    0x0003_ffff,
+    0x0007_ffff,
+    0x000f_ffff,
+    0x001f_ffff,
+    0x003f_ffff,
+    0x007f_ffff,
+    0x00ff_ffff,
+    0x01ff_ffff,
+    0x03ff_ffff,
+    0x07ff_ffff,
+    0x0fff_ffff,
+    0x1fff_ffff,
+    0x3fff_ffff,
+    0x7fff_ffff,
+    0xffff_ffff,
 ];
 
 #[derive(Clone, Copy)]
@@ -58,8 +82,7 @@ impl<'a> BitStream<'a> {
     }
 
     pub fn Attach(&mut self, buffer: &'a [u8]) {
-        if std::ptr::eq(buffer.as_ptr(), self.buffer.as_ptr())
-            && buffer.len() == self.buffer.len()
+        if std::ptr::eq(buffer.as_ptr(), self.buffer.as_ptr()) && buffer.len() == self.buffer.len()
         {
             return;
         }
@@ -189,10 +212,18 @@ impl<'a> BitStream<'a> {
         }
     }
 
-    pub fn SkipB(&mut self) { self.Skip(1) }
-    pub fn Skip1(&mut self, how_many: usize) { self.Skip(how_many) }
-    pub fn Skip2(&mut self, how_many: usize) { self.Skip(how_many) }
-    pub fn Skip4(&mut self, how_many: usize) { self.Skip(how_many) }
+    pub fn SkipB(&mut self) {
+        self.Skip(1)
+    }
+    pub fn Skip1(&mut self, how_many: usize) {
+        self.Skip(how_many)
+    }
+    pub fn Skip2(&mut self, how_many: usize) {
+        self.Skip(how_many)
+    }
+    pub fn Skip4(&mut self, how_many: usize) {
+        self.Skip(how_many)
+    }
 
     pub fn Skip8(&mut self, how_many: usize) {
         if how_many > 64 {
@@ -211,12 +242,24 @@ impl<'a> BitStream<'a> {
         v
     }
 
-    pub fn PeekB(&mut self) -> bool { self.Peek(1) != 0 }
-    pub fn Peek1(&mut self, how_many: usize) -> Int8u { self.Peek(how_many) as Int8u }
-    pub fn Peek2(&mut self, how_many: usize) -> Int16u { self.Peek(how_many) as Int16u }
-    pub fn Peek3(&mut self, how_many: usize) -> Int32u { self.Peek(how_many) }
-    pub fn Peek4(&mut self, how_many: usize) -> Int32u { self.Peek(how_many) }
-    pub fn Peek8(&mut self, how_many: usize) -> Int64u { self.Peek(how_many) as Int64u }
+    pub fn PeekB(&mut self) -> bool {
+        self.Peek(1) != 0
+    }
+    pub fn Peek1(&mut self, how_many: usize) -> Int8u {
+        self.Peek(how_many) as Int8u
+    }
+    pub fn Peek2(&mut self, how_many: usize) -> Int16u {
+        self.Peek(how_many) as Int16u
+    }
+    pub fn Peek3(&mut self, how_many: usize) -> Int32u {
+        self.Peek(how_many)
+    }
+    pub fn Peek4(&mut self, how_many: usize) -> Int32u {
+        self.Peek(how_many)
+    }
+    pub fn Peek8(&mut self, how_many: usize) -> Int64u {
+        self.Peek(how_many) as Int64u
+    }
 
     pub fn BookMarkPos(&mut self, set: bool) {
         if set {
@@ -236,7 +279,7 @@ impl<'a> BitStream<'a> {
         }
     }
 
-    pub fn Remain(&self) -> Int32u {
+    pub fn remain(&self) -> Int32u {
         (self.buffer_size + self.last_byte_size) as Int32u
     }
 
