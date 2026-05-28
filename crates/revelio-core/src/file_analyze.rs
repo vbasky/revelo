@@ -300,6 +300,18 @@ impl<'a> FileAnalyze<'a> {
         Some(&self.buffer[self.element_offset..self.element_offset + n])
     }
 
+    /// Read up to `n` bytes starting at absolute file offset `at`, ignoring
+    /// the cursor. Returns the available slice (possibly shorter than `n`
+    /// if it runs past EOF), or `None` if `at` is out of bounds. Used to
+    /// reach into mdat sample data at offsets recorded from stco/co64.
+    pub fn peek_raw_at(&self, at: usize, n: usize) -> Option<&[u8]> {
+        if at >= self.buffer.len() {
+            return None;
+        }
+        let end = (at + n).min(self.buffer.len());
+        Some(&self.buffer[at..end])
+    }
+
     fn skip(&mut self, n: usize) {
         if self.Remain() < n {
             self.truncated = true;

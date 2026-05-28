@@ -34,7 +34,7 @@ pub mod afd_bar_data;
 pub mod h263;
 pub mod mpeg4v;
 
-pub use avc::{parse_avc, parse_sps as parse_avc_sps, AvcInfo, EncoderInfo, parse_x264_style_encoder, gop_detect};
+pub use avc::{parse_avc, parse_sps as parse_avc_sps, AvcInfo, EncoderInfo, parse_x264_style_encoder, extract_encoder_from_avc_sei_nalus, gop_detect};
 pub use hevc::{parse_hevc, parse_hevc_sps, extract_encoder_from_sei_nalus, HevcInfo};
 pub use theora::parse_theora;
 pub use vp8::parse_vp8;

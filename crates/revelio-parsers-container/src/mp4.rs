@@ -48,6 +48,8 @@ const BOX_DATA: int32u = u32::from_be_bytes(*b"data");
 const BOX_KEYS: int32u = u32::from_be_bytes(*b"keys");
 const BOX_MDAT: int32u = u32::from_be_bytes(*b"mdat");
 const BOX_TKHD: int32u = u32::from_be_bytes(*b"tkhd");
+const BOX_STCO: int32u = u32::from_be_bytes(*b"stco");  // 32-bit chunk offsets
+const BOX_CO64: int32u = u32::from_be_bytes(*b"co64");  // 64-bit chunk offsets
 
 /// iTunes-style `©too` (tool/encoder) metadata key.
 const ITUNES_KEY_TOOL: int32u = 0xA9_74_6F_6F;
@@ -226,6 +228,12 @@ struct TrackInfo {
     // Encoder info extracted from AVC/HEVC SEI user_data_unregistered
     // message (library + name/version/settings sub-fields).
     encoder_info: Option<revelio_parsers_video::EncoderInfo>,
+    /// Absolute file offset of this track's first chunk (stco/co64 entry 0)
+    /// — start of the first sample, used to locate AVC SEI in mdat.
+    first_chunk_offset: Option<u64>,
+    /// NAL length prefix size from avcC's lengthSizeMinusOne (+1); 4 is the
+    /// near-universal default when absent.
+    avc_nal_length_size: Option<u8>,
     /// CABAC mode from avcC's PPS entry — true if entropy_coding_mode_flag.
     avc_cabac: Option<bool>,
     /// tkhd matrix-derived rotation, in degrees (clockwise, 0/90/180/270).
@@ -326,8 +334,62 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
         mdat_size,
         moov_offset,
     };
+    // AVC encoder SEI lives in the first mdat sample, not avcC — scan for
+    // it before emitting (HEVC already gets its SEI from the hvcC arrays).
+    scan_avc_encoder_sei(fa, &mut tracks);
     fill_streams(fa, &ftyp_brands, &tracks, &movie, &layout);
     true
+}
+
+/// For AVC video tracks lacking encoder info, read the first sample from
+/// mdat (located via stco/co64 + stsz entry 0) and pull the x264-style
+/// encoder string out of its SEI user_data_unregistered NAL.
+fn scan_avc_encoder_sei(fa: &FileAnalyze, tracks: &mut [TrackInfo]) {
+    for track in tracks.iter_mut() {
+        if track.video_format != Some("AVC") || track.encoder_info.is_some() {
+            continue;
+        }
+        let (Some(off), Some(size)) = (track.first_chunk_offset, track.first_sample_size) else {
+            continue;
+        };
+        let len_size = track.avc_nal_length_size.unwrap_or(4) as usize;
+        let Some(sample) = fa.peek_raw_at(off as usize, size as usize) else {
+            continue;
+        };
+        let sei_nalus = collect_avc_sei_nalus(sample, len_size);
+        if sei_nalus.is_empty() {
+            continue;
+        }
+        if let Some(enc) = revelio_parsers_video::extract_encoder_from_avc_sei_nalus(&sei_nalus) {
+            track.encoder_info = Some(enc);
+        }
+    }
+}
+
+/// Walk length-prefixed NAL units in an MP4 sample and return the SEI ones
+/// (AVC nal_unit_type 6).
+fn collect_avc_sei_nalus(sample: &[u8], len_size: usize) -> Vec<&[u8]> {
+    let mut out = Vec::new();
+    if len_size == 0 || len_size > 4 {
+        return out;
+    }
+    let mut pos = 0usize;
+    while pos + len_size <= sample.len() {
+        let mut nalu_len = 0usize;
+        for i in 0..len_size {
+            nalu_len = (nalu_len << 8) | sample[pos + i] as usize;
+        }
+        pos += len_size;
+        if nalu_len == 0 || pos + nalu_len > sample.len() {
+            break;
+        }
+        let nal = &sample[pos..pos + nalu_len];
+        if !nal.is_empty() && (nal[0] & 0x1F) == 6 {
+            out.push(nal);
+        }
+        pos += nalu_len;
+    }
+    out
 }
 
 struct BoxLayout {
@@ -525,6 +587,20 @@ fn handle_inner(
                 parse_stsz(fa, box_size, track);
             } else {
                 fa.Skip_Hexa(box_size.saturating_sub(8), "stsz");
+            }
+        }
+        BOX_STCO => {
+            if let Some(track) = tracks.last_mut() {
+                parse_stco(fa, box_size, track, false);
+            } else {
+                fa.Skip_Hexa(box_size.saturating_sub(8), "stco");
+            }
+        }
+        BOX_CO64 => {
+            if let Some(track) = tracks.last_mut() {
+                parse_stco(fa, box_size, track, true);
+            } else {
+                fa.Skip_Hexa(box_size.saturating_sub(8), "co64");
             }
         }
         BOX_STTS => {
@@ -1436,6 +1512,7 @@ fn parse_avcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         return;
     }
     // body[4] = lengthSizeMinusOne (low 2 bits); body[5] = numOfSPS (low 5 bits)
+    track.avc_nal_length_size = Some((body[4] & 0x03) + 1);
     let num_sps = (body[5] & 0x1F) as usize;
     let mut pos = 6;
     let mut first_sps: Option<&[u8]> = None;
@@ -1844,6 +1921,38 @@ fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     let consumed = fa.Element_Offset() - start;
     if consumed < body_size {
         fa.Skip_Hexa(body_size - consumed, "stsz_tail");
+    }
+}
+
+/// Parse stco (32-bit) / co64 (64-bit) chunk-offset tables. We only need
+/// the first entry — the absolute file offset of the track's first chunk,
+/// i.e. where its first sample begins — to locate AVC SEI in mdat.
+fn parse_stco(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo, is_co64: bool) {
+    let body_size = box_size.saturating_sub(8);
+    let entry_size = if is_co64 { 8 } else { 4 };
+    if body_size < 8 + entry_size {
+        fa.Skip_Hexa(body_size, "stco");
+        return;
+    }
+    let start = fa.Element_Offset();
+    fa.Skip_Hexa(4, "version_flags");
+    let mut entry_count: int32u = 0;
+    fa.Get_B4(&mut entry_count, "entry_count");
+    if entry_count > 0 {
+        let offset = if is_co64 {
+            let mut v: int64u = 0;
+            fa.Get_B8(&mut v, "chunk_offset");
+            v
+        } else {
+            let mut v: int32u = 0;
+            fa.Get_B4(&mut v, "chunk_offset");
+            v as int64u
+        };
+        track.first_chunk_offset = Some(offset);
+    }
+    let consumed = fa.Element_Offset() - start;
+    if consumed < body_size {
+        fa.Skip_Hexa(body_size - consumed, "stco_tail");
     }
 }
 

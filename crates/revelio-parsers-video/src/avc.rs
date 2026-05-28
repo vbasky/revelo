@@ -426,10 +426,12 @@ pub fn parse_x264_style_encoder(raw: &str) -> EncoderInfo {
         if segment.starts_with("options: ") {
             let opts_raw = &segment["options: ".len()..];
             let tokens: Vec<&str> = opts_raw.split_whitespace().collect();
+            // Drop the encoder's fps=/bitdepth= tokens (the oracle omits
+            // them). Do NOT drop digit-leading tokens — "8x8dct=1" is a
+            // real x264 option that begins with a digit.
             let filtered: Vec<&str> = tokens.iter()
                 .filter(|t| {
                     !t.is_empty()
-                    && !t.starts_with(|c: char| c.is_ascii_digit())
                     && !t.starts_with("fps=")
                     && !t.starts_with("bitdepth=")
                 })
@@ -868,9 +870,12 @@ fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
         }
 
         if payload_type == 5 {
-            // user_data_unregistered: 16-byte UUID + string
+            // user_data_unregistered: 16-byte UUID + string. payload_size
+            // already counts the UUID, so the available-bytes guard must
+            // NOT add uuid_len on top (doing so overflowed for any real
+            // x264/x265 SEI and made extraction silently fail).
             let uuid_len = 16 * 8; // 16 bytes
-            if off + uuid_len + payload_size as usize * 8 > clean.len() * 8 {
+            if payload_size < 16 || off + payload_size as usize * 8 > clean.len() * 8 {
                 return None;
             }
             skip_bits(&mut off, uuid_len);
@@ -900,6 +905,19 @@ fn extract_encoder_from_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
         }
     }
 
+    None
+}
+
+/// Extract x264/eavc encoder info from a set of AVC SEI NAL units (each
+/// without start code / length prefix, raw NAL bytes). Used by container
+/// parsers (MP4) that locate the first-frame SEI in mdat — the avcC config
+/// box carries only SPS/PPS, so the encoder SEI lives in the sample data.
+pub fn extract_encoder_from_avc_sei_nalus(sei_nalus: &[&[u8]]) -> Option<EncoderInfo> {
+    for nal in sei_nalus {
+        if let Some(enc) = extract_encoder_from_sei(nal) {
+            return Some(enc);
+        }
+    }
     None
 }
 

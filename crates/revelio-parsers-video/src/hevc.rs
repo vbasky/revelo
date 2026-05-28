@@ -379,8 +379,23 @@ fn extract_encoder_from_hevc_sei(nal_unit: &[u8]) -> Option<EncoderInfo> {
             if !s.is_empty() {
                 let info = match uuid_hi {
                     0x2CA2DE09B51747DB => {
+                        // x265's SEI string is "x265 (build NNN) - <version>
+                        // - <desc> - … - options: …". parse_x264_style_encoder
+                        // pulls the right version into .version but leaves the
+                        // "(build NNN)" wrapper in .library. MediaInfo reports
+                        // library as "x265 - <version>", name "x265", version
+                        // the bare version — rebuild to match.
                         let info = parse_x264_style_encoder(s);
-                        EncoderInfo { name: Some("x265".to_owned()), version: info.name.clone(), ..info }
+                        let library = match &info.version {
+                            Some(v) => format!("x265 - {v}"),
+                            None => info.library.clone(),
+                        };
+                        EncoderInfo {
+                            library,
+                            name: Some("x265".to_owned()),
+                            version: info.version,
+                            settings: info.settings,
+                        }
                     }
                     0x427FCC9BB8924821 => {
                         let info = parse_x264_style_encoder(s);
