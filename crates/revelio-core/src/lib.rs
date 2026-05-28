@@ -22,3 +22,30 @@ pub use file_level::{fill_file_level_fields, FileLevelInfo};
 pub use stream::{Stream, StreamCollection, StreamKind};
 
 pub mod timecode;
+/// Container-level reference file tracker.
+pub mod reference {
+    use std::collections::HashMap;
+    pub struct ReferenceFile {
+        pub path: String,
+        pub format: &'static str,
+        pub stream_id: u64,
+    }
+    pub struct ReferenceTracker {
+        pub files: Vec<ReferenceFile>,
+    }
+    impl ReferenceTracker {
+        pub fn new() -> Self { Self { files: Vec::new() } }
+        pub fn add(&mut self, path: &str, format: &'static str, stream_id: u64) {
+            self.files.push(ReferenceFile { path: path.to_string(), format, stream_id });
+        }
+        pub fn count(&self) -> usize { self.files.len() }
+    }
+    #[cfg(test)] mod tests {
+        use super::*;
+        #[test] fn test_ref() {
+            let mut t = ReferenceTracker::new();
+            t.add("extra.m2ts", "BDAV", 0x1011);
+            assert_eq!(t.count(), 1);
+        }
+    }
+}

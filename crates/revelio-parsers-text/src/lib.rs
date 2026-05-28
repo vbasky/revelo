@@ -31,10 +31,20 @@ pub mod teletext;
 pub mod scc;
 pub mod timed_text;
 pub mod webvtt;
+pub mod pdf;
+pub mod sdp;
+pub mod pac;
+pub mod dtvcc_transport;
+pub mod scte20;
 
 pub use ttml::parse_ttml;
 pub use teletext::parse_teletext;
 pub use scc::parse_scc;
 pub use timed_text::parse_timed_text;
 pub use webvtt::parse_webvtt;
+pub use pdf::parse_pdf;
+pub use sdp::parse_sdp;
+pub use pac::parse_pac;
+pub use dtvcc_transport::parse_dtvcc_transport;
+pub use scte20::parse_scte20;
 

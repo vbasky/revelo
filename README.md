@@ -9,15 +9,15 @@ C++ `mediainfo` CLI.
 
 ## Status
 
-**174 parsers** registered across 8 domains, **530 tests** passing.
+**185 parsers** registered across 8 domains, **541 tests** passing.
 
 | Category | Parsers | Coverage | Formats |
 |---|---|---|---|
 | Containers | 42 | 98% | MP4/MOV, MKV/WebM, AVI, MPEG-TS, MPEG-PS, WAV, AIFF, Ogg, FLV, MXF, +32 more |
-| Audio | 50 | 86% | AAC, MP3, AC-3/4, DTS/DTS-UHD, FLAC, Opus, Vorbis, TrueHD, Dolby E, PCM, CELT, MPEG-H 3D, SMPTE ST 302/331/337, +35 more |
+| Audio | 56 | 91% | AAC/ADTS, MP3, AC-3/4, DTS/DTS-UHD, FLAC, Opus, Vorbis, TrueHD, Dolby E, PCM, ADM, DolbyAudioMetadata, PcmVob, PcmM2ts, MGA, CELT, MPEG-H 3D, SMPTE ST 302/331/337, +35 more |
 | Video | 28 | 90% | AVC, HEVC, VVC, AV1, VP8/VP9, MPEG-2, VC-1, VC-3/DNxHD, ProRes, FFV1, H.263, MPEG-4V, Theora, Y4M, Canopus HQ, CineForm, Fraps, FLIC, HuffYUV, Lagarith, AVS/AVS3, Dirac, HDR Vivid, Dolby Vision, AIC, AFD/Bar |
 | Image | 19 | 100% | JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, PSD, DPX, EXR, DDS, BPG, PCX, TGA, ArriRaw, Amiga Icon, RLE, AVIF Gain Map, HEIF |
-| Text/Subtitles | 16 | 80% | SubRip, TTML, Timed Text, PGS, DVB Subtitle, Teletext, EIA-608/708, CDP, SCC, N19, Kate, CMML, ARIB STD-B24/B37, OtherText, WebVTT |
+| Text/Subtitles | 21 | 90% | SubRip, TTML, Timed Text, PGS, DVB Subtitle, Teletext, EIA-608/708, CDP, SCC, N19, PDF, SDP, PAC, DTvCC Transport, SCTE-20, Kate, CMML, ARIB STD-B24/B37, OtherText, WebVTT |
 | Archives | 11 | 100% | ZIP, 7z, RAR, TAR, gzip, bzip2, ACE, ISO 9660, ELF, Mach-O, MZ/PE |
 | Tags | 12 | 86% | ID3v1/v2, APE Tag, Vorbis Comment, Lyrics3, EXIF, XMP, ICC, IIM/IPTC, C2PA, PropertyList, SphericalVideo |
 | Reader | 4 | 100% | File, Directory, HTTP, MMS |
@@ -47,9 +47,9 @@ estimates — each kind has ~60-120 possible fields and the set varies by format
 
 | Kind | Fields | Coverage | Known Gaps |
 |------|--------|----------|-------------|
-| General | ~80 | 85% | `Format_Profile` (Base Media vs Version 2), `Encoded_Library_Name`, `Encoded_Library_Version`, `Encoded_Library_Settings` (not populated in all parser paths) |
+| General | ~80 | 87% | `Encoded_Library_Name`, `Encoded_Library_Version`, `Encoded_Library_Settings` (not populated in all parser paths) |
 | Video | ~70 | 78% | `Encoded_Library`/`_Name`/`_Version`/`_Settings` missing from text display and AVC-in-MP4 path; `Bits_Pixel_Frame`, `FrameRate_Mode_Original`, `BufferSize`, `BitRate_Maximum` (Video) never filled |
-| Audio | ~60 | 82% | `Compression_Ratio`, `ReplayGain_*` never filled; sampling count / frame count off by 1 in some MP4 files; `BufferSize` never filled |
+| Audio | ~60 | 85% | `Compression_Ratio`, `ReplayGain_*` never filled; `BufferSize` never filled |
 | Text | ~30 | 90% | Minor — most subtitle field coverage complete |
 | Image | ~25 | 85% | ICC profile parse → `ICC_*` fields exposed in XML but not in text display |
 | Other/Menu | ~25 | 70% | Chapter names/durations, timecode metadata not exposed in text display |
@@ -73,14 +73,18 @@ estimates — each kind has ~60-120 possible fields and the set varies by format
 
 **Parser fills only partially:**
 - `Encoded_Library_Name`/`_Version`/`_Settings` for HEVC — `extract_encoder_from_sei_nalus` returns all three but only `.library` is stored
-- `Format_Profile` for MP4 General — always emits "Base Media", missing " / Version 2" suffix from ftyp minor version
 - AVC-in-MP4 `Encoded_Library` — x264 SEI extracted only in Annex-B path, not in `avcC` path
 
 **Numeric precision (off by ≤1 unit):**
-- SamplingCount off by 16 (1465280 vs 1465296) — MP4 sample table vs audio frame count
-- FrameCount off by 1 (1430 vs 1431) — same root cause
-- Duration off by −1 ms (30.526 vs 30.527) — derived from frame count × frame duration rounding
-- Opus preskip delay: 6 ms vs 7 ms — `312/48000` rounding at `{:.3}`
+- ~~SamplingCount off by 16 (1465280 vs 1465296)~~ — **fixed** with rounded mvhd→ms conversion
+- ~~FrameCount off by 1 (1430 vs 1431)~~ — **fixed** with round-to-nearest frame count
+- ~~Duration off by −1 ms (30.526 vs 30.527)~~ — **fixed** with round-to-nearest mvhd→ms conversion
+- ~~Audio BitRate off by 5 bps (160000 vs 160005)~~ — **fixed** with general_duration_ms-based derivation
+- ~~Audio BitRate_Mode VBR→CBR~~ — **fixed** with avg/max bitrate comparison
+- ~~Audio StreamSize off by 427 B (610133 vs 610560)~~ — **fixed** by not trimming first sample size
+- ~~SamplingRate precision (12812241 vs 12812244 in 44100 Hz files)~~ — **fixed** with rounded duration×rate
+
+~~Strikethrough~~ = fixed in current code.
 
 **Text renderers missing:**
 - `Bits_Pixel_Frame` — "Bits/(Pixel*Frame)" label, humanised to 3 decimal places
@@ -113,10 +117,10 @@ cargo build -p revelio-cdylib --release
 
 ## Pending
 
-**Audio (remainder):** ADM, Dolby Audio Metadata, PcmVob, PcmM2ts, MGA, MPEG-4 AAC full, ChannelSplitting/Grouping depth
+**Audio (remainder):** ChannelSplitting/Grouping depth
 
-**Text (remainder):** PDF, SDP, PAC, DTvCC Transport, SCTE-20
+**Text (remainder):** None — all text formats covered
 
-**Container infrastructure:** RIFF elements helper, Ogg sub-elements, MPEG-4 descriptors, PSI table depth, IBI creation, reference files
+**Container infrastructure:** RIFF element tree depth, Ogg sub-elements, MPEG-4 descriptor chain depth
 
-**Core:** MediaInfo_Config field ordering, trace/demux events, multi-file support, MIME type detection, duplicate/reference parsing
+**Core:** MediaInfo_Config field ordering, trace/demux events, multi-file concatenation, duplicate/reference parsing orchestration

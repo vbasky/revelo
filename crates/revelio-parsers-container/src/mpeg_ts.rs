@@ -170,7 +170,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                     } else if is_pmt {
                         if let Some(prog) = programs_by_pmt_pid.get_mut(&pid) {
                             if prog.streams.is_empty() {
-                                parse_pmt(&section, prog);
+                        parse_pmt(&section, prog);
                             }
                         }
                     }

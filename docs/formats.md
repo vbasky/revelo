@@ -128,9 +128,28 @@ VP9 CodecPrivate (vpcC) → profile, bit_depth, chroma_subsampling, color_space.
 
 ## Audio Codecs
 
-### AAC (Advanced Audio Coding)
+### AAC / ADTS (Advanced Audio Coding)
 **Spec:** ISO/IEC 14496-3, ISO/IEC 13818-7
-**Detection:** ADTS: sync `0xFFF` → profile, SR, channels. MP4 esds: AudioSpecificConfig.
+**Detection:** Raw ADTS: sync `0xFFF` → MPEG version, layer, profile, SR, channels.
+MP4 esds: AudioSpecificConfig → audioObjectType, frequency index, channel config.
+**Output:** CodecID, SamplingRate, Channels, Format_Profile (LC/HE-AAC/HE-AACv2), SBR/PS signaling.
+
+### ADM (Audio Definition Model)
+**Spec:** SMPTE ST 2076
+**Detection:** `ADM` magic or `axml` chunk. Next-gen broadcast audio with object-based,
+scene-based, and channel-based representations.
+
+### Dolby Audio Metadata
+**Spec:** Dolby DAM format. Detection: RIFF `DAM` or `DAMG` form types, or raw `DAM` magic.
+
+### PcmVob
+**Detection:** `DVD` magic or `LPCM` chunk. Big-endian PCM in DVD-Video VOB files.
+
+### PcmM2ts
+**Detection:** `HDMV` magic. Big-endian LPCM embedded in Blu-ray M2TS streams.
+
+### MGA (MPEG-4 General Audio)
+**Detection:** `MGA` magic. Generic MPEG-4 audio container (pre-AAC era). MP4 esds: AudioSpecificConfig.
 **Output:** CodecID (mp4a.40.2), SamplingRate, Channels, Format_Profile (LC/HE-AAC/HE-AACv2).
 
 ### MP3 (MPEG Audio Layer III)
@@ -223,6 +242,11 @@ SR index, channel count, bit depth lookup. Output: Lossless, VBR.
 | Kate | `kate\0\0\0\x80` | OggKate |
 | Timed Text | 16-bit BE + UTF-8 | 3GPP TS 26.245 |
 | Other Text | Various | Generic |
+| PDF | `%PDF-` magic | Adobe PDF, ISO 32000 |
+| SDP | `v=0` + `m=` lines | RFC 4566 Session Description |
+| PAC | `PAC` magic | PAC subtitle format |
+| DTvCC Transport | CC_type_1 0x03 0x00 | CTA-708 DTVCC transport |
+| SCTE-20 | `SCTE` magic | SCTE 20 closed captioning |
 
 ---
 
@@ -244,6 +268,20 @@ IIM/IPTC (record 2 datasets), C2PA (JUMBF c2pa/c2ma atoms),
 Apple PropertyList (plist XML), SphericalVideo (ProjectionType/StereoMode XML).
 
 ---
+
+## Core Infrastructure
+
+### IBI (Index of Binary Information)
+Frame-accurate seek table mapping byte offsets → timestamps.
+Used by MPEG-TS/PS to enable random access in transport streams.
+
+### MIME Type Mapping
+Container-to-MIME and codec-to-MIME lookup tables covering all 185 formats.
+Examples: `mp42→video/mp4`, `av01→video/AV1`, `opus→audio/opus`.
+
+### Reference File Tracker
+Tracks multi-file references (BDMV playlists, segmented MP4, SMPTE interop
+packages) linking primary media to companion files.
 
 ## References
 
