@@ -22,9 +22,21 @@ fn main() -> ExitCode {
             true
         })
         .unwrap_or(false);
+    // --strict swaps the default order-insensitive line-set diff for an
+    // order-sensitive LCS diff, so "0 only in oracle, 0 only in rust"
+    // means the two XML outputs are line-for-line identical (true byte
+    // fidelity), not merely the same set of lines.
+    let strict = args
+        .iter()
+        .position(|a| a == "--strict")
+        .map(|i| {
+            args.remove(i);
+            true
+        })
+        .unwrap_or(false);
 
     if args.is_empty() {
-        eprintln!("usage: diff-harness [--rust-xml] <media-file> [<media-file> ...]");
+        eprintln!("usage: diff-harness [--rust-xml] [--strict] <media-file> [<media-file> ...]");
         return ExitCode::from(2);
     }
 
@@ -40,7 +52,7 @@ fn main() -> ExitCode {
             }
             continue;
         }
-        match diff_one(path) {
+        match diff_one(path, strict) {
             Ok(report) => println!("{report}"),
             Err(msg) => {
                 eprintln!("{path}: {msg}");
@@ -56,19 +68,28 @@ struct Report {
     path: String,
     oracle_xml: String,
     rust_xml: String,
+    strict: bool,
 }
 
 impl std::fmt::Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "=== {} ===", self.path)?;
-        let diffs = diff_lines(&self.oracle_xml, &self.rust_xml);
+        let diffs = if self.strict {
+            diff_lines_ordered(&self.oracle_xml, &self.rust_xml)
+        } else {
+            diff_lines(&self.oracle_xml, &self.rust_xml)
+        };
         let only_oracle = diffs.iter().filter(|d| matches!(d, LineDiff::OnlyOracle(_))).count();
         let only_rust = diffs.iter().filter(|d| matches!(d, LineDiff::OnlyRust(_))).count();
         let common = diffs.iter().filter(|d| matches!(d, LineDiff::Common)).count();
+        let mode = if self.strict { " (order-sensitive)" } else { "" };
         writeln!(
             f,
-            "  {common} lines match, {only_oracle} only in oracle, {only_rust} only in rust",
+            "  {common} lines match, {only_oracle} only in oracle, {only_rust} only in rust{mode}",
         )?;
+        if self.strict && only_oracle == 0 && only_rust == 0 {
+            writeln!(f, "  BYTE-EQUAL {common}/{common}")?;
+        }
         for d in &diffs {
             match d {
                 LineDiff::Common => {}
@@ -80,13 +101,14 @@ impl std::fmt::Display for Report {
     }
 }
 
-fn diff_one(path: &str) -> Result<Report, String> {
+fn diff_one(path: &str, strict: bool) -> Result<Report, String> {
     let oracle_xml = run_oracle(path)?;
     let rust_xml = run_rust_engine(path)?;
     Ok(Report {
         path: path.to_owned(),
         oracle_xml,
         rust_xml,
+        strict,
     })
 }
 
@@ -332,6 +354,56 @@ fn diff_lines<'a>(oracle: &'a str, rust: &'a str) -> Vec<LineDiff<'a>> {
         if !o.contains(line) {
             diffs.push(LineDiff::OnlyRust(line));
         }
+    }
+    diffs
+}
+
+/// Order-sensitive diff via longest-common-subsequence. Lines kept in
+/// sequence are Common; the rest become deletions (only in oracle) and
+/// insertions (only in rust). Unlike the set diff this respects both
+/// ordering and duplicate multiplicity, so a reordered field shows up as
+/// a delete+insert pair and "0 only in oracle, 0 only in rust" means the
+/// two outputs are line-for-line identical. XML here is at most a few
+/// hundred lines, so the O(n·m) table is cheap.
+fn diff_lines_ordered<'a>(oracle: &'a str, rust: &'a str) -> Vec<LineDiff<'a>> {
+    let o: Vec<&str> = oracle.lines().collect();
+    let r: Vec<&str> = rust.lines().collect();
+    let (n, m) = (o.len(), r.len());
+
+    // dp[i][j] = LCS length of o[i..] and r[j..].
+    let mut dp = vec![vec![0u32; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if o[i] == r[j] {
+                dp[i + 1][j + 1] + 1
+            } else {
+                dp[i + 1][j].max(dp[i][j + 1])
+            };
+        }
+    }
+
+    let mut diffs = Vec::new();
+    let (mut i, mut j) = (0usize, 0usize);
+    while i < n && j < m {
+        if o[i] == r[j] {
+            diffs.push(LineDiff::Common);
+            i += 1;
+            j += 1;
+        } else if dp[i + 1][j] >= dp[i][j + 1] {
+            diffs.push(LineDiff::OnlyOracle(o[i]));
+            i += 1;
+        } else {
+            diffs.push(LineDiff::OnlyRust(r[j]));
+            j += 1;
+        }
+    }
+    while i < n {
+        diffs.push(LineDiff::OnlyOracle(o[i]));
+        i += 1;
+    }
+    while j < m {
+        diffs.push(LineDiff::OnlyRust(r[j]));
+        j += 1;
     }
     diffs
 }
