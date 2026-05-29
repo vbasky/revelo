@@ -104,3 +104,68 @@ fn csv_escape(s: &str) -> String {
         s.to_owned()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revelo_util::Ztring;
+
+    fn stream_with(kind: StreamKind, fields: &[(&str, &str)]) -> StreamCollection {
+        let mut c = StreamCollection::new();
+        for (k, v) in fields {
+            c.set_field(kind, 0, k, Ztring::from(*v));
+        }
+        c
+    }
+
+    #[test]
+    fn csv_includes_file_path_comment() {
+        let c = stream_with(StreamKind::General, &[("Format", "MPEG-4")]);
+        let out = to_csv(&c, "/tmp/test.mp4");
+        assert!(out.starts_with("# /tmp/test.mp4\n"), "{out}");
+    }
+
+    #[test]
+    fn csv_emits_header_and_data_rows() {
+        let mut c = StreamCollection::new();
+        c.set_field(StreamKind::General, 0, "Format", "MPEG-4");
+        c.set_field(StreamKind::Video, 0, "Format", "AVC");
+        c.set_field(StreamKind::Video, 0, "Width", "1920");
+        c.set_field(StreamKind::Video, 0, "Height", "1080");
+        let out = to_csv(&c, "f.mp4");
+        assert!(out.contains("# General\n"));
+        assert!(out.contains("# Video\n"));
+        assert!(out.contains("StreamIndex"));
+        assert!(out.contains("1920"));
+        assert!(out.contains("1080"));
+    }
+
+    #[test]
+    fn csv_escapes_commas() {
+        let mut c = StreamCollection::new();
+        c.set_field(StreamKind::General, 0, "Format", "MPEG-4");
+        c.set_field(StreamKind::General, 0, "Title", "Video, Part 1");
+        let out = to_csv(&c, "f.mp4");
+        assert!(out.contains("\"Video, Part 1\""));
+    }
+
+    #[test]
+    fn csv_empty_streams_produce_empty_output() {
+        let c = stream_with(StreamKind::Video, &[]);
+        let out = to_csv(&c, "f.mp4");
+        // No fields to emit — only the file path header
+        assert!(out.starts_with("# f.mp4\n"));
+        assert_eq!(out.lines().count(), 1);
+    }
+
+    #[test]
+    fn csv_handles_multiple_streams_per_kind() {
+        let mut c = StreamCollection::new();
+        c.set_field(StreamKind::Audio, 0, "Format", "AAC");
+        c.set_field(StreamKind::Audio, 1, "Format", "AC3");
+        c.set_field(StreamKind::Audio, 1, "Channels", "6");
+        let out = to_csv(&c, "f.mp4");
+        assert!(out.contains("0,AAC"));
+        assert!(out.contains("1,AC3"));
+    }
+}

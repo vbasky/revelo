@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.3] - 2026-05-29
+
+### Added
+
+- CSV output format (`--csv`)
+- Summary output mode (`--summary`) with aggregate stream statistics
+- `--inform-version` and `--inform-timestamp` flags for text output provenance
+- `--log-file <FILE>` flag for writing output to file
+
+### Fixed
+
+- AV1 `Format_Profile` now includes level (e.g. `Main@L5.3` instead of just `Main`)
+- AV1 `Format_Info` now shows `AOMedia Video 1`
+- AV1 sequence header parser no longer returns `None` when timing info present
+- BPG test helper `unimplemented!()` panic for VSI values 21-34 bits
+
 ## [0.2.2] - 2026-05-29
 
 ### Added

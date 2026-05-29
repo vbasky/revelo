@@ -279,3 +279,65 @@ fn human_bitrate(bps: u64) -> String {
         format!("{} b/s", bps)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use revelo_core::StreamCollection;
+
+    fn stream_with(kind: StreamKind, fields: &[(&str, &str)]) -> StreamCollection {
+        let mut c = StreamCollection::new();
+        for (k, v) in fields {
+            c.set_field(kind, 0, k, *v);
+        }
+        c
+    }
+
+    #[test]
+    fn summary_shows_file_path() {
+        let c = stream_with(StreamKind::General, &[("Format", "MPEG-4")]);
+        let out = to_summary(&c, "/tmp/v.mp4");
+        assert!(out.contains("File: /tmp/v.mp4"));
+    }
+
+    #[test]
+    fn summary_shows_container_format_and_size() {
+        let c = stream_with(
+            StreamKind::General,
+            &[("Format", "MPEG-4"), ("FileSize", "5510872")],
+        );
+        let out = to_summary(&c, "f.mp4");
+        assert!(out.contains("Container: MPEG-4"));
+        assert!(out.contains("Size: "));
+        assert!(out.contains("MiB"));
+    }
+
+    #[test]
+    fn summary_counts_streams() {
+        let mut c = StreamCollection::new();
+        c.set_field(StreamKind::Video, 0, "Format", "AVC");
+        c.set_field(StreamKind::Audio, 0, "Format", "AAC");
+        c.set_field(StreamKind::Audio, 1, "Format", "AC3");
+        c.set_field(StreamKind::Text, 0, "Format", "SubRip");
+        let out = to_summary(&c, "f.mp4");
+        assert!(out.contains("Streams: 1 video, 2 audio, 1 text, 0 image"));
+    }
+
+    #[test]
+    fn summary_video_shows_codecs_and_resolutions() {
+        let mut c = StreamCollection::new();
+        c.set_field(StreamKind::Video, 0, "Format", "AVC");
+        c.set_field(StreamKind::Video, 0, "Width", "1920");
+        c.set_field(StreamKind::Video, 0, "Height", "1080");
+        let out = to_summary(&c, "f.mp4");
+        assert!(out.contains("Codec(s): AVC"));
+        assert!(out.contains("Resolution: 1920x1080"));
+    }
+
+    #[test]
+    fn summary_human_readable_duration() {
+        let c = stream_with(StreamKind::General, &[("Duration", "60095")]);
+        let out = to_summary(&c, "f.mp4");
+        assert!(out.contains("1 m 0 s"));
+    }
+}
