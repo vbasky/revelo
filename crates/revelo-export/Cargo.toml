@@ -4,6 +4,7 @@ version = "0.2.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Output formatters for revelo: XML, JSON, Text, EBUCore, MPEG-7, PBCore, NISO, FIMS, Graph, RevTMD."
 
 [lib]
 name = "revelo_export"
@@ -13,5 +14,5 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core" }
-zenlib = { path = "../zenlib" }
+revelo-core = { path = "../revelo-core", version = "0.2.0" }
+zenlib = { path = "../zenlib", version = "0.2.0" }

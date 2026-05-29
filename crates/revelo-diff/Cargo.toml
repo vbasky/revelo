@@ -4,6 +4,7 @@ version = "0.2.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 description = "Differential testing against mediainfo oracle"
 
 [[bin]]
@@ -14,6 +15,6 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core" }
-revelo-dispatcher = { path = "../revelo-dispatcher" }
-revelo-export = { path = "../revelo-export" }
+revelo-core = { path = "../revelo-core", version = "0.2.0" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.0" }
+revelo-export = { path = "../revelo-export", version = "0.2.0" }

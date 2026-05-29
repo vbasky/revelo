@@ -4,6 +4,7 @@ version = "0.2.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Video-codec parsers for revelo (AVC, HEVC, AV1, APV, VP9, ...)."
 
 [lib]
 name = "revelo_parsers_video"
@@ -13,5 +14,5 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core" }
-zenlib = { path = "../zenlib" }
+revelo-core = { path = "../revelo-core", version = "0.2.0" }
+zenlib = { path = "../zenlib", version = "0.2.0" }
