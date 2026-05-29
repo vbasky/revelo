@@ -48,20 +48,21 @@ use revelio_parsers_text::{
     parse_ttml, parse_webvtt,
 };
 use revelio_parsers_video::{
-    parse_afd_bar_data, parse_aic, parse_av1, parse_avc, parse_avs, parse_avs3, parse_canopus,
+    parse_afd_bar_data, parse_aic, parse_apv, parse_av1, parse_avc, parse_avs, parse_avs3,
+    parse_canopus,
     parse_cineform, parse_dirac, parse_dolby_vision, parse_ffv1, parse_flic, parse_fraps,
     parse_h263, parse_hdr_vivid, parse_hevc, parse_huffyuv, parse_lagarith, parse_mpeg2,
     parse_mpeg4v, parse_prores, parse_theora, parse_vc1, parse_vc3, parse_vp8, parse_vp9,
     parse_vvc, parse_y4m,
 };
 
-/// Returns the complete parser dispatch table (177 entries).
+/// Returns the complete parser dispatch table (178 entries).
 ///
 /// Ordering: containers first (header peek → sub-parser delegation),
 /// then video codecs, audio codecs, images, text, and archives.
 /// Container-vs-elementary ordering matters — a raw codec parser
 /// running before a container could false-match on random bytes.
-pub fn table() -> [fn(&mut FileAnalyze) -> bool; 177] {
+pub fn table() -> [fn(&mut FileAnalyze) -> bool; 178] {
     [
         // ── Containers ──────────────────────────────────────────
         parse_wav,           // WAV
@@ -145,6 +146,7 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 177] {
         parse_vc1,      // VC-1
         parse_mpeg2,    // MPEG-2 Video
         parse_av1,      // AV1
+        parse_apv,      // APV (Advanced Professional Video)
         parse_avc,      // AVC / H.264
         parse_hevc,     // HEVC / H.265
         parse_vp8,      // VP8

@@ -93,7 +93,7 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table, parallel race via rayon |
 | **Output fidelity** | Reference oracle | Byte-equal XML (differential harness) |
 | **License** | BSD-2-Clause | BSD-2-Clause |
-| **Format support** | ~200 formats | 193 parsers, 185 fields |
+| **Format support** | ~200 formats | 194 parsers, 185 fields |
 | **WASM** | No | Compiles on `wasm32-unknown-unknown` |
 
 ## Project scale
@@ -287,7 +287,7 @@ All layers are implemented and validated:
 
 | Layer | Status | Detail |
 | --- | --- | --- |
-| Format parsers | ✓ | 193 parsers across 8 domains |
+| Format parsers | ✓ | 194 parsers across 8 domains |
 | Output fields | ✓ | 185 fields, all gaps closed |
 | Output formatters | ✓ | XML/Text/JSON + 7 domain |
 | Reader layer | ✓ | File, Directory, HTTP, MMS |

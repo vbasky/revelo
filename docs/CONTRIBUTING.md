@@ -21,7 +21,7 @@ Cargo workspace root
 ├─ crates/revelio-parsers-image       Image format parsers (19 parsers)
 ├─ crates/revelio-parsers-tag         Tag/metadata parsers (12 parsers)
 ├─ crates/revelio-parsers-text        Text/subtitle parsers (21 parsers)
-├─ crates/revelio-parsers-video       Video codec parsers (28 parsers)
+├─ crates/revelio-parsers-video       Video codec parsers (29 parsers)
 └─ crates/revelio-parsers-archive     Archive format parsers (11 parsers)
 ```
 

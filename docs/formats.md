@@ -116,6 +116,14 @@ Level from operating point.
 **HDR10+:** Metadata OBU (type=8, metadata_type=1) → ITU-T T.35 with country
 `0xB5`, provider `0x003C`, application `4` → `HDR_Format: ST 2094-40`.
 
+### APV (Advanced Professional Video)
+**Spec:** APV bitstream — intra-only professional codec
+**Detection:** `aPv1` signature at byte offset 4 (after the `au_size` field).
+**Fields:** Walks to the first frame / access-unit-information PBU and reads
+`frame_info` → profile\@level, `band_idc`, Width/Height, ColorSpace +
+ChromaSubsampling (from `chroma_format_idc`), BitDepth (`bit_depth_minus8` + 8),
+and CICP colour description (primaries/transfer/matrix/range) when present.
+
 ### VP8 / VP9
 **Spec:** RFC 6386 (VP8), WebM VP9 spec
 **Detection:** VP8 keyframe magic `0x9D012A`. VP9 frame marker + profile bits.

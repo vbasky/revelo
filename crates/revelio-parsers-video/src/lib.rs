@@ -5,6 +5,7 @@
 
 pub mod afd_bar_data;
 pub mod aic;
+pub mod apv;
 pub mod av1;
 pub mod avc;
 pub mod avs;
@@ -36,6 +37,7 @@ pub mod mpeg4v;
 
 pub use afd_bar_data::parse_afd_bar_data;
 pub use aic::parse_aic;
+pub use apv::parse_apv;
 pub use av1::{Av1Info, parse_av1, parse_av1_from_codec_config};
 pub use avc::{
     AvcInfo, EncoderInfo, extract_encoder_from_avc_sei_nalus, gop_detect, parse_avc,

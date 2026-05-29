@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- APV (Advanced Professional Video) parser (`revelio_parsers_video::apv`) — detects the `aPv1` signature, walks to the first frame/access-unit PBU, and fills profile\@level, dimensions, chroma format, bit depth, and colour description. Ported from MediaInfoLib's `File_Apv.cpp`.
+
 ## [0.2.0] - 2026-05-29
 
 ### Added
