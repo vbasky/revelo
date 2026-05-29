@@ -92,7 +92,7 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | **Language** | C++ | Pure Rust |
 | **Memory safety** | Manual | Compile-time guaranteed |
 | **Build** | `./Configure` + `make` + 10 system deps | `cargo build` (no system libs) |
-| **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelo-cli` |
+| **Install** | `apt install mediainfo` / `brew install mediainfo` | `brew tap vbasky/revelo && brew install revelo` or `cargo install revelo-cli` |
 | **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table, parallel race via rayon |
 | **Output fidelity** | Reference oracle | Byte-equal XML (differential harness) |
 | **License** | BSD-2-Clause | BSD-2-Clause |
@@ -190,9 +190,10 @@ output/API surface, and the differential test harness.
 ## Installation
 
 ```sh
-cargo install revelo-cli                   # CLI only (binary)
-cargo add revelo-core                      # library (core + dispatcher)
-cargo add revelo-export                    # library (output formatters)
+brew tap vbasky/revelo && brew install revelo   # Homebrew (macOS / Linux)
+cargo install revelo-cli                         # CLI only (binary)
+cargo add revelo-core                            # library (core + dispatcher)
+cargo add revelo-export                          # library (output formatters)
 ```
 
 Or add individual parser crates as needed:

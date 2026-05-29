@@ -1,0 +1,182 @@
+name: Release
+
+on:
+  push:
+    tags: [v*]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary_name: revelo
+            archive_ext: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary_name: revelo
+            archive_ext: tar.gz
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary_name: revelo
+            archive_ext: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary_name: revelo.exe
+            archive_ext: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release -p revelo-cli --target ${{ matrix.target }}
+
+      - name: Archive (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          archive="revelo-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          tar czf "${archive}" ${{ matrix.binary_name }}
+          echo "archive=${archive}" >> "$GITHUB_ENV"
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          archive="revelo-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          7z a "${archive}" ${{ matrix.binary_name }}
+          echo "archive=${archive}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/${{ env.archive }}
+
+  release:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+          path: /tmp/assets
+
+      - name: Generate checksums
+        working-directory: /tmp/assets
+        run: |
+          for f in *; do
+            if [[ "$f" != *.sha256 ]]; then
+              shasum -a 256 "$f" > "$f.sha256"
+            fi
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: revelo ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            /tmp/assets/*
+          fail_on_unmatched_files: true
+
+  formula:
+    name: Generate Homebrew formula
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binaries + checksums
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+          path: /tmp/assets
+
+      - name: Generate formula
+        run: |
+          tag="${{ github.ref_name }}"
+          version="${tag#v}"
+
+          cd /tmp/assets
+          arm64_sha=$(shasum -a 256 "revelo-${tag}-aarch64-apple-darwin.tar.gz" | cut -d' ' -f1)
+          x64_sha=$(shasum -a 256 "revelo-${tag}-x86_64-apple-darwin.tar.gz" | cut -d' ' -f1)
+          linux_sha=$(shasum -a 256 "revelo-${tag}-x86_64-unknown-linux-gnu.tar.gz" | cut -d' ' -f1)
+
+          cat > /tmp/revelo.rb <<RUBY
+          class Revelo < Formula
+            desc "Read technical metadata from any media file, in pure Rust"
+            homepage "https://github.com/vbasky/revelo"
+            license "BSD-2-Clause"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/vbasky/revelo/releases/download/${tag}/revelo-${tag}-aarch64-apple-darwin.tar.gz"
+                sha256 "${arm64_sha}"
+              end
+              on_intel do
+                url "https://github.com/vbasky/revelo/releases/download/${tag}/revelo-${tag}-x86_64-apple-darwin.tar.gz"
+                sha256 "${x64_sha}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/vbasky/revelo/releases/download/${tag}/revelo-${tag}-x86_64-unknown-linux-gnu.tar.gz"
+              sha256 "${linux_sha}"
+            end
+
+            def install
+              bin.install "revelo"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("\#{bin}/revelo --version")
+            end
+          end
+          RUBY
+
+          echo "=== Homebrew formula ==="
+          cat /tmp/revelo.rb
+
+      - name: Upload formula as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: homebrew-formula
+          path: /tmp/revelo.rb
+
+      - name: Push formula to Homebrew tap
+        env:
+          TAP_REPO: ${{ secrets.TAP_REPO }}
+          GH_TOKEN: ${{ secrets.TAP_PAT }}
+        if: env.TAP_REPO != ''
+        run: |
+          tag="${{ github.ref_name }}"
+          tmpdir="$(mktemp -d)"
+          git clone "https://github.com/${TAP_REPO}.git" "${tmpdir}"
+          cp /tmp/revelo.rb "${tmpdir}/Formula/revelo.rb"
+          cd "${tmpdir}"
+          git config user.name "revelo release bot"
+          git config user.email "releases@revelo.sh"
+          git add Formula/revelo.rb
+          git commit -m "revelo ${tag}"
+          git push

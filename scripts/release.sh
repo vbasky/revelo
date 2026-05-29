@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 #
-# Release revelo end-to-end, in the one order that keeps crates.io, the git tag,
-# and the GitHub release from ever drifting:
+# Release revelo to crates.io.
 #
-#   pre-flight  ->  bump versions  ->  commit  ->  tag  ->  push
-#               ->  GitHub release  ->  cargo publish (dependency order)
+# Binary builds + Homebrew formula generation happen automatically in CI
+# (`.github/workflows/release.yml`) when the tag is pushed.
 #
 # Usage:
 #   scripts/release.sh <version>      e.g.  scripts/release.sh 0.2.2
 #
+# Steps:
+#   1. Bump versions in all crate Cargo.toml
+#   2. Commit, tag, push (triggers CI binary build)
+#   3. Publish to crates.io (dependency order)
+#
 # Notes:
-#   * cargo publish is driven by the Cargo.toml `version`, not by git tags — but
-#     we still tag/release FIRST so the published code always has a matching tag.
-#   * Update CHANGELOG.md and commit it before running (the tree must be clean);
-#     GitHub release notes are auto-generated from commits via --generate-notes.
-#   * Publishing new *versions* of existing crates is not rate-limited. Adding a
-#     brand-new crate name for the first time IS (1/10 min) and isn't handled here.
+#   * Update CHANGELOG.md and commit it before running (the tree must be clean).
+#   * CI handles the GitHub Release + binary artifacts automatically.
 
 set -euo pipefail
 
@@ -69,11 +69,9 @@ git commit -m "release: ${TAG}"
 git tag -a "${TAG}" -m "revelo ${VERSION}"
 git push origin master
 git push origin "${TAG}"
+echo "==> tag pushed — CI is building binaries and creating the GitHub Release"
 
-# ── GitHub release ─────────────────────────────────────────────────────────
-gh release create "${TAG}" --title "revelo ${VERSION}" --generate-notes --latest
-
-# ── publish to crates.io in dependency order ───────────────────────────────
+# ── wait for CI to finish, then publish to crates.io ────────────────────────
 # cargo waits for each crate to index before the next can resolve it.
 for c in "${CRATES[@]}"; do
   echo "==> cargo publish ${c}@${VERSION}"
