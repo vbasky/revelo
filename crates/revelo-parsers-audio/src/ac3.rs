@@ -331,9 +331,158 @@ fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a valid E-AC-3 8-byte frame buffer (the first 8 bytes).
+    /// Returns a full buffer padded to 32 bytes.
+    fn make_eac3_frame(strmtyp: u8, substreamid: u8, frmsiz: u16, fscod: u8,
+                       numblkscod: u8, acmod: u8, lfeon: u8, bsid: u8,
+                       dialnorm: u8) -> Vec<u8> {
+        let mut fb = [0u8; 8];
+
+        // Sync word
+        fb[0] = 0x0B;
+        fb[1] = 0x77;
+
+        // strmtyp (2) | substreamid (3) | frmsiz_hi (3) at byte 2
+        let frmsiz_hi = (frmsiz >> 8) as u8;
+        let frmsiz_lo = frmsiz as u8;
+        fb[2] = (strmtyp << 6) | (substreamid << 3) | (frmsiz_hi & 0x07);
+        fb[3] = frmsiz_lo;
+
+        // fscod (2) | numblkscod (2) | acmod (3) | lfeon (1) at byte 4
+        fb[4] = (fscod << 6) | (numblkscod << 4) | (acmod << 1) | lfeon;
+
+        // bsid (5) at byte5 bits 7-3; dialnorm starts at byte5 bit 2
+        fb[5] = (bsid << 3) | (dialnorm >> 2);
+        // dialnorm low 2 bits at byte6 bits 7-6; rest zeros
+        fb[6] = (dialnorm & 0x03) << 6;
+
+        // Pad to 32 bytes
+        let mut buf = fb.to_vec();
+        buf.resize(32, 0);
+        buf
+    }
+
+    /// Build a valid AC-3 frame buffer for stereo (acmod=2).
+    fn make_ac3_frame(fscod: u8, frmsizecod: u8, bsid: u8, bsmod: u8,
+                      acmod: u8, lfeon: u8, dsurmod: u8, dialnorm: u8) -> Vec<u8> {
+        let mut buf = vec![0x0B, 0x77];
+        buf.push(0x00); buf.push(0x00); // crc1
+        buf.push((fscod << 6) | (frmsizecod & 0x3F));
+        // After Reader skip(5), bit layout:
+        //   byte5[7:3] = bsid, byte5[2:0] = bsmod
+        buf.push((bsid << 3) | bsmod);
+        //   byte6[7:5] = acmod, byte6[4:3] = dsurmod (if acmod==2), byte6[2] = lfeon
+        let mut byte6 = acmod << 5;
+        if acmod == 2 {
+            byte6 |= dsurmod << 3;
+        }
+        byte6 |= lfeon << 2;
+        buf.push(byte6);
+        //   byte7[7:3] = dialnorm
+        buf.push(dialnorm << 3);
+        buf.resize(32, 0);
+        buf
+    }
+
     #[test]
     fn rejects_non_ac3() {
         let mut fa = FileAnalyze::new(b"NOT AC3");
         assert!(!parse_ac3(&mut fa));
+    }
+
+    #[test]
+    fn rejects_short_buffer() {
+        let mut fa = FileAnalyze::new(&[0x0Bu8]);
+        assert!(!parse_ac3(&mut fa));
+    }
+
+    #[test]
+    fn accepts_ac3_sync() {
+        let buf = make_ac3_frame(0, 6, 8, 0, 2, 0, 0, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format").as_deref(), Some("AC-3"));
+        assert_eq!(a("Format_Commercial_IfAny").as_deref(), Some("Dolby Digital"));
+    }
+
+    #[test]
+    fn accepts_eac3_sync() {
+        let buf = make_eac3_frame(0, 0, 64, 0, 3, 2, 0, 16, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format").as_deref(), Some("E-AC-3"));
+        assert_eq!(a("Format_Commercial_IfAny").as_deref(), Some("Dolby Digital Plus"));
+    }
+
+    #[test]
+    fn eac3_detects_atmos_when_strmtyp_1() {
+        // strmtyp=1 = dependent substream → Atmos
+        let buf = make_eac3_frame(1, 0, 64, 0, 3, 2, 0, 16, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Commercial_IfAny").as_deref(), Some("Dolby Digital Plus with Atmos"));
+        assert_eq!(a("Format_AdditionalFeatures").as_deref(), Some("Atmos"));
+        assert_eq!(a("HDR_Format").as_deref(), Some("Dolby Atmos"));
+    }
+
+    #[test]
+    fn eac3_no_atmos_when_strmtyp_0() {
+        let buf = make_eac3_frame(0, 0, 64, 0, 3, 2, 0, 16, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_AdditionalFeatures"), None);
+        assert_eq!(a("HDR_Format"), None);
+    }
+
+    #[test]
+    fn eac3_parses_sample_rate_48000() {
+        let buf = make_eac3_frame(0, 0, 64, 0, 3, 2, 0, 16, 0); // fscod=0
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
+    }
+
+    #[test]
+    fn eac3_parses_sample_rate_44100() {
+        let buf = make_eac3_frame(0, 0, 64, 1, 3, 2, 0, 16, 0); // fscod=1
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("44100"));
+    }
+
+    #[test]
+    fn eac3_rejects_unknown_sample_rate() {
+        // fscod=3 with fscod2=3 → REDUCED_SAMPLE_RATE[3] = 0 → error
+        let _buf = make_eac3_frame(0, 0, 64, 3, 0, 2, 0, 16, 0);
+        // fscod=3 triggers reduced-rate path, fscod2 = bits 34-35 = numblkscod field
+        // But numblkscod = 0 here, and fscod2 = 0 → REDUCED_SAMPLE_RATE[0] = 24000
+        // Actually I used 3 for fscod, so it goes to the reduced-rate branch.
+        // The numblkscod field becomes fscod2. Let me make fscod2=3 → REDUCED_SAMPLE_RATE[3] = 0
+        // Need numblkscod=3 in the byte4 position. fscod=3, so:
+        // byte4 = (3<<6) | (3<<4) = 0xC0 | 0x30 = 0xF0
+        let mut fb = [0u8; 8];
+        fb[0] = 0x0B; fb[1] = 0x77;
+        fb[2] = 0x00; fb[3] = 0x40; // strmtyp=0, substreamid=0, frmsiz=64
+        fb[4] = 0xF0; // fscod=3, fscod2=3
+        fb[5] = 0x80; // bsid=16
+        let buf: Vec<u8> = fb.into_iter().chain(std::iter::repeat(0).take(24)).collect();
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_ac3(&mut fa));
+    }
+
+    #[test]
+    fn get_bits_utility() {
+        let data = [0b10101100u8];
+        assert_eq!(get_bits(&data, 0, 1), 1);
+        assert_eq!(get_bits(&data, 1, 2), 1); // "01"
+        assert_eq!(get_bits(&data, 4, 4), 0x0C); // "1100"
+        assert_eq!(get_bits(&data, 8, 1), 0); // past end → 0 (no-Option version)
     }
 }

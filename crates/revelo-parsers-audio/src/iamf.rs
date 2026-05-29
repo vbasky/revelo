@@ -476,31 +476,165 @@ mod tests {
     use super::*;
 
     fn make_iamf(first_byte: u8) -> Vec<u8> {
-        // Build a minimal IAMF stream: an IA Sequence Header OBU carrying the
-        // mandatory "iamf" magic + profiles, followed by one Audio Element OBU
-        // so detection passes and AudioCount resolves to 1. `first_byte` is the
-        // sequence header's OBU header byte; the payload is laid out to match
-        // the flags the parser reads (the extension flag adds a 1-byte
-        // extension-size field before the payload).
         let extension = (first_byte & 1) != 0;
 
         let mut seq_payload = b"iamf".to_vec();
-        seq_payload.push(0); // primary_profile = Simple
-        seq_payload.push(0); // additional_profile
+        seq_payload.push(0);
+        seq_payload.push(0);
 
         let mut buf = vec![first_byte];
-        buf.push(seq_payload.len() as u8); // obu_size (LEB128, < 128)
+        buf.push(seq_payload.len() as u8);
         if extension {
-            buf.push(0); // extension_header_size = 0
+            buf.push(0);
         }
         buf.extend_from_slice(&seq_payload);
 
-        // Audio Element OBU (obu_type 1): minimal channel-based element →
-        // id, type byte, codec_config_id, num_substreams, num_params, all 0.
         let ae_payload = [0u8; 5];
-        buf.push(0x08); // obu_type = 1 (Audio Element), no flags
-        buf.push(ae_payload.len() as u8); // obu_size
+        buf.push(0x08);
+        buf.push(ae_payload.len() as u8);
         buf.extend_from_slice(&ae_payload);
+
+        buf
+    }
+
+    fn make_iamf_with_codec_config(first_byte: u8, codec_4cc: &[u8; 4]) -> Vec<u8> {
+        let extension = (first_byte & 1) != 0;
+
+        let mut seq_payload = b"iamf".to_vec();
+        seq_payload.push(0);
+        seq_payload.push(0);
+
+        let mut buf = vec![first_byte];
+        buf.push(seq_payload.len() as u8);
+        if extension {
+            buf.push(0);
+        }
+        buf.extend_from_slice(&seq_payload);
+
+        // Codec Config OBU (type=0): codec_config_id(LEB128) + codec_id(4) + num_samples_per_frame(LEB128) + audio_roll_distance(u16)
+        let cc_id: u64 = 0;
+        let cc_id_leb = vec![cc_id as u8];
+        let cc_payload = {
+            let mut p = cc_id_leb.clone();
+            p.extend_from_slice(codec_4cc);
+            // num_samples_per_frame = 960 (Opus default)
+            p.push(0xC0); p.push(0x07); // LEB128 960
+            // audio_roll_distance = 0
+            p.push(0x00); p.push(0x00);
+            p
+        };
+        // obu header: type=0, no flags
+        buf.push(0x00);
+        buf.push(cc_payload.len() as u8);
+        buf.extend_from_slice(&cc_payload);
+
+        // Audio Element OBU (type=1): references codec_config_id=0
+        let mut ae_payload = vec![0u8; 1]; // ae_id = 0
+        ae_payload.push(0x00); // type_byte: audio_element_type=0 (channel-based), reserved bits
+        ae_payload.push(0x00); // codec_config_id = 0
+        ae_payload.push(0x01); // num_substreams = 1
+        ae_payload.push(0x00); // substream_id[0] = 0
+        ae_payload.push(0x00); // num_params = 0
+        // scalable channel layout: num_layers=1
+        ae_payload.push(0x01); // num_layers = 1
+        // layer 0: num_groups=1
+        ae_payload.push(0x01);
+        // group 0: cg_id=0, num_channels=2
+        ae_payload.push(0x00); // cg_id = 0
+        ae_payload.push(0x02); // num_channels = 2
+        // skip channel azimuth/elevation for each channel (1 byte each)
+        ae_payload.push(0x00); // ch0 azimuth/elev
+        ae_payload.push(0x00); // ch1 azimuth/elev
+
+        buf.push(0x08);
+        buf.push(ae_payload.len() as u8);
+        buf.extend_from_slice(&ae_payload);
+
+        buf
+    }
+
+    fn make_iamf_ambisonics(first_byte: u8) -> Vec<u8> {
+        let extension = (first_byte & 1) != 0;
+
+        let mut seq_payload = b"iamf".to_vec();
+        seq_payload.push(0);
+        seq_payload.push(0);
+
+        let mut buf = vec![first_byte];
+        buf.push(seq_payload.len() as u8);
+        if extension {
+            buf.push(0);
+        }
+        buf.extend_from_slice(&seq_payload);
+
+        // Audio Element OBU: scene-based (ambisonics)
+        let mut ae_payload = vec![0u8; 1]; // ae_id = 0
+        // type_byte: audio_element_type=1 (scene-based)
+        ae_payload.push(0x20);
+        ae_payload.push(0x00); // codec_config_id = 0
+        ae_payload.push(0x01); // num_substreams = 1
+        ae_payload.push(0x00); // substream_id[0] = 0
+        ae_payload.push(0x00); // num_params = 0
+        // ambisonics config: ambisonics_mode=0 (normal), order=1
+        ae_payload.push(0x00); // mode=0 at bit 0
+        ae_payload.push(0x01); // order = 1
+
+        buf.push(0x08);
+        buf.push(ae_payload.len() as u8);
+        buf.extend_from_slice(&ae_payload);
+
+        buf
+    }
+
+    fn make_iamf_multi_element(first_byte: u8) -> Vec<u8> {
+        // Two Audio Element OBUs
+        let extension = (first_byte & 1) != 0;
+
+        let mut seq_payload = b"iamf".to_vec();
+        seq_payload.push(0);
+        seq_payload.push(0);
+
+        let mut buf = vec![first_byte];
+        buf.push(seq_payload.len() as u8);
+        if extension {
+            buf.push(0);
+        }
+        buf.extend_from_slice(&seq_payload);
+
+        // Audio Element OBU 1: ae_id=0, channel-based, 2 channels
+        let mut ae1 = vec![0u8; 1]; // ae_id = 0
+        ae1.push(0x00); // channel-based
+        ae1.push(0x00); // codec_config_id = 0
+        ae1.push(0x01); // num_substreams = 1
+        ae1.push(0x00); // substream_id = 0
+        ae1.push(0x00); // num_params = 0
+        ae1.push(0x01); // num_layers = 1
+        ae1.push(0x01); // num_groups = 1
+        ae1.push(0x00); // cg_id = 0
+        ae1.push(0x02); // num_channels = 2
+        ae1.push(0x00); // ch0
+        ae1.push(0x00); // ch1
+
+        buf.push(0x08);
+        buf.push(ae1.len() as u8);
+        buf.extend_from_slice(&ae1);
+
+        // Audio Element OBU 2: ae_id=1, channel-based, 6 channels
+        let mut ae2 = vec![0x01u8; 1]; // ae_id = 1
+        ae2.push(0x00); // channel-based
+        ae2.push(0x00); // codec_config_id = 0
+        ae2.push(0x01); // num_substreams = 1
+        ae2.push(0x00); // substream_id = 0
+        ae2.push(0x00); // num_params = 0
+        ae2.push(0x01); // num_layers = 1
+        ae2.push(0x01); // num_groups = 1
+        ae2.push(0x00); // cg_id = 0
+        ae2.push(0x06); // num_channels = 6
+        for _ in 0..6 { ae2.push(0x00); }
+
+        buf.push(0x08);
+        buf.push(ae2.len() as u8);
+        buf.extend_from_slice(&ae2);
 
         buf
     }
@@ -521,20 +655,118 @@ mod tests {
     }
 
     #[test]
+    fn parses_codec_config_opus() {
+        let buf = make_iamf_with_codec_config(0xF8, b"Opus");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("CodecID").as_deref(), Some("Opus"));
+        assert!(a("CodecID_Description").unwrap_or_default().contains("Opus"));
+        assert!(a("SamplesPerFrame").as_deref() == Some("960"));
+    }
+
+    #[test]
+    fn parses_codec_config_aac() {
+        let buf = make_iamf_with_codec_config(0xF8, b"mp4a");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("CodecID").as_deref(), Some("AAC"));
+    }
+
+    #[test]
+    fn parses_codec_config_flac() {
+        let buf = make_iamf_with_codec_config(0xF8, b"fLaC");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("CodecID").as_deref(), Some("FLAC"));
+    }
+
+    #[test]
+    fn parses_channel_based_element() {
+        let buf = make_iamf_with_codec_config(0xF8, b"Opus");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Settings").as_deref(), Some("Channel-Based"));
+        assert_eq!(a("StreamCount").as_deref(), Some("1"));
+        assert_eq!(a("Channels").as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn parses_ambisonics_element() {
+        let buf = make_iamf_ambisonics(0xF8);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert!(a("Format_Settings").unwrap_or_default().contains("Ambisonics"));
+        assert_eq!(a("Channels").as_deref(), Some("4"));
+        assert_eq!(a("StreamCount").as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn parses_multi_element_stream() {
+        let buf = make_iamf_multi_element(0xF8);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(g("AudioCount").as_deref(), Some("2"));
+        let a0 = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        let a1 = |k: &str| fa.retrieve(StreamKind::Audio, 1, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a0("Format").as_deref(), Some("IAMF"));
+        assert_eq!(a1("Format").as_deref(), Some("IAMF"));
+        assert_eq!(a1("Channels").as_deref(), Some("6"));
+    }
+
+    #[test]
+    fn parses_simple_profile() {
+        let buf = make_iamf(0xF8);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(g("Format_Profile").as_deref(), Some("Simple"));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Profile").as_deref(), Some("Simple"));
+    }
+
+    #[test]
+    fn parses_scalable_channel_layout_mono() {
+        let mut off = 0usize;
+        let data = [0x01, 0x01, 0x00, 0x01, 0x00];
+        let (count, layout) = parse_scalable_channel_layout(&data, &mut off);
+        assert_eq!(count, 1);
+        assert_eq!(layout, "Mono");
+    }
+
+    #[test]
+    fn parses_scalable_channel_layout_stereo() {
+        let mut off = 0usize;
+        let data = [0x01, 0x01, 0x00, 0x02, 0x00, 0x00];
+        let (count, layout) = parse_scalable_channel_layout(&data, &mut off);
+        assert_eq!(count, 2);
+        assert_eq!(layout, "Stereo");
+    }
+
+    #[test]
+    fn parses_scalable_channel_layout_5dot1() {
+        let mut off = 0usize;
+        let data = [0x01, 0x01, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let (count, _layout) = parse_scalable_channel_layout(&data, &mut off);
+        assert_eq!(count, 6);
+    }
+
+    #[test]
     fn rejects_non_iamf_buffer() {
-        // 0x00 = obu_type=0 (Codec Config) — not a sequence header.
         let buf = make_iamf(0x00);
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_iamf(&mut fa));
-        // ASCII text should also be rejected.
         let mut fa2 = FileAnalyze::new(b"NOT IAMF........");
         assert!(!parse_iamf(&mut fa2));
     }
 
     #[test]
     fn rejects_when_reserved_bit_set() {
-        // 0xFA = obu_type=31, redundant=0, reserved=1 (invalid), ext=0.
-        // 0xFE = obu_type=31, redundant=1, reserved=1 (invalid), ext=0.
         for &b in &[0xFAu8, 0xFB, 0xFE, 0xFF] {
             let buf = make_iamf(b);
             let mut fa = FileAnalyze::new(&buf);
@@ -546,5 +778,52 @@ mod tests {
     fn rejects_short_buffer() {
         let mut fa = FileAnalyze::new(&[0xF8u8, 0x00]);
         assert!(!parse_iamf(&mut fa));
+    }
+
+    #[test]
+    fn obu_header_rejects_empty() {
+        assert!(parse_obu_header(&[], 0).is_none());
+    }
+
+    #[test]
+    fn obu_header_parses_sequence_header_type() {
+        // 0xF8 = obu_type=31 (11111), redundant=0, reserved=0, extension=0
+        let result = parse_obu_header(&[0xF8, 0x04, b'i', b'a', b'm', b'f', 0x00, 0x00], 0);
+        assert!(result.is_some());
+        let (ty, size, hdr_size, redundant) = result.unwrap();
+        assert_eq!(ty, 31);
+        assert_eq!(size, 4);
+        assert_eq!(hdr_size, 2);
+        assert!(!redundant);
+    }
+
+    #[test]
+    fn obu_header_handles_leb128_extension() {
+        // obu_type=31, extension=1, extension_header_size=0
+        let result = parse_obu_header(&[0xF9, 0x04, 0x00, b'i', b'a', b'm', b'f', 0x00, 0x00], 0);
+        assert!(result.is_some());
+        let (_ty, _size, hdr_size, _redundant) = result.unwrap();
+        // header includes: obu_header(1) + leb128-size(1) + ext_size_leb(1) + ext_data(0) = 3
+        assert_eq!(hdr_size, 3);
+    }
+
+    #[test]
+    fn read_leb128_zero() {
+        let (val, bytes) = read_leb128(&[0x00], 0).unwrap();
+        assert_eq!(val, 0);
+        assert_eq!(bytes, 1);
+    }
+
+    #[test]
+    fn read_leb128_multi_byte() {
+        // 960 = 0x3C0, LEB128 = [0xC0, 0x07]
+        let (val, bytes) = read_leb128(&[0xC0, 0x07], 0).unwrap();
+        assert_eq!(val, 960);
+        assert_eq!(bytes, 2);
+    }
+
+    #[test]
+    fn read_leb128_overflow() {
+        assert!(read_leb128(&[0x80; 20], 0).is_none());
     }
 }

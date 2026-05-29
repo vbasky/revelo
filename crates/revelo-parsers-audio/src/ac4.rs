@@ -218,9 +218,95 @@ pub fn parse_ac4(fa: &mut FileAnalyze) -> bool {
 mod tests {
     use super::*;
 
+    /// Build a minimal AC-4 frame with the given sync and flag bytes after.
+    /// `extra` is raw bytes appended after the sync word but before frame header bits.
+    fn make_ac4_core(sync: u16, extra: &[u8]) -> Vec<u8> {
+        let mut buf = vec![(sync >> 8) as u8, sync as u8];
+        buf.extend_from_slice(extra);
+        // Pad to at least 6 bytes + extra space so frame_length etc. work
+        while buf.len() < 64 {
+            buf.push(0);
+        }
+        buf
+    }
+
+    fn build_frame_header(
+        bit_rate_mode: u8,
+        frame_length: u16,
+        num_substreams: u8,
+        substreams: &[(u8, u8, u8, u8, u8, u8)],
+        joc_objects: u8,
+        dialnorm: u8,
+    ) -> Vec<u8> {
+        // Write bits sequentially using AC-4 bitstream layout.
+        // After sync word (16 bits):
+        // bits 16-23: bit_rate_mode(1) b_low_delay(1) reserved(2) version(4)
+        // bits 24-39: frame_length(16)
+        // bits 40-43: num_substreams(4)
+        // bit 44+: substream table
+        let mut bits = vec![0u8; 5]; // buf[2..7] → bits 16-55
+        bits[0] = bit_rate_mode << 7; // b_low_delay=0, reserved=00, version=0000 → bits 16-23
+        bits[1] = (frame_length >> 8) as u8; // frame_length high byte → bits 24-31
+        bits[2] = frame_length as u8;        // frame_length low byte → bits 32-39
+        bits[3] = num_substreams << 4;       // top nibble = bits 40-43
+
+        let mut bit_off = 28; // bits-relative: full_off(44) - sync(16)
+
+        for &(ss_idx, frame_rate, sr_code, ch_mode, ims, joc) in substreams {
+            // ss_idx(4) at bit_off..bit_off+4
+            write_bits(&mut bits, bit_off, ss_idx as u32, 4);
+            bit_off += 4;
+            // frame_rate(3)
+            write_bits(&mut bits, bit_off, frame_rate as u32, 3);
+            bit_off += 3;
+            // sr_code(4)
+            write_bits(&mut bits, bit_off, sr_code as u32, 4);
+            bit_off += 4;
+            // ch_mode(4)
+            write_bits(&mut bits, bit_off, ch_mode as u32, 4);
+            bit_off += 4;
+            // ims(1) + joc(1)
+            write_bits(&mut bits, bit_off, ims as u32, 1);
+            bit_off += 1;
+            write_bits(&mut bits, bit_off, joc as u32, 1);
+            bit_off += 1;
+            // joc_num_objects(5) if joc==1
+            if joc != 0 {
+                write_bits(&mut bits, bit_off, joc_objects as u32, 5);
+                bit_off += 5;
+            }
+            // loudness_type(4)
+            write_bits(&mut bits, bit_off, 3, 4); // type=3 → has dialnorm
+            bit_off += 4;
+            // dialog_level(5)
+            write_bits(&mut bits, bit_off, dialnorm as u32, 5);
+            bit_off += 5;
+        }
+
+        bits
+    }
+
+    fn write_bits(buf: &mut Vec<u8>, bit_off: usize, value: u32, n: usize) {
+        for i in 0..n {
+            let byte_idx = (bit_off + i) / 8;
+            let bit_idx = 7 - ((bit_off + i) % 8);
+            while byte_idx >= buf.len() {
+                buf.push(0);
+            }
+            let bit_val = ((value >> (n - 1 - i)) & 1) as u8;
+            buf[byte_idx] |= bit_val << bit_idx;
+        }
+    }
+
     #[test]
     fn rejects_non_ac4() {
         let mut fa = FileAnalyze::new(b"NOT AC4");
+        assert!(!parse_ac4(&mut fa));
+    }
+
+    #[test]
+    fn rejects_short_buffer() {
+        let mut fa = FileAnalyze::new(&[0xAC, 0x40, 0x00]);
         assert!(!parse_ac4(&mut fa));
     }
 
@@ -238,5 +324,153 @@ mod tests {
         buf.extend(std::iter::repeat_n(0u8, 64));
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ac4(&mut fa));
+    }
+
+    #[test]
+    fn detects_cbr_mode() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("BitRate_Mode").as_deref(), Some("CBR"));
+    }
+
+    #[test]
+    fn detects_vbr_mode() {
+        let frame_hdr = build_frame_header(1, 64, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("BitRate_Mode").as_deref(), Some("VBR"));
+    }
+
+    #[test]
+    fn detects_ims_flag() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 1, 0)], 0, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Settings").as_deref(), Some("IMS"));
+        assert!(a("Format_AdditionalFeatures").unwrap_or_default().contains("Immersive Stereo"));
+    }
+
+    #[test]
+    fn detects_joc_flag() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 0, 1)], 5, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert!(a("Format_AdditionalFeatures").unwrap_or_default().contains("Joint Object Coding"));
+        assert!(a("Format_AdditionalFeatures").unwrap_or_default().contains("5 objects"));
+    }
+
+    #[test]
+    fn detects_ims_and_joc() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 1, 1)], 3, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Commercial_IfAny").as_deref(), Some("Dolby AC-4 Immersive"));
+    }
+
+    #[test]
+    fn sets_commercial_name_immersive() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 1, 1)], 2, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(g("Format_Commercial_IfAny").as_deref(), Some("Dolby AC-4 Immersive"));
+    }
+
+    #[test]
+    fn sets_commercial_name_base() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let g = |k: &str| fa.retrieve(StreamKind::General, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(g("Format_Commercial_IfAny").as_deref(), Some("Dolby AC-4"));
+    }
+
+    #[test]
+    fn parses_sample_rate_44100() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 0, 1, 0, 0)], 0, 0); // sr_code=0 → 44100
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("44100"));
+    }
+
+    #[test]
+    fn parses_sample_rate_48000() {
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0); // sr_code=1 → 48000
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
+    }
+
+    #[test]
+    fn parses_channel_mode_counts() {
+        for (ch_mode, expected) in &[(0u8, 1u8), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8)] {
+            let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, *ch_mode, 0, 0)], 0, 0);
+            let buf = make_ac4_core(0xAC40, &frame_hdr);
+            let mut fa = FileAnalyze::new(&buf);
+            assert!(parse_ac4(&mut fa), "ch_mode={} should parse", ch_mode);
+            let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+            assert_eq!(a("Channels").as_deref(), Some(expected.to_string()).as_deref(), "ch_mode={} -> {} channels", ch_mode, expected);
+        }
+    }
+
+    #[test]
+    fn detects_crc_when_present() {
+        // AC41 sync means CRC present
+        let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0);
+        let buf = make_ac4_core(0xAC41, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Settings_CRC").as_deref(), Some("Yes"));
+    }
+
+    #[test]
+    fn parses_frame_count() {
+        let frame_hdr = build_frame_header(0, 32, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0);
+        let mut buf = vec![0xAC, 0x40];
+        buf.extend_from_slice(&frame_hdr);
+        buf.resize(256, 0); // file_size = 256, frame_length = 32 -> about 8 frames
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("FrameCount").as_deref(), Some("8"));
+    }
+
+    #[test]
+    fn multiple_substreams_aggregates_channels() {
+        // Two substreams: stereo (ch_mode=1) + 5.1 (ch_mode=5) -> max channels = 6
+        let frame_hdr = build_frame_header(0, 64, 2, &[(0, 0, 1, 1, 0, 0), (1, 0, 1, 5, 0, 0)], 0, 0);
+        let buf = make_ac4_core(0xAC40, &frame_hdr);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Channels").as_deref(), Some("6"));
+    }
+
+    #[test]
+    fn get_bits_reads_various_widths() {
+        let data = [0b10101100u8];
+        assert_eq!(get_bits(&data, 0, 1), Some(1));
+        assert_eq!(get_bits(&data, 0, 2), Some(2)); // 10
+        assert_eq!(get_bits(&data, 3, 3), Some(3)); // 011
+        assert_eq!(get_bits(&data, 4, 4), Some(0x0C)); // 1100
+        assert_eq!(get_bits(&data, 8, 1), None);
     }
 }

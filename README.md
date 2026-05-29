@@ -6,6 +6,8 @@ A library and CLI for containers, audio & video codecs, image formats, subtitle
 streams, archives, and embedded tags. A port of MediaInfoLib, validated
 byte-for-byte against the C++ `mediainfo` oracle through differential testing.
 
+**Name:** *Revelo* is Latin *to reveal/unveil* — it reveals the technical metadata hidden inside media files.
+
 [![crates.io](https://img.shields.io/crates/v/revelo-core?logo=rust&color=orange)](https://crates.io/crates/revelo-core)
 [![docs.rs](https://img.shields.io/docsrs/revelo-core?logo=docsdotrs)](https://docs.rs/revelo-core)
 [![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=master&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)

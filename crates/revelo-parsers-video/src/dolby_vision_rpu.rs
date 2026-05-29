@@ -237,15 +237,162 @@ pub fn fill_dv_rpu_fields(fa: &mut FileAnalyze, pos: usize, rpu: &DolbyVisionRpu
 mod tests {
     use super::*;
 
+    /// Build a Dolby Vision RPU NAL unit with the given extension data.
+    /// NAL header: first byte = (0x3F << 1) | (nal_type >> 0... actually 0x7C = NAL type 62
+    fn make_dv_rpu(extensions: &[(u8, &[u8])]) -> Vec<u8> {
+        // NAL header: 2 bytes for HEVC
+        // NAL type 62: first byte = (62 << 1) = 0x7C, second byte = 0x01 (temporal_id+1)
+        let mut nal = vec![0x7Cu8, 0x01];
+
+        // RPU prefix: 6 bytes
+        nal.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+        // num_extensions_minus1
+        nal.push((extensions.len().saturating_sub(1)) as u8);
+
+        for &(ext_type, ext_data) in extensions {
+            // extension_size in LEB128 (assuming < 128)
+            nal.push(ext_data.len() as u8);
+            nal.push(ext_type);
+            nal.extend_from_slice(ext_data);
+        }
+
+        // Pad to meet the minimum length requirement (10 bytes)
+        nal.resize(nal.len().max(10), 0);
+        nal
+    }
+
+    /// Build L1 metadata payload (8 bytes).
+    fn make_l1_data(color_primaries: u8, max_lum: u32, min_lum: u32) -> Vec<u8> {
+        let l1_byte = color_primaries << 5; // top 3 bits = color_primaries
+        let mut data = vec![l1_byte];
+        data.extend_from_slice(&max_lum.to_be_bytes());
+        data.extend_from_slice(&min_lum.to_be_bytes());
+        data
+    }
+
     #[test]
     fn rejects_non_dv_nal() {
-        let nal = vec![0x00; 10]; // NAL type 0, not 62
+        let nal = vec![0x00; 10];
         assert!(parse_dv_rpu(&nal).is_none());
     }
 
     #[test]
     fn rejects_short_buffer() {
-        let nal = vec![0x7C; 5]; // NAL type 62 but too short
+        let nal = vec![0x7C; 5];
         assert!(parse_dv_rpu(&nal).is_none());
+    }
+
+    #[test]
+    fn accepts_valid_rpu_no_extensions() {
+        // "no L1-L8 extensions" = a single dummy extension block with type=255 (reserved), size=0
+        let nal = make_dv_rpu(&[(255, &[])]);
+        let info = parse_dv_rpu(&nal);
+        assert!(info.is_some());
+        let info = info.unwrap();
+        assert!(info.has_rpu);
+        assert!(!info.l1_metadata);
+        assert!(!info.reshaping_present);
+    }
+
+    #[test]
+    fn parses_l1_extension() {
+        let l1 = make_l1_data(0, 10000000, 50); // 1000 cd/m² max, 0.005 cd/m² min
+        let nal = make_dv_rpu(&[(0, &l1)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert!(info.l1_metadata);
+        assert!(!info.l2_metadata);
+        assert!(!info.l3_metadata);
+        assert!(!info.l4_metadata);
+    }
+
+    #[test]
+    fn parses_l1_luminance_values() {
+        let l1 = make_l1_data(0, 10_000_000u32, 100); // max=1000.0, min=0.01
+        let nal = make_dv_rpu(&[(0, &l1)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert!(info.max_luminance.is_some());
+        assert!(info.min_luminance.is_some());
+        assert!((info.max_luminance.unwrap() - 1000.0).abs() < 0.1);
+        assert!((info.min_luminance.unwrap() - 0.01).abs() < 0.001);
+    }
+
+    #[test]
+    fn parses_l1_color_space_bt2020() {
+        let l1 = make_l1_data(0, 10000000, 50);
+        let nal = make_dv_rpu(&[(0, &l1)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert_eq!(info.color_space.as_deref(), Some("BT.2020"));
+    }
+
+    #[test]
+    fn parses_l1_color_space_p3_d65() {
+        let l1 = make_l1_data(1, 10000000, 50);
+        let nal = make_dv_rpu(&[(0, &l1)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert_eq!(info.color_space.as_deref(), Some("P3 D65"));
+    }
+
+    #[test]
+    fn parses_l1_color_space_bt709() {
+        let l1 = make_l1_data(2, 10000000, 50);
+        let nal = make_dv_rpu(&[(0, &l1)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert_eq!(info.color_space.as_deref(), Some("BT.709"));
+    }
+
+    #[test]
+    fn parses_l5_reshaping_extension() {
+        // L5 extension (type 4) with non-empty data → reshaping_present
+        let l5_data = [0x01, 0x02, 0x03];
+        let nal = make_dv_rpu(&[(4, &l5_data)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert!(info.l5_metadata);
+        assert!(info.reshaping_present);
+    }
+
+    #[test]
+    fn parses_l1_and_l5_together() {
+        let l1 = make_l1_data(1, 10000000, 50);
+        let l5 = [0x01, 0x02, 0x03];
+        let nal = make_dv_rpu(&[(0, &l1), (4, &l5)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert!(info.l1_metadata);
+        assert!(info.l5_metadata);
+        assert!(info.reshaping_present);
+        assert_eq!(info.color_space.as_deref(), Some("P3 D65"));
+    }
+
+    #[test]
+    fn parses_l2_l3_l4_extensions() {
+        let nal = make_dv_rpu(&[(1, &[0u8; 4]), (2, &[0u8; 4]), (3, &[0u8; 4])]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert!(info.l2_metadata);
+        assert!(info.l3_metadata);
+        assert!(info.l4_metadata);
+        assert!(!info.l1_metadata);
+    }
+
+    #[test]
+    fn parses_vdr_dm_data_ext_type_8() {
+        let nal = make_dv_rpu(&[(8, &[0u8; 4])]);
+        let info = parse_dv_rpu(&nal).unwrap();
+        assert!(info.l5_metadata); // VDR DM data also sets l5_metadata
+    }
+
+    #[test]
+    fn fill_dv_rpu_fields_sets_correctly() {
+        let l1 = make_l1_data(0, 10000000, 50);
+        let nal = make_dv_rpu(&[(0, &l1)]);
+        let info = parse_dv_rpu(&nal).unwrap();
+
+        let mut fa = FileAnalyze::new(&[0u8; 10]);
+        fa.stream_prepare(StreamKind::Video);
+        fill_dv_rpu_fields(&mut fa, 0, &info);
+
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(v("HDR_Format_Version").as_deref(), Some("RPU L1"));
+        assert_eq!(v("colour_primaries").as_deref(), Some("BT.2020"));
+        assert!(v("MasteringDisplay_Luminance").unwrap_or_default().contains("cd/m²"));
     }
 }

@@ -140,4 +140,181 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_truehd(&mut fa));
     }
+
+    #[test]
+    fn truehd_rejects_too_short() {
+        let mut fa = FileAnalyze::new(&[0xF8, 0x72, 0x6F]);
+        assert!(!parse_truehd(&mut fa));
+    }
+
+    #[test]
+    fn ac3_plus_truehd_sync() {
+        let buf = make_truehd(0xF8726FBB, 0x12, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_Commercial").as_deref(), Some("Dolby TrueHD + AC-3"));
+    }
+
+    #[test]
+    fn parses_sampling_rate_48000() {
+        // sr_idx = 0 → byte4 top nibble = 0x0X
+        let buf = make_truehd(0xF8726FBA, 0x03, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
+    }
+
+    #[test]
+    fn parses_sampling_rate_96000() {
+        // sr_idx = 1
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("96000"));
+    }
+
+    #[test]
+    fn parses_sampling_rate_192000() {
+        let buf = make_truehd(0xF8726FBA, 0x23, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("192000"));
+    }
+
+    #[test]
+    fn parses_sampling_rate_44100() {
+        let buf = make_truehd(0xF8726FBA, 0x33, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("44100"));
+    }
+
+    #[test]
+    fn parses_sampling_rate_88200() {
+        let buf = make_truehd(0xF8726FBA, 0x43, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("88200"));
+    }
+
+    #[test]
+    fn parses_sampling_rate_176400() {
+        let buf = make_truehd(0xF8726FBA, 0x53, 0x34, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("SamplingRate").as_deref(), Some("176400"));
+    }
+
+    #[test]
+    fn parses_channel_count() {
+        for (ch_code, expected) in &[(0u8, 1u8), (1, 2), (2, 3), (3, 4), (5, 6), (7, 8)] {
+            // ch_code = byte4 low nibble
+            let byte4 = 0x10 | ch_code;
+            let buf = make_truehd(0xF8726FBA, byte4, 0x34, &[]);
+            let mut fa = FileAnalyze::new(&buf);
+            assert!(parse_truehd(&mut fa), "ch_code={} should parse", ch_code);
+            let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+            assert_eq!(a("Channels").as_deref(), Some(expected.to_string()).as_deref());
+        }
+    }
+
+    #[test]
+    fn parses_bit_depth_16() {
+        // bit_depth code = 1 → top nibble of byte5 = 0x1X
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x1E, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("BitDepth").as_deref(), Some("16"));
+    }
+
+    #[test]
+    fn parses_bit_depth_20() {
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x2E, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("BitDepth").as_deref(), Some("20"));
+    }
+
+    #[test]
+    fn parses_bit_depth_24() {
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x3E, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("BitDepth").as_deref(), Some("24"));
+    }
+
+    #[test]
+    fn detects_atmos_via_ss_info() {
+        // ss_info (byte6 top nibble) >= 2 triggers Atmos
+        // ch_code = 7 → 8 channels → >= 6 → set HDR_Format
+        let extra = [0x20u8, 0x00, 0x00]; // byte6=0x20 → ss_info=2
+        let buf = make_truehd(0xF8726FBA, 0x17, 0x3E, &extra); // ch_code=7 → 8ch
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_AdditionalFeatures").as_deref(), Some("Atmos"));
+        assert_eq!(a("HDR_Format").as_deref(), Some("Dolby Atmos"));
+    }
+
+    #[test]
+    fn detects_atmos_via_mat_sync() {
+        // MAT sync 0x0003 right after frame header (at buf[8..9])
+        // Needs buf.len() >= 8 and the MAT search starts at i=8
+        let extra = vec![0x00, 0x00, 0x00, 0x03, 0x12, 0x34, 0x56, 0x78];
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x3E, &extra);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_AdditionalFeatures").as_deref(), Some("Atmos"));
+    }
+
+    #[test]
+    fn atmos_no_hdr_format_when_channels_lt_6() {
+        // Atmos detected but total_channels (from ch_code) < 6 → HDR_Format should NOT be set
+        let extra = [0x20u8, 0x00, 0x00]; // ss_info=2
+        let buf = make_truehd(0xF8726FBA, 0x12, 0x3E, &extra); // ch_code=2 → 3 channels
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_AdditionalFeatures").as_deref(), Some("Atmos"));
+        assert_eq!(a("HDR_Format"), None);
+    }
+
+    #[test]
+    fn no_atmos_when_ss_info_low() {
+        let extra = [0x10u8, 0x00, 0x00]; // ss_info=1 → no Atmos
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x3E, &extra);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format_AdditionalFeatures"), None);
+    }
+
+    #[test]
+    fn compression_mode_lossless() {
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x3E, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Compression_Mode").as_deref(), Some("Lossless"));
+    }
+
+    #[test]
+    fn bitrate_mode_vbr() {
+        let buf = make_truehd(0xF8726FBA, 0x13, 0x3E, &[]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("BitRate_Mode").as_deref(), Some("VBR"));
+    }
 }
