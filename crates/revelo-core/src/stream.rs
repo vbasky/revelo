@@ -222,6 +222,51 @@ impl StreamCollection {
         self.by_kind.get(&kind)?.get(pos)
     }
 
+    /// Remove all streams whose [`StreamKind`] is not in `keep`, and
+    /// remove all streams at a kind whose positional index is not in
+    /// `positions` (when that map entry exists). Used to implement
+    /// `--video-only`, `--audio-only`, and `--stream` filtering.
+    pub fn filter_keep(
+        &mut self,
+        keep: &[StreamKind],
+        specific: &[(StreamKind, usize)],
+    ) {
+        let keep_set: std::collections::HashSet<StreamKind> =
+            keep.iter().copied().collect();
+        let specific_map: std::collections::HashMap<StreamKind, std::collections::HashSet<usize>> =
+            specific.iter().fold(std::collections::HashMap::new(), |mut map, &(k, pos)| {
+                map.entry(k).or_default().insert(pos);
+                map
+            });
+
+        let mut specific_keep_all = true;
+        if !specific.is_empty() {
+            specific_keep_all = false;
+        }
+
+        self.by_kind.retain(|&kind, streams| {
+            if !keep_set.contains(&kind) {
+                return false;
+            }
+            if specific_keep_all {
+                return true;
+            }
+            if let Some(positions) = specific_map.get(&kind) {
+                // Keep only the positions that were specified.
+                let mut i = 0;
+                streams.retain(|_| {
+                    let keep = positions.contains(&i);
+                    i += 1;
+                    keep
+                });
+            } else {
+                // This kind is in `keep` but has no specific positions
+                // selected — keep all streams of this kind.
+            }
+            true
+        });
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (StreamKind, usize, &Stream)> {
         self.by_kind.iter().flat_map(|(k, v)| v.iter().enumerate().map(move |(i, s)| (*k, i, s)))
     }

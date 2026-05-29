@@ -319,3 +319,51 @@ Porting these would mean translating ~3.7k lines of C++ blind, with no way to ru
 the differential harness — contrary to the project's harness-validated workflow.
 They become tractable only with real sample files (and, for APV/AV2, a newer
 mediainfo). DCP PKL, the one validatable holdout, is implemented (BYTE-EQUAL).
+
+## Future improvements
+
+Planned features and high-impact areas for the next development phase:
+
+### Output & Reporting
+- **CSV / YAML export** — Machine-friendly formats for pipeline integration
+  (straightforward addition to `revelo-export`).
+- **HTML report** — Self-contained visual report with collapsible sections and
+  summary cards.
+- **Summary mode** — Aggregate statistics across a file collection: codec
+  distribution, resolution ranges, bitrate profiles, container breakdown.
+
+### Batch & Comparison
+- **Glob / batch processing** — `revelo --json "**/*.mp4"` to process an entire
+  directory tree and output as NDJSON or an array. Currently only single-file +
+  BDMV playlists are supported.
+- **Diff mode** — `revelo --diff a.mkv b.mkv` to show which fields differ
+  between two files (user-facing, distinct from the harness-oriented
+  `revelo-diff`).
+
+### Fidelity gaps
+- **Elementary-stream extraction** — Wire PES payload parsing for MPEG-TS
+  (AVC/AAC), VP9 frame headers in MKV/WebM, FLV per-tag AVC bitstream, and AV1
+  OBU sequence headers in MP4 to close the remaining ~10 divergence gaps.
+- **Blocked fields** — `FrameRate_Mode_Original` and `Format_Settings_SBR` need
+  real-world test samples to validate against the oracle.
+
+### Broader reach
+- **Python bindings** via PyO3 — natural fit for the media analysis audience,
+  with the existing C ABI (`revelo-cdylib`) as a proven bridge.
+- **NPM package** — WASM builds already compile on `wasm32-unknown-unknown`; a
+  documented JS API and NPM release would enable browser-side media inspection.
+
+### Extraction
+- **Cover art / attachment extraction** — `--extract-attachments` flag for MKV
+  Attachments, MP4 Cover boxes, and ID3 APIC frames.
+- **Subtitle extraction** — Dump subtitle streams to SRT/VTT from any container.
+- **Thumbnail / keyframe offset** — Report byte offset of the first keyframe
+  (no decoding — metadata-position only).
+
+### Quality of life
+- **Stream filtering** — `--video-only`, `--audio-only`, `--stream 0:1` to
+  select specific tracks by index.
+- **Container verification** — Structural integrity checks: MOOV atom
+  completeness, EBML well-formedness, RIFF size consistency.
+- **Format conversion** — `revelo --to-json --from-xml` to transform between
+  export formats without re-parsing.

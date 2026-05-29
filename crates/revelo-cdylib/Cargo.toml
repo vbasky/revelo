@@ -1,7 +1,8 @@
 [package]
 name = "revelo-cdylib"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "C ABI shim exposing MediaInfo_* entry points"
@@ -17,7 +18,7 @@ crate-type = ["cdylib"]
 workspace = true
 
 [dependencies]
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.1" }
-revelo-core = { path = "../revelo-core", version = "0.2.1" }
-revelo-export = { path = "../revelo-export", version = "0.2.1" }
-revelo-util = { path = "../revelo-util", version = "0.2.1" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.2" }
+revelo-core = { path = "../revelo-core", version = "0.2.2" }
+revelo-export = { path = "../revelo-export", version = "0.2.2" }
+revelo-util = { path = "../revelo-util", version = "0.2.2" }

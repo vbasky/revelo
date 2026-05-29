@@ -1,7 +1,8 @@
 [package]
 name = "revelo-dispatcher"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Parallel format-detection dispatch table for revelo's media parsers."
@@ -14,11 +15,11 @@ workspace = true
 
 [dependencies]
 rayon.workspace = true
-revelo-core = { path = "../revelo-core", version = "0.2.1" }
-revelo-parsers-archive = { path = "../revelo-parsers-archive", version = "0.2.1" }
-revelo-parsers-audio = { path = "../revelo-parsers-audio", version = "0.2.1" }
-revelo-parsers-container = { path = "../revelo-parsers-container", version = "0.2.1" }
-revelo-parsers-image = { path = "../revelo-parsers-image", version = "0.2.1" }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.2.1" }
-revelo-parsers-text = { path = "../revelo-parsers-text", version = "0.2.1" }
-revelo-parsers-video = { path = "../revelo-parsers-video", version = "0.2.1" }
+revelo-core = { path = "../revelo-core", version = "0.2.2" }
+revelo-parsers-archive = { path = "../revelo-parsers-archive", version = "0.2.2" }
+revelo-parsers-audio = { path = "../revelo-parsers-audio", version = "0.2.2" }
+revelo-parsers-container = { path = "../revelo-parsers-container", version = "0.2.2" }
+revelo-parsers-image = { path = "../revelo-parsers-image", version = "0.2.2" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.2.2" }
+revelo-parsers-text = { path = "../revelo-parsers-text", version = "0.2.2" }
+revelo-parsers-video = { path = "../revelo-parsers-video", version = "0.2.2" }

@@ -68,6 +68,7 @@ fn display_fields(kind: StreamKind) -> &'static [&'static str] {
             "Duration",
             "OverallBitRate",
             "FrameRate",
+            "IsComplete",
             "Encoded_Application",
             "Encoded_Library",
             "Encoded_Date",
@@ -212,6 +213,11 @@ fn render(
 ) -> Option<(&'static str, String)> {
     match field {
         "CompleteName" => Some(("Complete name", path.to_owned())),
+
+        "IsComplete" => {
+            let v = s.get("IsComplete")?.as_str();
+            Some(("Is complete", if v == "Yes" { "Yes" } else { v }.to_owned()))
+        }
 
         "Format" => {
             let fmt = s.get("Format")?.as_str().to_owned();

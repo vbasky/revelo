@@ -1,4 +1,4 @@
-use std::env;
+use clap::CommandFactory;
 use std::fs;
 use std::path::Path;
 use std::process;
@@ -7,56 +7,26 @@ use std::time::UNIX_EPOCH;
 use revelo_core::computed_fields::fill_computed_fields;
 use revelo_core::multi_file::MultiFileLoader;
 use revelo_core::multi_file::find_duplicate_streams;
-use revelo_core::{FileAnalyze, FileLevelInfo, fill_file_level_fields};
+use revelo_core::{FileAnalyze, FileLevelInfo, StreamKind, fill_file_level_fields};
 use revelo_dispatcher::detect;
 use revelo_export::{to_json, to_text, to_xml};
 
+mod cli;
+use cli::Cli;
+
 fn main() -> process::ExitCode {
-    let mut args: Vec<String> = env::args().skip(1).collect();
-    let mut xml_mode = false;
-    let mut json_mode = false;
-    let mut demux_level = String::from("frame");
-    let mut trace_level = String::from("0");
-    let mut multi_file = false;
+    let cli = <Cli as clap::Parser>::parse();
 
-    args.retain(|a| {
-        if a == "--xml" {
-            xml_mode = true;
-            false
-        } else if a == "--json" {
-            json_mode = true;
-            false
-        } else if a.starts_with("--demux=") {
-            demux_level = a[8..].to_string();
-            false
-        } else if a.starts_with("--trace=") {
-            trace_level = a[8..].to_string();
-            false
-        } else if a == "--multi-file" {
-            multi_file = true;
-            false
-        } else {
-            true
+    let path = match cli.path {
+        Some(p) => p,
+        None => {
+            let _ = Cli::command().print_help();
+            println!();
+            return process::ExitCode::SUCCESS;
         }
-    });
+    };
 
-    if args.is_empty() {
-        eprintln!("{}", include_str!("banner.txt"));
-        eprintln!(
-            "Usage: revelo [--xml|--json] <file-path>
-Options:
-  --xml         XML output
-  --json        JSON output
-  --multi-file  scan companion files (BDMV M2TS, sidecar subtitles)
-  --demux=N     demux level: frame (default), container, elementary
-  --trace=N     trace verbosity (0-9)
-"
-        );
-        return process::ExitCode::SUCCESS;
-    }
-
-    let path = &args[0];
-    let bytes = match fs::read(path) {
+    let bytes = match fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
             eprintln!("{path}: {e}");
@@ -64,14 +34,14 @@ Options:
         }
     };
 
-    let metadata = fs::metadata(path).ok();
+    let metadata = fs::metadata(&path).ok();
     let mut parsed = false;
 
     // Multi-file: scan for companion files (BDMV M2TS, SRT/SST sidecars)
     let mut extra_data: Option<Vec<u8>> = None;
-    if multi_file {
+    if cli.multi_file {
         let mut loader = MultiFileLoader::new();
-        loader.scan_references(std::path::Path::new(path), &Default::default());
+        loader.scan_references(std::path::Path::new(&path), &Default::default());
         if let Some((data, _count)) = loader.load_all() {
             extra_data = Some(data);
         }
@@ -93,10 +63,10 @@ Options:
 
     if let Some(winner) = winner {
         let mut fa = FileAnalyze::new(&parse_buf);
-        fa.set_option("demux", &demux_level);
-        fa.set_option("trace_level", &trace_level);
-        fa.set_option("multi_file", if multi_file { "1" } else { "0" });
-        if let Some(ref _extra) = extra_data {
+        fa.set_option("demux", &cli.demux);
+        fa.set_option("trace_level", &cli.trace);
+        fa.set_option("multi_file", if cli.multi_file { "1" } else { "0" });
+        if extra_data.is_some() {
             fa.reference_count = 1;
         }
         if winner(&mut fa) {
@@ -112,7 +82,7 @@ Options:
                 .map(|d| d.as_secs() as i64);
             let info = FileLevelInfo {
                 file_size: metadata.as_ref().map(|m| m.len()).unwrap_or(bytes.len() as u64),
-                extension: Path::new(path).extension().and_then(|s| s.to_str()),
+                extension: Path::new(&path).extension().and_then(|s| s.to_str()),
                 modified_unix_secs,
                 local_offset_secs: local_offset_seconds(),
             };
@@ -120,12 +90,54 @@ Options:
             fill_computed_fields(fa.streams_mut());
             fa.duplicate_indices = find_duplicate_streams(fa.streams());
 
-            let output = if json_mode {
-                to_json(fa.streams(), path, env!("CARGO_PKG_VERSION"))
-            } else if xml_mode {
-                to_xml(fa.streams(), path, env!("CARGO_PKG_VERSION"))
+            // --verify: report structural integrity
+            if cli.verify {
+                let is_complete = if fa.truncated() { "No" } else { "Yes" };
+                fa.force_field(StreamKind::General, 0, "IsComplete", is_complete);
+                if fa.truncated() {
+                    fa.force_field(
+                        StreamKind::General,
+                        0,
+                        "Warning",
+                        "File appears truncated — parser was unable to read the full structure",
+                    );
+                }
+            }
+
+            // Stream filtering: apply before output
+            if cli.video_only || cli.audio_only || !cli.stream.is_empty() {
+                let mut keep_kinds = vec![StreamKind::General];
+                if cli.video_only {
+                    keep_kinds.push(StreamKind::Video);
+                }
+                if cli.audio_only {
+                    keep_kinds.push(StreamKind::Audio);
+                }
+                if cli.video_only && !cli.audio_only && cli.stream.is_empty() {
+                    // video-only: General + Video
+                } else if !cli.video_only && cli.audio_only && cli.stream.is_empty() {
+                    // audio-only: General + Audio
+                } else if !cli.video_only && !cli.audio_only && cli.stream.is_empty() {
+                    // Neither flag set but --stream was used — keep all kinds
+                    keep_kinds.extend_from_slice(&[
+                        StreamKind::Video,
+                        StreamKind::Audio,
+                        StreamKind::Text,
+                        StreamKind::Other,
+                        StreamKind::Image,
+                        StreamKind::Menu,
+                    ]);
+                }
+
+                fa.streams_mut().filter_keep(&keep_kinds, &cli.stream);
+            }
+
+            let output = if cli.json {
+                to_json(fa.streams(), &path, env!("CARGO_PKG_VERSION"))
+            } else if cli.xml {
+                to_xml(fa.streams(), &path, env!("CARGO_PKG_VERSION"))
             } else {
-                to_text(fa.streams(), path)
+                to_text(fa.streams(), &path)
             };
             println!("{output}");
         }

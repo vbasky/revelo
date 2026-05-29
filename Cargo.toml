@@ -20,6 +20,7 @@ members = [
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.85"
 license = "BSD-2-Clause"
 repository = "https://github.com/vbasky/revelo"
 

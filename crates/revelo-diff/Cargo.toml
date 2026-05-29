@@ -1,7 +1,8 @@
 [package]
 name = "revelo-diff"
-version = "0.2.1"
+version = "0.2.2"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
@@ -16,6 +17,6 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.2.1" }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.1" }
-revelo-export = { path = "../revelo-export", version = "0.2.1" }
+revelo-core = { path = "../revelo-core", version = "0.2.2" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.2" }
+revelo-export = { path = "../revelo-export", version = "0.2.2" }
