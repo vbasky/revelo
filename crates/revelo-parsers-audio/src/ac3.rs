@@ -334,9 +334,17 @@ mod tests {
 
     /// Build a valid E-AC-3 8-byte frame buffer (the first 8 bytes).
     /// Returns a full buffer padded to 32 bytes.
-    fn make_eac3_frame(strmtyp: u8, substreamid: u8, frmsiz: u16, fscod: u8,
-                       numblkscod: u8, acmod: u8, lfeon: u8, bsid: u8,
-                       dialnorm: u8) -> Vec<u8> {
+    fn make_eac3_frame(
+        strmtyp: u8,
+        substreamid: u8,
+        frmsiz: u16,
+        fscod: u8,
+        numblkscod: u8,
+        acmod: u8,
+        lfeon: u8,
+        bsid: u8,
+        dialnorm: u8,
+    ) -> Vec<u8> {
         let mut fb = [0u8; 8];
 
         // Sync word
@@ -364,10 +372,19 @@ mod tests {
     }
 
     /// Build a valid AC-3 frame buffer for stereo (acmod=2).
-    fn make_ac3_frame(fscod: u8, frmsizecod: u8, bsid: u8, bsmod: u8,
-                      acmod: u8, lfeon: u8, dsurmod: u8, dialnorm: u8) -> Vec<u8> {
+    fn make_ac3_frame(
+        fscod: u8,
+        frmsizecod: u8,
+        bsid: u8,
+        bsmod: u8,
+        acmod: u8,
+        lfeon: u8,
+        dsurmod: u8,
+        dialnorm: u8,
+    ) -> Vec<u8> {
         let mut buf = vec![0x0B, 0x77];
-        buf.push(0x00); buf.push(0x00); // crc1
+        buf.push(0x00);
+        buf.push(0x00); // crc1
         buf.push((fscod << 6) | (frmsizecod & 0x3F));
         // After Reader skip(5), bit layout:
         //   byte5[7:3] = bsid, byte5[2:0] = bsmod
@@ -468,8 +485,10 @@ mod tests {
         // Need numblkscod=3 in the byte4 position. fscod=3, so:
         // byte4 = (3<<6) | (3<<4) = 0xC0 | 0x30 = 0xF0
         let mut fb = [0u8; 8];
-        fb[0] = 0x0B; fb[1] = 0x77;
-        fb[2] = 0x00; fb[3] = 0x40; // strmtyp=0, substreamid=0, frmsiz=64
+        fb[0] = 0x0B;
+        fb[1] = 0x77;
+        fb[2] = 0x00;
+        fb[3] = 0x40; // strmtyp=0, substreamid=0, frmsiz=64
         fb[4] = 0xF0; // fscod=3, fscod2=3
         fb[5] = 0x80; // bsid=16
         let buf: Vec<u8> = fb.into_iter().chain(std::iter::repeat(0).take(24)).collect();

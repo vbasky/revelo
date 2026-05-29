@@ -247,8 +247,8 @@ mod tests {
         let mut bits = vec![0u8; 5]; // buf[2..7] → bits 16-55
         bits[0] = bit_rate_mode << 7; // b_low_delay=0, reserved=00, version=0000 → bits 16-23
         bits[1] = (frame_length >> 8) as u8; // frame_length high byte → bits 24-31
-        bits[2] = frame_length as u8;        // frame_length low byte → bits 32-39
-        bits[3] = num_substreams << 4;       // top nibble = bits 40-43
+        bits[2] = frame_length as u8; // frame_length low byte → bits 32-39
+        bits[3] = num_substreams << 4; // top nibble = bits 40-43
 
         let mut bit_off = 28; // bits-relative: full_off(44) - sync(16)
 
@@ -420,13 +420,21 @@ mod tests {
 
     #[test]
     fn parses_channel_mode_counts() {
-        for (ch_mode, expected) in &[(0u8, 1u8), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8)] {
+        for (ch_mode, expected) in
+            &[(0u8, 1u8), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8)]
+        {
             let frame_hdr = build_frame_header(0, 64, 1, &[(0, 0, 1, *ch_mode, 0, 0)], 0, 0);
             let buf = make_ac4_core(0xAC40, &frame_hdr);
             let mut fa = FileAnalyze::new(&buf);
             assert!(parse_ac4(&mut fa), "ch_mode={} should parse", ch_mode);
             let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
-            assert_eq!(a("Channels").as_deref(), Some(expected.to_string()).as_deref(), "ch_mode={} -> {} channels", ch_mode, expected);
+            assert_eq!(
+                a("Channels").as_deref(),
+                Some(expected.to_string()).as_deref(),
+                "ch_mode={} -> {} channels",
+                ch_mode,
+                expected
+            );
         }
     }
 
@@ -456,7 +464,8 @@ mod tests {
     #[test]
     fn multiple_substreams_aggregates_channels() {
         // Two substreams: stereo (ch_mode=1) + 5.1 (ch_mode=5) -> max channels = 6
-        let frame_hdr = build_frame_header(0, 64, 2, &[(0, 0, 1, 1, 0, 0), (1, 0, 1, 5, 0, 0)], 0, 0);
+        let frame_hdr =
+            build_frame_header(0, 64, 2, &[(0, 0, 1, 1, 0, 0), (1, 0, 1, 5, 0, 0)], 0, 0);
         let buf = make_ac4_core(0xAC40, &frame_hdr);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ac4(&mut fa));

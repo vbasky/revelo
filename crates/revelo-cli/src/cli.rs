@@ -78,9 +78,9 @@ pub(crate) struct Cli {
 
 /// Parse a `"KIND:INDEX"` string into a `(StreamKind, usize)` pair.
 fn parse_stream_selector(s: &str) -> Result<(StreamKind, usize), String> {
-    let (kind_str, idx_str) = s.split_once(':').ok_or_else(|| {
-        format!("invalid stream selector '{s}': expected KIND:INDEX (e.g. 0:1)")
-    })?;
+    let (kind_str, idx_str) = s
+        .split_once(':')
+        .ok_or_else(|| format!("invalid stream selector '{s}': expected KIND:INDEX (e.g. 0:1)"))?;
     let kind = match kind_str {
         "0" | "General" => StreamKind::General,
         "1" | "Video" => StreamKind::Video,
@@ -89,9 +89,11 @@ fn parse_stream_selector(s: &str) -> Result<(StreamKind, usize), String> {
         "4" | "Other" => StreamKind::Other,
         "5" | "Image" => StreamKind::Image,
         "6" | "Menu" => StreamKind::Menu,
-        _ => return Err(format!(
-            "unknown stream kind '{kind_str}': use 0-6 or General/Video/Audio/Text/Other/Image/Menu"
-        )),
+        _ => {
+            return Err(format!(
+                "unknown stream kind '{kind_str}': use 0-6 or General/Video/Audio/Text/Other/Image/Menu"
+            ));
+        }
     };
     let index: usize = idx_str.parse().map_err(|_| {
         format!("invalid stream index '{idx_str}': expected a non-negative integer")

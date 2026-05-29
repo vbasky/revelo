@@ -1320,7 +1320,9 @@ mod tests {
         // Mastering display SEI (type 137): 24 bytes of display primaries + luminance
         let mut md = Vec::new();
         // display_primaries[x][y] × 3 = 6 × 2-byte values = 12 bytes
-        for _ in 0..6 { md.extend_from_slice(&[0x00, 0x00]); }
+        for _ in 0..6 {
+            md.extend_from_slice(&[0x00, 0x00]);
+        }
         // white_point[x][y] = 4 bytes
         md.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
         // max_display_mastering_luminance = 4 bytes

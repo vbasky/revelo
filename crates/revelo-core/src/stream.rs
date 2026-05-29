@@ -226,13 +226,8 @@ impl StreamCollection {
     /// remove all streams at a kind whose positional index is not in
     /// `positions` (when that map entry exists). Used to implement
     /// `--video-only`, `--audio-only`, and `--stream` filtering.
-    pub fn filter_keep(
-        &mut self,
-        keep: &[StreamKind],
-        specific: &[(StreamKind, usize)],
-    ) {
-        let keep_set: std::collections::HashSet<StreamKind> =
-            keep.iter().copied().collect();
+    pub fn filter_keep(&mut self, keep: &[StreamKind], specific: &[(StreamKind, usize)]) {
+        let keep_set: std::collections::HashSet<StreamKind> = keep.iter().copied().collect();
         let specific_map: std::collections::HashMap<StreamKind, std::collections::HashSet<usize>> =
             specific.iter().fold(std::collections::HashMap::new(), |mut map, &(k, pos)| {
                 map.entry(k).or_default().insert(pos);

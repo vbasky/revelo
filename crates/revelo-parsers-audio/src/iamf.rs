@@ -518,9 +518,11 @@ mod tests {
             let mut p = cc_id_leb.clone();
             p.extend_from_slice(codec_4cc);
             // num_samples_per_frame = 960 (Opus default)
-            p.push(0xC0); p.push(0x07); // LEB128 960
+            p.push(0xC0);
+            p.push(0x07); // LEB128 960
             // audio_roll_distance = 0
-            p.push(0x00); p.push(0x00);
+            p.push(0x00);
+            p.push(0x00);
             p
         };
         // obu header: type=0, no flags
@@ -630,7 +632,9 @@ mod tests {
         ae2.push(0x01); // num_groups = 1
         ae2.push(0x00); // cg_id = 0
         ae2.push(0x06); // num_channels = 6
-        for _ in 0..6 { ae2.push(0x00); }
+        for _ in 0..6 {
+            ae2.push(0x00);
+        }
 
         buf.push(0x08);
         buf.push(ae2.len() as u8);
