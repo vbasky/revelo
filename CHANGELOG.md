@@ -8,13 +8,17 @@
 - Summary output mode (`--summary`) with aggregate stream statistics
 - `--inform-version` and `--inform-timestamp` flags for text output provenance
 - `--log-file <FILE>` flag for writing output to file
+- `Format_Level_Inferred` computed field for AV1 — shows the minimum required
+  level based on resolution and frame rate (e.g. `4.1` for 1080p60)
 
 ### Fixed
 
 - AV1 `Format_Profile` now includes level (e.g. `Main@L5.3` instead of just `Main`)
 - AV1 `Format_Info` now shows `AOMedia Video 1`
 - AV1 sequence header parser no longer returns `None` when timing info present
+- AV1 level now reads from codec config record instead of last operating point
 - BPG test helper `unimplemented!()` panic for VSI values 21-34 bits
+- MKV `Title` field now populated from `HANDLER_NAME` and `TITLE` tags
 
 ## [0.2.2] - 2026-05-29
 
