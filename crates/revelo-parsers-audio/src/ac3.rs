@@ -197,6 +197,9 @@ fn get_bits(data: &[u8], off: usize, n: usize) -> u32 {
     let mut v = 0u32;
     for i in 0..n {
         let bit = off + i;
+        if bit / 8 >= data.len() {
+            break;
+        }
         let byte = data[bit / 8];
         v = (v << 1) | ((byte >> (7 - (bit % 8))) & 1) as u32;
     }

@@ -82,7 +82,7 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
                 has_atmos = true;
             }
             // Check for MAT sync (0x0003) following TrueHD frame
-            for i in (8..buf.len().saturating_sub(6)).step_by(8) {
+            for i in (8..buf.len().saturating_sub(1)).step_by(8) {
                 if buf[i] == 0x00 && buf[i + 1] == 0x03 {
                     // MAT header detected
                     has_atmos = true;
@@ -111,9 +111,17 @@ pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
 mod tests {
     use super::*;
 
+    fn make_truehd(sync: u32, byte4: u8, byte5: u8, extra: &[u8]) -> Vec<u8> {
+        let mut buf = sync.to_be_bytes().to_vec();
+        buf.push(byte4);
+        buf.push(byte5);
+        buf.extend_from_slice(extra);
+        buf
+    }
+
     #[test]
     fn truehd_detects_sync() {
-        let buf: Vec<u8> = vec![0xF8, 0x72, 0x6F, 0xBA, 0x12, 0x34];
+        let buf = make_truehd(0xF8726FBA, 0x12, 0x34, &[]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_truehd(&mut fa));
         assert_eq!(

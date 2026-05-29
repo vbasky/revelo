@@ -391,8 +391,9 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
             if payload_start + obu_size <= data.len() {
                 let payload = &data[payload_start..payload_start + obu_size];
                 if let Some(info) = parse_av1_sequence_header(payload) {
-                    seq_header_info = Some(info);
-                    break; // Found sequence header, done
+                    if seq_header_info.is_none() {
+                        seq_header_info = Some(info);
+                    }
                 }
             }
         } else if obu_type == OBU_METADATA {
