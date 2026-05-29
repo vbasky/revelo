@@ -15,7 +15,7 @@ pub mod file_level;
 pub mod prelude;
 pub mod reader;
 pub mod stream;
-mod zenlib_re_export;
+mod revelo_util_re_export;
 
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;

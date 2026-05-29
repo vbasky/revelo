@@ -565,7 +565,7 @@ fn language_name(code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zenlib::Ztring;
+    use revelo_util::Ztring;
 
     fn stream_with(kind: StreamKind, fields: &[(&str, &str)]) -> StreamCollection {
         let mut c = StreamCollection::new();

@@ -15,4 +15,4 @@ workspace = true
 
 [dependencies]
 revelo-core = { path = "../revelo-core", version = "0.2.0" }
-zenlib = { path = "../zenlib", version = "0.2.0" }
+revelo-util = { path = "../revelo-util", version = "0.2.0" }

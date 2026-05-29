@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn test_duplicate_detection() {
         use super::super::{StreamCollection, StreamKind};
-        use zenlib::Ztring;
+        use revelo_util::Ztring;
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Video);
         sc.set_field(StreamKind::Video, 0, "Format", Ztring::from("AVC"));
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_no_duplicate_different_lang() {
         use super::super::{StreamCollection, StreamKind};
-        use zenlib::Ztring;
+        use revelo_util::Ztring;
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Audio);
         sc.set_field(StreamKind::Audio, 0, "Format", Ztring::from("AAC"));

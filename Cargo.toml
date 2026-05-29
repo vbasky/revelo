@@ -14,7 +14,7 @@ members = [
     "crates/revelo-parsers-tag",
     "crates/revelo-parsers-text",
     "crates/revelo-parsers-video",
-    "crates/zenlib",
+    "crates/revelo-util",
     "crates/revelo-cdylib",
 ]
 

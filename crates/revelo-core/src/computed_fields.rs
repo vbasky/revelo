@@ -1,5 +1,5 @@
 use super::stream::{StreamCollection, StreamKind};
-use zenlib::Ztring;
+use revelo_util::Ztring;
 
 pub fn fill_computed_fields(sc: &mut StreamCollection) {
     fill_bits_pixel_frame(sc);

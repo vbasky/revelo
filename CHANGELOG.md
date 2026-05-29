@@ -30,7 +30,7 @@
 - Toolchain switched from nightly to **stable** — edition 2024 and let-chains are both stabilized, so no nightly features are required
 - Renamed `diff-harness` → `revelo-diff`; it now uses `revelo_dispatcher::detect()` instead of a hand-maintained parser table
 - Parser dispatch table (`revelo-dispatcher`) now carries inline format-name comments
-- `zenlib` `FromRadix`/`FromRadixSigned` traits changed to `pub(super)`; `zenlib_re_export` re-exports to `pub(crate)`
+- `revelo-util` `FromRadix`/`FromRadixSigned` traits changed to `pub(super)`; `revelo-util_re_export` re-exports to `pub(crate)`
 - `[workspace.lints.rustdoc]` allows intentional byte-layout notation (`invalid_html_tags`, `broken_intra_doc_links`)
 - Bare URLs in doc comments wrapped in `<>`
 - CI no longer fails the build on warnings (`-D warnings` dropped); `cargo fmt --check` is reported but non-blocking

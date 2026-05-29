@@ -146,7 +146,7 @@ fn json_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zenlib::Ztring;
+    use revelo_util::Ztring;
 
     #[test]
     fn json_has_creating_library_header() {

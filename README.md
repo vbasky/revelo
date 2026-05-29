@@ -139,7 +139,7 @@ The crate stack, from consumers at the top down to the foundation:
 ├────────────────────────────────────────────────────────────┤
 │  container · audio · video · image · text · tag · archive    │  parsers (193)
 ├────────────────────────────────────────────────────────────┤
-│  revelo-core (FileAnalyze engine)     zenlib                │  foundation
+│  revelo-core (FileAnalyze engine)     revelo-util                │  foundation
 └────────────────────────────────────────────────────────────┘
    revelo-diff — differential harness, diffs output vs the mediainfo oracle
 ```
@@ -153,7 +153,7 @@ output/API surface, and the differential test harness.
 
 | Crate | Role | Status |
 | --- | --- | --- |
-| `zenlib` | ZenLib port — `Ztring`, bit reader, integer/float types | Stable |
+| `revelo-util` | ZenLib port — `Ztring`, bit reader, integer/float types | Stable |
 | `revelo-core` | Analysis engine — `FileAnalyze` byte reader, stream model, demux/trace, config dispatch, computed fields | Stable |
 | `revelo-dispatcher` | Parser table (single source of truth) + parallel `detect()` | Stable |
 

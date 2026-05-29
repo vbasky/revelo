@@ -9,7 +9,7 @@ the engine works.
 
 ```bash
 Cargo workspace root
-├─ crates/zenlib              C++-style integer types + bitstream helpers
+├─ crates/revelo-util              C++-style integer types + bitstream helpers
 ├─ crates/revelo-core        The parser engine (FileAnalyze, streams, config)
 ├─ crates/revelo-export      Output formatters (XML, Text, JSON, EBUCore, …)
 ├─ crates/revelo-cli         CLI tool (cargo run --bin revelo -- path/to/file)
@@ -150,7 +150,7 @@ All public parser API methods use **snake_case**:
 
 ### Types
 
-Type aliases from `zenlib::types` (used in declarations):
+Type aliases from `revelo-util::types` (used in declarations):
 
 - `Int8u` = `u8`, `Int32u` = `u32`, `Int64u` = `u64`
 - `Float32` = `f32`, `Float64` = `f64`

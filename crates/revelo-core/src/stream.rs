@@ -9,7 +9,7 @@
 //! [`FileAnalyze`](super::FileAnalyze).
 
 use std::collections::BTreeMap;
-use zenlib::Ztring;
+use revelo_util::Ztring;
 
 /// `stream_t` from `MediaInfo_Const.h`. Same discriminants so external
 /// consumers binding through the C ABI later get matching values.

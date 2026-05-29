@@ -472,7 +472,7 @@ pub(crate) fn canonical_field_order(kind: StreamKind) -> &'static [&'static str]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zenlib::Ztring;
+    use revelo_util::Ztring;
 
     fn build_wav_streams() -> StreamCollection {
         let mut c = StreamCollection::new();

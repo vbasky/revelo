@@ -84,7 +84,7 @@ impl<'a, 'b> Reader<'a, 'b> {
         kind: crate::stream::StreamKind,
         pos: usize,
         parameter: &str,
-        value: impl Into<zenlib::Ztring>,
+        value: impl Into<revelo_util::Ztring>,
     ) {
         self.fa.set_field(kind, pos, parameter, value);
     }
@@ -93,7 +93,7 @@ impl<'a, 'b> Reader<'a, 'b> {
         kind: crate::stream::StreamKind,
         pos: usize,
         parameter: &str,
-        value: impl Into<zenlib::Ztring>,
+        value: impl Into<revelo_util::Ztring>,
     ) {
         self.fa.force_field(kind, pos, parameter, value);
     }

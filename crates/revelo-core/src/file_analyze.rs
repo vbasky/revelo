@@ -11,7 +11,7 @@
 use crate::config::MediaConfig;
 use crate::element::ElementTree;
 use crate::stream::{StreamCollection, StreamKind};
-use zenlib::Ztring;
+use revelo_util::Ztring;
 
 pub struct FileAnalyze<'a> {
     buffer: &'a [u8],

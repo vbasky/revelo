@@ -23,7 +23,7 @@ pub fn to_pbcore(streams: &StreamCollection, file_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zenlib::Ztring;
+    use revelo_util::Ztring;
     #[test]
     fn test() {
         let mut c = StreamCollection::new();
