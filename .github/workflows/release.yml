@@ -142,21 +142,28 @@ jobs:
           done
 
   formula:
-    name: Homebrew formula
+    name: Homebrew formula PR
     needs: [publish]
+    if: github.repository == 'vbasky/revelo'
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
-      - name: Fetch source tarball SHA
+      - uses: actions/checkout@v4
+
+      - name: Generate formula
+        id: formula
         run: |
           tag="${{ github.ref_name }}"
           url="https://github.com/vbasky/revelo/archive/refs/tags/${tag}.tar.gz"
           sha=$(curl -sL "${url}" | shasum -a 256 | cut -d' ' -f1)
+          version="${tag#v}"
 
-          cat <<RUBY
+          cat <<RUBY > /tmp/revelo.rb
           class Revelo < Formula
             desc "Read technical metadata from any media file, in pure Rust"
             homepage "https://github.com/vbasky/revelo"
-            url "https://github.com/vbasky/revelo/archive/refs/tags/${tag}.tar.gz"
+            url "${url}"
             sha256 "${sha}"
             license "BSD-2-Clause"
 
@@ -173,3 +180,33 @@ jobs:
             end
           end
           RUBY
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR to homebrew-core
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_CORE_TOKEN }}
+        run: |
+          VERSION="${{ steps.formula.outputs.version }}"
+          BRANCH="revelo-${VERSION}"
+
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/vbasky/homebrew-core.git" /tmp/homebrew-core
+          cd /tmp/homebrew-core
+          git remote add upstream https://github.com/Homebrew/homebrew-core.git
+          git fetch upstream master
+          git checkout -b "${BRANCH}" upstream/master
+
+          mkdir -p Formula/r
+          cp /tmp/revelo.rb Formula/r/revelo.rb
+          git add Formula/r/revelo.rb
+          git -c user.name="revelo-bot" \
+             -c user.email="bot@revelo.app" \
+             commit -m "revelo ${VERSION}"
+
+          git push origin "${BRANCH}" 2>&1
+
+          gh pr create \
+            --repo Homebrew/homebrew-core \
+            --head "vbasky:${BRANCH}" \
+            --base master \
+            --title "revelo ${VERSION}" \
+            --body "Update revelo to ${VERSION}."

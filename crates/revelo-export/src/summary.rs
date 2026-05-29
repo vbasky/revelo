@@ -302,10 +302,7 @@ mod tests {
 
     #[test]
     fn summary_shows_container_format_and_size() {
-        let c = stream_with(
-            StreamKind::General,
-            &[("Format", "MPEG-4"), ("FileSize", "5510872")],
-        );
+        let c = stream_with(StreamKind::General, &[("Format", "MPEG-4"), ("FileSize", "5510872")]);
         let out = to_summary(&c, "f.mp4");
         assert!(out.contains("Container: MPEG-4"));
         assert!(out.contains("Size: "));
