@@ -9,8 +9,8 @@ pub fn parse_afd_bar_data(fa: &mut FileAnalyze) -> bool {
     }
     if &buf[0..4] == b"AFBd" || &buf[0..4] == b"BARD" {
         let pos = fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, pos, "Format", "AFD/Bar Data", false);
-        fa.fill(StreamKind::Video, pos, "Format_Info", "SMPTE 2016-1", false);
+        fa.set_field(StreamKind::Video, pos, "Format", "AFD/Bar Data");
+        fa.set_field(StreamKind::Video, pos, "Format_Info", "SMPTE 2016-1");
         return true;
     }
     false

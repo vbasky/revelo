@@ -19,8 +19,8 @@ pub fn parse_webvtt(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "WebVTT", false);
-    fa.fill(StreamKind::Text, pos, "MuxingMode", "WebVTT", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "WebVTT");
+    fa.set_field(StreamKind::Text, pos, "MuxingMode", "WebVTT");
 
     true
 }

@@ -1,10 +1,10 @@
 //! Core of the Rust MediaInfo engine — transliteration of MediaInfoLib's
 //! `File__Analyze` infrastructure. Provides the byte-reader surface that
-//! every parser uses (`Get_B*`, `Get_L*`, `Peek_*`, `Skip_*`) plus, later,
-//! the element tree, stream model, config, and event dispatch.
+//! every parser uses (`Get_B*`, `Get_L*`, `Peek_*`, `Skip_*`) plus the
+//! element tree, stream model, config, and event dispatch.
 //!
-//! Naming follows the C++ side verbatim. Idiomaticity is sacrificed for
-//! 1:1 readability with the upstream parsers.
+//! All methods return native Rust types (`u8`, `u16`, `u32`, `u64`, `f32`,
+//! `f64`) rather than out-parameters or type aliases.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]
@@ -12,12 +12,15 @@
 pub mod element;
 pub mod file_analyze;
 pub mod file_level;
+pub mod prelude;
+pub mod reader;
 pub mod stream;
 mod zenlib_re_export;
 
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;
 pub use file_level::{FileLevelInfo, fill_file_level_fields};
+pub use reader::Reader;
 pub use stream::{Stream, StreamCollection, StreamKind};
 
 pub mod channel_grouping;

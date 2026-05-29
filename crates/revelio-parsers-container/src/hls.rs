@@ -66,7 +66,7 @@ pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "HLS", true);
+    fa.force_field(StreamKind::General, 0, "Format", "HLS");
 
     let mut is_master = false;
     let mut saw_segment = false;
@@ -102,7 +102,7 @@ pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
         // No variants and no segments — C++ falls through to "Master".
         "Master"
     };
-    fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
+    fa.set_field(StreamKind::General, 0, "Format_Profile", profile);
 
     true
 }
@@ -118,20 +118,19 @@ fn parse_ext_x_key(fa: &mut FileAnalyze, attrs: &str) {
         if key == "METHOD" {
             if value.starts_with("AES-128") {
                 // Match the exact set of fields C++ fills for AES-128.
-                fa.fill(StreamKind::General, 0, "Encryption_Format", "AES", false);
-                fa.fill(StreamKind::General, 0, "Encryption_Length", "128", false);
-                fa.fill(StreamKind::General, 0, "Encryption_Method", "Segment", false);
-                fa.fill(StreamKind::General, 0, "Encryption_Mode", "CBC", false);
-                fa.fill(StreamKind::General, 0, "Encryption_Padding", "PKCS7", false);
-                fa.fill(
+                fa.set_field(StreamKind::General, 0, "Encryption_Format", "AES");
+                fa.set_field(StreamKind::General, 0, "Encryption_Length", "128");
+                fa.set_field(StreamKind::General, 0, "Encryption_Method", "Segment");
+                fa.set_field(StreamKind::General, 0, "Encryption_Mode", "CBC");
+                fa.set_field(StreamKind::General, 0, "Encryption_Padding", "PKCS7");
+                fa.set_field(
                     StreamKind::General,
                     0,
                     "Encryption_InitializationVector",
                     "Sequence number",
-                    false,
                 );
             }
-            fa.fill(StreamKind::General, 0, "Encryption", value, false);
+            fa.set_field(StreamKind::General, 0, "Encryption", value);
         }
     }
 }

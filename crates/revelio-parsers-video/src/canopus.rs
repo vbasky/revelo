@@ -15,8 +15,8 @@ pub fn parse_canopus(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "Canopus HQ", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "Grass Valley HQX", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "Canopus HQ");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "Grass Valley HQX");
     true
 }
 #[cfg(test)]

@@ -94,58 +94,58 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
     };
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "TIFF", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "TIFF");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
     if let Some(ref s) = ifd.software {
         // TIFF Software → both Encoded_Application_Name and the composed
         // Encoded_Application (oracle emits both, derived from the same
         // string when no version info is separately available).
-        fa.fill(StreamKind::General, 0, "Encoded_Application", s.clone(), false);
-        fa.fill(StreamKind::General, 0, "Encoded_Application_Name", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Application", s.clone());
+        fa.set_field(StreamKind::General, 0, "Encoded_Application_Name", s.clone());
     }
     if let Some(ref s) = ifd.make {
-        fa.fill(StreamKind::General, 0, "Make", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Make", s.clone());
     }
     if let Some(ref s) = ifd.model {
-        fa.fill(StreamKind::General, 0, "Model", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Model", s.clone());
     }
     if let Some(ref s) = ifd.artist {
-        fa.fill(StreamKind::General, 0, "Artist", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Artist", s.clone());
     }
     if let Some(ref s) = ifd.copyright {
-        fa.fill(StreamKind::General, 0, "Copyright", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Copyright", s.clone());
     }
     if let Some(ref s) = ifd.date_time {
-        fa.fill(StreamKind::General, 0, "DateTime", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "DateTime", s.clone());
     }
     if let Some(ref s) = ifd.image_description {
-        fa.fill(StreamKind::General, 0, "Description", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Description", s.clone());
     }
 
     fa.stream_prepare(StreamKind::Image);
     let endianness = if little_endian { "Little" } else { "Big" };
-    fa.fill(StreamKind::Image, 0, "Format", "TIFF", false);
-    fa.fill(StreamKind::Image, 0, "Format_Settings_Endianness", endianness, false);
+    fa.set_field(StreamKind::Image, 0, "Format", "TIFF");
+    fa.set_field(StreamKind::Image, 0, "Format_Settings_Endianness", endianness);
     if ifd.is_thumbnail {
-        fa.fill(StreamKind::Image, 0, "Type", "Thumbnail", false);
+        fa.set_field(StreamKind::Image, 0, "Type", "Thumbnail");
     }
     if ifd.width > 0 {
-        fa.fill(StreamKind::Image, 0, "Width", ifd.width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", ifd.width.to_string());
     }
     if ifd.height > 0 {
-        fa.fill(StreamKind::Image, 0, "Height", ifd.height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", ifd.height.to_string());
     }
     if ifd.bits_per_sample > 0 {
-        fa.fill(StreamKind::Image, 0, "BitDepth", ifd.bits_per_sample.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "BitDepth", ifd.bits_per_sample.to_string());
     }
     if ifd.compression > 0 {
         let name = tiff_compression_name(ifd.compression);
         if !name.is_empty() {
-            fa.fill(StreamKind::Image, 0, "Format", name, true);
+            fa.force_field(StreamKind::Image, 0, "Format", name);
         }
         let cm = tiff_compression_mode(ifd.compression);
         if !cm.is_empty() {
-            fa.fill(StreamKind::Image, 0, "Compression_Mode", cm, false);
+            fa.set_field(StreamKind::Image, 0, "Compression_Mode", cm);
         }
     }
     if ifd.photometric > 0 {
@@ -154,7 +154,7 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
             cs.push('A');
         }
         if !cs.is_empty() {
-            fa.fill(StreamKind::Image, 0, "ColorSpace", cs, false);
+            fa.set_field(StreamKind::Image, 0, "ColorSpace", cs);
         }
     }
 
@@ -176,13 +176,13 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         }
     };
     if let Some(x) = ifd.x_resolution {
-        fa.fill(StreamKind::Image, 0, "Density_X", format_rat(x), false);
+        fa.set_field(StreamKind::Image, 0, "Density_X", format_rat(x));
     }
     if let Some(y) = ifd.y_resolution {
-        fa.fill(StreamKind::Image, 0, "Density_Y", format_rat(y), false);
+        fa.set_field(StreamKind::Image, 0, "Density_Y", format_rat(y));
     }
     if !unit_str.is_empty() {
-        fa.fill(StreamKind::Image, 0, "Density_Unit", unit_str, false);
+        fa.set_field(StreamKind::Image, 0, "Density_Unit", unit_str);
     }
     if ifd.x_resolution.is_some() || ifd.y_resolution.is_some() {
         // Density_String mirrors the C++'s "Density/String" composed
@@ -191,12 +191,11 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
         let ys = ifd.y_resolution.map(format_rat).unwrap_or_else(|| "?".into());
         let val_part = if xs == ys { xs.clone() } else { format!("{}x{}", xs, ys) };
         if !unit_str.is_empty() {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Image,
                 0,
                 "Density_String",
                 format!("{} {}", val_part, unit_str),
-                false,
             );
         }
     }

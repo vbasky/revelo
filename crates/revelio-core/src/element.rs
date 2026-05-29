@@ -7,8 +7,6 @@
 //! `Header_Parse`/`Data_Parse` parser callback architecture and is handled
 //! separately when that lands.
 
-use crate::zenlib_re_export::Int64u;
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ElementInfo {
     /// `Some(name)` for field reads recorded via `Param` (i.e. `Get_B4(Size, "Size")`),
@@ -21,7 +19,7 @@ pub struct ElementInfo {
 #[derive(Clone, Debug, Default)]
 pub struct ElementNode {
     pub name: String,
-    pub size: Int64u,
+    pub size: u64,
     pub infos: Vec<ElementInfo>,
     pub children: Vec<ElementNode>,
     pub has_error: bool,
@@ -96,7 +94,7 @@ impl ElementTree {
         self.stack.len().saturating_sub(1)
     }
 
-    pub fn set_current_size(&mut self, size: Int64u) {
+    pub fn set_current_size(&mut self, size: u64) {
         if let Some(last) = self.stack.last_mut() {
             last.size = size;
         }

@@ -261,57 +261,50 @@ const ASPECT_RATIO_TABLE: [Option<(u16, u16)>; 16] = [
 pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
     fa.stream_prepare(StreamKind::Video);
 
-    fa.fill(StreamKind::Video, 0, "Format", "MPEG Video", false);
-    fa.fill(StreamKind::Video, 0, "Format_Version", "Version 2", false);
+    fa.set_field(StreamKind::Video, 0, "Format", "MPEG Video");
+    fa.set_field(StreamKind::Video, 0, "Format_Version", "Version 2");
 
     if let Some(profile) = info.profile {
-        fa.fill(StreamKind::Video, 0, "Format_Profile", profile.as_str(), false);
+        fa.set_field(StreamKind::Video, 0, "Format_Profile", profile.as_str());
     }
 
     if let Some(level) = info.level
         && let Some(level_str) = level.as_str()
     {
-        fa.fill(StreamKind::Video, 0, "Format_Level", level_str, false);
+        fa.set_field(StreamKind::Video, 0, "Format_Level", level_str);
     }
 
     if info.width > 0 {
-        fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
+        fa.set_field(StreamKind::Video, 0, "Width", info.width.to_string());
     }
 
     if info.height > 0 {
-        fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+        fa.set_field(StreamKind::Video, 0, "Height", info.height.to_string());
     }
 
     if let Some(fr) = info.frame_rate() {
-        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr), false);
+        fa.set_field(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr));
     }
 
     if let Some(bitrate) = info.bit_rate {
-        fa.fill(StreamKind::Video, 0, "BitRate", bitrate.to_string(), false);
+        fa.set_field(StreamKind::Video, 0, "BitRate", bitrate.to_string());
     }
 
     if let Some((num, den)) = info.aspect_ratio {
         let dar = num as f64 / den as f64;
-        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
-        fa.fill(
-            StreamKind::Video,
-            0,
-            "DisplayAspectRatio/String",
-            format!("{}:{}", num, den),
-            false,
-        );
+        fa.set_field(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar));
+        fa.set_field(StreamKind::Video, 0, "DisplayAspectRatio/String", format!("{}:{}", num, den));
     }
 
     if let Some(chroma) = info.chroma_format_str() {
-        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
+        fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", chroma);
     }
 
-    fa.fill(
+    fa.set_field(
         StreamKind::Video,
         0,
         "ScanType",
         if info.progressive { "Progressive" } else { "Interlaced" },
-        false,
     );
 }
 

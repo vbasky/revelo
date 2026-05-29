@@ -36,8 +36,8 @@ pub fn parse_heif(fa: &mut FileAnalyze) -> bool {
         "mif1" | "msf1" => "HEIF",
         _ => "HEIF",
     };
-    fa.fill(StreamKind::Image, pos, "Format", format, false);
-    fa.fill(StreamKind::Image, pos, "Format_Profile", major_brand, false);
+    fa.set_field(StreamKind::Image, pos, "Format", format);
+    fa.set_field(StreamKind::Image, pos, "Format_Profile", major_brand);
 
     true
 }

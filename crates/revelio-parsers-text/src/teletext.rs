@@ -25,8 +25,8 @@ pub fn parse_teletext(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "Teletext", false);
-    fa.fill(StreamKind::Text, pos, "MuxingMode", "Teletext", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "Teletext");
+    fa.set_field(StreamKind::Text, pos, "MuxingMode", "Teletext");
 
     true
 }

@@ -18,8 +18,7 @@
 //!       4 bytes BE: security_level
 //!     DATA: terminates the header (audio payload follows, format unknown)
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int32u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_TWIN: u32 = 0x5457_494E; // "TWIN"
 const CHUNK_COMM: u32 = 0x434F_4D4D; // "COMM"
@@ -27,7 +26,7 @@ const CHUNK_DATA: u32 = 0x4441_5441; // "DATA"
 
 const HEADER_LEN: usize = 4 + 8 + 4; // magic + version + subchunks_size
 
-fn samplerate_from_code(code: Int32u) -> Option<u32> {
+fn samplerate_from_code(code: u32) -> Option<u32> {
     match code {
         11 => Some(11025),
         22 => Some(22050),
@@ -37,92 +36,86 @@ fn samplerate_from_code(code: Int32u) -> Option<u32> {
 }
 
 pub fn parse_twin_vq(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < HEADER_LEN {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < HEADER_LEN {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(4)) {
-        Some(h) if h.len() == 4 => h,
-        _ => return false,
-    };
+    let head = r.peek_raw(4)?;
     let magic = u32::from_be_bytes([head[0], head[1], head[2], head[3]]);
     if magic != MAGIC_TWIN {
-        return false;
+        return None;
     }
 
-    let file_size = fa.remain() as u64;
+    let file_size = r.remain() as u64;
 
-    fa.element_begin("TwinVQ");
-    let mut magic_consume: Int32u = 0;
-    fa.get_c4(&mut magic_consume, "magic");
-    fa.skip_hexa(8, "version");
-    let mut subchunks_size: Int32u = 0;
-    fa.get_b4(&mut subchunks_size, "subchunks_size");
+    r.element_begin("TwinVQ");
+    r.fourcc("magic")?;
+    r.skip(8)?; // version
+    r.be_u32("subchunks_size")?;
 
-    let mut channel_mode: Option<Int32u> = None;
-    let mut bitrate_kbps: Option<Int32u> = None;
+    let mut channel_mode: Option<u32> = None;
+    let mut bitrate_kbps: Option<u32> = None;
     let mut samplerate: Option<u32> = None;
 
     // Walk chunks until DATA (or buffer exhausted). DATA terminates the
     // header per the C++ reference — its payload format is not parsed.
     loop {
-        if fa.remain() < 8 {
+        if r.remain() < 8 {
             break;
         }
-        let mut id: Int32u = 0;
-        let mut size: Int32u = 0;
-        fa.get_c4(&mut id, "id");
-        fa.get_b4(&mut size, "size");
+        let id = r.fourcc("id")?;
+        let size = r.be_u32("size")?;
 
         if id == CHUNK_DATA {
             break;
         }
 
         let size_usize = size as usize;
-        if fa.remain() < size_usize {
+        if r.remain() < size_usize {
             break;
         }
 
         if id == CHUNK_COMM && size_usize >= 16 {
-            let mut cm: Int32u = 0;
-            let mut br: Int32u = 0;
-            let mut sr: Int32u = 0;
-            fa.get_b4(&mut cm, "channel_mode");
-            fa.get_b4(&mut br, "bitrate");
-            fa.get_b4(&mut sr, "samplerate");
-            fa.skip_b4("security_level");
+            let cm = r.be_u32("channel_mode")?;
+            let br = r.be_u32("bitrate")?;
+            let sr = r.be_u32("samplerate")?;
+            r.be_u32("security_level")?;
             channel_mode = Some(cm);
             bitrate_kbps = Some(br);
             samplerate = samplerate_from_code(sr);
             if size_usize > 16 {
-                fa.skip_hexa(size_usize - 16, "Extension");
+                r.skip(size_usize - 16)?; // Extension
             }
         } else {
-            fa.skip_hexa(size_usize, "ChunkData");
+            r.skip(size_usize)?; // ChunkData
         }
     }
-    fa.element_end();
+    r.element_end();
 
     // COMM is the only chunk we need to surface stream params; bail if missing.
     let (cm, br, sr) = match (channel_mode, bitrate_kbps, samplerate) {
         (Some(c), Some(b), Some(s)) => (c, b, s),
-        _ => return false,
+        _ => return None,
     };
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "TwinVQ", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "TwinVQ");
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "TwinVQ", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "TwinVQ", false);
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "TwinVQ");
+    r.set_field(StreamKind::Audio, 0, "Codec", "TwinVQ");
     // C++ stores channel_mode+1: 0→mono, 1→stereo.
-    fa.fill(StreamKind::Audio, 0, "Channels", (cm + 1).to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitRate", (br as u64 * 1000).to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
-
-    true
+    r.set_field(StreamKind::Audio, 0, "Channels", (cm + 1).to_string());
+    r.set_field(StreamKind::Audio, 0, "BitRate", (br as u64 * 1000).to_string());
+    r.set_field(StreamKind::Audio, 0, "SamplingRate", sr.to_string());
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    r.set_field(StreamKind::Audio, 0, "StreamSize", file_size.to_string());
+    Some(())
 }
 
 #[cfg(test)]

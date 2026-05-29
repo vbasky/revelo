@@ -19,8 +19,8 @@ pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
         let box_type = std::str::from_utf8(&buf[4..8]).unwrap_or("");
         if (box_type == "mhm1" || box_type == "mha1") && size >= 12 {
             let pos = fa.stream_prepare(StreamKind::Audio);
-            fa.fill(StreamKind::Audio, pos, "Format", "MPEG-H 3D Audio", false);
-            fa.fill(StreamKind::Audio, pos, "Format_Info", "Immersive 3D Audio", false);
+            fa.set_field(StreamKind::Audio, pos, "Format", "MPEG-H 3D Audio");
+            fa.set_field(StreamKind::Audio, pos, "Format_Info", "Immersive 3D Audio");
             return true;
         }
     }

@@ -96,6 +96,15 @@ profile_tier_level(1,max_sublayers-1), pic dimensions, conformance window.
 **Deep analysis:** Full VUI colour parsing. HDR10 Mastering Display SEI (type 137)
 → primaries, white point, luminance (0.00002/0.0001 cd/m² units). Content Light
 Level SEI (type 144) → MaxCLL, MaxFALL (cd/m²). x265 encoder UUID dispatch.
+**HDR10+:** SEI payload type 4, country code `0xB5`, ITU-T provider `0x003C`,
+application identifier 4 → `HDR_Format: ST 2094-40`, summary string.
+**SL-HDR1:** SEI payload types 172 (HDR metadata), 173 (HDR/WCG tone-mapping),
+174 (colour mapping table) → `HDR_Format: ETSI TS 103 433`, `HDR_Format_Compatibility: SL-HDR1`.
+**CTA-861:** SEI user_data_registered (country `0xB5`, provider `0x003C`) →
+CEA-861 auxiliary data parsing.
+**Dolby Vision RPU:** NAL unit type 62 — full RPU header parsing: RPU type,
+format version, L1 extension metadata (target luminance), L5 reshaping
+parameters, L8 VDR metadata → per-frame HDR luminance values.
 **HDR output:** `MasteringDisplay_ColorPrimaries`, `MasteringDisplay_Luminance`,
 `MaxCLL`, `MaxFALL`, `HDR_Format: SMPTE ST 2086`, `HDR_Format_Compatibility: HDR10`.
 
@@ -104,6 +113,8 @@ Level SEI (type 144) → MaxCLL, MaxFALL (cd/m²). x265 encoder UUID dispatch.
 **Detection:** OBU sequence header (type=1). Profile-based bit depth (0→8-bit,
 1→10-bit, 2→12-bit) and chroma subsampling (0-1→4:2:0, 2→4:2:2).
 Level from operating point.
+**HDR10+:** Metadata OBU (type=8, metadata_type=1) → ITU-T T.35 with country
+`0xB5`, provider `0x003C`, application `4` → `HDR_Format: ST 2094-40`.
 
 ### VP8 / VP9
 **Spec:** RFC 6386 (VP8), WebM VP9 spec
@@ -124,7 +135,12 @@ VP9 CodecPrivate (vpcC) → profile, bit_depth, chroma_subsampling, color_space.
 | FFV1 | "FFV1" magic | Archival lossless |
 | Canopus | CHQX/CHQH 4CC | Grass Valley |
 | CineForm | CFHD magic | GoPro wavelet |
-| Dolby Vision | dvcC/dvvC boxes, XML | HDR profiles 5/7/8.1 |
+| Dolby Vision | dvcC/dvvC boxes, XML, NAL type 62 RPU | HDR profiles 5/7/8.1, L1 luminance metadata |
+| HDR10+ (ST 2094-40) | HEVC SEI type 4, AV1 metadata OBU | Per-frame HDR metadata |
+| SL-HDR1 | HEVC SEI payload 172/173/174 | ETSI TS 103 433 HDR/WCG |
+| HLG | CICP transfer=18 (MP4) / ColourPrimaries (MKV) | ARIB STD-B67 |
+| PQ | CICP transfer=16 (MP4) / ColourPrimaries (MKV) | SMPTE ST 2084 |
+| CTA-861 | HEVC SEI user_data_registered | Auxiliary data parsing |
 | Fraps | FPS1 4CC | Game capture |
 | FLIC | 0xAF11/0xAF12 | Autodesk Animator |
 | HuffYUV | HFYU 4CC | Lossless YUV |
@@ -134,6 +150,13 @@ VP9 CodecPrivate (vpcC) → profile, bit_depth, chroma_subsampling, color_space.
 | HDR Vivid | HDRV/HVIV | Chinese HDR |
 | AIC | aic/AIC 4CC | Apple intermediate |
 | AFD/Bar | AFBd/BARD | SMPTE 2016-1 |
+
+### Container-level HDR signalling
+
+| Container | Detection | HDR_Format output |
+|---|---|---|
+| MP4 | `colr` box `transfer_characteristics` = 16 (PQ) / 18 (HLG) | `SMPTE ST 2084` / `ARIB STD-B67` |
+| Matroska | `Colour` element `TransferCharacteristics` | `SMPTE ST 2084` / `ARIB STD-B67` |
 
 ---
 
@@ -168,10 +191,13 @@ scene-based, and channel-based representations.
 **Detection:** Frame sync `0xFFF` + layer=3. Xing/VBRI headers → VBR/CBR, frame count.
 **Output:** Duration, BitRate, BitRate_Mode, Encoded_Library (LAME), stereo mode.
 
-### AC-3 / E-AC-3 (Dolby Digital)
+### AC-3 / E-AC-3 (Dolby Digital + Dolby Digital Plus)
 **Spec:** ATSC A/52:2018
 **Detection:** Sync word `0x0B77`. bsid → AC-3(8-10), E-AC-3(16).
 **Output:** BitRate, Channels+LFE, dialnorm, dsurmod, bitstream mode.
+**Atmos (E-AC-3):** `strmtyp` field (bits 16–17) — dependent substream
+(strmtyp=1) signals Dolby Atmos → `Format_AdditionalFeatures: Atmos`,
+`HDR_Format: Dolby Atmos`.
 
 ### DTS / DTS-UHD
 **Spec:** ETSI TS 102 114
@@ -193,16 +219,38 @@ Channel mapping family 0 (mono/stereo) / 1 (Vorbis order, table lookup).
 **Detection:** Packet type 1 + "vorbis" magic. Version 0 only.
 **Output:** Channels, SamplingRate, BitRate, Mode (CBR/VBR), VorbisComment metadata.
 
-### TrueHD / MLP
+### TrueHD / MLP (Dolby TrueHD + Dolby Atmos)
 **Spec:** Dolby TrueHD Bitstream Specification
 **Detection:** Sync `0xF8726FBA` (TrueHD) / `0xF8726FBB` (AC-3 core + TrueHD).
 SR index, channel count, bit depth lookup. Output: Lossless, VBR.
+**Atmos:** MAT (MLP Audio Transfer) frame header `0x0003` detection + substream
+type sniffing → `Format_AdditionalFeatures: Atmos`, `HDR_Format: Dolby Atmos`.
+
+### AC-4 (Dolby AC-4)
+**Spec:** ETSI TS 103 190, ATSC A/342
+**Detection:** Sync word `0xAC40` (with CRC) / `0xAC41` (without CRC).
+**Frame header:** CBR/VBR flag, frame length, substream table (up to 16 substreams)
+with per-substream sampling rate, channel mode, IMS (Immersive Stereo) flag,
+JOC (Joint Object Coding) object count, loudness/dialnorm.
+**Output:** `Format: AC-4`, `BitRate_Mode: CBR/VBR`, `SamplingRate`, `Channels`,
+`Dialnorm`. IMS → `Format_Commercial: Dolby AC-4 Immersive`.
+
+### IAMF / Eclipsa Audio
+**Spec:** [AOMedia IAMF Specification](https://aomediacodec.github.io/iamf/)
+**Detection:** OBU sequence magic — IA Sequence Header OBU (type=0) with codec
+config, followed by Audio Element OBUs (type=2).
+**OBU parsing:** Codec Config OBU — codec_id (Opus/AAC/LPCM), num_samples_per_frame,
+audio_roll_distance. Audio Element OBU — scalable channel layout (number of layers,
+loudspeaker/channel groups), ambisonics mode (mono/1/2/3), multi-language
+labels. Stream parameters merged across all elements.
+**Output:** `Format: IAMF`, `CodecID`, `Channels` (total across all layers),
+`SamplingRate`, `Format_Commercial: Eclipsa Audio`.
 
 ### Other Codecs
-- AC-4 (Dolby AC-4, ATSC 3.0), USAC/xHE-AAC (MPEG-D), MPEG-H 3D Audio
+- USAC/xHE-AAC (MPEG-D), MPEG-H 3D Audio
 - CELT (ultra-low-delay), PCM (WAVEFORMATEX), ADPCM, WavPack, TAK, TTA
 - Musepack SV7/SV8, Monkey's Audio (APE), Speex, ALAC (CAF), ALS
-- AU, AIFF/AIFC, DSD/DSDIFF, MIDI, Module formats (MOD/XM/IT/S3M), IAB, IAMF
+- AU, AIFF/AIFC, DSD/DSDIFF, MIDI, Module formats (MOD/XM/IT/S3M), IAB
 - Dolby E (SMPTE 337M 0x9669), SMPTE ST 302/331/337 (AES3 transport)
 
 ---
@@ -336,7 +384,8 @@ TFF/BFF/PsF). Maps to Video_ScanOrder/Video_Interlacement output fields.
 - ISO/IEC 10918-1 (JPEG), ISO/IEC 15948 (PNG), EXIF 2.32, ICC.1:2010, TIFF 6.0 (Adobe)
 
 ### HDR
-- SMPTE ST 2084 (PQ), SMPTE ST 2086, CTA-861-G, Dolby Vision Profiles
+- SMPTE ST 2084 (PQ), SMPTE ST 2086, SMPTE ST 2094-40 (HDR10+), CTA-861-G,
+  Dolby Vision Profiles, ARIB STD-B67 (HLG), ETSI TS 103 433 (SL-HDR1)
 
 ### Text
 - [W3C WebVTT](https://www.w3.org/TR/webvtt1/), W3C TTML1/2, SMPTE ST 2052-1

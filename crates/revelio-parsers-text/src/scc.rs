@@ -20,8 +20,8 @@ pub fn parse_scc(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "SCC", false);
-    fa.fill(StreamKind::Text, pos, "MuxingMode", "SCC", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "SCC");
+    fa.set_field(StreamKind::Text, pos, "MuxingMode", "SCC");
 
     true
 }

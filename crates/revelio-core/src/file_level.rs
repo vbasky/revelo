@@ -29,10 +29,10 @@ pub struct FileLevelInfo<'a> {
 /// `MediaInfo_Internal` wrapper does after a parser finishes.
 pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
     let file_size = info.file_size;
-    fa.fill(StreamKind::General, 0, "FileSize", file_size.to_string(), false);
+    fa.set_field(StreamKind::General, 0, "FileSize", file_size.to_string());
 
     if let Some(ext) = info.extension {
-        fa.fill(StreamKind::General, 0, "FileExtension", ext.to_owned(), false);
+        fa.set_field(StreamKind::General, 0, "FileExtension", ext.to_owned());
     }
 
     let audio_stream_size: Option<u64> =
@@ -51,7 +51,7 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
         });
 
     if let Some(ms) = duration_ms {
-        fa.fill(StreamKind::General, 0, "Duration", ms.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "Duration", ms.to_string());
     }
 
     // OverallBitRate = FileSize × 8 × 1000 / Duration_ms, rounded to
@@ -63,7 +63,7 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
         && ms > 0
     {
         let overall = ((file_size as f64) * 8.0 * 1000.0 / (ms as f64)).round() as u64;
-        let has_video = fa.count_get(StreamKind::Video) > 0;
+        let has_video = fa.stream_count(StreamKind::Video) > 0;
         let overall_mode = if !has_video {
             fa.retrieve(StreamKind::Audio, 0, "BitRate_Mode").map(|z| z.as_str().to_owned())
         } else {
@@ -72,9 +72,9 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
             if video_fr_mode.as_deref() == Some("VFR") { Some("VBR".to_owned()) } else { None }
         };
         if let Some(mode) = overall_mode {
-            fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", mode, false);
+            fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", mode);
         }
-        fa.fill(StreamKind::General, 0, "OverallBitRate", overall.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "OverallBitRate", overall.to_string());
     }
 
     // Propagate the primary video stream's frame rate + total frame
@@ -82,18 +82,18 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
     // container level (e.g. big_buck_bunny General FrameRate=24.000,
     // FrameCount=1440). Only when a video track exists and the parser
     // hasn't already set them on General.
-    if fa.count_get(StreamKind::Video) > 0 {
+    if fa.stream_count(StreamKind::Video) > 0 {
         if fa.retrieve(StreamKind::General, 0, "FrameRate").is_none()
             && let Some(fr) =
                 fa.retrieve(StreamKind::Video, 0, "FrameRate").map(|z| z.as_str().to_owned())
         {
-            fa.fill(StreamKind::General, 0, "FrameRate", fr, false);
+            fa.set_field(StreamKind::General, 0, "FrameRate", fr);
         }
         if fa.retrieve(StreamKind::General, 0, "FrameCount").is_none()
             && let Some(fc) =
                 fa.retrieve(StreamKind::Video, 0, "FrameCount").map(|z| z.as_str().to_owned())
         {
-            fa.fill(StreamKind::General, 0, "FrameCount", fc, false);
+            fa.set_field(StreamKind::General, 0, "FrameCount", fc);
         }
     }
 
@@ -107,32 +107,29 @@ pub fn fill_file_level_fields(fa: &mut FileAnalyze, info: &FileLevelInfo<'_>) {
     if let Some(audio_size) = audio_stream_size {
         let elementary = audio_size + video_stream_size;
         if elementary < file_size {
-            fa.fill(
+            fa.set_field(
                 StreamKind::General,
                 0,
                 "StreamSize",
                 (file_size - elementary).to_string(),
-                false,
             );
         }
     } else if video_stream_size > 0 && video_stream_size < file_size {
-        fa.fill(
+        fa.set_field(
             StreamKind::General,
             0,
             "StreamSize",
             (file_size - video_stream_size).to_string(),
-            false,
         );
     }
 
     if let Some(unix_secs) = info.modified_unix_secs {
-        fa.fill(StreamKind::General, 0, "File_Modified_Date", format_utc(unix_secs), false);
-        fa.fill(
+        fa.set_field(StreamKind::General, 0, "File_Modified_Date", format_utc(unix_secs));
+        fa.set_field(
             StreamKind::General,
             0,
             "File_Modified_Date_Local",
             format_local(unix_secs, info.local_offset_secs),
-            false,
         );
     }
 }
@@ -202,8 +199,8 @@ mod tests {
     fn propagates_video_framerate_and_framecount_to_general() {
         let mut fa = FileAnalyze::new(b"");
         fa.stream_prepare(StreamKind::General);
-        fa.fill(StreamKind::Video, 0, "FrameRate", "24.000", false);
-        fa.fill(StreamKind::Video, 0, "FrameCount", "1440", false);
+        fa.set_field(StreamKind::Video, 0, "FrameRate", "24.000");
+        fa.set_field(StreamKind::Video, 0, "FrameCount", "1440");
         let info = FileLevelInfo {
             file_size: 1,
             extension: None,
@@ -229,7 +226,7 @@ mod tests {
     fn does_not_propagate_framerate_without_video() {
         let mut fa = FileAnalyze::new(b"");
         fa.stream_prepare(StreamKind::General);
-        fa.fill(StreamKind::Audio, 0, "Format", "AAC", false);
+        fa.set_field(StreamKind::Audio, 0, "Format", "AAC");
         let info = FileLevelInfo {
             file_size: 1,
             extension: None,
@@ -244,7 +241,7 @@ mod tests {
     fn computes_overall_bitrate_from_duration() {
         let mut fa = FileAnalyze::new(b"");
         fa.stream_prepare(StreamKind::General);
-        fa.fill(StreamKind::General, 0, "Duration", "1000", false);
+        fa.set_field(StreamKind::General, 0, "Duration", "1000");
         let info = FileLevelInfo {
             file_size: 125_000, // 125000 bytes over 1 s = 1_000_000 bps
             extension: None,

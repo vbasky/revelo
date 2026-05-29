@@ -11,8 +11,8 @@ pub fn parse_scte20(fa: &mut FileAnalyze) -> bool {
     }
     if &buf[0..4] == b"SCTE" || &buf[0..4] == b"scte" {
         let pos = fa.stream_prepare(StreamKind::Text);
-        fa.fill(StreamKind::Text, pos, "Format", "SCTE-20", false);
-        fa.fill(StreamKind::Text, pos, "Format_Info", "SCTE 20 closed captioning", false);
+        fa.set_field(StreamKind::Text, pos, "Format", "SCTE-20");
+        fa.set_field(StreamKind::Text, pos, "Format_Info", "SCTE 20 closed captioning");
         return true;
     }
     false

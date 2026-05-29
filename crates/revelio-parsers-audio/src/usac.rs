@@ -53,16 +53,16 @@ pub fn parse_usac(fa: &mut FileAnalyze) -> bool {
 fn fill_usac_streams(fa: &mut FileAnalyze, channels: u8, sample_rate: u32, profile: u8) {
     let pos = fa.stream_prepare(StreamKind::Audio);
 
-    fa.fill(StreamKind::Audio, pos, "Format", "USAC", false);
-    fa.fill(StreamKind::Audio, pos, "Codec", "xHE-AAC", false);
-    fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "USAC");
+    fa.set_field(StreamKind::Audio, pos, "Codec", "xHE-AAC");
+    fa.set_field(StreamKind::Audio, pos, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string());
 
     match profile {
-        0 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "LC", false),
-        1 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "HE-AAC", false),
-        2 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "HE-AACv2", false),
-        3 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "xHE-AAC", false),
+        0 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "LC"),
+        1 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "HE-AAC"),
+        2 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "HE-AACv2"),
+        3 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "xHE-AAC"),
         _ => {}
     }
 }

@@ -16,16 +16,16 @@ pub fn parse_celt(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "CELT", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "Ultra-low-delay codec", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "CELT");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "Ultra-low-delay codec");
 
     if buf.len() >= 8 {
         let bitstream_version = buf[4] as u32;
         let channels = buf[5] as u32;
         let mode = buf[7] as u32;
-        fa.fill(StreamKind::Audio, pos, "Format_Version", format!("{}", bitstream_version), false);
-        fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-        fa.fill(StreamKind::Audio, pos, "Format_Settings_Mode", mode.to_string(), false);
+        fa.set_field(StreamKind::Audio, pos, "Format_Version", format!("{}", bitstream_version));
+        fa.set_field(StreamKind::Audio, pos, "Channels", channels.to_string());
+        fa.set_field(StreamKind::Audio, pos, "Format_Settings_Mode", mode.to_string());
     }
 
     true

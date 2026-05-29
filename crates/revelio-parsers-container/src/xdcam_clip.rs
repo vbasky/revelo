@@ -23,7 +23,7 @@ pub fn parse_xdcam_clip(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "XDCAM Clip", false);
+    fa.set_field(StreamKind::General, 0, "Format", "XDCAM Clip");
     true
 }
 

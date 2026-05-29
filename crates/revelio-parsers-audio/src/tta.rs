@@ -12,66 +12,59 @@
 //!   uint32  DataLength      (total decoded sample count per channel)
 //!   uint32  CRC32
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_TTA1: [u8; 4] = *b"TTA1";
 const HEADER_LEN: usize = 22;
 
 pub fn parse_tta(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < HEADER_LEN {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < HEADER_LEN {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(4)) {
-        Some(h) if h.len() == 4 => h,
-        _ => return false,
-    };
-    if head != MAGIC_TTA1 {
-        return false;
+    if r.peek_raw(4)? != MAGIC_TTA1 {
+        return None;
     }
 
-    fa.element_begin("TTA");
-    let mut signature: Int32u = 0;
-    fa.get_c4(&mut signature, "Signature");
-    let mut audio_format: Int16u = 0;
-    fa.get_l2(&mut audio_format, "AudioFormat");
-    let mut channels: Int16u = 0;
-    fa.get_l2(&mut channels, "NumChannels");
-    let mut bits_per_sample: Int16u = 0;
-    fa.get_l2(&mut bits_per_sample, "BitsPerSample");
-    let mut sample_rate: Int32u = 0;
-    fa.get_l4(&mut sample_rate, "SampleRate");
-    let mut samples: Int32u = 0;
-    fa.get_l4(&mut samples, "DataLength");
-    fa.skip_l4("CRC32");
-    fa.element_end();
+    r.element_begin("TTA");
+    r.fourcc("Signature")?;
+    r.le_u16("AudioFormat")?;
+    let channels = r.le_u16("NumChannels")?;
+    let bits_per_sample = r.le_u16("BitsPerSample")?;
+    let sample_rate = r.le_u32("SampleRate")?;
+    let samples = r.le_u32("DataLength")?;
+    r.le_u32("CRC32")?;
+    r.element_end();
 
     // Reject obviously-broken headers: divisions below would panic and the
     // resulting metadata would be useless anyway.
     if sample_rate == 0 || channels == 0 || bits_per_sample == 0 || samples == 0 {
-        return false;
+        return None;
     }
 
     // C++ computes Duration via CalcDurationUncompressedSize:
     //   Duration = Samples * 1000 / SampleRate
     let duration_ms: u64 = (samples as u64) * 1000 / (sample_rate as u64);
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "TTA", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "TTA");
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "TTA", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "TTA ", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-
-    true
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "TTA");
+    r.set_field(StreamKind::Audio, 0, "Codec", "TTA ");
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    r.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    r.set_field(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string());
+    r.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    r.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    r.set_field(StreamKind::Audio, 0, "SamplingCount", samples.to_string());
+    r.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+    Some(())
 }
 
 #[cfg(test)]

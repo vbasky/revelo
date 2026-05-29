@@ -21,13 +21,12 @@
 //!   0x2C  L4  unknown
 //!   0x30  L4  sample_rate
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int32u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const PMP_MAGIC_SIZE: usize = 4;
 const PMP_V1_HEADER_SIZE: usize = 52;
 
-fn pmp_video_format(video_format: Int32u) -> &'static str {
+fn pmp_video_format(video_format: u32) -> &'static str {
     match video_format {
         0 => "MPEG-4 Visual",
         1 => "AVC",
@@ -35,7 +34,7 @@ fn pmp_video_format(video_format: Int32u) -> &'static str {
     }
 }
 
-fn pmp_audio_format(audio_format: Int32u) -> &'static str {
+fn pmp_audio_format(audio_format: u32) -> &'static str {
     match audio_format {
         0 => "MPEG Audio",
         1 => "AAC",
@@ -46,94 +45,86 @@ fn pmp_audio_format(audio_format: Int32u) -> &'static str {
 /// Parse PMP container.
 /// Fills: Format.
 pub fn parse_pmp(fa: &mut FileAnalyze) -> bool {
-    let peek_len = fa.remain().min(PMP_V1_HEADER_SIZE);
-    let header = match fa.peek_raw(peek_len) {
-        Some(b) => b,
-        None => return false,
-    };
-    if header.len() < PMP_MAGIC_SIZE {
-        return false;
-    }
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    // Magic is the sole acceptance gate; the body is best-effort, matching
+    // the C++ which fills General.Format=PMP even on a truncated header.
+    let header = r.peek_raw(PMP_MAGIC_SIZE)?;
     if &header[0..4] != b"pmpm" {
-        return false;
+        return None;
     }
 
-    fa.element_begin("PMP");
-    let mut _signature: Int32u = 0;
-    fa.get_c4(&mut _signature, "Signature");
-    let mut version: Int32u = 0;
-    fa.get_l4(&mut version, "Version");
+    r.element_begin("PMP");
+    r.fourcc("Signature")?;
+    let version = r.le_u32("Version").unwrap_or(0);
 
-    let mut video_format: Int32u = 0;
-    let mut nb_frames: Int32u = 0;
-    let mut video_width: Int32u = 0;
-    let mut video_height: Int32u = 0;
-    let mut time_base_num: Int32u = 0;
-    let mut time_base_den: Int32u = 0;
-    let mut audio_format: Int32u = 0;
-    let mut channels: Int32u = 0;
-    let mut sample_rate: Int32u = 0;
+    let mut video_format: u32 = 0;
+    let mut nb_frames: u32 = 0;
+    let mut video_width: u32 = 0;
+    let mut video_height: u32 = 0;
+    let mut time_base_den: u32 = 0;
+    let mut audio_format: u32 = 0;
+    let mut channels: u32 = 0;
+    let mut sample_rate: u32 = 0;
 
-    if version == 1 && fa.remain() >= PMP_V1_HEADER_SIZE - 8 {
-        fa.get_l4(&mut video_format, "video_format");
-        fa.get_l4(&mut nb_frames, "number of frames");
-        fa.get_l4(&mut video_width, "video_width");
-        fa.get_l4(&mut video_height, "video_height");
-        fa.get_l4(&mut time_base_num, "time_base_num");
-        fa.get_l4(&mut time_base_den, "time_base_den");
-        let mut _nb_audio: Int32u = 0;
-        fa.get_l4(&mut _nb_audio, "number of audio streams");
-        fa.get_l4(&mut audio_format, "audio_format");
-        fa.get_l4(&mut channels, "channels");
-        let mut _unknown: Int32u = 0;
-        fa.get_l4(&mut _unknown, "unknown");
-        fa.get_l4(&mut sample_rate, "sample_rate");
+    if version == 1 && r.remain() >= PMP_V1_HEADER_SIZE - 8 {
+        video_format = r.le_u32("video_format")?;
+        nb_frames = r.le_u32("number of frames")?;
+        video_width = r.le_u32("video_width")?;
+        video_height = r.le_u32("video_height")?;
+        // time_base_num is parsed but not consumed in the upstream FrameRate
+        // calculation, which uses `(float)time_base_den / 100` directly.
+        r.le_u32("time_base_num")?;
+        time_base_den = r.le_u32("time_base_den")?;
+        r.le_u32("number of audio streams")?;
+        audio_format = r.le_u32("audio_format")?;
+        channels = r.le_u32("channels")?;
+        r.le_u32("unknown")?;
+        sample_rate = r.le_u32("sample_rate")?;
     }
-    fa.element_end();
+    r.element_end();
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "PMP", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "PMP");
 
     if version == 1 {
-        fa.stream_prepare(StreamKind::Video);
+        r.stream_prepare(StreamKind::Video);
         let vfmt = pmp_video_format(video_format);
         if !vfmt.is_empty() {
-            fa.fill(StreamKind::Video, 0, "Format", vfmt, false);
+            r.set_field(StreamKind::Video, 0, "Format", vfmt);
         }
         if nb_frames > 0 {
-            fa.fill(StreamKind::Video, 0, "FrameCount", nb_frames.to_string(), false);
+            r.set_field(StreamKind::Video, 0, "FrameCount", nb_frames.to_string());
         }
         if video_width > 0 {
-            fa.fill(StreamKind::Video, 0, "Width", video_width.to_string(), false);
+            r.set_field(StreamKind::Video, 0, "Width", video_width.to_string());
         }
         if video_height > 0 {
-            fa.fill(StreamKind::Video, 0, "Height", video_height.to_string(), false);
+            r.set_field(StreamKind::Video, 0, "Height", video_height.to_string());
         }
-        // The reference C++ uses `(float)time_base_den / 100` directly; we
-        // mirror it verbatim — the `time_base_num` field is parsed but not
-        // consumed in the upstream FrameRate calculation.
-        let _ = time_base_num;
         if time_base_den > 0 {
             let frame_rate = (time_base_den as f64) / 100.0;
-            fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+            r.set_field(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate));
         }
-        fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
+        r.set_field(StreamKind::General, 0, "VideoCount", "1");
 
-        fa.stream_prepare(StreamKind::Audio);
+        r.stream_prepare(StreamKind::Audio);
         let afmt = pmp_audio_format(audio_format);
         if !afmt.is_empty() {
-            fa.fill(StreamKind::Audio, 0, "Format", afmt, false);
+            r.set_field(StreamKind::Audio, 0, "Format", afmt);
         }
         if channels > 0 {
-            fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+            r.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
         }
         if sample_rate > 0 {
-            fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+            r.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
         }
-        fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+        r.set_field(StreamKind::General, 0, "AudioCount", "1");
     }
-
-    true
+    Some(())
 }
 
 #[cfg(test)]

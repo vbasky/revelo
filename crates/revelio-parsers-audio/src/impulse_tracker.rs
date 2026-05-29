@@ -35,72 +35,61 @@
 //!  SmpNum*4:        Samples offsets
 //!  PatNum*4:        Patterns offsets
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC: &[u8; 4] = b"IMPM";
 const FIXED_HEADER_BYTES: usize = 192;
 
 pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
-    let head = match fa.peek_raw(fa.remain().min(4)) {
-        Some(h) if h.len() >= 4 => h,
-        _ => return false,
-    };
-    if &head[..4] != MAGIC {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    let head = r.peek_raw(4)?;
+    if head.len() < 4 || &head[..4] != MAGIC {
+        return None;
     }
-    if fa.remain() < FIXED_HEADER_BYTES {
-        return false;
+    if r.remain() < FIXED_HEADER_BYTES {
+        return None;
     }
 
-    fa.element_begin("Impulse Tracker");
+    r.element_begin("Impulse Tracker");
 
-    fa.skip_b4("Signature");
+    r.be_u32("Signature")?;
 
-    let song_name_bytes = fa.read_raw(26).to_vec();
-    let song_name = trim_local_string(&song_name_bytes);
-    fa.skip_l1("Unknown");
-    fa.skip_l1("Unknown");
+    let song_name = trim_local_string(r.read_raw(26)?);
+    r.le_u8("Unknown")?;
+    r.le_u8("Unknown")?;
 
-    let mut ord_num: Int16u = 0;
-    let mut ins_num: Int16u = 0;
-    let mut smp_num: Int16u = 0;
-    let mut pat_num: Int16u = 0;
-    fa.get_l2(&mut ord_num, "Orders count");
-    fa.get_l2(&mut ins_num, "Instruments count");
-    fa.get_l2(&mut smp_num, "Samples count");
-    fa.get_l2(&mut pat_num, "Paterns count");
+    let ord_num = r.le_u16("Orders count")?;
+    let ins_num = r.le_u16("Instruments count")?;
+    let smp_num = r.le_u16("Samples count")?;
+    let pat_num = r.le_u16("Paterns count")?;
 
-    let mut sw_version_minor: Int8u = 0;
-    let mut sw_version_major: Int8u = 0;
-    let mut version_minor: Int8u = 0;
-    let mut version_major: Int8u = 0;
-    fa.get_l1(&mut sw_version_minor, "Cwt/v (Minor)");
-    fa.get_l1(&mut sw_version_major, "Cwt/v (Major)");
-    fa.get_l1(&mut version_minor, "Cwt (Minor)");
-    fa.get_l1(&mut version_major, "Cwt (Major)");
+    let sw_version_minor = r.le_u8("Cwt/v (Minor)")?;
+    let sw_version_major = r.le_u8("Cwt/v (Major)")?;
+    let version_minor = r.le_u8("Cwt (Minor)")?;
+    let version_major = r.le_u8("Cwt (Major)")?;
 
-    let mut flags: Int16u = 0;
-    fa.get_l2(&mut flags, "Flags");
+    let flags = r.le_u16("Flags")?;
     let stereo = (flags & 0x0001) != 0;
-    fa.skip_l2("Special");
-    fa.skip_l1("Global volume");
-    fa.skip_l1("Mix volume");
-    let mut initial_speed: Int8u = 0;
-    let mut initial_tempo: Int8u = 0;
-    fa.get_l1(&mut initial_speed, "Initial Speed");
-    fa.get_l1(&mut initial_tempo, "Initial Temp");
-    fa.skip_l1("Panning separation between channels");
-    fa.skip_l1("0");
-    fa.skip_l2("Message Length");
-    fa.skip_l4("Message Offset");
-    fa.skip_l1("Unknown");
-    fa.skip_l1("Unknown");
-    fa.skip_l1("Unknown");
-    fa.skip_l1("Unknown");
-    fa.skip_l1("Unknown");
-    fa.skip_hexa(64, "Chnl Pan");
-    fa.skip_hexa(64, "Chnl Vol");
+    r.le_u16("Special")?;
+    r.le_u8("Global volume")?;
+    r.le_u8("Mix volume")?;
+    r.le_u8("Initial Speed")?;
+    let initial_tempo = r.le_u8("Initial Temp")?;
+    r.le_u8("Panning separation between channels")?;
+    r.le_u8("0")?;
+    r.le_u16("Message Length")?;
+    r.le_u32("Message Offset")?;
+    r.le_u8("Unknown")?;
+    r.le_u8("Unknown")?;
+    r.le_u8("Unknown")?;
+    r.le_u8("Unknown")?;
+    r.le_u8("Unknown")?;
+    r.skip(64)?; // Chnl Pan
+    r.skip(64)?; // Chnl Vol
 
     // Variable tables: skip only what the buffer still holds, mirroring
     // the C++ reference which calls Skip_XX past the fixed header.
@@ -108,20 +97,20 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
     let ins_bytes = (ins_num as usize) * 4;
     let smp_bytes = (smp_num as usize) * 4;
     let pat_bytes = (pat_num as usize) * 4;
-    if fa.remain() >= ord_bytes {
-        fa.skip_hexa(ord_bytes, "Orders");
+    if r.remain() >= ord_bytes {
+        r.skip(ord_bytes)?;
     }
-    if fa.remain() >= ins_bytes {
-        fa.skip_hexa(ins_bytes, "Instruments");
+    if r.remain() >= ins_bytes {
+        r.skip(ins_bytes)?;
     }
-    if fa.remain() >= smp_bytes {
-        fa.skip_hexa(smp_bytes, "Samples");
+    if r.remain() >= smp_bytes {
+        r.skip(smp_bytes)?;
     }
-    if fa.remain() >= pat_bytes {
-        fa.skip_hexa(pat_bytes, "Patterns");
+    if r.remain() >= pat_bytes {
+        r.skip(pat_bytes)?;
     }
 
-    fa.element_end();
+    r.element_end();
 
     // Version strings mirror C++: minor is split as minor/16 . minor%16
     // (the high nibble is the decimal tens digit, low nibble the ones),
@@ -135,23 +124,20 @@ pub fn parse_impulse_tracker(fa: &mut FileAnalyze) -> bool {
         sw_version_minor % 16
     );
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Impulse Tracker", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", format_version, false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "Impulse Tracker");
+    r.set_field(StreamKind::General, 0, "Format_Version", format_version);
     if !song_name.is_empty() {
-        fa.fill(StreamKind::General, 0, "Track", song_name, false);
+        r.set_field(StreamKind::General, 0, "Track", song_name);
     }
-    fa.fill(StreamKind::General, 0, "Encoded_Application", encoded_app, false);
-    fa.fill(StreamKind::General, 0, "BPM", initial_tempo.to_string(), false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.set_field(StreamKind::General, 0, "Encoded_Application", encoded_app);
+    r.set_field(StreamKind::General, 0, "BPM", initial_tempo.to_string());
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
-    fa.fill(StreamKind::Audio, 0, "Channels", if stereo { "2" } else { "1" }, false);
-
-    let _ = initial_speed;
-
-    true
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "Module");
+    r.set_field(StreamKind::Audio, 0, "Channels", if stereo { "2" } else { "1" });
+    Some(())
 }
 
 // IT stores the song name as a 26-byte fixed-width field, NUL-padded.

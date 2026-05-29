@@ -13,8 +13,8 @@ pub fn parse_cineform(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "CineForm", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "GoPro CineForm wavelet", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "CineForm");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "GoPro CineForm wavelet");
     true
 }
 #[cfg(test)]

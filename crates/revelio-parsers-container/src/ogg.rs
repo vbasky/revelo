@@ -271,7 +271,7 @@ fn parse_opus_ident(packet: &[u8], stream: &mut OggStream) {
 fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
     fa.stream_prepare(StreamKind::General);
     fa.element_begin("Ogg");
-    fa.fill(StreamKind::General, 0, "Format", "Ogg", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Ogg");
 
     let mut audio_count: u32 = 0;
     let mut video_count: u32 = 0;
@@ -279,34 +279,32 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
         match stream.codec {
             Some(OggCodec::Vorbis) | Some(OggCodec::Opus) | Some(OggCodec::Flac) => {
                 let pos = fa.stream_prepare(StreamKind::Audio);
-                fa.fill(StreamKind::Audio, pos, "ID", stream.serial.to_string(), false);
+                fa.set_field(StreamKind::Audio, pos, "ID", stream.serial.to_string());
                 let fmt = match stream.codec.unwrap() {
                     OggCodec::Vorbis => "Vorbis",
                     OggCodec::Opus => "Opus",
                     OggCodec::Flac => "FLAC",
                     _ => unreachable!(),
                 };
-                fa.fill(StreamKind::Audio, pos, "Format", fmt, false);
-                fa.fill(StreamKind::Audio, pos, "BitRate_Mode", "VBR", false);
+                fa.set_field(StreamKind::Audio, pos, "Format", fmt);
+                fa.set_field(StreamKind::Audio, pos, "BitRate_Mode", "VBR");
                 if stream.bitrate_nominal > 0 {
-                    fa.fill(
+                    fa.set_field(
                         StreamKind::Audio,
                         pos,
                         "BitRate",
                         stream.bitrate_nominal.to_string(),
-                        false,
                     );
                 }
                 if stream.channels > 0 {
-                    fa.fill(StreamKind::Audio, pos, "Channels", stream.channels.to_string(), false);
+                    fa.set_field(StreamKind::Audio, pos, "Channels", stream.channels.to_string());
                 }
                 if stream.sample_rate > 0 {
-                    fa.fill(
+                    fa.set_field(
                         StreamKind::Audio,
                         pos,
                         "SamplingRate",
                         stream.sample_rate.to_string(),
-                        false,
                     );
                 }
                 if stream.last_granule > 0 && stream.sample_rate > 0 {
@@ -316,14 +314,13 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                     // samples). So compute Duration first.
                     let duration_ms = (stream.last_granule * 1000) / (stream.sample_rate as u64);
                     let sampling_count = duration_ms * (stream.sample_rate as u64) / 1000;
-                    fa.fill(
+                    fa.set_field(
                         StreamKind::Audio,
                         pos,
                         "SamplingCount",
                         sampling_count.to_string(),
-                        false,
                     );
-                    fa.fill(StreamKind::Audio, pos, "Duration", duration_ms.to_string(), false);
+                    fa.set_field(StreamKind::Audio, pos, "Duration", duration_ms.to_string());
                     // For Vorbis-in-Ogg the oracle reports StreamSize
                     // = bitrate_nominal/8 * Duration_seconds, not the
                     // actual byte total (which would include Ogg page
@@ -331,27 +328,21 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
                     // the nominal rate" convention.
                     if stream.bitrate_nominal > 0 {
                         let stream_size = (stream.bitrate_nominal as u64) * duration_ms / 8000;
-                        fa.fill(
-                            StreamKind::Audio,
-                            pos,
-                            "StreamSize",
-                            stream_size.to_string(),
-                            false,
-                        );
+                        fa.set_field(StreamKind::Audio, pos, "StreamSize", stream_size.to_string());
                     }
                 }
-                fa.fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
+                fa.set_field(StreamKind::Audio, pos, "Compression_Mode", "Lossy");
                 // Vorbis comment vendor → Audio.Encoded_Library (the muxer
                 // string). The "encoder=..." comment, when present, fills
                 // Encoded_Application (codec-level encoder identification).
                 if let Some(v) = &stream.vendor {
-                    fa.fill(StreamKind::Audio, pos, "Encoded_Library", v.clone(), false);
+                    fa.set_field(StreamKind::Audio, pos, "Encoded_Library", v.clone());
                 }
                 if stream.codec == Some(OggCodec::Vorbis) {
                     // FFmpeg + libvorbis always use floor type 1 — same as
                     // every other contemporary Vorbis encoder. Hardcoding
                     // matches oracle until/if we ever encode floor 0.
-                    fa.fill(StreamKind::Audio, pos, "Format_Settings_Floor", "1", false);
+                    fa.set_field(StreamKind::Audio, pos, "Format_Settings_Floor", "1");
                 }
                 audio_count += 1;
             }
@@ -361,15 +352,15 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
     }
 
     if audio_count > 0 {
-        fa.fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "AudioCount", audio_count.to_string());
         // Ogg-wrapped lossy audio (Vorbis/Opus) is VBR; the oracle
         // emits OverallBitRate_Mode for the General track.
-        fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
+        fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "VBR");
         // Propagate the first Vorbis stream's encoder comment to
         // General.Encoded_Application (oracle does the same).
         for stream in streams {
             if let Some(e) = &stream.encoder_comment {
-                fa.fill(StreamKind::General, 0, "Encoded_Application", e.clone(), false);
+                fa.set_field(StreamKind::General, 0, "Encoded_Application", e.clone());
                 break;
             }
         }
@@ -378,7 +369,7 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
         // audio-only and Theora+Vorbis Ogg).
     }
     if video_count > 0 {
-        fa.fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "VideoCount", video_count.to_string());
     }
 }
 

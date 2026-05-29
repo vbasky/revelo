@@ -22,14 +22,14 @@ pub fn parse_adpcm(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "ADPCM", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "ADPCM");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "ADPCM", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "ADPCM", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "ADPCM");
+    fa.set_field(StreamKind::Audio, 0, "Codec", "ADPCM");
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
     true
 }
 
@@ -60,8 +60,8 @@ mod tests {
     fn fills_one_audio_stream() {
         let mut fa = FileAnalyze::new(&[0xAAu8; 64]);
         assert!(parse_adpcm(&mut fa));
-        assert_eq!(fa.count_get(StreamKind::Audio), 1);
-        assert_eq!(fa.count_get(StreamKind::General), 1);
-        assert_eq!(fa.count_get(StreamKind::Video), 0);
+        assert_eq!(fa.stream_count(StreamKind::Audio), 1);
+        assert_eq!(fa.stream_count(StreamKind::General), 1);
+        assert_eq!(fa.stream_count(StreamKind::Video), 0);
     }
 }

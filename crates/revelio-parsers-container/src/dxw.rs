@@ -55,7 +55,7 @@ pub fn parse_dxw(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DXW", true);
+    fa.force_field(StreamKind::General, 0, "Format", "DXW");
     true
 }
 

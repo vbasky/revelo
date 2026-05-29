@@ -50,29 +50,29 @@ fn fill_streams(
     file_size: usize,
 ) {
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "AMR", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.fill(StreamKind::General, 0, "StreamSize", header_size.to_string(), true);
+    fa.set_field(StreamKind::General, 0, "Format", "AMR");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
+    fa.force_field(StreamKind::General, 0, "StreamSize", header_size.to_string());
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "AMR", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "AMR", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "AMR");
+    fa.set_field(StreamKind::Audio, 0, "Codec", "AMR");
     if is_wb {
-        fa.fill(StreamKind::Audio, 0, "Format_Profile", "Wide band", false);
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", "16000", false);
-        fa.fill(StreamKind::Audio, 0, "BitDepth", "14", false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Profile", "Wide band");
+        fa.set_field(StreamKind::Audio, 0, "SamplingRate", "16000");
+        fa.set_field(StreamKind::Audio, 0, "BitDepth", "14");
     } else {
-        fa.fill(StreamKind::Audio, 0, "Format_Profile", "Narrow band", false);
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", "8000", false);
-        fa.fill(StreamKind::Audio, 0, "BitDepth", "13", false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Profile", "Narrow band");
+        fa.set_field(StreamKind::Audio, 0, "SamplingRate", "8000");
+        fa.set_field(StreamKind::Audio, 0, "BitDepth", "13");
     }
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
     // AMR uses variable per-frame mode codes; bitrate varies frame-to-frame
     // unless every frame happens to share the same mode (not detected here).
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
     let audio_bytes = file_size.saturating_sub(header_size);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_bytes.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", audio_bytes.to_string());
 }
 
 #[cfg(test)]

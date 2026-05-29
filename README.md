@@ -113,8 +113,8 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | Category | Parsers | Coverage | Formats |
 | --- | --- | --- | --- |
 | Containers | 42 | 98% | MP4/MOV, MKV/WebM, AVI, MPEG-TS, MPEG-PS, WAV, AIFF, Ogg, FLV, MXF, +32 more |
-| Audio | 56 | 100% | AAC/ADTS, MP3, AC-3/4, DTS/DTS-UHD, FLAC, Opus, Vorbis, TrueHD, Dolby E, PCM, ADM, MGA, CELT, MPEG-H 3D, SMPTE ST 302/331/337, +40 more |
-| Video | 28 | 100% | AVC, HEVC, VVC, AV1, VP8/VP9, MPEG-2, VC-1, VC-3/DNxHD, ProRes, FFV1, H.263, MPEG-4V, Theora, Y4M, Canopus HQ, CineForm, Dirac, HDR Vivid, Dolby Vision, +9 more |
+| Audio | 56 | 100% | AAC/ADTS, MP3, AC-3/4, DTS/DTS-UHD, FLAC, Opus, Vorbis, TrueHD/Atmos, Dolby E, PCM, ADM, MGA, CELT, MPEG-H 3D, **IAMF/Eclipsa Audio**, **AC-4 IMS/JOC**, SMPTE ST 302/331/337, +37 more |
+| Video | 28 | 100% | AVC, HEVC, VVC, AV1, VP8/VP9, MPEG-2, VC-1, VC-3/DNxHD, ProRes, FFV1, H.263, MPEG-4V, Theora, Y4M, Canopus HQ, CineForm, Dirac, HDR Vivid, **Dolby Vision RPU**, **HDR10+**, **SL-HDR1**, **HLG/PQ**, **CTA-861**, +8 more |
 | Image | 19 | 100% | JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, PSD, DPX, EXR, DDS, BPG, PCX, TGA, ArriRaw, Amiga Icon, RLE, AVIF Gain Map, HEIF |
 | Text/Subtitles | 21 | 100% | SubRip, TTML, Timed Text, PGS, DVB Subtitle, Teletext, EIA-608/708, CDP, SCC, N19, PDF, SDP, PAC, DTvCC, SCTE-20, Kate, CMML, ARIB STD-B24/B37, WebVTT |
 | Archives | 11 | 100% | ZIP, 7z, RAR, TAR, gzip, bzip2, ACE, ISO 9660, ELF, Mach-O, MZ/PE |

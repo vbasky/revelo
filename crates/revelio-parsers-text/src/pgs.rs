@@ -58,11 +58,11 @@ pub fn parse_pgs(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "PGS", false);
+    fa.set_field(StreamKind::General, 0, "Format", "PGS");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "PGS", false);
-    fa.fill(StreamKind::Text, 0, "Codec", "PGS", false);
+    fa.set_field(StreamKind::Text, 0, "Format", "PGS");
+    fa.set_field(StreamKind::Text, 0, "Codec", "PGS");
 
     true
 }

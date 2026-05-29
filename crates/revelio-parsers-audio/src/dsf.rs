@@ -97,49 +97,49 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DSF", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", format!("Version {}", format_version), false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DSF");
+    fa.set_field(StreamKind::General, 0, "Format_Version", format!("Version {}", format_version));
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
     let file_size_now = fa.remain() as u64;
     if total_file_size != 0 && total_file_size != file_size_now {
-        fa.fill(StreamKind::General, 0, "Truncated", "Yes", false);
+        fa.set_field(StreamKind::General, 0, "Truncated", "Yes");
     }
 
     fa.stream_prepare(StreamKind::Audio);
     // FormatID 0 = DSD raw. C++ falls back to numeric for unknown IDs; we
     // do the same so non-standard files still get a Format value.
     if format_id == 0 {
-        fa.fill(StreamKind::Audio, 0, "Format", "DSD", false);
+        fa.set_field(StreamKind::Audio, 0, "Format", "DSD");
     } else {
-        fa.fill(StreamKind::Audio, 0, "Format", format_id.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Format", format_id.to_string());
     }
 
     let ct_idx = channel_type as usize;
     if ct_idx > 0 && ct_idx < DSF_CHANNEL_POSITIONS.len() {
-        fa.fill(StreamKind::Audio, 0, "ChannelPositions", DSF_CHANNEL_POSITIONS[ct_idx], false);
-        fa.fill(StreamKind::Audio, 0, "ChannelLayout", DSF_CHANNEL_LAYOUT[ct_idx], false);
+        fa.set_field(StreamKind::Audio, 0, "ChannelPositions", DSF_CHANNEL_POSITIONS[ct_idx]);
+        fa.set_field(StreamKind::Audio, 0, "ChannelLayout", DSF_CHANNEL_LAYOUT[ct_idx]);
     }
-    fa.fill(StreamKind::Audio, 0, "Channels", channel_num.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_frequency.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Channels", channel_num.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sampling_frequency.to_string());
     // bits_per_sample here is the byte-bit-order of the DSD stream (1=LE, 8=BE),
     // not the audio bit depth. Audio bit depth for DSD is always 1.
     match bits_per_sample {
         1 => {
-            fa.fill(StreamKind::Audio, 0, "Format_Settings", "Little", false);
-            fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Little", false);
+            fa.set_field(StreamKind::Audio, 0, "Format_Settings", "Little");
+            fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", "Little");
         }
         8 => {
-            fa.fill(StreamKind::Audio, 0, "Format_Settings", "Big", false);
-            fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+            fa.set_field(StreamKind::Audio, 0, "Format_Settings", "Big");
+            fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big");
         }
         _ => {}
     }
-    fa.fill(StreamKind::Audio, 0, "BitDepth", "1", false);
-    fa.fill(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", "1");
+    fa.set_field(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
     if audio_stream_size > 0 {
-        fa.fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string());
     }
 
     // Format_Commercial_IfAny: DSDxxx where xxx is the multiplier over the
@@ -149,7 +149,7 @@ pub fn parse_dsf(fa: &mut FileAnalyze) -> bool {
     while mult <= 512 {
         let base = sr / mult;
         if base == 48000 || base == 44100 {
-            fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", format!("DSD{}", mult), false);
+            fa.set_field(StreamKind::Audio, 0, "Format_Commercial_IfAny", format!("DSD{}", mult));
             break;
         }
         mult *= 2;

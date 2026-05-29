@@ -2,18 +2,18 @@
 //!
 //! Parses VOS and VOL start codes from elementary streams.
 
-use revelio_core::{FileAnalyze, StreamKind};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 /// Parse MPEG-4 Visual (DivX/Xvid) elementary stream.
 ///
 /// Detection: Visual Object Sequence start 0x000001B0.
 /// Fills: Profile, dimensions, VOL header.
 pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
+    let r = &mut Reader::wrap(fa);
     let mut found = false;
 
-    while fa.remain() >= 4 {
-        let mut code: u32 = 0;
-        fa.peek_b4(&mut code);
+    while r.remain() >= 4 {
+        let Some(code) = r.peek_be_u32() else { break };
         if (code >> 8) != 0x000001 {
             break;
         }
@@ -22,15 +22,14 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
 
         match start_code {
             0xB0 => {
-                fa.element_begin("video_object_start_code");
-                fa.skip_b4("start code");
-                if fa.remain() >= 1 {
-                    let mut profile: u8 = 0;
-                    fa.get_b1(&mut profile, "profile_and_level_indication");
-                    fa.element_end();
+                r.element_begin("video_object_start_code");
+                r.be_u32("start code");
+                if r.remain() >= 1 {
+                    let profile = r.be_u8("profile_and_level_indication").unwrap_or(0);
+                    r.element_end();
 
-                    fa.stream_prepare(StreamKind::Video);
-                    fa.fill(StreamKind::Video, 0, "Format", "MPEG-4 Visual", false);
+                    r.stream_prepare(StreamKind::Video);
+                    r.set_field(StreamKind::Video, 0, "Format", "MPEG-4 Visual");
                     let profile_str = match profile {
                         0x01 => "Simple Profile",
                         0x02 => "Simple Scalable Profile",
@@ -49,72 +48,59 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
                         0x0F => "Advanced Scalable Texture Profile",
                         _ => "",
                     };
-                    fa.fill(StreamKind::Video, 0, "Format_Profile", profile_str, false);
+                    r.set_field(StreamKind::Video, 0, "Format_Profile", profile_str);
                     found = true;
                 }
             }
             0xB3 | 0x20..=0x2F => {
-                fa.element_begin("video_object_layer_start_code");
-                fa.skip_b4("start code");
+                r.element_begin("video_object_layer_start_code");
+                r.be_u32("start code");
 
-                if fa.remain() < 9 {
-                    fa.element_end();
+                if r.remain() < 9 {
+                    r.element_end();
                     break;
                 }
 
-                let mut random: u8 = 0;
-                fa.get_b1(&mut random, "random_accessible_vol");
-                let mut obj_type: u8 = 0;
-                fa.get_b1(&mut obj_type, "video_object_type_indication");
-                let mut is_obj_layer: u8 = 0;
-                fa.get_b1(&mut is_obj_layer, "is_object_layer_identifier");
+                r.be_u8("random_accessible_vol");
+                r.be_u8("video_object_type_indication");
+                let is_obj_layer = r.be_u8("is_object_layer_identifier").unwrap_or(0);
 
                 let mut width: u16 = 0;
                 let mut height: u16 = 0;
 
-                if is_obj_layer != 0 && fa.remain() >= 5 {
-                    fa.get_b1(&mut random, "video_object_layer_verid");
-                    fa.get_b1(&mut random, "video_object_layer_priority");
-                    let mut aspect: u8 = 0;
-                    fa.get_b1(&mut aspect, "aspect_ratio_info");
+                if is_obj_layer != 0 && r.remain() >= 5 {
+                    r.be_u8("video_object_layer_verid");
+                    r.be_u8("video_object_layer_priority");
+                    r.be_u8("aspect_ratio_info");
 
-                    if fa.remain() >= 1 {
-                        let mut vol_ctrl: u8 = 0;
-                        fa.get_b1(&mut vol_ctrl, "vol_control_parameters");
+                    if r.remain() >= 1 {
+                        let vol_ctrl = r.be_u8("vol_control_parameters").unwrap_or(0);
 
-                        if vol_ctrl != 0 && fa.remain() >= 1 {
-                            fa.get_b1(&mut random, "chroma_format");
-                            fa.get_b1(&mut random, "shape");
+                        if vol_ctrl != 0 && r.remain() >= 1 {
+                            r.be_u8("chroma_format");
+                            r.be_u8("shape");
                         }
-                        let mut shape: u8 = 0;
-                        fa.get_b1(&mut shape, "video_object_layer_shape");
+                        let shape = r.be_u8("video_object_layer_shape").unwrap_or(0);
 
-                        if shape == 0 && fa.remain() >= 8 {
-                            fa.get_b1(&mut random, "marker_bit");
+                        if shape == 0 && r.remain() >= 8 {
+                            r.be_u8("marker_bit");
+                            r.be_u16("vop_time_increment_resolution");
+                            let fixed_vop = r.be_u16("fixed_vop_rate").unwrap_or(0);
 
-                            let mut time_inc: u16 = 0;
-                            fa.get_b2(&mut time_inc, "vop_time_increment_resolution");
-                            let mut fixed_vop: u16 = 0;
-                            fa.get_b2(&mut fixed_vop, "fixed_vop_rate");
-
-                            if fixed_vop != 0 && fa.remain() >= 2 {
-                                fa.get_b2(&mut fixed_vop, "fixed_vop_time_increment");
+                            if fixed_vop != 0 && r.remain() >= 2 {
+                                r.be_u16("fixed_vop_time_increment");
                             }
 
-                            fa.get_b1(&mut random, "marker_bit");
-                            if fa.remain() >= 2 {
-                                let mut w_hi: u8 = 0;
-                                let mut w_lo: u8 = 0;
-                                fa.get_b1(&mut w_hi, "width_msb");
-                                fa.get_b1(&mut w_lo, "width_lsb");
+                            r.be_u8("marker_bit");
+                            if r.remain() >= 2 {
+                                let w_hi = r.be_u8("width_msb").unwrap_or(0);
+                                let w_lo = r.be_u8("width_lsb").unwrap_or(0);
                                 width = (((w_hi as u16) << 5) | ((w_lo as u16) >> 3)) & 0x1FFF;
 
-                                fa.get_b1(&mut random, "marker_bit");
-                                if fa.remain() >= 2 {
-                                    let mut h_hi: u8 = 0;
-                                    let mut h_lo: u8 = 0;
-                                    fa.get_b1(&mut h_hi, "height_msb");
-                                    fa.get_b1(&mut h_lo, "height_lsb");
+                                r.be_u8("marker_bit");
+                                if r.remain() >= 2 {
+                                    let h_hi = r.be_u8("height_msb").unwrap_or(0);
+                                    let h_lo = r.be_u8("height_lsb").unwrap_or(0);
                                     height = (((h_hi as u16) << 5) | ((h_lo as u16) >> 3)) & 0x1FFF;
                                 }
                             }
@@ -122,15 +108,15 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
                     }
                 }
 
-                fa.element_end();
+                r.element_end();
 
-                fa.stream_prepare(StreamKind::Video);
-                fa.fill(StreamKind::Video, 0, "Format", "MPEG-4 Visual", false);
+                r.stream_prepare(StreamKind::Video);
+                r.set_field(StreamKind::Video, 0, "Format", "MPEG-4 Visual");
                 if width > 0 {
-                    fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
+                    r.set_field(StreamKind::Video, 0, "Width", width.to_string());
                 }
                 if height > 0 {
-                    fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
+                    r.set_field(StreamKind::Video, 0, "Height", height.to_string());
                 }
                 found = true;
             }
@@ -142,7 +128,7 @@ pub fn parse_mpeg4v(fa: &mut FileAnalyze) -> bool {
                 {
                     break;
                 }
-                fa.skip_b4("start code");
+                r.be_u32("start code");
             }
         }
     }

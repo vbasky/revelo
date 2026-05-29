@@ -64,7 +64,7 @@ pub fn parse_ism(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "ISM", true);
+    fa.force_field(StreamKind::General, 0, "Format", "ISM");
     true
 }
 

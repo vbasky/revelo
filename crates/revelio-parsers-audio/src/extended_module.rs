@@ -23,92 +23,70 @@
 //!    2 bytes LE:    BPM
 //!   256 bytes:      Pattern order table
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC: &[u8; 17] = b"Extended Module: ";
 const HEADER_MIN_BYTES: usize = 336;
 
 pub fn parse_extended_module(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < HEADER_MIN_BYTES {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < HEADER_MIN_BYTES {
+        return None;
     }
-    let head = match fa.peek_raw(38) {
-        Some(h) => h,
-        None => return false,
-    };
+    let head = r.peek_raw(38)?;
     if &head[..17] != MAGIC || head[37] != 0x1A {
-        return false;
+        return None;
     }
 
-    fa.element_begin("Extended Module");
+    r.element_begin("Extended Module");
 
-    // Signature ("Extended Module: ").
-    let _ = fa.read_raw(17);
+    r.read_raw(17)?; // Signature ("Extended Module: ")
+    let module_name = trim_local_string(r.read_raw(20)?);
+    r.le_u8("0x1A")?;
+    let tracker_name = trim_local_string(r.read_raw(20)?);
 
-    // Module name: 20 bytes, then 0x1A sentinel.
-    let module_name_bytes = fa.read_raw(20).to_vec();
-    let module_name = trim_local_string(&module_name_bytes);
-    fa.skip_l1("0x1A");
+    let version_minor = r.le_u8("Version (minor)")?;
+    let version_major = r.le_u8("Version (major)")?;
+    r.le_u32("Header size")?;
+    r.le_u16("Song Length")?;
+    r.le_u16("Restart position")?;
+    let channels = r.le_u16("Number of channels")?;
+    let patterns = r.le_u16("Number of patterns")?;
+    let instruments = r.le_u16("Number of instruments")?;
+    r.le_u16("Flags")?;
+    let tempo = r.le_u16("Tempo")?;
+    let bpm = r.le_u16("BPM")?;
+    r.skip(256)?; // Pattern order table
 
-    // Tracker name: 20 bytes.
-    let tracker_name_bytes = fa.read_raw(20).to_vec();
-    let tracker_name = trim_local_string(&tracker_name_bytes);
-
-    let mut version_minor: Int8u = 0;
-    let mut version_major: Int8u = 0;
-    fa.get_l1(&mut version_minor, "Version (minor)");
-    fa.get_l1(&mut version_major, "Version (major)");
-
-    let mut header_size: Int32u = 0;
-    fa.get_l4(&mut header_size, "Header size");
-
-    let mut length: Int16u = 0;
-    fa.get_l2(&mut length, "Song Length");
-    fa.skip_l2("Restart position");
-
-    let mut channels: Int16u = 0;
-    let mut patterns: Int16u = 0;
-    let mut instruments: Int16u = 0;
-    let mut flags: Int16u = 0;
-    let mut tempo: Int16u = 0;
-    let mut bpm: Int16u = 0;
-    fa.get_l2(&mut channels, "Number of channels");
-    fa.get_l2(&mut patterns, "Number of patterns");
-    fa.get_l2(&mut instruments, "Number of instruments");
-    fa.get_l2(&mut flags, "Flags");
-    fa.get_l2(&mut tempo, "Tempo");
-    fa.get_l2(&mut bpm, "BPM");
-    fa.skip_hexa(256, "Pattern order table");
-
-    fa.element_end();
+    r.element_end();
 
     // Version string mirrors C++: "<major>.<minor/10><minor%10>" so
     // version 1.04 prints as "1.04" (not "1.4").
     let version_str = format!("{}.{}{}", version_major, version_minor / 10, version_minor % 10);
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Extended Module", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version_str, false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "Extended Module");
+    r.set_field(StreamKind::General, 0, "Format_Version", version_str);
     if !module_name.is_empty() {
-        fa.fill(StreamKind::General, 0, "Track", module_name, false);
+        r.set_field(StreamKind::General, 0, "Track", module_name);
     }
     if !tracker_name.is_empty() {
-        fa.fill(StreamKind::General, 0, "Encoded_Application", tracker_name, false);
+        r.set_field(StreamKind::General, 0, "Encoded_Application", tracker_name);
     }
-    fa.fill(StreamKind::General, 0, "Tempo", tempo.to_string(), false);
-    fa.fill(StreamKind::General, 0, "BPM", bpm.to_string(), false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.set_field(StreamKind::General, 0, "Tempo", tempo.to_string());
+    r.set_field(StreamKind::General, 0, "BPM", bpm.to_string());
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
-    fa.fill(StreamKind::Audio, 0, "Sampler, Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Sampler, Patterns", patterns.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Sampler, Instruments", instruments.to_string(), false);
-
-    let _ = (length, flags, header_size);
-
-    true
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "Module");
+    r.set_field(StreamKind::Audio, 0, "Sampler, Channels", channels.to_string());
+    r.set_field(StreamKind::Audio, 0, "Sampler, Patterns", patterns.to_string());
+    r.set_field(StreamKind::Audio, 0, "Sampler, Instruments", instruments.to_string());
+    Some(())
 }
 
 /// XM stores names as 20-byte fixed-width fields, space-padded on the

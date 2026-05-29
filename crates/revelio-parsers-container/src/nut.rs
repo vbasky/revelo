@@ -11,8 +11,7 @@
 //!   0x00  24  file_id_string = "nut/multimedia container"
 //!   0x18   1  file_id_string_zero = 0x00
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int8u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const NUT_HEADER_SIZE: usize = 25;
 const NUT_FILE_ID: &[u8; 24] = b"nut/multimedia container";
@@ -22,28 +21,25 @@ const NUT_FILE_ID: &[u8; 24] = b"nut/multimedia container";
 /// Detection: `nut/multimedia container\0` magic.
 /// Fills: Stream headers, timebase, codec info.
 pub fn parse_nut(fa: &mut FileAnalyze) -> bool {
-    // peek_raw(min(N, Remain)) shields tiny buffers from a panic; we still
-    // require the full 25-byte header to accept.
-    let want = NUT_HEADER_SIZE.min(fa.remain());
-    let header = match fa.peek_raw(want) {
-        Some(b) if b.len() == NUT_HEADER_SIZE => b,
-        _ => return false,
-    };
+    parse(fa).is_some()
+}
 
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    // Require the full 25-byte header to accept.
+    let header = r.peek_raw(NUT_HEADER_SIZE)?;
     if &header[0..24] != NUT_FILE_ID || header[24] != 0 {
-        return false;
+        return None;
     }
 
-    fa.element_begin("Nut header");
-    let _ = fa.read_raw(24);
-    let mut _zero: Int8u = 0;
-    fa.get_b1(&mut _zero, "file_id_string zero");
-    fa.element_end();
+    r.element_begin("Nut header");
+    r.skip(24)?; // file_id_string
+    r.be_u8("file_id_string zero")?;
+    r.element_end();
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Nut", false);
-
-    true
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "Nut");
+    Some(())
 }
 
 #[cfg(test)]

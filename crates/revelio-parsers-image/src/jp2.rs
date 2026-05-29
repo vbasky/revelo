@@ -10,17 +10,16 @@
 //! J2K detection: SOC marker `\xFF\x4F`.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int16u;
 
 const JP2_SIG: [u8; 12] = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A];
-const SOC_MARKER: Int16u = 0xFF4F;
-const SIZ_MARKER: Int16u = 0xFF51;
+const SOC_MARKER: u16 = 0xFF4F;
+const SIZ_MARKER: u16 = 0xFF51;
 
 /// Parse a JPEG 2000 image (JP2 file or raw J2K codestream).
 pub fn parse_jp2(fa: &mut FileAnalyze) -> bool {
     // Try raw J2K codestream first (peek_b2 doesn't borrow fa long-term)
-    let mut magic: Int16u = 0;
-    fa.peek_b2(&mut magic);
+    let mut magic: u16 = 0;
+    magic = fa.peek_b2();
     if magic == SOC_MARKER {
         return parse_j2k_codestream(fa);
     }
@@ -107,26 +106,26 @@ fn parse_jp2_file(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "JPEG 2000", false);
+    fa.set_field(StreamKind::Image, 0, "Format", "JPEG 2000");
 
     if compression == 7 {
-        fa.fill(StreamKind::Image, 0, "Format_Info", "JPEG 2000 file format (JP2)", false);
+        fa.set_field(StreamKind::Image, 0, "Format_Info", "JPEG 2000 file format (JP2)");
     }
 
     if width > 0 {
-        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
     }
     if height > 0 {
-        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     }
     if num_components > 0 {
-        fa.fill(StreamKind::Image, 0, "BitDepth_Planes", num_components.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "BitDepth_Planes", num_components.to_string());
     }
     if bpc > 0 {
         let bit_depth = (bpc & 0x7F) + 1;
-        fa.fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "BitDepth", bit_depth.to_string());
         if (bpc & 0x80) != 0 {
-            fa.fill(StreamKind::Image, 0, "Format_Settings_Sign", "Signed", false);
+            fa.set_field(StreamKind::Image, 0, "Format_Settings_Sign", "Signed");
         }
     }
 
@@ -142,8 +141,8 @@ fn parse_j2k_codestream(fa: &mut FileAnalyze) -> bool {
     if buf.len() < 4 {
         return false;
     }
-    let mut magic: Int16u = 0;
-    fa.peek_b2(&mut magic);
+    let mut magic: u16 = 0;
+    magic = fa.peek_b2();
     if magic != SOC_MARKER {
         return false;
     }
@@ -207,20 +206,20 @@ fn parse_j2k_codestream(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "JPEG 2000", false);
-    fa.fill(StreamKind::Image, 0, "Format_Info", "JPEG 2000 codestream (J2K)", false);
+    fa.set_field(StreamKind::Image, 0, "Format", "JPEG 2000");
+    fa.set_field(StreamKind::Image, 0, "Format_Info", "JPEG 2000 codestream (J2K)");
 
     if width > 0 {
-        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
     }
     if height > 0 {
-        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     }
     if num_components > 0 {
-        fa.fill(StreamKind::Image, 0, "BitDepth_Planes", num_components.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "BitDepth_Planes", num_components.to_string());
     }
     if bit_depth > 0 {
-        fa.fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "BitDepth", bit_depth.to_string());
     }
 
     true

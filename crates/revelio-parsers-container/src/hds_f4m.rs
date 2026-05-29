@@ -69,7 +69,7 @@ pub fn parse_hds_f4m(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "HDS F4M", true);
+    fa.force_field(StreamKind::General, 0, "Format", "HDS F4M");
     true
 }
 

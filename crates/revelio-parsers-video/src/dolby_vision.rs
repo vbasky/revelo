@@ -91,65 +91,60 @@ fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
 fn fill_dv_streams(fa: &mut FileAnalyze, info: &DolbyVisionInfo) {
     let pos = fa.stream_prepare(StreamKind::Video);
 
-    fa.fill(StreamKind::Video, pos, "Format", "Dolby Vision", false);
-    fa.fill(StreamKind::Video, pos, "HDR_Format", "Dolby Vision", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "Dolby Vision");
+    fa.set_field(StreamKind::Video, pos, "HDR_Format", "Dolby Vision");
 
     if !info.profile.is_empty() {
-        fa.fill(StreamKind::Video, pos, "HDR_Format_Profile", info.profile.clone(), false);
+        fa.set_field(StreamKind::Video, pos, "HDR_Format_Profile", info.profile.clone());
     }
     if !info.level.is_empty() {
-        fa.fill(StreamKind::Video, pos, "HDR_Format_Level", info.level.clone(), false);
+        fa.set_field(StreamKind::Video, pos, "HDR_Format_Level", info.level.clone());
     }
     if !info.version_major.is_empty() {
-        fa.fill(
+        fa.set_field(
             StreamKind::Video,
             pos,
             "HDR_Format_Version",
             format!("{}.{}", info.version_major, info.version_minor),
-            false,
         );
     }
     if info.bl_present && !info.bl_compatibility_id.is_empty() {
-        fa.fill(
+        fa.set_field(
             StreamKind::Video,
             pos,
             "HDR_Format_Compatibility",
             format!("BL:{}", info.bl_compatibility_id),
-            false,
         );
     }
     if !info.max_luminance.is_empty() {
-        fa.fill(
+        fa.set_field(
             StreamKind::Video,
             pos,
             "MasteringDisplay_Luminance_Max",
             info.max_luminance.clone(),
-            false,
         );
     }
     if !info.min_luminance.is_empty() {
-        fa.fill(
+        fa.set_field(
             StreamKind::Video,
             pos,
             "MasteringDisplay_Luminance_Min",
             info.min_luminance.clone(),
-            false,
         );
     }
     if !info.color_primaries.is_empty() {
-        fa.fill(
+        fa.set_field(
             StreamKind::Video,
             pos,
             "MasteringDisplay_ColorPrimaries",
             info.color_primaries.clone(),
-            false,
         );
     }
     if !info.max_cll.is_empty() {
-        fa.fill(StreamKind::Video, pos, "MaxCLL", info.max_cll.clone(), false);
+        fa.set_field(StreamKind::Video, pos, "MaxCLL", info.max_cll.clone());
     }
     if !info.max_fall.is_empty() {
-        fa.fill(StreamKind::Video, pos, "MaxFALL", info.max_fall.clone(), false);
+        fa.set_field(StreamKind::Video, pos, "MaxFALL", info.max_fall.clone());
     }
 }
 

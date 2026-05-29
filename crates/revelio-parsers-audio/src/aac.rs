@@ -15,7 +15,7 @@ pub fn parse_aac(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "AAC", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "AAC");
     let profile = (buf[2] >> 6) & 0x03;
     let _sr = match (buf[2] >> 2) & 0x0F {
         0 => 96000,
@@ -28,9 +28,9 @@ pub fn parse_aac(fa: &mut FileAnalyze) -> bool {
     };
     let _ch = ((buf[2] & 0x01) << 2) | (buf[3] >> 6);
     match profile {
-        0 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "LC", false),
-        1 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "HE-AAC", false),
-        2 => fa.fill(StreamKind::Audio, pos, "Format_Profile", "HE-AACv2", false),
+        0 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "LC"),
+        1 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "HE-AAC"),
+        2 => fa.set_field(StreamKind::Audio, pos, "Format_Profile", "HE-AACv2"),
         _ => {}
     }
     true

@@ -22,117 +22,97 @@
 //!   B3: NOMBR (nominal bitrate)
 //!   bit-packed: QUAL(6) KFGSHIFT(5) PF(2) reserved(3)
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int32u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 pub fn parse_theora(fa: &mut FileAnalyze) -> bool {
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
     // Need at least signature(1) + "theora"(6) + version(3) = 10 bytes
-    if fa.remain() < 10 {
-        return false;
+    if r.remain() < 10 {
+        return None;
     }
 
-    fa.element_begin("Theora");
+    r.element_begin("Theora");
 
-    let mut signature: u8 = 0;
-    fa.get_b1(&mut signature, "Signature");
-    if signature != 0x80 {
-        fa.element_end();
-        return false;
+    if r.be_u8("Signature")? != 0x80 {
+        r.element_end();
+        return None;
     }
-
-    // Check for "theora" signature bytes
-    let sig_bytes = match fa.peek_raw(6) {
-        Some(b) => b,
-        None => {
-            fa.element_end();
-            return false;
-        }
-    };
-    if sig_bytes != b"theora" {
-        fa.element_end();
-        return false;
+    if r.peek_raw(6)? != b"theora" {
+        r.element_end();
+        return None;
     }
-    fa.skip_hexa(6, "Signature");
+    r.skip(6)?; // "theora"
 
-    let mut version: Int32u = 0;
-    fa.get_b3(&mut version, "Version");
+    let version = r.be_u24("Version")?;
 
     if (version & 0x030200) == 0x030200 {
-        // Version 3.2.x
-        fa.skip_b2("FMBW");
-        fa.skip_b2("FMBH");
+        // Version 3.2.x. Body reads default to 0 on truncation (detection
+        // still succeeds), matching the original behaviour.
+        r.be_u16("FMBW");
+        r.be_u16("FMBH");
+        let picw = r.be_u24("PICW").unwrap_or(0);
+        let pich = r.be_u24("PICH").unwrap_or(0);
+        r.be_u8("PICX");
+        r.be_u8("PICY");
+        let frn = r.be_u32("FRN").unwrap_or(0);
+        let frd = r.be_u32("FRD").unwrap_or(0);
+        let parn = r.be_u24("PARN").unwrap_or(0);
+        let pard = r.be_u24("PARD").unwrap_or(0);
+        r.be_u8("CS"); // color space: 0=4:2:0, 2=4:2:2, 3=4:4:4
+        let nombr = r.be_u24("NOMBR").unwrap_or(0); // nominal bitrate
 
-        let mut picw: Int32u = 0;
-        let mut pich: Int32u = 0;
-        fa.get_b3(&mut picw, "PICW");
-        fa.get_b3(&mut pich, "PICH");
+        r.bits(|b| {
+            b.skip(6); // QUAL
+            b.skip(5); // KFGSHIFT
+            b.skip(2); // PF (pixel format)
+            b.skip(3); // Reserved
+            Some(())
+        });
 
-        fa.skip_b1("PICX");
-        fa.skip_b1("PICY");
+        r.element_end();
 
-        let mut frn: Int32u = 0;
-        let mut frd: Int32u = 0;
-        fa.get_b4(&mut frn, "FRN");
-        fa.get_b4(&mut frd, "FRD");
-
-        let mut parn: Int32u = 0;
-        let mut pard: Int32u = 0;
-        fa.get_b3(&mut parn, "PARN");
-        fa.get_b3(&mut pard, "PARD");
-
-        fa.skip_b1("CS"); // color space: 0=4:2:0, 2=4:2:2, 3=4:4:4
-
-        let mut nombr: Int32u = 0;
-        fa.get_b3(&mut nombr, "NOMBR"); // nominal bitrate
-
-        fa.bs_begin();
-        fa.skip_s1(6, "QUAL");
-        fa.skip_s1(5, "KFGSHIFT");
-        fa.skip_s1(2, "PF"); // pixel format
-        fa.skip_s1(3, "Reserved");
-        fa.bs_end();
-
-        fa.element_end();
-
-        // Fill streams
-        fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, 0, "Format", "Theora", false);
-        fa.fill(StreamKind::Video, 0, "Codec", "Theora", false);
+        r.stream_prepare(StreamKind::Video);
+        r.set_field(StreamKind::Video, 0, "Format", "Theora");
+        r.set_field(StreamKind::Video, 0, "Codec", "Theora");
 
         if frn > 0 && frd > 0 {
             let frame_rate = frn as f64 / frd as f64;
-            fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+            r.set_field(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate));
         }
 
         let pixel_ratio = if parn > 0 && pard > 0 { parn as f64 / pard as f64 } else { 1.0 };
 
-        fa.fill(StreamKind::Video, 0, "Width", picw.to_string(), false);
-        fa.fill(StreamKind::Video, 0, "Height", pich.to_string(), false);
+        r.set_field(StreamKind::Video, 0, "Width", picw.to_string());
+        r.set_field(StreamKind::Video, 0, "Height", pich.to_string());
 
         if picw > 0 && pich > 0 {
             let dar = picw as f64 / pich as f64 * pixel_ratio;
-            fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+            r.set_field(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar));
         }
 
         if nombr > 0 {
-            fa.fill(StreamKind::Video, 0, "BitRate_Nominal", nombr.to_string(), false);
+            r.set_field(StreamKind::Video, 0, "BitRate_Nominal", nombr.to_string());
         }
 
-        fa.stream_prepare(StreamKind::General);
-        fa.fill(StreamKind::General, 0, "Format", "Theora", false);
+        r.stream_prepare(StreamKind::General);
+        r.set_field(StreamKind::General, 0, "Format", "Theora");
 
-        return true;
+        return Some(());
     }
 
     // Version not 3.2.x — still accept minimal
-    fa.element_end();
-    fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "Theora", false);
-    fa.fill(StreamKind::Video, 0, "Codec", "Theora", false);
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Theora", false);
+    r.element_end();
+    r.stream_prepare(StreamKind::Video);
+    r.set_field(StreamKind::Video, 0, "Format", "Theora");
+    r.set_field(StreamKind::Video, 0, "Codec", "Theora");
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "Theora");
 
-    true
+    Some(())
 }
 
 #[cfg(test)]

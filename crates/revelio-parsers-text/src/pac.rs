@@ -13,8 +13,8 @@ pub fn parse_pac(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "PAC", false);
-    fa.fill(StreamKind::Text, pos, "Format_Info", "PAC subtitle format", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "PAC");
+    fa.set_field(StreamKind::Text, pos, "Format_Info", "PAC subtitle format");
     true
 }
 #[cfg(test)]

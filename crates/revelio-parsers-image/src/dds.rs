@@ -52,30 +52,30 @@ pub fn parse_dds(fa: &mut FileAnalyze) -> bool {
     let file_size = fa.remain();
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DDS", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DDS");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
 
     fa.stream_prepare(StreamKind::Image);
     if (pf_flags & 0x4) != 0 {
         // FourCC-compressed: oracle uses the RIFF codec map which
         // resolves DXT1/DXT3/DXT5/DX10/etc to "DirectX TC".
-        fa.fill(StreamKind::Image, 0, "Format", "DirectX TC", false);
+        fa.set_field(StreamKind::Image, 0, "Format", "DirectX TC");
         let fcc_str: String = fourcc.iter().map(|&b| b as char).collect();
-        fa.fill(StreamKind::Image, 0, "CodecID", fcc_str, false);
+        fa.set_field(StreamKind::Image, 0, "CodecID", fcc_str);
     } else {
-        fa.fill(StreamKind::Image, 0, "Format", "DDS", false);
+        fa.set_field(StreamKind::Image, 0, "Format", "DDS");
     }
     if (flags & 0x4) != 0 {
-        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
     }
     if (flags & 0x2) != 0 {
-        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     }
     if (flags & 0x800000) != 0 {
-        fa.fill(StreamKind::Image, 0, "BitDepth", depth.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "BitDepth", depth.to_string());
     }
-    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.set_field(StreamKind::Image, 0, "StreamSize", file_size.to_string());
+    fa.force_field(StreamKind::General, 0, "StreamSize", "0");
     true
 }
 

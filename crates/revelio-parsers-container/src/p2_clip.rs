@@ -25,7 +25,7 @@ pub fn parse_p2_clip(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "P2 Clip", false);
+    fa.set_field(StreamKind::General, 0, "Format", "P2 Clip");
     true
 }
 

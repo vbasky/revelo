@@ -23,12 +23,12 @@ pub fn parse_arriraw(fa: &mut FileAnalyze) -> bool {
     let file_size = fa.remain();
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Arri Raw", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Arri Raw");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "Arri Raw", false);
-    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.set_field(StreamKind::Image, 0, "Format", "Arri Raw");
+    fa.set_field(StreamKind::Image, 0, "StreamSize", file_size.to_string());
+    fa.force_field(StreamKind::General, 0, "StreamSize", "0");
     true
 }
 

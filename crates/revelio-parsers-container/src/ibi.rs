@@ -45,7 +45,7 @@ pub fn parse_ibi(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Ibi", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Ibi");
     true
 }
 

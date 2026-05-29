@@ -240,20 +240,20 @@ fn read_ue(data: &[u8], offset: &mut usize) -> Option<u64> {
 
 fn fill_vvc_streams(fa: &mut FileAnalyze, info: &VvcInfo) {
     fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "VVC", false);
-    fa.fill(StreamKind::Video, 0, "Format_Version", "Version 1", false);
-    fa.fill(StreamKind::Video, 0, "Format_Profile", vvc_profile_name(info.profile_idc), false);
-    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
+    fa.set_field(StreamKind::Video, 0, "Format", "VVC");
+    fa.set_field(StreamKind::Video, 0, "Format_Version", "Version 1");
+    fa.set_field(StreamKind::Video, 0, "Format_Profile", vvc_profile_name(info.profile_idc));
+    fa.set_field(StreamKind::Video, 0, "Width", info.width.to_string());
+    fa.set_field(StreamKind::Video, 0, "Height", info.height.to_string());
+    fa.set_field(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string());
     if info.chroma_format_idc == 0 {
-        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:0:0", false);
+        fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:0:0");
     } else if info.chroma_format_idc == 1 {
-        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:0", false);
+        fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:2:0");
     } else if info.chroma_format_idc == 2 {
-        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:2", false);
+        fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:2:2");
     } else if info.chroma_format_idc == 3 {
-        fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:4:4", false);
+        fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:4:4");
     }
 }
 

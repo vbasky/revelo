@@ -13,8 +13,7 @@
 //! still get Format=IAB but leave those audio fields blank, matching the
 //! C++ which simply skips the unknown payload.
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const IAB_SAMPLE_RATE: [u32; 4] = [48000, 96000, 0, 0];
 const IAB_BIT_DEPTH: [u8; 4] = [16, 24, 0, 0];
@@ -40,32 +39,26 @@ fn iab_frame_rate(code: u8) -> Option<f64> {
 /// Detection: iab_frame sync.
 /// Fills: Format, frame config.
 pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
-    // Need at least the fixed-size pieces of the preamble + IAFrame headers
-    // plus 1 byte of Version. PreambleLength is read up front, so the peek
-    // is split into "fixed prefix" (5 bytes) then "rest".
-    let head = match fa.peek_raw(fa.remain().min(5)) {
-        Some(h) if h.len() == 5 => h,
-        _ => return false,
-    };
-    if head[0] != 0x01 {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    // Validate the preamble + IAFrame headers by peeking, then consume.
+    let head = r.peek_raw(5)?;
+    if head.len() < 5 || head[0] != 0x01 {
+        return None;
     }
     let preamble_length = u32::from_be_bytes([head[1], head[2], head[3], head[4]]) as usize;
 
-    // Full header: 5 (preamble header) + preamble_length + 5 (iaframe header)
-    // + 1 (version). Use peek_raw with the Remain-clamped len per spec.
     let full_needed = 5usize.saturating_add(preamble_length).saturating_add(5).saturating_add(1);
-    let peek_len = fa.remain().min(full_needed);
-    if peek_len < full_needed {
-        return false;
+    let full = r.peek_raw(full_needed)?;
+    if full.len() < full_needed {
+        return None;
     }
-    let full = match fa.peek_raw(peek_len) {
-        Some(f) => f,
-        None => return false,
-    };
     let iaframe_tag_off = 5 + preamble_length;
     if full[iaframe_tag_off] != 0x02 {
-        return false;
+        return None;
     }
     let iaframe_length = u32::from_be_bytes([
         full[iaframe_tag_off + 1],
@@ -75,37 +68,30 @@ pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
     ]);
     // Sanity: IAFrameLength must cover at least the Version byte.
     if iaframe_length < 1 {
-        return false;
+        return None;
     }
 
     let version = full[iaframe_tag_off + 5];
 
-    fa.element_begin("IAB");
-    let mut preamble_tag: Int8u = 0;
-    fa.get_b1(&mut preamble_tag, "PreambleTag");
-    let mut _preamble_len: Int32u = 0;
-    fa.get_b4(&mut _preamble_len, "PreambleLength");
-    fa.skip_hexa(preamble_length, "PreambleValue");
-    let mut iaframe_tag: Int8u = 0;
-    fa.get_b1(&mut iaframe_tag, "IAFrameTag");
-    let mut _ia_len: Int32u = 0;
-    fa.get_b4(&mut _ia_len, "IAFrameLength");
+    r.element_begin("IAB");
+    r.be_u8("PreambleTag")?;
+    r.be_u32("PreambleLength")?;
+    r.skip(preamble_length)?; // PreambleValue
+    r.be_u8("IAFrameTag")?;
+    r.be_u32("IAFrameLength")?;
 
     let mut sample_rate: Option<u32> = None;
     let mut bit_depth: Option<u8> = None;
     let mut frame_rate: Option<f64> = None;
 
     if version == 1 {
-        let mut _v: Int8u = 0;
-        fa.get_b1(&mut _v, "Version");
-        fa.bs_begin();
-        let mut sr_idx: Int8u = 0;
-        let mut bd_idx: Int8u = 0;
-        let mut fr_idx: Int8u = 0;
-        fa.get_s1(2, &mut sr_idx, "SampleRate");
-        fa.get_s1(2, &mut bd_idx, "BitDepth");
-        fa.get_s1(4, &mut fr_idx, "FrameRate");
-        fa.bs_end();
+        r.be_u8("Version")?;
+        let (sr_idx, bd_idx, fr_idx) = r.bits(|b| {
+            let sr_idx = b.read::<u8>(2, "SampleRate")?;
+            let bd_idx = b.read::<u8>(2, "BitDepth")?;
+            let fr_idx = b.read::<u8>(4, "FrameRate")?;
+            Some((sr_idx, bd_idx, fr_idx))
+        })?;
 
         let sr = IAB_SAMPLE_RATE[(sr_idx & 0x3) as usize];
         if sr != 0 {
@@ -119,19 +105,19 @@ pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
             frame_rate = Some(fr);
         }
     }
-    fa.element_end();
+    r.element_end();
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "IAB", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "IAB");
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "IAB", false);
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "IAB");
     if let Some(sr) = sample_rate {
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "SamplingRate", sr.to_string());
     }
     if let Some(bd) = bit_depth {
-        fa.fill(StreamKind::Audio, 0, "BitDepth", bd.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "BitDepth", bd.to_string());
     }
     if let Some(fr) = frame_rate {
         // Integer frame rates render without decimals; 23.976 keeps 3 digits
@@ -141,10 +127,9 @@ pub fn parse_iab(fa: &mut FileAnalyze) -> bool {
         } else {
             format!("{:.3}", fr)
         };
-        fa.fill(StreamKind::Audio, 0, "FrameRate", s, false);
+        r.set_field(StreamKind::Audio, 0, "FrameRate", s);
     }
-
-    true
+    Some(())
 }
 
 #[cfg(test)]

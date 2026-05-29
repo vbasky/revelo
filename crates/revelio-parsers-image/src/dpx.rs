@@ -58,11 +58,11 @@ pub fn parse_dpx(fa: &mut FileAnalyze) -> bool {
         // Cineon path: provide a minimal stream entry; the file
         // information layout differs from DPX and we don't decode it.
         fa.stream_prepare(StreamKind::General);
-        fa.fill(StreamKind::General, 0, "Format", "Cineon", false);
+        fa.set_field(StreamKind::General, 0, "Format", "Cineon");
         fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, 0, "Format", "Cineon", false);
+        fa.set_field(StreamKind::Image, 0, "Format", "Cineon");
         let endian_str = if le { "Little" } else { "Big" };
-        fa.fill(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str, false);
+        fa.set_field(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str);
         return true;
     }
 
@@ -88,63 +88,63 @@ pub fn parse_dpx(fa: &mut FileAnalyze) -> bool {
     };
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DPX", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DPX");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
     let version_fmt = format_version(&version_raw);
     if !version_fmt.is_empty() {
-        fa.fill(StreamKind::General, 0, "Format_Version", version_fmt.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Format_Version", version_fmt.clone());
     }
     if let Some(ref c) = creator {
-        fa.fill(StreamKind::General, 0, "Encoded_Library", c.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Library", c.clone());
     }
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "DPX", false);
+    fa.set_field(StreamKind::Image, 0, "Format", "DPX");
     if !version_fmt.is_empty() {
-        fa.fill(StreamKind::Image, 0, "Format_Version", version_fmt, false);
+        fa.set_field(StreamKind::Image, 0, "Format_Version", version_fmt);
     }
     let endian_str = if le { "Little" } else { "Big" };
-    fa.fill(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str, false);
+    fa.set_field(StreamKind::Image, 0, "Format_Settings_Endianness", endian_str);
     if let Some(pack) = dpx_packing(packing_method) {
-        fa.fill(StreamKind::Image, 0, "Format_Settings_Packing", pack, false);
+        fa.set_field(StreamKind::Image, 0, "Format_Settings_Packing", pack);
     }
     if let Some(enc) = dpx_encoding(encoding_method) {
-        fa.fill(StreamKind::Image, 0, "Format_Compression", enc, false);
+        fa.set_field(StreamKind::Image, 0, "Format_Compression", enc);
     }
     if width > 0 {
-        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
     }
     if height > 0 {
-        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     }
     if width > 0 && height > 0 {
-        fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
+        fa.set_field(StreamKind::Image, 0, "PixelAspectRatio", "1.000");
         let dar = width as f64 / height as f64;
-        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.set_field(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar));
     }
     let cs = dpx_descriptor_color_space(descriptor);
     if !cs.is_empty() {
-        fa.fill(StreamKind::Image, 0, "ColorSpace", cs, false);
+        fa.set_field(StreamKind::Image, 0, "ColorSpace", cs);
     }
     let cm = dpx_descriptor_chroma(descriptor);
     if !cm.is_empty() {
-        fa.fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
+        fa.set_field(StreamKind::Image, 0, "ChromaSubsampling", cm);
     }
-    fa.fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "BitDepth", bit_depth.to_string());
     // DPX is uncompressed → lossless.
-    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossless");
     // Image.StreamSize = file size (whole file is image data + header,
     // but oracle reports the file size as the image's StreamSize). General
     // StreamSize = 0 (no separately-tracked overhead in this model).
     let file_size = fa.remain();
-    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.set_field(StreamKind::Image, 0, "StreamSize", file_size.to_string());
+    fa.force_field(StreamKind::General, 0, "StreamSize", "0");
     // Oracle marks colour_description_present whenever colorimetric/
     // transfer fields are present in the image element header (always
     // present in DPX, so always emit "Yes").
-    fa.fill(StreamKind::Image, 0, "colour_description_present", "Yes", false);
+    fa.set_field(StreamKind::Image, 0, "colour_description_present", "Yes");
     if let Some(c) = creator {
-        fa.fill(StreamKind::Image, 0, "Encoded_Library", c, false);
+        fa.set_field(StreamKind::Image, 0, "Encoded_Library", c);
     }
     true
 }

@@ -14,9 +14,9 @@ pub fn parse_smpte_st0302(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "AES3", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "SMPTE ST 302", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Settings_Mode", "16 AES3 channels", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "AES3");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "SMPTE ST 302");
+    fa.set_field(StreamKind::Audio, pos, "Format_Settings_Mode", "16 AES3 channels");
     true
 }
 

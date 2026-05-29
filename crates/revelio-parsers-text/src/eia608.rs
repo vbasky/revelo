@@ -21,11 +21,11 @@ pub fn parse_eia608(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "EIA-608", false);
-    fa.fill(StreamKind::General, 0, "TextCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "EIA-608");
+    fa.set_field(StreamKind::General, 0, "TextCount", "1");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "EIA-608", false);
+    fa.set_field(StreamKind::Text, 0, "Format", "EIA-608");
     true
 }
 
@@ -47,7 +47,7 @@ mod tests {
         let t = |k: &str| fa.retrieve(StreamKind::Text, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format").as_deref(), Some("EIA-608"));
         assert_eq!(t("Format").as_deref(), Some("EIA-608"));
-        assert_eq!(fa.count_get(StreamKind::Text), 1);
-        assert_eq!(fa.count_get(StreamKind::General), 1);
+        assert_eq!(fa.stream_count(StreamKind::Text), 1);
+        assert_eq!(fa.stream_count(StreamKind::General), 1);
     }
 }

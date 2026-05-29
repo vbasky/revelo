@@ -1,0 +1,25 @@
+# cargo-deny configuration
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "deny"
+notice = "warn"
+
+[licenses]
+allow = [
+    "BSD-2-Clause",
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+]
+copyleft = "deny"
+default = "deny"
+
+[[licenses.clarify]]
+name = "rayon"
+expression = "MIT OR Apache-2.0"
+license-files = [
+    { path = "LICENSE-MIT", hash = 0 },
+]

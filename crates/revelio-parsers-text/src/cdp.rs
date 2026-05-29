@@ -23,10 +23,10 @@ pub fn parse_cdp(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "CDP", true);
+    fa.force_field(StreamKind::General, 0, "Format", "CDP");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "CDP", true);
+    fa.force_field(StreamKind::Text, 0, "Format", "CDP");
     true
 }
 
@@ -49,7 +49,7 @@ mod tests {
             fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
             Some("CDP")
         );
-        assert_eq!(fa.count_get(StreamKind::Text), 1);
+        assert_eq!(fa.stream_count(StreamKind::Text), 1);
     }
 
     #[test]

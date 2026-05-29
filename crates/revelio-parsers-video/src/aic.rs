@@ -11,8 +11,8 @@ pub fn parse_aic(fa: &mut FileAnalyze) -> bool {
     }
     if &buf[4..8] == b"aic " || &buf[0..4] == b"AIC " {
         let pos = fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, pos, "Format", "Apple Intermediate Codec", false);
-        fa.fill(StreamKind::Video, pos, "Format_Info", "AIC", false);
+        fa.set_field(StreamKind::Video, pos, "Format", "Apple Intermediate Codec");
+        fa.set_field(StreamKind::Video, pos, "Format_Info", "AIC");
         return true;
     }
     false

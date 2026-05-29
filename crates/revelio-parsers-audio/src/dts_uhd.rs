@@ -18,13 +18,13 @@ pub fn parse_dts_uhd(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DTS", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DTS");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "DTS", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Profile", "UHD", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "DTS");
+    fa.set_field(StreamKind::Audio, 0, "Format_Profile", "UHD");
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
 
     true
 }

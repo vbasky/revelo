@@ -31,8 +31,7 @@
 //!      7 bits: LastFrameLength part 2
 //!   1 byte:   EncoderVersion     (e.g. 115 → "1.15")
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const HEADER_SIZE: u64 = 25;
 const SAMPLES_PER_FRAME: u64 = 1152;
@@ -63,74 +62,70 @@ const MPC_PROFILE: [&str; 16] = [
 /// Detection: `MP+` (SV7) / `MPCK` (SV8) magic.
 /// Fills: Profile, quality, sample rate, channels.
 pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.remain().min(4));
-    let Some(h) = head else { return false };
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    let h = r.peek_raw(4)?;
     if h.len() < 4 {
-        return false;
+        return None;
     }
     if &h[0..3] != b"MP+" || (h[3] & 0x0F) != 7 {
-        return false;
+        return None;
     }
-    if fa.remain() < HEADER_SIZE as usize {
-        return false;
+    if r.remain() < HEADER_SIZE as usize {
+        return None;
     }
 
     // Capture total buffer size for BitRate denominator (matches C++ File_Size).
-    let file_size = fa.remain() as u64;
+    let file_size = r.remain() as u64;
 
-    fa.element_begin("SV7 header");
+    r.element_begin("SV7 header");
 
-    let _sig = fa.read_raw(3).to_vec();
+    r.read_raw(3)?; // signature
 
-    fa.bs_begin();
-    let mut pns: Int8u = 0;
-    let mut version: Int8u = 0;
-    fa.get_s1(4, &mut pns, "PNS");
-    fa.get_s1(4, &mut version, "Version");
-    fa.bs_end();
+    r.bits(|b| {
+        b.read::<u8>(4, "PNS")?;
+        b.read::<u8>(4, "Version")?;
+        Some(())
+    })?;
 
-    let mut frame_count: Int32u = 0;
-    fa.get_l4(&mut frame_count, "FrameCount");
+    let frame_count = r.le_u32("FrameCount")?;
+    r.le_u16("MaxLevel")?;
 
-    fa.skip_l2("MaxLevel");
+    let (profile, sample_freq_idx) = r.bits(|b| {
+        let profile = b.read::<u8>(4, "Profile")?;
+        b.read::<u8>(2, "Link")?;
+        let sample_freq_idx = b.read::<u8>(2, "SampleFreq")?;
+        b.skip(1); // IntensityStereo
+        b.skip(1); // MidSideStereo
+        b.skip(6); // MaxBand
+        Some((profile, sample_freq_idx))
+    })?;
 
-    fa.bs_begin();
-    let mut profile: Int8u = 0;
-    let mut link: Int8u = 0;
-    let mut sample_freq_idx: Int8u = 0;
-    fa.get_s1(4, &mut profile, "Profile");
-    fa.get_s1(2, &mut link, "Link");
-    fa.get_s1(2, &mut sample_freq_idx, "SampleFreq");
-    fa.skip_s1(1, "IntensityStereo");
-    fa.skip_s1(1, "MidSideStereo");
-    fa.skip_s1(6, "MaxBand");
-    fa.bs_end();
+    r.le_u16("TitlePeak")?;
+    r.le_u16("TitleGain")?;
+    r.le_u16("AlbumPeak")?;
+    r.le_u16("AlbumGain")?;
 
-    fa.skip_l2("TitlePeak");
-    let mut title_gain: Int16u = 0;
-    fa.get_l2(&mut title_gain, "TitleGain");
+    r.bits(|b| {
+        b.skip(16); // unused
+        b.skip(4); // LastFrameLength (part 1)
+        b.skip(1); // FastSeekingSafe
+        b.skip(3); // unused
+        b.skip(1); // TrueGapless
+        b.skip(7); // LastFrameLength (part 2)
+        Some(())
+    })?;
 
-    fa.skip_l2("AlbumPeak");
-    let mut album_gain: Int16u = 0;
-    fa.get_l2(&mut album_gain, "AlbumGain");
+    let encoder_version = r.le_u8("EncoderVersion")?;
 
-    fa.bs_begin();
-    fa.skip_s2(16, "unused");
-    fa.skip_s1(4, "LastFrameLength (part 1)");
-    fa.skip_s1(1, "FastSeekingSafe");
-    fa.skip_s1(3, "unused");
-    fa.skip_s1(1, "TrueGapless");
-    fa.skip_s1(7, "LastFrameLength (part 2)");
-    fa.bs_end();
-
-    let mut encoder_version: Int8u = 0;
-    fa.get_l1(&mut encoder_version, "EncoderVersion");
-
-    fa.element_end();
+    r.element_end();
 
     let sample_rate = MPC_SAMPLE_FREQ[(sample_freq_idx as usize) & 0x03];
     if sample_rate == 0 || frame_count == 0 {
-        return false;
+        return None;
     }
 
     let samples = (frame_count as u64) * SAMPLES_PER_FRAME;
@@ -142,40 +137,38 @@ pub fn parse_mpc(fa: &mut FileAnalyze) -> bool {
 
     let encoder = format_encoder_version(encoder_version);
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Musepack", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", "Version 7", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "Musepack");
+    r.set_field(StreamKind::General, 0, "Format_Version", "Version 7");
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "Musepack", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Version", "Version 7", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "SV7", false);
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "Musepack");
+    r.set_field(StreamKind::Audio, 0, "Format_Version", "Version 7");
+    r.set_field(StreamKind::Audio, 0, "Codec", "SV7");
     let profile_name = MPC_PROFILE[(profile as usize) & 0x0F];
     if !profile_name.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Codec_Settings", profile_name, false);
+        r.set_field(StreamKind::Audio, 0, "Codec_Settings", profile_name);
     }
     if !encoder.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Encoded_Library", encoder, false);
+        r.set_field(StreamKind::Audio, 0, "Encoded_Library", encoder);
     }
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", "2", false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", "16", false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-
-    let _ = (pns, link, title_gain, album_gain);
-    true
+    r.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    r.set_field(StreamKind::Audio, 0, "BitRate", bit_rate.to_string());
+    r.set_field(StreamKind::Audio, 0, "Channels", "2");
+    r.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    r.set_field(StreamKind::Audio, 0, "SamplingCount", samples.to_string());
+    r.set_field(StreamKind::Audio, 0, "BitDepth", "16");
+    r.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    Some(())
 }
 
 /// EncoderVersion is encoded as an integer that, divided by 100, is the
 /// human-readable version (e.g. 115 → "1.15"). C++ appends " Beta" when
 /// `v % 10 != 0 && v % 2 == 0` and " Alpha" when `v % 2 == 1`; release
 /// builds (v % 10 == 0) get no suffix.
-fn format_encoder_version(v: Int8u) -> String {
+fn format_encoder_version(v: u8) -> String {
     if v == 0 {
         return String::new();
     }

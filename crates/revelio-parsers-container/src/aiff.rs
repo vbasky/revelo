@@ -19,23 +19,22 @@
 //! then BitRate = StreamSize * 8 * 1000 / Duration_ms, formatted with
 //! 10 decimal digits.
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Float80, Int8u, Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
-const FOURCC_FORM: Int32u = u32::from_be_bytes(*b"FORM");
-const FOURCC_AIFF: Int32u = u32::from_be_bytes(*b"AIFF");
-const FOURCC_AIFC: Int32u = u32::from_be_bytes(*b"AIFC");
-const FOURCC_COMM: Int32u = u32::from_be_bytes(*b"COMM");
-const FOURCC_SSND: Int32u = u32::from_be_bytes(*b"SSND");
+const FOURCC_FORM: u32 = u32::from_be_bytes(*b"FORM");
+const FOURCC_AIFF: u32 = u32::from_be_bytes(*b"AIFF");
+const FOURCC_AIFC: u32 = u32::from_be_bytes(*b"AIFC");
+const FOURCC_COMM: u32 = u32::from_be_bytes(*b"COMM");
+const FOURCC_SSND: u32 = u32::from_be_bytes(*b"SSND");
 
 #[derive(Debug, Default)]
 struct CommChunk {
-    num_channels: Int16u,
-    num_sample_frames: Int32u,
-    sample_size: Int16u,
-    sample_rate: Float80,
+    num_channels: u16,
+    num_sample_frames: u32,
+    sample_size: u16,
+    sample_rate: f64,
     // AIFC-only: present when the FORM type is "AIFC".
-    compression_type: Option<Int32u>,
+    compression_type: Option<u32>,
 }
 
 /// Decoded codec mapping for an AIFC compressionType FourCC. `format`
@@ -49,7 +48,7 @@ struct AifcCodec {
     is_float: bool,
 }
 
-fn map_aifc_compression(fourcc: Int32u) -> AifcCodec {
+fn map_aifc_compression(fourcc: u32) -> AifcCodec {
     // FourCCs matched as ASCII bytes; AIFC compressionType is case-sensitive
     // per the spec but real files use both cases for the same codec, so we
     // accept both. Endianness/Sign assignments follow File_Pcm.cpp's table.
@@ -88,136 +87,122 @@ fn map_aifc_compression(fourcc: Int32u) -> AifcCodec {
 /// Detection: `FORM` + `AIFF`/`AIFC` form type.
 /// Fills: COMM chunk (channels, sample rate, bit depth), SSND data size.
 pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
-    let mut magic: Int32u = 0;
-    fa.peek_b4(&mut magic);
-    if magic != FOURCC_FORM {
-        return false;
-    }
+    parse(fa).is_some()
+}
 
-    fa.element_begin("FORM");
-    let mut form_id: Int32u = 0;
-    fa.get_c4(&mut form_id, "ID");
-    let mut form_size: Int32u = 0;
-    fa.get_b4(&mut form_size, "Size");
-    let mut form_type: Int32u = 0;
-    fa.get_c4(&mut form_type, "Type");
-
-    if form_type != FOURCC_AIFF && form_type != FOURCC_AIFC {
-        fa.element_end();
-        return false;
-    }
-    let is_aifc = form_type == FOURCC_AIFC;
-
-    let mut comm: Option<CommChunk> = None;
-    let mut audio_stream_size: u64 = 0;
-
-    while fa.remain() >= 8 {
-        let mut chunk_id: Int32u = 0;
-        fa.get_c4(&mut chunk_id, "ChunkID");
-        let mut chunk_size: Int32u = 0;
-        fa.get_b4(&mut chunk_size, "ChunkSize");
-
-        let chunk_size_usize = chunk_size as usize;
-        if fa.remain() < chunk_size_usize {
-            break;
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let (comm, audio_stream_size) = {
+        let r = &mut Reader::wrap(fa);
+        if r.peek_be_u32()? != FOURCC_FORM {
+            return None;
         }
 
-        match chunk_id {
-            FOURCC_COMM => {
-                fa.element_begin("Common");
-                let mut num_channels: Int16u = 0;
-                fa.get_b2(&mut num_channels, "numChannels");
-                let mut num_sample_frames: Int32u = 0;
-                fa.get_b4(&mut num_sample_frames, "numSampleFrames");
-                let mut sample_size: Int16u = 0;
-                fa.get_b2(&mut sample_size, "sampleSize");
-                let mut sample_rate: Float80 = 0.0;
-                fa.get_bf10(&mut sample_rate, "sampleRate");
+        r.element_begin("FORM");
+        r.fourcc("ID")?;
+        r.be_u32("Size")?;
+        let form_type = r.fourcc("Type")?;
 
-                let mut consumed: usize = 18;
-                let mut compression_type: Option<Int32u> = None;
-                if is_aifc && chunk_size_usize >= consumed + 4 {
-                    let mut ct: Int32u = 0;
-                    fa.get_c4(&mut ct, "compressionType");
-                    compression_type = Some(ct);
-                    consumed += 4;
-                    // Pascal string: 1-byte length + payload, then padded to
-                    // even total length within the chunk body.
-                    if chunk_size_usize >= consumed + 1 {
-                        let mut pa_len: Int8u = 0;
-                        fa.get_b1(&mut pa_len, "compressionName_length");
-                        consumed += 1;
-                        let pa_total = pa_len as usize;
-                        let pa_take = pa_total.min(chunk_size_usize - consumed);
-                        if pa_take > 0 {
-                            fa.skip_hexa(pa_take, "compressionName");
-                            consumed += pa_take;
-                        }
-                        // Pascal string occupies (1 + len) bytes, padded so
-                        // the whole pair is even.
-                        if (1 + pa_total) % 2 == 1 && chunk_size_usize > consumed {
-                            fa.skip_hexa(1, "compressionName_pad");
+        if form_type != FOURCC_AIFF && form_type != FOURCC_AIFC {
+            r.element_end();
+            return None;
+        }
+        let is_aifc = form_type == FOURCC_AIFC;
+
+        let mut comm: Option<CommChunk> = None;
+        let mut audio_stream_size: u64 = 0;
+
+        while r.remain() >= 8 {
+            let chunk_id = r.fourcc("ChunkID")?;
+            let chunk_size = r.be_u32("ChunkSize")?;
+
+            let chunk_size_usize = chunk_size as usize;
+            if r.remain() < chunk_size_usize {
+                break;
+            }
+
+            match chunk_id {
+                FOURCC_COMM => {
+                    r.element_begin("Common");
+                    let num_channels = r.be_u16("numChannels")?;
+                    let num_sample_frames = r.be_u32("numSampleFrames")?;
+                    let sample_size = r.be_u16("sampleSize")?;
+                    let sample_rate = r.be_f80("sampleRate")?;
+
+                    let mut consumed: usize = 18;
+                    let mut compression_type: Option<u32> = None;
+                    if is_aifc && chunk_size_usize >= consumed + 4 {
+                        compression_type = Some(r.fourcc("compressionType")?);
+                        consumed += 4;
+                        // Pascal string: 1-byte length + payload, then padded to
+                        // even total length within the chunk body.
+                        if chunk_size_usize >= consumed + 1 {
+                            let pa_len = r.be_u8("compressionName_length")?;
                             consumed += 1;
+                            let pa_total = pa_len as usize;
+                            let pa_take = pa_total.min(chunk_size_usize - consumed);
+                            if pa_take > 0 {
+                                r.skip(pa_take)?; // compressionName
+                                consumed += pa_take;
+                            }
+                            // Pascal string occupies (1 + len) bytes, padded so
+                            // the whole pair is even.
+                            if (1 + pa_total) % 2 == 1 && chunk_size_usize > consumed {
+                                r.skip(1)?; // compressionName_pad
+                                consumed += 1;
+                            }
                         }
                     }
-                }
-                if chunk_size_usize > consumed {
-                    fa.skip_hexa(chunk_size_usize - consumed, "Extension");
-                }
-                if chunk_size_usize % 2 == 1 {
-                    let mut _pad: Int8u = 0;
-                    fa.get_b1(&mut _pad, "Padding");
-                }
-                fa.element_end();
+                    if chunk_size_usize > consumed {
+                        r.skip(chunk_size_usize - consumed)?; // Extension
+                    }
+                    if chunk_size_usize % 2 == 1 {
+                        let _ = r.be_u8("Padding");
+                    }
+                    r.element_end();
 
-                comm = Some(CommChunk {
-                    num_channels,
-                    num_sample_frames,
-                    sample_size,
-                    sample_rate,
-                    compression_type,
-                });
-            }
-            FOURCC_SSND => {
-                fa.element_begin("SoundData");
-                let mut offset: Int32u = 0;
-                fa.get_b4(&mut offset, "offset");
-                let mut block_size: Int32u = 0;
-                fa.get_b4(&mut block_size, "blockSize");
-                // Actual audio data is the chunk body minus the 8-byte
-                // offset+blockSize prefix.
-                let samples_size = chunk_size_usize.saturating_sub(8);
-                audio_stream_size = samples_size as u64;
-                fa.skip_hexa(samples_size, "Samples");
-                if chunk_size_usize % 2 == 1 {
-                    let mut _pad: Int8u = 0;
-                    fa.get_b1(&mut _pad, "Padding");
+                    comm = Some(CommChunk {
+                        num_channels,
+                        num_sample_frames,
+                        sample_size,
+                        sample_rate,
+                        compression_type,
+                    });
                 }
-                fa.element_end();
-            }
-            _ => {
-                fa.skip_hexa(chunk_size_usize, "Unknown");
-                if chunk_size_usize % 2 == 1 {
-                    let mut _pad: Int8u = 0;
-                    fa.get_b1(&mut _pad, "Padding");
+                FOURCC_SSND => {
+                    r.element_begin("SoundData");
+                    r.be_u32("offset")?;
+                    r.be_u32("blockSize")?;
+                    // Actual audio data is the chunk body minus the 8-byte
+                    // offset+blockSize prefix.
+                    let samples_size = chunk_size_usize.saturating_sub(8);
+                    audio_stream_size = samples_size as u64;
+                    r.skip(samples_size)?; // Samples
+                    if chunk_size_usize % 2 == 1 {
+                        let _ = r.be_u8("Padding");
+                    }
+                    r.element_end();
+                }
+                _ => {
+                    r.skip(chunk_size_usize)?; // Unknown
+                    if chunk_size_usize % 2 == 1 {
+                        let _ = r.be_u8("Padding");
+                    }
                 }
             }
         }
-    }
 
-    fa.element_end();
+        r.element_end();
+        (comm, audio_stream_size)
+    };
 
-    if let Some(comm) = comm {
-        fill_streams(fa, &comm, audio_stream_size);
-        true
-    } else {
-        false
-    }
+    let comm = comm?;
+    fill_streams(fa, &comm, audio_stream_size);
+    Some(())
 }
 
 fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) {
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "AIFF", false);
+    fa.set_field(StreamKind::General, 0, "Format", "AIFF");
 
     fa.stream_prepare(StreamKind::Audio);
     let codec = match comm.compression_type {
@@ -230,16 +215,16 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
         },
     };
     if !codec.format.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Format", codec.format, false);
+        fa.set_field(StreamKind::Audio, 0, "Format", codec.format);
     }
     if let Some(end) = codec.endianness {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", end, false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", end);
     }
     if let Some(sign) = codec.sign {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Sign", sign, false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Sign", sign);
     }
     if codec.is_float {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Floating", "Yes", false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Floating", "Yes");
     }
 
     // Duration as integer milliseconds, matching the C++ AfterComma=0 fill
@@ -250,8 +235,8 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
         0
     };
 
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms_int.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms_int.to_string());
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
 
     // BitRate = StreamSize * 8 * 1000 / Duration_ms_int, with the integer
     // millisecond truncation that the C++ retrieves via To_float64() of
@@ -259,19 +244,19 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
     // oracle's %.10f formatting.
     if duration_ms_int > 0 {
         let bitrate_f64 = (audio_stream_size as f64) * 8.0 * 1000.0 / (duration_ms_int as f64);
-        fa.fill(StreamKind::Audio, 0, "BitRate", format!("{:.10}", bitrate_f64), false);
+        fa.set_field(StreamKind::Audio, 0, "BitRate", format!("{:.10}", bitrate_f64));
     }
 
-    fa.fill(StreamKind::Audio, 0, "Channels", comm.num_channels.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Channels", comm.num_channels.to_string());
     // Sample rate stored as integer if it's whole; matches oracle's "48000"
     // not "48000.000" for typical AIFF.
     let sr_int: i64 = comm.sample_rate.round() as i64;
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sr_int.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingCount", comm.num_sample_frames.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", comm.sample_size.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sr_int.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingCount", comm.num_sample_frames.to_string());
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", comm.sample_size.to_string());
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string());
 
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 }
 
 #[cfg(test)]

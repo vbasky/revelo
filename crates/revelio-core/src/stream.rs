@@ -130,14 +130,37 @@ impl StreamCollection {
         v.len() - 1
     }
 
-    pub fn count_get(&self, kind: StreamKind) -> usize {
+    pub fn stream_count(&self, kind: StreamKind) -> usize {
         self.by_kind.get(&kind).map(|v| v.len()).unwrap_or(0)
     }
 
-    /// `Fill(StreamKind, StreamPos, Parameter, Value, Replace)`. If the
-    /// stream doesn't exist yet it is auto-created — matches the C++
-    /// behavior where Fill at pos=0 implicitly prepares a stream.
-    pub fn fill(
+    /// Set a field on a stream. If the field already exists, it is NOT
+    /// overwritten (first-write-wins). Auto-creates the stream if it
+    /// doesn't exist yet.
+    pub fn set_field(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+    ) {
+        self.fill(kind, pos, parameter, value, false)
+    }
+
+    /// Set a field on a stream, ALWAYS overwriting any existing value.
+    /// Auto-creates the stream if it doesn't exist yet.
+    pub fn force_field(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+    ) {
+        self.fill(kind, pos, parameter, value, true)
+    }
+
+    /// Inner helper: `Fill(StreamKind, StreamPos, Parameter, Value, Replace)`.
+    fn fill(
         &mut self,
         kind: StreamKind,
         pos: usize,
@@ -152,9 +175,31 @@ impl StreamCollection {
         v[pos].set(parameter, value.into(), replace);
     }
 
-    /// `Fill_Extra` — like `Fill`, but the parameter ends up in the
-    /// stream's `<extra>` block instead of the main field list.
-    pub fn fill_extra(
+    /// Set a field in the stream's `<extra>` bucket instead of the
+    /// standard field list. First-write-wins.
+    pub fn set_extra_field(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+    ) {
+        self.fill_extra(kind, pos, parameter, value, false)
+    }
+
+    /// Like [`set_extra_field`], but ALWAYS overwrites.
+    pub fn force_extra_field(
+        &mut self,
+        kind: StreamKind,
+        pos: usize,
+        parameter: &str,
+        value: impl Into<Ztring>,
+    ) {
+        self.fill_extra(kind, pos, parameter, value, true)
+    }
+
+    /// Inner helper for extra-bucket fields.
+    fn fill_extra(
         &mut self,
         kind: StreamKind,
         pos: usize,
@@ -192,17 +237,17 @@ mod tests {
         assert_eq!(c.stream_prepare(StreamKind::Audio), 0);
         assert_eq!(c.stream_prepare(StreamKind::Audio), 1);
         assert_eq!(c.stream_prepare(StreamKind::Video), 0);
-        assert_eq!(c.count_get(StreamKind::Audio), 2);
-        assert_eq!(c.count_get(StreamKind::Video), 1);
-        assert_eq!(c.count_get(StreamKind::Text), 0);
+        assert_eq!(c.stream_count(StreamKind::Audio), 2);
+        assert_eq!(c.stream_count(StreamKind::Video), 1);
+        assert_eq!(c.stream_count(StreamKind::Text), 0);
     }
 
     #[test]
     fn fill_and_retrieve_round_trip() {
         let mut c = StreamCollection::new();
         c.stream_prepare(StreamKind::Audio);
-        c.fill(StreamKind::Audio, 0, "Format", "FLAC", false);
-        c.fill(StreamKind::Audio, 0, "SamplingRate", "48000", false);
+        c.set_field(StreamKind::Audio, 0, "Format", "FLAC");
+        c.set_field(StreamKind::Audio, 0, "SamplingRate", "48000");
         assert_eq!(c.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()), Some("FLAC"));
         assert_eq!(
             c.retrieve(StreamKind::Audio, 0, "SamplingRate").map(|z| z.as_str()),
@@ -212,26 +257,26 @@ mod tests {
     }
 
     #[test]
-    fn fill_without_replace_keeps_first_value() {
+    fn set_field_keeps_first_value() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", "MP4", false);
-        c.fill(StreamKind::General, 0, "Format", "MOV", false);
+        c.set_field(StreamKind::General, 0, "Format", "MP4");
+        c.set_field(StreamKind::General, 0, "Format", "MOV");
         assert_eq!(c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()), Some("MP4"));
     }
 
     #[test]
-    fn fill_with_replace_overwrites() {
+    fn force_field_overwrites() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", "MP4", false);
-        c.fill(StreamKind::General, 0, "Format", "MOV", true);
+        c.set_field(StreamKind::General, 0, "Format", "MP4");
+        c.force_field(StreamKind::General, 0, "Format", "MOV");
         assert_eq!(c.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()), Some("MOV"));
     }
 
     #[test]
-    fn fill_auto_creates_stream_if_pos_unset() {
+    fn set_field_auto_creates_stream_if_pos_unset() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::Audio, 2, "Format", "AAC", false);
-        assert_eq!(c.count_get(StreamKind::Audio), 3);
+        c.set_field(StreamKind::Audio, 2, "Format", "AAC");
+        assert_eq!(c.stream_count(StreamKind::Audio), 3);
         assert_eq!(c.retrieve(StreamKind::Audio, 2, "Format").map(|z| z.as_str()), Some("AAC"));
         // The auto-created earlier streams are empty
         assert_eq!(c.retrieve(StreamKind::Audio, 0, "Format"), None);
@@ -240,9 +285,9 @@ mod tests {
     #[test]
     fn iter_preserves_insertion_order_within_stream() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::Video, 0, "Format", "AVC", false);
-        c.fill(StreamKind::Video, 0, "Width", "1920", false);
-        c.fill(StreamKind::Video, 0, "Height", "1080", false);
+        c.set_field(StreamKind::Video, 0, "Format", "AVC");
+        c.set_field(StreamKind::Video, 0, "Width", "1920");
+        c.set_field(StreamKind::Video, 0, "Height", "1080");
         let s = c.stream(StreamKind::Video, 0).unwrap();
         let order: Vec<&str> = s.iter().map(|(k, _)| k).collect();
         assert_eq!(order, vec!["Format", "Width", "Height"]);
@@ -251,10 +296,10 @@ mod tests {
     #[test]
     fn iter_walks_all_streams_grouped_by_kind() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", "MP4", false);
-        c.fill(StreamKind::Video, 0, "Format", "AVC", false);
-        c.fill(StreamKind::Audio, 0, "Format", "AAC", false);
-        c.fill(StreamKind::Audio, 1, "Format", "AC3", false);
+        c.set_field(StreamKind::General, 0, "Format", "MP4");
+        c.set_field(StreamKind::Video, 0, "Format", "AVC");
+        c.set_field(StreamKind::Audio, 0, "Format", "AAC");
+        c.set_field(StreamKind::Audio, 1, "Format", "AC3");
         let pairs: Vec<(StreamKind, usize)> = c.iter().map(|(k, i, _)| (k, i)).collect();
         assert_eq!(
             pairs,

@@ -116,108 +116,106 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
         video_ids.iter().map(|sid| sniff_mpeg2_sequence(buf, *sid)).collect();
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "MPEG-PS", false);
+    fa.set_field(StreamKind::General, 0, "Format", "MPEG-PS");
     if !video_ids.is_empty() {
-        fa.fill(StreamKind::General, 0, "VideoCount", video_ids.len().to_string(), false);
+        fa.set_field(StreamKind::General, 0, "VideoCount", video_ids.len().to_string());
     }
     let audio_count = audio_ids.len() + (if private1_seen { 1 } else { 0 });
     if audio_count > 0 {
-        fa.fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "AudioCount", audio_count.to_string());
     }
 
     let mut stream_order: u32 = 0;
     for (idx, sid) in video_ids.iter().enumerate() {
         let pos = fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
-        fa.fill(StreamKind::Video, pos, "ID", sid.to_string(), false);
+        fa.set_field(StreamKind::Video, pos, "StreamOrder", stream_order.to_string());
+        fa.set_field(StreamKind::Video, pos, "ID", sid.to_string());
         stream_order += 1;
-        fa.fill(StreamKind::Video, pos, "Format", "MPEG Video", false);
-        fa.fill(StreamKind::Video, pos, "Format_Version", "2", false);
-        fa.fill(StreamKind::Video, pos, "BitRate_Mode", "VBR", false);
+        fa.set_field(StreamKind::Video, pos, "Format", "MPEG Video");
+        fa.set_field(StreamKind::Video, pos, "Format_Version", "2");
+        fa.set_field(StreamKind::Video, pos, "BitRate_Mode", "VBR");
         if let Some(seq) = &video_seqs[idx] {
             // MPEG-2 defaults — Sequence Header Extension parsing would
             // refine Format_Profile/Level. ffmpeg's mpeg2video encoder
             // defaults to Main/Main.
-            fa.fill(StreamKind::Video, pos, "Format_Profile", "Main", false);
-            fa.fill(StreamKind::Video, pos, "Format_Level", "Main", false);
-            fa.fill(StreamKind::Video, pos, "Format_Settings_BVOP", "No", false);
-            fa.fill(StreamKind::Video, pos, "Format_Settings_Matrix", "Default", false);
-            fa.fill(StreamKind::Video, pos, "Width", seq.width.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "Height", seq.height.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "Sampled_Width", seq.width.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "Sampled_Height", seq.height.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "PixelAspectRatio", "1.000", false);
+            fa.set_field(StreamKind::Video, pos, "Format_Profile", "Main");
+            fa.set_field(StreamKind::Video, pos, "Format_Level", "Main");
+            fa.set_field(StreamKind::Video, pos, "Format_Settings_BVOP", "No");
+            fa.set_field(StreamKind::Video, pos, "Format_Settings_Matrix", "Default");
+            fa.set_field(StreamKind::Video, pos, "Width", seq.width.to_string());
+            fa.set_field(StreamKind::Video, pos, "Height", seq.height.to_string());
+            fa.set_field(StreamKind::Video, pos, "Sampled_Width", seq.width.to_string());
+            fa.set_field(StreamKind::Video, pos, "Sampled_Height", seq.height.to_string());
+            fa.set_field(StreamKind::Video, pos, "PixelAspectRatio", "1.000");
             let dar = seq.width as f64 / seq.height as f64;
-            fa.fill(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar), false);
-            fa.fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", seq.frame_rate), false);
-            fa.fill(StreamKind::Video, pos, "FrameRate_Num", seq.frame_rate_num.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "FrameRate_Den", seq.frame_rate_den.to_string(), false);
+            fa.set_field(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar));
+            fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{:.3}", seq.frame_rate));
+            fa.set_field(StreamKind::Video, pos, "FrameRate_Num", seq.frame_rate_num.to_string());
+            fa.set_field(StreamKind::Video, pos, "FrameRate_Den", seq.frame_rate_den.to_string());
             if seq.frame_count > 0 {
-                fa.fill(StreamKind::Video, pos, "FrameCount", seq.frame_count.to_string(), false);
+                fa.set_field(StreamKind::Video, pos, "FrameCount", seq.frame_count.to_string());
                 if seq.frame_rate > 0.0 {
                     let dur_ms = (seq.frame_count as f64 * 1000.0 / seq.frame_rate).round() as u64;
-                    fa.fill(StreamKind::Video, pos, "Duration", dur_ms.to_string(), false);
+                    fa.set_field(StreamKind::Video, pos, "Duration", dur_ms.to_string());
                 }
             }
             if seq.stream_size > 0 {
-                fa.fill(StreamKind::Video, pos, "StreamSize", seq.stream_size.to_string(), false);
+                fa.set_field(StreamKind::Video, pos, "StreamSize", seq.stream_size.to_string());
             }
         }
-        fa.fill(StreamKind::Video, pos, "ColorSpace", "YUV", false);
-        fa.fill(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0", false);
-        fa.fill(StreamKind::Video, pos, "BitDepth", "8", false);
-        fa.fill(StreamKind::Video, pos, "ScanType", "Progressive", false);
-        fa.fill(StreamKind::Video, pos, "Compression_Mode", "Lossy", false);
+        fa.set_field(StreamKind::Video, pos, "ColorSpace", "YUV");
+        fa.set_field(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0");
+        fa.set_field(StreamKind::Video, pos, "BitDepth", "8");
+        fa.set_field(StreamKind::Video, pos, "ScanType", "Progressive");
+        fa.set_field(StreamKind::Video, pos, "Compression_Mode", "Lossy");
     }
     for (idx, sid) in audio_ids.iter().enumerate() {
         let pos = fa.stream_prepare(StreamKind::Audio);
-        fa.fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
-        fa.fill(StreamKind::Audio, pos, "ID", sid.to_string(), false);
+        fa.set_field(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string());
+        fa.set_field(StreamKind::Audio, pos, "ID", sid.to_string());
         stream_order += 1;
-        fa.fill(StreamKind::Audio, pos, "Format", "MPEG Audio", false);
+        fa.set_field(StreamKind::Audio, pos, "Format", "MPEG Audio");
         if let Some(mp) = &audio_frames[idx] {
-            fa.fill(StreamKind::Audio, pos, "Format_Version", mp.version_name, false);
-            fa.fill(StreamKind::Audio, pos, "Format_Profile", mp.layer_name, false);
-            fa.fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
-            fa.fill(
+            fa.set_field(StreamKind::Audio, pos, "Format_Version", mp.version_name);
+            fa.set_field(StreamKind::Audio, pos, "Format_Profile", mp.layer_name);
+            fa.set_field(StreamKind::Audio, pos, "BitRate_Mode", "CBR");
+            fa.set_field(
                 StreamKind::Audio,
                 pos,
                 "BitRate",
                 (mp.bitrate_kbps as u32 * 1000).to_string(),
-                false,
             );
-            fa.fill(StreamKind::Audio, pos, "Channels", mp.channels.to_string(), false);
-            fa.fill(StreamKind::Audio, pos, "SamplingRate", mp.sample_rate.to_string(), false);
-            fa.fill(
+            fa.set_field(StreamKind::Audio, pos, "Channels", mp.channels.to_string());
+            fa.set_field(StreamKind::Audio, pos, "SamplingRate", mp.sample_rate.to_string());
+            fa.set_field(
                 StreamKind::Audio,
                 pos,
                 "SamplesPerFrame",
                 mp.samples_per_frame.to_string(),
-                false,
             );
             if mp.frame_count > 0 && mp.sample_rate > 0 {
                 let total_samples = mp.frame_count as u64 * mp.samples_per_frame as u64;
                 let dur_ms =
                     (total_samples * 1000 + mp.sample_rate as u64 / 2) / mp.sample_rate as u64;
-                fa.fill(StreamKind::Audio, pos, "Duration", dur_ms.to_string(), false);
-                fa.fill(StreamKind::Audio, pos, "FrameCount", mp.frame_count.to_string(), false);
-                fa.fill(StreamKind::Audio, pos, "SamplingCount", total_samples.to_string(), false);
+                fa.set_field(StreamKind::Audio, pos, "Duration", dur_ms.to_string());
+                fa.set_field(StreamKind::Audio, pos, "FrameCount", mp.frame_count.to_string());
+                fa.set_field(StreamKind::Audio, pos, "SamplingCount", total_samples.to_string());
                 let frame_rate = mp.sample_rate as f64 / mp.samples_per_frame as f64;
-                fa.fill(StreamKind::Audio, pos, "FrameRate", format!("{:.3}", frame_rate), false);
+                fa.set_field(StreamKind::Audio, pos, "FrameRate", format!("{:.3}", frame_rate));
             }
             if mp.stream_size > 0 {
-                fa.fill(StreamKind::Audio, pos, "StreamSize", mp.stream_size.to_string(), false);
+                fa.set_field(StreamKind::Audio, pos, "StreamSize", mp.stream_size.to_string());
             }
         }
-        fa.fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
+        fa.set_field(StreamKind::Audio, pos, "Compression_Mode", "Lossy");
     }
     if private1_seen {
         // Private stream 1 carries AC-3/DTS/LPCM in DVD VOBs. Without
         // sub-stream sniffing we just label it "Private".
         let pos = fa.stream_prepare(StreamKind::Audio);
-        fa.fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
-        fa.fill(StreamKind::Audio, pos, "ID", "189", false); // 0xBD
-        fa.fill(StreamKind::Audio, pos, "Format", "Private", false);
+        fa.set_field(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string());
+        fa.set_field(StreamKind::Audio, pos, "ID", "189"); // 0xBD
+        fa.set_field(StreamKind::Audio, pos, "Format", "Private");
     }
 
     true
@@ -513,8 +511,8 @@ mod tests {
             fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("MPEG-PS".into())
         );
-        assert_eq!(fa.count_get(StreamKind::Video), 1);
-        assert_eq!(fa.count_get(StreamKind::Audio), 1);
+        assert_eq!(fa.stream_count(StreamKind::Video), 1);
+        assert_eq!(fa.stream_count(StreamKind::Audio), 1);
         assert_eq!(
             fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("MPEG Video".into())

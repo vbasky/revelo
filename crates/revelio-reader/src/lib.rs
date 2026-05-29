@@ -4,24 +4,24 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 pub fn parse_file_reader(fa: &mut FileAnalyze) -> bool {
     let pos = fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, pos, "Reader", "File", false);
+    fa.set_field(StreamKind::General, pos, "Reader", "File");
     true
 }
 
 pub fn parse_directory_reader(fa: &mut FileAnalyze) -> bool {
     let pos = fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, pos, "Reader", "Directory", false);
+    fa.set_field(StreamKind::General, pos, "Reader", "Directory");
     true
 }
 
 pub fn parse_http_reader(fa: &mut FileAnalyze) -> bool {
     let pos = fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, pos, "Reader", "HTTP", false);
+    fa.set_field(StreamKind::General, pos, "Reader", "HTTP");
     true
 }
 
 pub fn parse_mms_reader(fa: &mut FileAnalyze) -> bool {
     let pos = fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, pos, "Reader", "MMS", false);
+    fa.set_field(StreamKind::General, pos, "Reader", "MMS");
     true
 }

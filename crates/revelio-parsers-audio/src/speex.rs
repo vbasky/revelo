@@ -23,74 +23,67 @@
 //!    4 bytes LE: reserved1
 //!    4 bytes LE: reserved2
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int32u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const SPEEX_MAGIC: &[u8; 8] = b"Speex   ";
 const IDENTIFICATION_MIN_SIZE: usize = 80;
 
 pub fn parse_speex(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.remain().min(8));
-    let Some(h) = head else { return false };
-    if h.len() < 8 || h != SPEEX_MAGIC {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let speex_version;
+    // (rate, channels, bitrate, vbr) when version_id == 1.
+    let params: Option<(u32, u32, u32, u32)>;
+    {
+        let r = &mut Reader::wrap(fa);
+        let head = r.peek_raw(8)?;
+        if head.len() < 8 || head != SPEEX_MAGIC {
+            return None;
+        }
+        if r.remain() < IDENTIFICATION_MIN_SIZE {
+            return None;
+        }
+
+        r.element_begin("Speex");
+        r.skip(8)?; // speex_string
+        speex_version = parse_nul_terminated_utf8(r.read_raw(20)?);
+        let speex_version_id = r.le_u32("Speex_version_id")?;
+
+        if speex_version_id == 1 {
+            r.le_u32("header_size")?;
+            let rate = r.le_u32("rate")?;
+            r.le_u32("mode")?;
+            r.le_u32("mode_bitstream_version")?;
+            let nb_channels = r.le_u32("nb_channels")?;
+            let bitrate = r.le_u32("bitrate")?;
+            r.le_u32("frame_size")?;
+            let vbr = r.le_u32("vbr")?;
+            r.le_u32("frames_per_packet")?;
+            r.le_u32("extra_headers")?;
+            r.le_u32("reserved1")?;
+            r.le_u32("reserved2")?;
+            params = Some((rate, nb_channels, bitrate, vbr));
+        } else {
+            params = None;
+        }
+        r.element_end();
     }
-    if fa.remain() < IDENTIFICATION_MIN_SIZE {
-        return false;
+
+    match params {
+        Some((rate, nb_channels, bitrate, vbr)) => {
+            let bitrate_opt = if bitrate == u32::MAX { None } else { Some(bitrate) };
+            fill_streams(fa, &speex_version, Some(rate), Some(nb_channels), bitrate_opt);
+            // vbr field: 0 => CBR, anything else => VBR. fill_streams defaults
+            // BitRate_Mode to VBR; override when the header explicitly says CBR.
+            if vbr == 0 {
+                fa.force_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
+            }
+        }
+        None => fill_streams(fa, &speex_version, None, None, None),
     }
-
-    fa.element_begin("Speex");
-    fa.skip_hexa(8, "speex_string");
-
-    let version_bytes = fa.read_raw(20).to_vec();
-    let speex_version = parse_nul_terminated_utf8(&version_bytes);
-
-    let mut speex_version_id: Int32u = 0;
-    fa.get_l4(&mut speex_version_id, "Speex_version_id");
-
-    if speex_version_id != 1 {
-        fa.element_end();
-        fill_streams(fa, &speex_version, None, None, None);
-        return true;
-    }
-
-    let mut header_size: Int32u = 0;
-    let mut rate: Int32u = 0;
-    let mut _mode: Int32u = 0;
-    let mut _mode_bs_ver: Int32u = 0;
-    let mut nb_channels: Int32u = 0;
-    let mut bitrate: Int32u = 0;
-    let mut _frame_size: Int32u = 0;
-    let mut vbr: Int32u = 0;
-    let mut _frames_per_packet: Int32u = 0;
-    let mut _extra_headers: Int32u = 0;
-    let mut _reserved1: Int32u = 0;
-    let mut _reserved2: Int32u = 0;
-
-    fa.get_l4(&mut header_size, "header_size");
-    fa.get_l4(&mut rate, "rate");
-    fa.get_l4(&mut _mode, "mode");
-    fa.get_l4(&mut _mode_bs_ver, "mode_bitstream_version");
-    fa.get_l4(&mut nb_channels, "nb_channels");
-    fa.get_l4(&mut bitrate, "bitrate");
-    fa.get_l4(&mut _frame_size, "frame_size");
-    fa.get_l4(&mut vbr, "vbr");
-    fa.get_l4(&mut _frames_per_packet, "frames_per_packet");
-    fa.get_l4(&mut _extra_headers, "extra_headers");
-    fa.get_l4(&mut _reserved1, "reserved1");
-    fa.get_l4(&mut _reserved2, "reserved2");
-
-    fa.element_end();
-
-    let bitrate_opt = if bitrate == u32::MAX { None } else { Some(bitrate) };
-    fill_streams(fa, &speex_version, Some(rate), Some(nb_channels), bitrate_opt);
-    // vbr field: 0 => CBR, anything else => VBR. Done after fill_streams
-    // because fill_streams defaults BitRate_Mode to VBR (task spec); override
-    // here when the header explicitly says CBR.
-    if vbr == 0 {
-        fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", true);
-    }
-    true
+    Some(())
 }
 
 fn parse_nul_terminated_utf8(bytes: &[u8]) -> String {
@@ -106,26 +99,26 @@ fn fill_streams(
     bitrate: Option<u32>,
 ) {
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Speex", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Speex");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "Speex", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "Speex", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "Speex");
+    fa.set_field(StreamKind::Audio, 0, "Codec", "Speex");
     if !speex_version.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Encoded_Library", speex_version, false);
+        fa.set_field(StreamKind::Audio, 0, "Encoded_Library", speex_version);
     }
     if let Some(r) = rate {
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", r.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "SamplingRate", r.to_string());
     }
     if let Some(c) = channels {
-        fa.fill(StreamKind::Audio, 0, "Channels", c.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Channels", c.to_string());
     }
     if let Some(b) = bitrate {
-        fa.fill(StreamKind::Audio, 0, "BitRate", b.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "BitRate", b.to_string());
     }
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
 }
 
 #[cfg(test)]

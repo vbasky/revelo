@@ -625,27 +625,27 @@ fn fill_streams(
 ) {
     let JpegFrame { width, height, precision, components } = frame;
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "JPEG", false);
+    fa.set_field(StreamKind::General, 0, "Format", "JPEG");
     let has_thumbnail = exif.thumbnail_width.is_some() && exif.thumbnail_height.is_some();
     let image_count = if has_thumbnail { 2 } else { 1 };
-    fa.fill(StreamKind::General, 0, "ImageCount", image_count.to_string(), false);
+    fa.set_field(StreamKind::General, 0, "ImageCount", image_count.to_string());
     // General.StreamSize = file overhead. When a thumbnail is embedded
     // its bytes are part of the EXIF APP1 segment but oracle deducts
     // them from General (and attributes them to the thumbnail Image
     // stream instead).
     let thumb_bytes = exif.thumbnail_size.unwrap_or(0) as usize;
     let general_overhead = overhead.saturating_sub(thumb_bytes);
-    fa.fill(StreamKind::General, 0, "StreamSize", general_overhead.to_string(), true);
+    fa.force_field(StreamKind::General, 0, "StreamSize", general_overhead.to_string());
     if let Some(d) = exif.description.as_deref()
         && !d.is_empty()
     {
-        fa.fill(StreamKind::General, 0, "Description", d.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "Description", d.to_string());
     }
     if let Some(dt) = exif.datetime_original.as_deref() {
-        fa.fill(StreamKind::General, 0, "Recorded_Date", exif_datetime_to_oracle(dt), false);
+        fa.set_field(StreamKind::General, 0, "Recorded_Date", exif_datetime_to_oracle(dt));
     }
     if let Some(dt) = exif.datetime.as_deref() {
-        fa.fill(StreamKind::General, 0, "Mastered_Date", exif_datetime_to_oracle(dt), false);
+        fa.set_field(StreamKind::General, 0, "Mastered_Date", exif_datetime_to_oracle(dt));
     }
     if let Some(m) = exif.make.as_deref()
         && !m.is_empty()
@@ -659,12 +659,12 @@ fn fill_streams(
             .trim_end_matches(" CORPORATION")
             .trim()
             .to_string();
-        fa.fill(StreamKind::General, 0, "Encoded_Hardware_CompanyName", normalized, false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Hardware_CompanyName", normalized);
     }
     if let Some(m) = exif.model.as_deref()
         && !m.is_empty()
     {
-        fa.fill(StreamKind::General, 0, "Encoded_Hardware_Model", m.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Hardware_Model", m.to_string());
     }
     // Exif sub-IFD extras (oracle wraps these in <extra>...</extra>).
     // Emit in oracle's display order so the diff matches sequentially.
@@ -672,15 +672,14 @@ fn fill_streams(
         && d > 0
     {
         let secs = n as f64 / d as f64;
-        fa.fill_extra(StreamKind::General, 0, "ShutterSpeed_Time", format!("{secs:.6}"), false);
+        fa.set_extra_field(StreamKind::General, 0, "ShutterSpeed_Time", format!("{secs:.6}"));
         // String form: "1/N s" if numerator is 1 and denominator > 0.
         if n == 1 {
-            fa.fill_extra(
+            fa.set_extra_field(
                 StreamKind::General,
                 0,
                 "ShutterSpeed_Time_String",
                 format!("1/{d} s"),
-                false,
             );
         }
     }
@@ -688,7 +687,7 @@ fn fill_streams(
         && d > 0
     {
         let v = n as f64 / d as f64;
-        fa.fill_extra(StreamKind::General, 0, "IrisFNumber", format!("{v:.1}"), false);
+        fa.set_extra_field(StreamKind::General, 0, "IrisFNumber", format!("{v:.1}"));
     }
     if let Some(prog) = exif.exposure_program {
         let s = match prog {
@@ -704,11 +703,11 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "AutoExposureMode", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "AutoExposureMode", s);
         }
     }
     if let Some(iso) = exif.iso_speed {
-        fa.fill_extra(StreamKind::General, 0, "ISOSensitivity", iso.to_string(), false);
+        fa.set_extra_field(StreamKind::General, 0, "ISOSensitivity", iso.to_string());
     }
     if let Some(v) = exif.exif_version {
         // "0220" → "2.20"
@@ -723,7 +722,7 @@ fn fill_streams(
                 s[2..3].chars().next().unwrap_or('0'),
                 s[3..4].chars().next().unwrap_or('0')
             );
-            fa.fill_extra(StreamKind::General, 0, "ExifVersion", pretty, false);
+            fa.set_extra_field(StreamKind::General, 0, "ExifVersion", pretty);
         }
     }
     if let Some(f) = exif.flash {
@@ -740,7 +739,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "Flash", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "Flash", s);
         }
     }
     if let Some((n, d)) = exif.focal_length
@@ -750,34 +749,30 @@ fn fill_streams(
         // Oracle drops decimals when the value is an integer mm.
         let int_mm = mm.round() as u32;
         if (mm - int_mm as f64).abs() < 0.01 {
-            fa.fill_extra(
+            fa.set_extra_field(
                 StreamKind::General,
                 0,
                 "LensZoomActualFocalLength",
                 int_mm.to_string(),
-                false,
             );
-            fa.fill_extra(
+            fa.set_extra_field(
                 StreamKind::General,
                 0,
                 "LensZoomActualFocalLength_String",
                 format!("{int_mm} mm"),
-                false,
             );
         } else {
-            fa.fill_extra(
+            fa.set_extra_field(
                 StreamKind::General,
                 0,
                 "LensZoomActualFocalLength",
                 format!("{mm:.1}"),
-                false,
             );
-            fa.fill_extra(
+            fa.set_extra_field(
                 StreamKind::General,
                 0,
                 "LensZoomActualFocalLength_String",
                 format!("{mm:.1} mm"),
-                false,
             );
         }
     }
@@ -790,7 +785,7 @@ fn fill_streams(
                 s[2..3].chars().next().unwrap_or('0'),
                 s[3..4].chars().next().unwrap_or('0')
             );
-            fa.fill_extra(StreamKind::General, 0, "FlashpixVersion", pretty, false);
+            fa.set_extra_field(StreamKind::General, 0, "FlashpixVersion", pretty);
         }
     }
     if let Some(wb) = exif.white_balance {
@@ -800,41 +795,38 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "AutoWhiteBalanceMode", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "AutoWhiteBalanceMode", s);
         }
     }
     if let Some(fl35) = exif.focal_length_35mm {
-        fa.fill_extra(
+        fa.set_extra_field(
             StreamKind::General,
             0,
             "LensZoom35mmStillCameraEquivalent",
             fl35.to_string(),
-            false,
         );
-        fa.fill_extra(
+        fa.set_extra_field(
             StreamKind::General,
             0,
             "LensZoom35mmStillCameraEquivalent_String",
             format!("{fl35} mm"),
-            false,
         );
     }
     // New EXIF fields
     if let Some(ref lens) = exif.lens_model {
-        fa.fill_extra(StreamKind::General, 0, "LensModel", lens.clone(), false);
+        fa.set_extra_field(StreamKind::General, 0, "LensModel", lens.clone());
     }
     if let Some((n, d)) = exif.exposure_bias
         && d > 0
     {
         let ev = n as f64 / d as f64;
         let sign = if ev >= 0.0 { "+" } else { "" };
-        fa.fill_extra(StreamKind::General, 0, "ExposureBias", format!("{sign}{ev:.2}"), false);
-        fa.fill_extra(
+        fa.set_extra_field(StreamKind::General, 0, "ExposureBias", format!("{sign}{ev:.2}"));
+        fa.set_extra_field(
             StreamKind::General,
             0,
             "ExposureBias_String",
             format!("{sign}{ev:.2} EV"),
-            false,
         );
     }
     if let Some(mode) = exif.metering_mode {
@@ -850,7 +842,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "MeteringMode", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "MeteringMode", s);
         }
     }
     if let Some(light) = exif.light_source {
@@ -879,7 +871,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "LightSource", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "LightSource", s);
         }
     }
     if let Some(scene) = exif.scene_type {
@@ -888,7 +880,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "SceneType", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "SceneType", s);
         }
     }
     if let Some(rendered) = exif.custom_rendered {
@@ -898,7 +890,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "CustomRendered", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "CustomRendered", s);
         }
     }
     if let Some(mode) = exif.exposure_mode {
@@ -909,14 +901,14 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "ExposureMode", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "ExposureMode", s);
         }
     }
     if let Some((n, d)) = exif.digital_zoom_ratio
         && d > 0
     {
         let ratio = n as f64 / d as f64;
-        fa.fill_extra(StreamKind::General, 0, "DigitalZoomRatio", format!("{ratio:.2}"), false);
+        fa.set_extra_field(StreamKind::General, 0, "DigitalZoomRatio", format!("{ratio:.2}"));
     }
     if let Some(scene) = exif.scene_capture_type {
         let s = match scene {
@@ -928,7 +920,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "SceneCaptureType", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "SceneCaptureType", s);
         }
     }
     if let Some(contrast) = exif.contrast {
@@ -939,7 +931,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "Contrast", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "Contrast", s);
         }
     }
     if let Some(sat) = exif.saturation {
@@ -950,7 +942,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "Saturation", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "Saturation", s);
         }
     }
     if let Some(sharp) = exif.sharpness {
@@ -961,21 +953,21 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.fill_extra(StreamKind::General, 0, "Sharpness", s, false);
+            fa.set_extra_field(StreamKind::General, 0, "Sharpness", s);
         }
     }
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "JPEG", false);
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Format", "JPEG");
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     let color_space = match components {
         1 => "Y",
         3 => "YUV",
         4 => "CMYK",
         _ => "Unknown",
     };
-    fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+    fa.set_field(StreamKind::Image, 0, "ColorSpace", color_space);
     if components == 3 && sampling.len() == 3 {
         let y = sampling[0];
         let cb = sampling[1];
@@ -994,33 +986,33 @@ fn fill_streams(
             None
         };
         if let Some(s) = subsampling {
-            fa.fill(StreamKind::Image, 0, "ChromaSubsampling", s, false);
+            fa.set_field(StreamKind::Image, 0, "ChromaSubsampling", s);
         }
     }
-    fa.fill(StreamKind::Image, 0, "BitDepth", precision.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossy", false);
+    fa.set_field(StreamKind::Image, 0, "BitDepth", precision.to_string());
+    fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossy");
     // Main Image.StreamSize = file - all-APP-overhead (the full overhead,
     // including the embedded thumbnail bytes). When a thumbnail exists
     // its bytes are NOT main-image data — keep using the full overhead.
     let image_size = file_size.saturating_sub(overhead);
-    fa.fill(StreamKind::Image, 0, "StreamSize", image_size.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "StreamSize", image_size.to_string());
     if let Some(c) = comment {
         // The COM-segment comment lands on the General stream (last field),
         // not the Image stream — matching the oracle's placement.
-        fa.fill(StreamKind::General, 0, "Comment", c, false);
+        fa.set_field(StreamKind::General, 0, "Comment", c);
     }
 
     // EXIF thumbnail → second Image stream (oracle labels it Type=Thumbnail,
     // MuxingMode=Exif). StreamSize comes from JPEGInterchangeFormatLength.
     if let (Some(tw), Some(th)) = (exif.thumbnail_width, exif.thumbnail_height) {
         let tpos = fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, tpos, "Type", "Thumbnail", false);
-        fa.fill(StreamKind::Image, tpos, "MuxingMode", "Exif", false);
-        fa.fill(StreamKind::Image, tpos, "Format", "JPEG", false);
-        fa.fill(StreamKind::Image, tpos, "Width", tw.to_string(), false);
-        fa.fill(StreamKind::Image, tpos, "Height", th.to_string(), false);
+        fa.set_field(StreamKind::Image, tpos, "Type", "Thumbnail");
+        fa.set_field(StreamKind::Image, tpos, "MuxingMode", "Exif");
+        fa.set_field(StreamKind::Image, tpos, "Format", "JPEG");
+        fa.set_field(StreamKind::Image, tpos, "Width", tw.to_string());
+        fa.set_field(StreamKind::Image, tpos, "Height", th.to_string());
         if let Some(sz) = exif.thumbnail_size {
-            fa.fill(StreamKind::Image, tpos, "StreamSize", sz.to_string(), false);
+            fa.set_field(StreamKind::Image, tpos, "StreamSize", sz.to_string());
         }
     }
 }

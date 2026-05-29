@@ -277,21 +277,21 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     );
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", container_format, true);
+    fa.force_field(StreamKind::General, 0, "Format", container_format);
 
     // General.ID = program_number of the first program (matches oracle
     // for single-program files; multi-program TS would list each).
     if let Some(first_prog) = programs_by_pmt_pid.values().next() {
-        fa.fill(StreamKind::General, 0, "ID", first_prog.program_number.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "ID", first_prog.program_number.to_string());
     }
 
     if let Some(dur) = duration_ms {
-        fa.fill(StreamKind::General, 0, "Duration", dur.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "Duration", dur.to_string());
     }
 
     if let Some(br) = overall_bitrate {
-        fa.fill(StreamKind::General, 0, "OverallBitRate", br.to_string(), false);
-        fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
+        fa.set_field(StreamKind::General, 0, "OverallBitRate", br.to_string());
+        fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "VBR");
     }
 
     // Count elementary streams by kind for *Count fields.
@@ -322,16 +322,16 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         }
     }
     if video_count > 0 {
-        fa.fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "VideoCount", video_count.to_string());
     }
     if audio_count > 0 {
-        fa.fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "AudioCount", audio_count.to_string());
     }
     if text_count > 0 {
-        fa.fill(StreamKind::General, 0, "TextCount", text_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "TextCount", text_count.to_string());
     }
     if menu_count > 0 {
-        fa.fill(StreamKind::General, 0, "MenuCount", menu_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "MenuCount", menu_count.to_string());
     }
 
     // Emit per-stream entries in (program, ES) order.
@@ -345,30 +345,30 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 continue;
             }
             fa.stream_prepare(kind);
-            let pos_in_kind = fa.count_get(kind) - 1;
+            let pos_in_kind = fa.stream_count(kind) - 1;
             // StreamOrder = "<program_idx>-<es_idx_in_program>" per oracle.
-            fa.fill(kind, pos_in_kind, "StreamOrder", format!("{}-{}", prog_idx, es_idx), false);
+            fa.set_field(kind, pos_in_kind, "StreamOrder", format!("{}-{}", prog_idx, es_idx));
             // ID = PID. Oracle renders as decimal.
-            fa.fill(kind, pos_in_kind, "ID", es.pid.to_string(), false);
-            fa.fill(kind, pos_in_kind, "MenuID", prog.program_number.to_string(), false);
-            fa.fill(kind, pos_in_kind, "Format", format, false);
+            fa.set_field(kind, pos_in_kind, "ID", es.pid.to_string());
+            fa.set_field(kind, pos_in_kind, "MenuID", prog.program_number.to_string());
+            fa.set_field(kind, pos_in_kind, "Format", format);
             // Video CodecID = decimal stream_type (oracle convention).
             // AAC overrides this below with its "<type>-<AOT>" form.
             if matches!(kind, StreamKind::Video) {
-                fa.fill(kind, pos_in_kind, "CodecID", es.stream_type.to_string(), false);
+                fa.set_field(kind, pos_in_kind, "CodecID", es.stream_type.to_string());
                 // AVC defaults — full SPS parse would refine
                 // Format_Profile/Level/Width/Height/ChromaSubsampling.
                 if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
-                    fa.fill(kind, pos_in_kind, "FrameRate_Mode", "VFR", false);
-                    fa.fill(kind, pos_in_kind, "BitDepth", "8", false);
-                    fa.fill(kind, pos_in_kind, "ScanType", "Progressive", false);
-                    fa.fill(kind, pos_in_kind, "Compression_Mode", "Lossy", false);
+                    fa.set_field(kind, pos_in_kind, "FrameRate_Mode", "VFR");
+                    fa.set_field(kind, pos_in_kind, "BitDepth", "8");
+                    fa.set_field(kind, pos_in_kind, "ScanType", "Progressive");
+                    fa.set_field(kind, pos_in_kind, "Compression_Mode", "Lossy");
                     if let Some(ref lib) = es.avc_encoder {
-                        fa.fill(kind, pos_in_kind, "Encoded_Library", lib.clone(), false);
+                        fa.set_field(kind, pos_in_kind, "Encoded_Library", lib.clone());
                         // Split "x264 - core 165 r3222 b35605a" into name + version.
                         if let Some(rest) = lib.strip_prefix("x264 - ") {
-                            fa.fill(kind, pos_in_kind, "Encoded_Library_Name", "x264", false);
-                            fa.fill(kind, pos_in_kind, "Encoded_Library_Version", rest, false);
+                            fa.set_field(kind, pos_in_kind, "Encoded_Library_Name", "x264");
+                            fa.set_field(kind, pos_in_kind, "Encoded_Library_Version", rest);
                         }
                     }
                 }
@@ -376,34 +376,33 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             if let Some(aac) = &es.aac {
                 // AAC ADTS payload → unlocks Format_Version, AOT, CodecID,
                 // MuxingMode=ADTS, Channels, SamplingRate, SamplesPerFrame.
-                fa.fill(kind, pos_in_kind, "Format_Version", "4", false);
+                fa.set_field(kind, pos_in_kind, "Format_Version", "4");
                 if let Some(profile) = aac_profile_name(aac.aot) {
-                    fa.fill(kind, pos_in_kind, "Format_AdditionalFeatures", profile, false);
+                    fa.set_field(kind, pos_in_kind, "Format_AdditionalFeatures", profile);
                 }
-                fa.fill(kind, pos_in_kind, "MuxingMode", "ADTS", false);
-                fa.fill(
+                fa.set_field(kind, pos_in_kind, "MuxingMode", "ADTS");
+                fa.set_field(
                     kind,
                     pos_in_kind,
                     "CodecID",
                     format!("{}-{}", es.stream_type, aac.aot),
-                    false,
                 );
-                fa.fill(kind, pos_in_kind, "BitRate_Mode", "VBR", false);
-                fa.fill(kind, pos_in_kind, "Channels", aac.channels.to_string(), false);
+                fa.set_field(kind, pos_in_kind, "BitRate_Mode", "VBR");
+                fa.set_field(kind, pos_in_kind, "Channels", aac.channels.to_string());
                 let (positions, layout) = aac_channel_layout(aac.channels);
                 if let Some(p) = positions {
-                    fa.fill(kind, pos_in_kind, "ChannelPositions", p, false);
+                    fa.set_field(kind, pos_in_kind, "ChannelPositions", p);
                 }
                 if let Some(l) = layout {
-                    fa.fill(kind, pos_in_kind, "ChannelLayout", l, false);
+                    fa.set_field(kind, pos_in_kind, "ChannelLayout", l);
                 }
-                fa.fill(kind, pos_in_kind, "SamplesPerFrame", "1024", false);
-                fa.fill(kind, pos_in_kind, "SamplingRate", aac.sample_rate.to_string(), false);
+                fa.set_field(kind, pos_in_kind, "SamplesPerFrame", "1024");
+                fa.set_field(kind, pos_in_kind, "SamplingRate", aac.sample_rate.to_string());
                 if aac.sample_rate > 0 {
                     let frame_rate = aac.sample_rate as f64 / 1024.0;
-                    fa.fill(kind, pos_in_kind, "FrameRate", format!("{:.3}", frame_rate), false);
+                    fa.set_field(kind, pos_in_kind, "FrameRate", format!("{:.3}", frame_rate));
                 }
-                fa.fill(kind, pos_in_kind, "Compression_Mode", "Lossy", false);
+                fa.set_field(kind, pos_in_kind, "Compression_Mode", "Lossy");
             }
             let _ = codec;
         }
@@ -422,10 +421,10 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             continue;
         }
         let pos = fa.stream_prepare(StreamKind::Menu);
-        fa.fill(StreamKind::Menu, pos, "StreamOrder", prog_idx.to_string(), false);
-        fa.fill(StreamKind::Menu, pos, "ID", prog.pmt_pid.to_string(), false);
-        fa.fill(StreamKind::Menu, pos, "MenuID", prog.program_number.to_string(), false);
-        fa.fill(StreamKind::Menu, pos, "Format", formats.join(" / "), false);
+        fa.set_field(StreamKind::Menu, pos, "StreamOrder", prog_idx.to_string());
+        fa.set_field(StreamKind::Menu, pos, "ID", prog.pmt_pid.to_string());
+        fa.set_field(StreamKind::Menu, pos, "MenuID", prog.program_number.to_string());
+        fa.set_field(StreamKind::Menu, pos, "Format", formats.join(" / "));
     }
 
     true
@@ -1157,8 +1156,8 @@ mod tests {
             fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("MPEG-TS".to_owned())
         );
-        assert_eq!(fa.count_get(StreamKind::Video), 1);
-        assert_eq!(fa.count_get(StreamKind::Audio), 1);
+        assert_eq!(fa.stream_count(StreamKind::Video), 1);
+        assert_eq!(fa.stream_count(StreamKind::Audio), 1);
         assert_eq!(
             fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("MPEG Video".to_owned())

@@ -26,8 +26,7 @@
 //!     36 bits: total_samples
 //!   16 bytes: MD5 of unencoded audio
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u, Int64u, Int128u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const BLOCK_TYPE_STREAMINFO: u8 = 0;
 #[allow(dead_code)]
@@ -42,13 +41,13 @@ const BLOCK_TYPE_PICTURE: u8 = 6;
 
 #[derive(Debug, Default)]
 struct StreamInfo {
-    min_frame_size: Int32u,
-    max_frame_size: Int32u,
-    sample_rate: Int32u,
-    channels: Int8u,
-    bits_per_sample: Int8u,
-    total_samples: Int64u,
-    md5: Int128u,
+    min_frame_size: u32,
+    max_frame_size: u32,
+    sample_rate: u32,
+    channels: u8,
+    bits_per_sample: u8,
+    total_samples: u64,
+    md5: u128,
 }
 
 /// Parse FLAC (Free Lossless Audio Codec) stream.
@@ -56,64 +55,64 @@ struct StreamInfo {
 /// Detection: `fLaC` marker.
 /// Fills: STREAMINFO (channels, rate, depth, total samples), VorbisComment, MD5.
 pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < 4 {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < 4 {
+        return None;
     }
-    let mut magic: Int32u = 0;
-    fa.peek_b4(&mut magic);
-    if magic != u32::from_be_bytes(*b"fLaC") {
-        return false;
+    if r.peek_be_u32()? != u32::from_be_bytes(*b"fLaC") {
+        return None;
     }
 
-    fa.element_begin("FLAC");
-    let mut magic_consume: Int32u = 0;
-    fa.get_c4(&mut magic_consume, "Magic");
+    r.element_begin("FLAC");
+    r.fourcc("Magic")?;
 
     let mut streaminfo: Option<StreamInfo> = None;
     let mut vorbis_comments: Option<VorbisComments> = None;
 
     loop {
-        if fa.remain() < 4 {
+        if r.remain() < 4 {
             break;
         }
-        let mut header: Int8u = 0;
-        fa.get_b1(&mut header, "BlockHeader");
+        let header = r.be_u8("BlockHeader")?;
         let is_last = (header & 0x80) != 0;
         let block_type = header & 0x7F;
-        let mut block_length: Int32u = 0;
-        fa.get_b3(&mut block_length, "BlockLength");
+        let block_length = r.be_u24("BlockLength")?;
         let block_len_usize = block_length as usize;
 
-        if fa.remain() < block_len_usize {
+        if r.remain() < block_len_usize {
             break;
         }
 
         match block_type {
             BLOCK_TYPE_STREAMINFO => {
-                fa.element_begin("STREAMINFO");
-                streaminfo = Some(parse_streaminfo(fa));
-                fa.element_end();
+                r.element_begin("STREAMINFO");
+                streaminfo = parse_streaminfo(r);
+                r.element_end();
                 if block_len_usize > 34 {
-                    fa.skip_hexa(block_len_usize - 34, "Extension");
+                    r.skip(block_len_usize - 34)?; // Extension
                 }
             }
             BLOCK_TYPE_VORBIS_COMMENT => {
-                fa.element_begin("VORBIS_COMMENT");
-                vorbis_comments = parse_vorbis_comment(fa, block_len_usize);
-                fa.element_end();
+                r.element_begin("VORBIS_COMMENT");
+                vorbis_comments = parse_vorbis_comment(r, block_len_usize);
+                r.element_end();
             }
             BLOCK_TYPE_CUESHEET => {
-                fa.element_begin("CUESHEET");
-                fa.skip_hexa(block_len_usize, "CuesheetBlock");
-                fa.element_end();
+                r.element_begin("CUESHEET");
+                r.skip(block_len_usize)?; // CuesheetBlock
+                r.element_end();
             }
             BLOCK_TYPE_PICTURE => {
-                fa.element_begin("PICTURE");
-                fa.skip_hexa(block_len_usize, "PictureBlock");
-                fa.element_end();
+                r.element_begin("PICTURE");
+                r.skip(block_len_usize)?; // PictureBlock
+                r.element_end();
             }
             _ => {
-                fa.skip_hexa(block_len_usize, "MetadataBlock");
+                r.skip(block_len_usize)?; // MetadataBlock
             }
         }
 
@@ -122,15 +121,12 @@ pub fn parse_flac(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    let audio_stream_size = fa.remain() as u64;
-    fa.element_end();
+    let audio_stream_size = r.remain() as u64;
+    r.element_end();
 
-    if let Some(info) = streaminfo {
-        fill_streams(fa, &info, audio_stream_size, vorbis_comments.as_ref());
-        true
-    } else {
-        false
-    }
+    let info = streaminfo?;
+    fill_streams(r, &info, audio_stream_size, vorbis_comments.as_ref());
+    Some(())
 }
 
 /// Parse a FLAC VORBIS_COMMENT block payload (block_len bytes after the
@@ -153,45 +149,40 @@ struct VorbisComments {
     description: Option<String>,
 }
 
-fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<VorbisComments> {
-    let start_offset = fa.element_offset();
+fn parse_vorbis_comment(r: &mut Reader<'_, '_>, block_len: usize) -> Option<VorbisComments> {
+    let start_offset = r.element_offset();
     let end_offset = start_offset + block_len;
 
-    let mut vendor_len: Int32u = 0;
-    fa.get_l4(&mut vendor_len, "vendor_length");
+    let vendor_len = r.le_u32("vendor_length")?;
     let vendor_len_usize = vendor_len as usize;
-    if fa.element_offset() + vendor_len_usize > end_offset {
+    if r.element_offset() + vendor_len_usize > end_offset {
         // Malformed — skip to block end.
-        if fa.remain() < end_offset - fa.element_offset() {
+        if r.remain() < end_offset - r.element_offset() {
             return None;
         }
-        fa.skip_hexa(end_offset - fa.element_offset(), "MalformedComment");
+        r.skip(end_offset - r.element_offset())?; // MalformedComment
         return None;
     }
 
-    let vendor_bytes = fa.read_raw(vendor_len_usize);
-    let vendor = String::from_utf8_lossy(vendor_bytes).into_owned();
+    let vendor = String::from_utf8_lossy(r.read_raw(vendor_len_usize)?).into_owned();
 
     let mut comments = VorbisComments { vendor, ..Default::default() };
 
     // Consume remaining comments (length-prefixed UTF-8 strings).
-    let mut num_comments: Int32u = 0;
-    if fa.remain() >= 4 {
-        fa.get_l4(&mut num_comments, "user_comment_list_length");
+    if r.remain() >= 4 {
+        let num_comments = r.le_u32("user_comment_list_length")?;
         for _ in 0..num_comments {
-            if fa.element_offset() + 4 > end_offset {
+            if r.element_offset() + 4 > end_offset {
                 break;
             }
-            let mut comment_len: Int32u = 0;
-            fa.get_l4(&mut comment_len, "comment_length");
+            let comment_len = r.le_u32("comment_length")?;
             let cl = comment_len as usize;
-            if fa.element_offset() + cl > end_offset {
+            if r.element_offset() + cl > end_offset {
                 break;
             }
 
             // Read and parse the comment
-            let comment_bytes = fa.read_raw(cl);
-            let comment = String::from_utf8_lossy(comment_bytes);
+            let comment = String::from_utf8_lossy(r.read_raw(cl)?);
 
             // Vorbis comments are "FIELD=value" format
             if let Some(eq_pos) = comment.find('=') {
@@ -213,38 +204,30 @@ fn parse_vorbis_comment(fa: &mut FileAnalyze, block_len: usize) -> Option<Vorbis
     }
 
     // If the block declared more bytes than we consumed, skip the trailer.
-    if fa.element_offset() < end_offset {
-        fa.skip_hexa(end_offset - fa.element_offset(), "Padding");
+    if r.element_offset() < end_offset {
+        r.skip(end_offset - r.element_offset())?; // Padding
     }
 
     Some(comments)
 }
 
-fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
-    let mut min_block_size: Int16u = 0;
-    let mut max_block_size: Int16u = 0;
-    fa.get_b2(&mut min_block_size, "BlockSize_Min");
-    fa.get_b2(&mut max_block_size, "BlockSize_Max");
-    let mut min_frame_size: Int32u = 0;
-    let mut max_frame_size: Int32u = 0;
-    fa.get_b3(&mut min_frame_size, "FrameSize_Min");
-    fa.get_b3(&mut max_frame_size, "FrameSize_Max");
+fn parse_streaminfo(r: &mut Reader<'_, '_>) -> Option<StreamInfo> {
+    r.be_u16("BlockSize_Min")?;
+    r.be_u16("BlockSize_Max")?;
+    let min_frame_size = r.be_u24("FrameSize_Min")?;
+    let max_frame_size = r.be_u24("FrameSize_Max")?;
 
-    fa.bs_begin();
-    let mut sample_rate: Int32u = 0;
-    let mut channels: Int8u = 0;
-    let mut bps: Int8u = 0;
-    let mut samples: Int64u = 0;
-    fa.get_s3(20, &mut sample_rate, "SampleRate");
-    fa.get_s1(3, &mut channels, "Channels");
-    fa.get_s1(5, &mut bps, "BitPerSample");
-    fa.get_s5(36, &mut samples, "Samples");
-    fa.bs_end();
+    let (sample_rate, channels, bps, samples) = r.bits(|b| {
+        let sample_rate = b.read::<u32>(20, "SampleRate")?;
+        let channels = b.read::<u8>(3, "Channels")?;
+        let bps = b.read::<u8>(5, "BitPerSample")?;
+        let samples = b.read::<u64>(36, "Samples")?;
+        Some((sample_rate, channels, bps, samples))
+    })?;
 
-    let mut md5: Int128u = 0;
-    fa.get_b16(&mut md5, "MD5");
+    let md5 = r.be_u128("MD5")?;
 
-    StreamInfo {
+    Some(StreamInfo {
         min_frame_size,
         max_frame_size,
         sample_rate,
@@ -252,11 +235,11 @@ fn parse_streaminfo(fa: &mut FileAnalyze) -> StreamInfo {
         bits_per_sample: bps,
         total_samples: samples,
         md5,
-    }
+    })
 }
 
 fn fill_streams(
-    fa: &mut FileAnalyze,
+    r: &mut Reader<'_, '_>,
     info: &StreamInfo,
     audio_stream_size: u64,
     vorbis_comments: Option<&VorbisComments>,
@@ -264,16 +247,16 @@ fn fill_streams(
     if info.sample_rate == 0 {
         return;
     }
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "FLAC", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "FLAC");
     // FLAC reports general StreamSize as 0 because the file *is* the audio
     // stream + metadata, with no separate container overhead in MediaInfo's
     // accounting model. Replace=true so the revelio-diff fallback can't
     // overwrite to FileSize-audio_StreamSize.
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    r.force_field(StreamKind::General, 0, "StreamSize", "0");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "FLAC", false);
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "FLAC");
 
     let channels_count = (info.channels as u16) + 1;
     let bps = (info.bits_per_sample as u16) + 1;
@@ -286,7 +269,7 @@ fn fill_streams(
     } else {
         "VBR"
     };
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", bitrate_mode, false);
+    r.set_field(StreamKind::Audio, 0, "BitRate_Mode", bitrate_mode);
 
     // Duration as integer milliseconds — same C++ pattern as AIFF
     // (AfterComma=0 stored as int).
@@ -296,68 +279,68 @@ fn fill_streams(
         0
     };
     if duration_ms_int > 0 {
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms_int.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "Duration", duration_ms_int.to_string());
     }
 
     // BitRate (integer for FLAC, no decimal — matches oracle "203651").
     if duration_ms_int > 0 {
         let bitrate =
             ((audio_stream_size as f64) * 8.0 * 1000.0 / (duration_ms_int as f64)).round() as u64;
-        fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "BitRate", bitrate.to_string());
     }
 
-    fa.fill(StreamKind::Audio, 0, "Channels", channels_count.to_string(), false);
+    r.set_field(StreamKind::Audio, 0, "Channels", channels_count.to_string());
     let (positions, layout) = channel_layout(channels_count);
     if let Some(p) = positions {
-        fa.fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
+        r.set_field(StreamKind::Audio, 0, "ChannelPositions", p);
     }
     if let Some(l) = layout {
-        fa.fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
+        r.set_field(StreamKind::Audio, 0, "ChannelLayout", l);
     }
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string(), false);
+    r.set_field(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string());
     if info.total_samples > 0 {
-        fa.fill(StreamKind::Audio, 0, "SamplingCount", info.total_samples.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "SamplingCount", info.total_samples.to_string());
     }
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bps.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string(), false);
+    r.set_field(StreamKind::Audio, 0, "BitDepth", bps.to_string());
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    r.set_field(StreamKind::Audio, 0, "StreamSize", audio_stream_size.to_string());
 
     if let Some(vc) = vorbis_comments {
         if !vc.vendor.is_empty() {
-            fa.fill(StreamKind::Audio, 0, "Encoded_Library", vc.vendor.as_str(), false);
-            fa.fill(StreamKind::General, 0, "Encoded_Application", vc.vendor.as_str(), false);
+            r.set_field(StreamKind::Audio, 0, "Encoded_Library", vc.vendor.as_str());
+            r.set_field(StreamKind::General, 0, "Encoded_Application", vc.vendor.as_str());
         }
 
         // Emit standard metadata fields from Vorbis comments
         if let Some(ref title) = vc.title {
-            fa.fill(StreamKind::General, 0, "Track", title.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Track", title.as_str());
         }
         if let Some(ref artist) = vc.artist {
-            fa.fill(StreamKind::General, 0, "Performer", artist.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Performer", artist.as_str());
         }
         if let Some(ref album) = vc.album {
-            fa.fill(StreamKind::General, 0, "Album", album.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Album", album.as_str());
         }
         if let Some(ref date) = vc.date {
-            fa.fill(StreamKind::General, 0, "Recorded_Date", date.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Recorded_Date", date.as_str());
         }
         if let Some(ref track_num) = vc.track_number {
-            fa.fill(StreamKind::General, 0, "Track/Position", track_num.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Track/Position", track_num.as_str());
         }
         if let Some(ref genre) = vc.genre {
-            fa.fill(StreamKind::General, 0, "Genre", genre.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Genre", genre.as_str());
         }
         if let Some(ref desc) = vc.description {
-            fa.fill(StreamKind::General, 0, "Description", desc.as_str(), false);
+            r.set_field(StreamKind::General, 0, "Description", desc.as_str());
         }
     }
 
     // MD5 of unencoded audio, rendered as 32-hex-char uppercase string.
     // Goes in the <extra> section per oracle output.
     let md5_hex = format!("{:032X}", info.md5);
-    fa.fill(StreamKind::Audio, 0, "MD5_Unencoded", md5_hex, false);
+    r.set_field(StreamKind::Audio, 0, "MD5_Unencoded", md5_hex);
 
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 }
 
 /// Map channel count → (ChannelPositions, ChannelLayout) using the same

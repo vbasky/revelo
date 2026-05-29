@@ -35,7 +35,7 @@ pub fn to_text(streams: &StreamCollection, path: &str) -> String {
 
     let mut first = true;
     for kind in kinds {
-        let count = streams.count_get(kind);
+        let count = streams.stream_count(kind);
         for pos in 0..count {
             if !first {
                 out.push('\n');
@@ -570,7 +570,7 @@ mod tests {
     fn stream_with(kind: StreamKind, fields: &[(&str, &str)]) -> StreamCollection {
         let mut c = StreamCollection::new();
         for (k, v) in fields {
-            c.fill(kind, 0, k, Ztring::from(*v), false);
+            c.set_field(kind, 0, k, Ztring::from(*v));
         }
         c
     }

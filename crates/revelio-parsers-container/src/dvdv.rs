@@ -45,7 +45,7 @@ pub fn parse_dvdv(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DVDV", true);
+    fa.force_field(StreamKind::General, 0, "Format", "DVDV");
     true
 }
 

@@ -28,7 +28,7 @@ pub fn parse_nsv(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "NSV", false);
+    fa.set_field(StreamKind::General, 0, "Format", "NSV");
     true
 }
 

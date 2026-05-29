@@ -70,7 +70,7 @@ impl MediaConfig {
     }
 
     pub fn set_option(&mut self, key: &str, value: &str) -> bool {
-        match key.to_lowercase().as_str() {
+        let recognised = match key.to_lowercase().as_str() {
             "demux" => {
                 self.set_demux(value);
                 true
@@ -104,7 +104,11 @@ impl MediaConfig {
                 true
             }
             _ => false,
+        };
+        if !recognised {
+            eprintln!("revelio: unknown config option \"{key}\" (value: \"{value}\")");
         }
+        recognised
     }
 
     /// Whether demux is active at the given level.

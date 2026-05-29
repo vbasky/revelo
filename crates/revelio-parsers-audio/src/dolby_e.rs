@@ -22,9 +22,9 @@ pub fn parse_dolby_e(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "Dolby E", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "Professional Dolby E", false);
-    fa.fill(StreamKind::Audio, pos, "Compression_Mode", "Lossless", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "Dolby E");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "Professional Dolby E");
+    fa.set_field(StreamKind::Audio, pos, "Compression_Mode", "Lossless");
     true
 }
 

@@ -24,7 +24,7 @@ pub fn parse_wtv(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "WTV", true);
+    fa.force_field(StreamKind::General, 0, "Format", "WTV");
     true
 }
 

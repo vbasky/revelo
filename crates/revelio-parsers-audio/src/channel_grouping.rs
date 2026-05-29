@@ -10,8 +10,8 @@ pub fn parse_channel_grouping(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "Channel Grouping", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "Multi-stream channel grouping", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "Channel Grouping");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "Multi-stream channel grouping");
     true
 }
 #[cfg(test)]

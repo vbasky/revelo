@@ -8,7 +8,6 @@
 //! terminators) or non-ASCII byte rejects the buffer.
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u};
 
 const HEADER_SIZE: usize = 0x5C;
 const ASCII_REGION: usize = 60 + 8 + 7;
@@ -93,40 +92,34 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
     fa.element_end();
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "aptX-100", false);
+    fa.set_field(StreamKind::General, 0, "Format", "aptX-100");
     if !title.is_empty() {
-        fa.fill(StreamKind::General, 0, "Movie", title.as_str(), false);
-        fa.fill(StreamKind::General, 0, "Title", title.as_str(), false);
+        fa.set_field(StreamKind::General, 0, "Movie", title.as_str());
+        fa.set_field(StreamKind::General, 0, "Title", title.as_str());
     }
     if studio == "none" {
         studio.clear();
     }
     if !studio.is_empty() {
-        fa.fill(StreamKind::General, 0, "ProductionStudio", studio.as_str(), false);
+        fa.set_field(StreamKind::General, 0, "ProductionStudio", studio.as_str());
     }
     if disc_number != 0 {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "Part_Position",
-            ((disc_number >> 7) + 1).to_string(),
-            false,
-        );
+        fa.set_field(StreamKind::General, 0, "Part_Position", ((disc_number >> 7) + 1).to_string());
     }
     if reel_number != 0 {
-        fa.fill(StreamKind::General, 0, "Reel_Position", reel_number.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "Reel_Position", reel_number.to_string());
     }
     if serial != 0 {
-        fa.fill(StreamKind::General, 0, "CatalogNumber", serial.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "CatalogNumber", serial.to_string());
     }
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "aptX-100", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "aptX-100");
     // 44100 Hz × 4 bit/channel (16-bit @ 1:4 compression) × channels.
     // Computed before matrixed-channel additions below, per the C++.
     let bit_rate = 44100u32 * 4 * channel_count as u32;
-    fa.fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "BitRate", bit_rate.to_string());
 
     let mut channel_layout = String::new();
     let mut settings = String::new();
@@ -165,42 +158,40 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
         }
         _ => "DTS Special Venue",
     };
-    fa.fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
+    fa.set_field(StreamKind::General, 0, "Format_Commercial_IfAny", commercial);
+    fa.set_field(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial);
     if !settings.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings", settings.as_str(), false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings", settings.as_str());
     }
-    fa.fill(StreamKind::Audio, 0, "Channel(s)", channel_count.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Channel(s)", channel_count.to_string());
     if !channel_layout.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "ChannelLayout", channel_layout.as_str(), false);
+        fa.set_field(StreamKind::Audio, 0, "ChannelLayout", channel_layout.as_str());
     }
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", "44100", false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.fill(
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", "44100");
+    fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+    fa.set_field(
         StreamKind::Audio,
         0,
         "TimeCode_FirstFrame",
         format_timecode(start_hh, start_mm, start_ss, start_ff),
-        false,
     );
     // C++ does `End--` before printing; subtract one frame (1/100 s, since 99fps).
     let (e_hh, e_mm, e_ss, e_ff) = decrement_frame(end_hh, end_mm, end_ss, end_ff);
-    fa.fill(
+    fa.set_field(
         StreamKind::Audio,
         0,
         "TimeCode_LastFrame",
         format_timecode(e_hh, e_mm, e_ss, e_ff),
-        false,
     );
 
     let language_out = map_language(&language);
     if !language_out.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Language", language_out.as_str(), false);
+        fa.set_field(StreamKind::Audio, 0, "Language", language_out.as_str());
     }
 
     if stream_size > 0 {
-        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "StreamSize", stream_size.to_string());
     }
 
     true
@@ -211,9 +202,9 @@ fn read_nul_string(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[..end]).into_owned()
 }
 
-fn bcd_to_decimal(v: Int8u) -> Int16u {
-    let tens = (v >> 4) as Int16u;
-    let units = (v & 0x0F) as Int16u;
+fn bcd_to_decimal(v: u8) -> u16 {
+    let tens = (v >> 4) as u16;
+    let units = (v & 0x0F) as u16;
     if tens >= 10 || units >= 10 {
         // Sentinel: any value > 99 will fail the validity check below.
         return u16::MAX;
@@ -221,21 +212,16 @@ fn bcd_to_decimal(v: Int8u) -> Int16u {
     tens * 10 + units
 }
 
-fn timecode_to_ms(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> i64 {
+fn timecode_to_ms(hh: u16, mm: u16, ss: u16, ff: u16) -> i64 {
     // ff is hundredths of a second (99 fps timed).
     (hh as i64) * 3_600_000 + (mm as i64) * 60_000 + (ss as i64) * 1000 + (ff as i64) * 10
 }
 
-fn format_timecode(hh: Int16u, mm: Int16u, ss: Int16u, ff: Int16u) -> String {
+fn format_timecode(hh: u16, mm: u16, ss: u16, ff: u16) -> String {
     format!("{:02}:{:02}:{:02}:{:02}", hh, mm, ss, ff)
 }
 
-fn decrement_frame(
-    hh: Int16u,
-    mm: Int16u,
-    ss: Int16u,
-    ff: Int16u,
-) -> (Int16u, Int16u, Int16u, Int16u) {
+fn decrement_frame(hh: u16, mm: u16, ss: u16, ff: u16) -> (u16, u16, u16, u16) {
     if ff > 0 {
         return (hh, mm, ss, ff - 1);
     }

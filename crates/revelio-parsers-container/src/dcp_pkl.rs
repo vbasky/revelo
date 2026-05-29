@@ -64,10 +64,10 @@ pub fn parse_dcp_pkl(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DCP PKL", true);
+    fa.force_field(StreamKind::General, 0, "Format", "DCP PKL");
     // The oracle reports General.StreamSize == FileSize for these
     // reference XML files (the whole file is the elementary stream).
-    fa.fill(StreamKind::General, 0, "StreamSize", file_size.to_string(), true);
+    fa.force_field(StreamKind::General, 0, "StreamSize", file_size.to_string());
     true
 }
 

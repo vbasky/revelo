@@ -26,11 +26,11 @@ pub fn parse_midi(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "MIDI", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "MIDI");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "MIDI", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "MIDI");
 
     true
 }

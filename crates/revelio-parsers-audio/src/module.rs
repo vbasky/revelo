@@ -19,7 +19,7 @@
 //!  128 bytes:        Pattern table
 //!    4 bytes ASCII:   Signature tag (M.K., M!K!, FLT4, FLT8, 6CHN, 8CHN)
 
-use revelio_core::{FileAnalyze, StreamKind};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const HEADER_MIN_BYTES: usize = 1084;
 const SIGNATURE_OFFSET: usize = 1080;
@@ -29,50 +29,50 @@ fn is_valid_signature(sig: &[u8]) -> bool {
 }
 
 pub fn parse_module(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < HEADER_MIN_BYTES {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < HEADER_MIN_BYTES {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(HEADER_MIN_BYTES)) {
-        Some(h) => h,
-        None => return false,
-    };
+    let head = r.peek_raw(HEADER_MIN_BYTES)?;
     if !is_valid_signature(&head[SIGNATURE_OFFSET..SIGNATURE_OFFSET + 4]) {
-        return false;
+        return None;
     }
 
-    fa.element_begin("Module");
+    r.element_begin("Module");
 
-    let module_name_bytes = fa.read_raw(20).to_vec();
-    let module_name = trim_local_string(&module_name_bytes);
+    let module_name = trim_local_string(r.read_raw(20)?);
 
     for _ in 0..31 {
-        fa.element_begin("Sample");
-        let _ = fa.read_raw(22);
-        fa.skip_b2("Sample length");
-        fa.skip_b1("Finetune value for the sample");
-        fa.skip_b1("Volume of the sample");
-        fa.skip_b2("Start of sample repeat offset");
-        fa.skip_b2("Length of sample repeat");
-        fa.element_end();
+        r.element_begin("Sample");
+        r.read_raw(22)?;
+        r.be_u16("Sample length")?;
+        r.be_u8("Finetune value for the sample")?;
+        r.be_u8("Volume of the sample")?;
+        r.be_u16("Start of sample repeat offset")?;
+        r.be_u16("Length of sample repeat")?;
+        r.element_end();
     }
-    fa.skip_b1("Number of song positions");
-    fa.skip_b1("0x7F");
-    fa.skip_hexa(128, "Pattern table");
-    fa.skip_c4("Signature");
+    r.be_u8("Number of song positions")?;
+    r.be_u8("0x7F")?;
+    r.skip(128)?; // Pattern table
+    r.fourcc("Signature")?;
 
-    fa.element_end();
+    r.element_end();
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Module", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "Module");
     if !module_name.is_empty() {
-        fa.fill(StreamKind::General, 0, "Track", module_name, false);
+        r.set_field(StreamKind::General, 0, "Track", module_name);
     }
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "Module", false);
-
-    true
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "Module");
+    Some(())
 }
 
 // Names are fixed-width fields, NUL- or space-padded. Use lossy UTF-8

@@ -13,8 +13,8 @@ pub fn parse_lagarith(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "Lagarith", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "Lagarith lossless", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "Lagarith");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "Lagarith lossless");
     true
 }
 #[cfg(test)]

@@ -76,8 +76,8 @@ pub fn parse_dcp_am(fa: &mut FileAnalyze) -> bool {
     };
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DCP AM", true);
-    fa.fill(StreamKind::General, 0, "Format_Version", version, true);
+    fa.force_field(StreamKind::General, 0, "Format", "DCP AM");
+    fa.force_field(StreamKind::General, 0, "Format_Version", version);
     true
 }
 

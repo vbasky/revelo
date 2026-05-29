@@ -23,7 +23,7 @@ pub fn parse_sequence_info(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "SequenceInfo", false);
+    fa.set_field(StreamKind::General, 0, "Format", "SequenceInfo");
     true
 }
 

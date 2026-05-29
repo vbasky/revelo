@@ -102,77 +102,71 @@ pub fn parse_gain_map(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Gain Map", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Gain Map");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "Gain Map", false);
-    fa.fill(StreamKind::Image, 0, "Format_Version", minimum_version.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Format", "Gain Map");
+    fa.set_field(StreamKind::Image, 0, "Format_Version", minimum_version.to_string());
 
     if !have_body {
         return true;
     }
 
-    fa.fill(StreamKind::Image, 0, "WriterVersion", writer_version.to_string(), false);
-    fa.fill(
+    fa.set_field(StreamKind::Image, 0, "WriterVersion", writer_version.to_string());
+    fa.set_field(
         StreamKind::Image,
         0,
         "IsMultichannel",
         if is_multichannel { "Yes" } else { "No" },
-        false,
     );
-    fa.fill(
+    fa.set_field(
         StreamKind::Image,
         0,
         "UseBaseColourSpace",
         if use_base_colour_space { "Yes" } else { "No" },
-        false,
     );
     if let Some(v) = base_hdr {
-        fa.fill(StreamKind::Image, 0, "BaseHdrHeadroom", format!("{:.6}", v), false);
+        fa.set_field(StreamKind::Image, 0, "BaseHdrHeadroom", format!("{:.6}", v));
     }
     if let Some(v) = alt_hdr {
-        fa.fill(StreamKind::Image, 0, "AlternateHdrHeadroom", format!("{:.6}", v), false);
+        fa.set_field(StreamKind::Image, 0, "AlternateHdrHeadroom", format!("{:.6}", v));
     }
 
     for (idx, ch) in channels.iter().enumerate() {
         let suffix = if is_multichannel { format!("_Channel{}", idx + 1) } else { String::new() };
         if let Some(v) = ch.gmin {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Image,
                 0,
                 &format!("GainMapMin{}", suffix),
                 format!("{:.6}", v),
-                false,
             );
         }
         if let Some(v) = ch.gmax {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Image,
                 0,
                 &format!("GainMapMax{}", suffix),
                 format!("{:.6}", v),
-                false,
             );
         }
         if let Some(v) = ch.gamma {
-            fa.fill(StreamKind::Image, 0, &format!("Gamma{}", suffix), format!("{:.6}", v), false);
+            fa.set_field(StreamKind::Image, 0, &format!("Gamma{}", suffix), format!("{:.6}", v));
         }
         if let Some(v) = ch.base_off {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Image,
                 0,
                 &format!("BaseOffset{}", suffix),
                 format!("{:.6}", v),
-                false,
             );
         }
         if let Some(v) = ch.alt_off {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Image,
                 0,
                 &format!("AlternateOffset{}", suffix),
                 format!("{:.6}", v),
-                false,
             );
         }
     }

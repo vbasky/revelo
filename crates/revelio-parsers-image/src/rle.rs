@@ -18,11 +18,11 @@ pub fn parse_rle(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "RLE", false);
+    fa.set_field(StreamKind::General, 0, "Format", "RLE");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "RLE", false);
-    fa.fill(StreamKind::Text, 0, "Codec", "RLE", false);
+    fa.set_field(StreamKind::Text, 0, "Format", "RLE");
+    fa.set_field(StreamKind::Text, 0, "Codec", "RLE");
     true
 }
 
@@ -51,8 +51,8 @@ mod tests {
     fn fills_one_text_stream() {
         let mut fa = FileAnalyze::new(&[0xFFu8; 32]);
         assert!(parse_rle(&mut fa));
-        assert_eq!(fa.count_get(StreamKind::Text), 1);
-        assert_eq!(fa.count_get(StreamKind::General), 1);
-        assert_eq!(fa.count_get(StreamKind::Image), 0);
+        assert_eq!(fa.stream_count(StreamKind::Text), 1);
+        assert_eq!(fa.stream_count(StreamKind::General), 1);
+        assert_eq!(fa.stream_count(StreamKind::Image), 0);
     }
 }

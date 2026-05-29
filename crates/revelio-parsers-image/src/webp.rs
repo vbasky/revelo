@@ -57,30 +57,30 @@ pub fn parse_webp(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "WebP", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "WebP");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", info.format, false);
+    fa.set_field(StreamKind::Image, 0, "Format", info.format);
     if let Some(v) = info.version {
-        fa.fill(StreamKind::Image, 0, "Format_Version", format!("Version {}", v), false);
+        fa.set_field(StreamKind::Image, 0, "Format_Version", format!("Version {}", v));
     }
     if info.width > 0 {
-        fa.fill(StreamKind::Image, 0, "Width", info.width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", info.width.to_string());
     }
     if info.height > 0 {
-        fa.fill(StreamKind::Image, 0, "Height", info.height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", info.height.to_string());
     }
-    fa.fill(StreamKind::Image, 0, "BitDepth", "8", false);
+    fa.set_field(StreamKind::Image, 0, "BitDepth", "8");
     if !info.compression.is_empty() {
-        fa.fill(StreamKind::Image, 0, "Compression_Mode", info.compression, false);
+        fa.set_field(StreamKind::Image, 0, "Compression_Mode", info.compression);
     }
     let mut color_space = info.color_space.to_string();
     if info.has_alpha && !color_space.ends_with('A') {
         color_space.push('A');
     }
     if !color_space.is_empty() {
-        fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+        fa.set_field(StreamKind::Image, 0, "ColorSpace", color_space);
     }
     let _ = info.is_animated;
     true

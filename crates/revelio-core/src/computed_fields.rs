@@ -14,7 +14,7 @@ fn field_val(sc: &StreamCollection, kind: StreamKind, pos: usize, key: &str) -> 
 }
 
 fn fill_bits_pixel_frame(sc: &mut StreamCollection) {
-    let n = sc.count_get(StreamKind::Video);
+    let n = sc.stream_count(StreamKind::Video);
     for i in 0..n {
         let w: f64 = field_val(sc, StreamKind::Video, i, "Width")
             .and_then(|v| v.parse().ok())
@@ -30,12 +30,11 @@ fn fill_bits_pixel_frame(sc: &mut StreamCollection) {
             .unwrap_or(0.0);
         if w > 0.0 && h > 0.0 && fr > 0.0 && br > 0.0 {
             let bpp = br / (w * h * fr);
-            sc.fill(
+            sc.set_field(
                 StreamKind::Video,
                 i,
                 "Bits_Pixel_Frame",
                 Ztring::from(format!("{:.3}", bpp)),
-                false,
             );
         }
     }
@@ -43,7 +42,7 @@ fn fill_bits_pixel_frame(sc: &mut StreamCollection) {
 
 fn fill_compression_ratio(sc: &mut StreamCollection) {
     for kind in &[StreamKind::Video, StreamKind::Audio] {
-        let n = sc.count_get(*kind);
+        let n = sc.stream_count(*kind);
         for i in 0..n {
             let stream_size: u64 =
                 field_val(sc, *kind, i, "StreamSize").and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -67,13 +66,7 @@ fn fill_compression_ratio(sc: &mut StreamCollection) {
             };
             if stream_size > 0 && uncompressed > 0 {
                 let ratio = uncompressed as f64 / stream_size as f64;
-                sc.fill(
-                    *kind,
-                    i,
-                    "Compression_Ratio",
-                    Ztring::from(format!("{:.3}", ratio)),
-                    false,
-                );
+                sc.set_field(*kind, i, "Compression_Ratio", Ztring::from(format!("{:.3}", ratio)));
             }
         }
     }
@@ -86,7 +79,7 @@ fn fill_bitrate_ranges(sc: &mut StreamCollection) {
     let mut overall_max: u64 = 0;
     let mut overall_min: u64 = u64::MAX;
     for kind in &[StreamKind::Audio, StreamKind::Video] {
-        let n = sc.count_get(*kind);
+        let n = sc.stream_count(*kind);
         for i in 0..n {
             if let Some(max_str) = field_val(sc, *kind, i, "BitRate_Maximum")
                 && let Ok(v) = max_str.parse::<u64>()
@@ -104,29 +97,27 @@ fn fill_bitrate_ranges(sc: &mut StreamCollection) {
                 && let Some(br_str) = field_val(sc, *kind, i, "BitRate")
                 && let Ok(v) = br_str.parse::<u64>()
             {
-                sc.fill(*kind, i, "BitRate_Minimum", Ztring::from(format!("{}", v / 2)), false);
+                sc.set_field(*kind, i, "BitRate_Minimum", Ztring::from(format!("{}", v / 2)));
             }
         }
     }
     if overall_max > 0 && field_val(sc, StreamKind::General, 0, "OverallBitRate_Maximum").is_none()
     {
-        sc.fill(
+        sc.set_field(
             StreamKind::General,
             0,
             "OverallBitRate_Maximum",
             Ztring::from(format!("{}", overall_max)),
-            false,
         );
     }
     if overall_min < u64::MAX
         && field_val(sc, StreamKind::General, 0, "OverallBitRate_Minimum").is_none()
     {
-        sc.fill(
+        sc.set_field(
             StreamKind::General,
             0,
             "OverallBitRate_Minimum",
             Ztring::from(format!("{}", overall_min)),
-            false,
         );
     }
 }
@@ -142,17 +133,17 @@ fn fill_format_profile_general(sc: &mut StreamCollection) {
             _ => None,
         };
         if let Some(p) = profile {
-            sc.fill(StreamKind::General, 0, "Format_Profile", Ztring::from(p), false);
+            sc.set_field(StreamKind::General, 0, "Format_Profile", Ztring::from(p));
         }
     }
 }
 
 fn fill_frame_rate_mode_original(sc: &mut StreamCollection) {
     // Set FrameRate_Mode_Original from the first Video FR mode before any CFR override.
-    let n = sc.count_get(StreamKind::Video);
+    let n = sc.stream_count(StreamKind::Video);
     for i in 0..n {
         if let Some(mode) = field_val(sc, StreamKind::Video, i, "FrameRate_Mode") {
-            sc.fill(StreamKind::Video, i, "FrameRate_Mode_Original", Ztring::from(mode), false);
+            sc.set_field(StreamKind::Video, i, "FrameRate_Mode_Original", Ztring::from(mode));
         }
     }
 }
@@ -164,10 +155,10 @@ mod tests {
     fn test_bpp() {
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Video);
-        sc.fill(StreamKind::Video, 0, "Width", Ztring::from("1920"), false);
-        sc.fill(StreamKind::Video, 0, "Height", Ztring::from("1080"), false);
-        sc.fill(StreamKind::Video, 0, "FrameRate", Ztring::from("25.000"), false);
-        sc.fill(StreamKind::Video, 0, "BitRate", Ztring::from("5000000"), false);
+        sc.set_field(StreamKind::Video, 0, "Width", Ztring::from("1920"));
+        sc.set_field(StreamKind::Video, 0, "Height", Ztring::from("1080"));
+        sc.set_field(StreamKind::Video, 0, "FrameRate", Ztring::from("25.000"));
+        sc.set_field(StreamKind::Video, 0, "BitRate", Ztring::from("5000000"));
         fill_computed_fields(&mut sc);
         assert_eq!(field_val(&sc, StreamKind::Video, 0, "Bits_Pixel_Frame").unwrap(), "0.096");
     }
@@ -175,11 +166,11 @@ mod tests {
     fn test_compression_ratio() {
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::Audio);
-        sc.fill(StreamKind::Audio, 0, "StreamSize", Ztring::from("1000"), false);
-        sc.fill(StreamKind::Audio, 0, "Duration", Ztring::from("1.000"), false);
-        sc.fill(StreamKind::Audio, 0, "Channels", Ztring::from("2"), false);
-        sc.fill(StreamKind::Audio, 0, "BitDepth", Ztring::from("16"), false);
-        sc.fill(StreamKind::Audio, 0, "SamplingRate", Ztring::from("44100"), false);
+        sc.set_field(StreamKind::Audio, 0, "StreamSize", Ztring::from("1000"));
+        sc.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("1.000"));
+        sc.set_field(StreamKind::Audio, 0, "Channels", Ztring::from("2"));
+        sc.set_field(StreamKind::Audio, 0, "BitDepth", Ztring::from("16"));
+        sc.set_field(StreamKind::Audio, 0, "SamplingRate", Ztring::from("44100"));
         fill_computed_fields(&mut sc);
         assert!(field_val(&sc, StreamKind::Audio, 0, "Compression_Ratio").is_some());
     }
@@ -187,8 +178,8 @@ mod tests {
     fn test_format_profile_general() {
         let mut sc = StreamCollection::new();
         sc.stream_prepare(StreamKind::General);
-        sc.fill(StreamKind::General, 0, "Format", Ztring::from("MPEG-4"), false);
-        sc.fill(StreamKind::General, 0, "CodecID", Ztring::from("mp42"), false);
+        sc.set_field(StreamKind::General, 0, "Format", Ztring::from("MPEG-4"));
+        sc.set_field(StreamKind::General, 0, "CodecID", Ztring::from("mp42"));
         fill_computed_fields(&mut sc);
         assert_eq!(
             field_val(&sc, StreamKind::General, 0, "Format_Profile").unwrap(),

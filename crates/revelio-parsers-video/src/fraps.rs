@@ -13,8 +13,8 @@ pub fn parse_fraps(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "Fraps", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "Fraps screen capture", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "Fraps");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "Fraps screen capture");
     true
 }
 #[cfg(test)]

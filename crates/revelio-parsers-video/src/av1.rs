@@ -354,9 +354,10 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         }
     }
 
-    // Look for sequence header OBU
+    // Look for sequence header OBU and HDR10+ metadata
     let mut pos = 0usize;
     let mut seq_header_info = None;
+    let mut hdr10plus_detected = false;
 
     while pos < data.len() {
         let header_result = parse_obu_header(&data[pos..]);
@@ -394,6 +395,25 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
                     break; // Found sequence header, done
                 }
             }
+        } else if obu_type == OBU_METADATA {
+            // Check for HDR10+ in Metadata OBU (metadata_type == 1 = ITU-T T35)
+            let payload_start = pos + header_size;
+            if payload_start + 1 <= data.len() {
+                let md_type = data[payload_start];
+                if md_type == 1 {
+                    if payload_start + obu_size <= data.len() {
+                        let t35_payload = &data[payload_start + 1..payload_start + obu_size];
+                        // HDR10+ detection: country=0xB5, provider=0x003C, app_id=4
+                        if t35_payload.len() >= 5
+                            && t35_payload[0] == 0xB5
+                            && u16::from_be_bytes([t35_payload[1], t35_payload[2]]) == 0x003C
+                            && t35_payload[3] == 4
+                        {
+                            hdr10plus_detected = true;
+                        }
+                    }
+                }
+            }
         }
 
         pos += header_size + obu_size;
@@ -408,11 +428,11 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     };
 
     fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "AV1", false);
-    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", info.chroma_subsampling, false);
+    fa.set_field(StreamKind::Video, 0, "Format", "AV1");
+    fa.set_field(StreamKind::Video, 0, "Width", info.width.to_string());
+    fa.set_field(StreamKind::Video, 0, "Height", info.height.to_string());
+    fa.set_field(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string());
+    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", info.chroma_subsampling);
 
     let profile_name = match info.profile {
         0 => "Main",
@@ -420,15 +440,20 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         2 => "Professional",
         _ => "Unknown",
     };
-    fa.fill(StreamKind::Video, 0, "Format_Profile", profile_name, false);
+    fa.set_field(StreamKind::Video, 0, "Format_Profile", profile_name);
 
-    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
-    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
+    fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
+    fa.set_field(StreamKind::Video, 0, "ScanType", "Progressive");
+
+    if hdr10plus_detected {
+        fa.set_field(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2094-40");
+        fa.set_field(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10+");
+    }
 
     // General stream
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "AV1", false);
-    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "AV1");
+    fa.set_field(StreamKind::General, 0, "VideoCount", "1");
 
     fa.element_end();
     true

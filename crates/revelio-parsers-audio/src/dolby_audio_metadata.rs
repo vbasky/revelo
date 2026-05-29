@@ -9,14 +9,14 @@ pub fn parse_dolby_audio_metadata(fa: &mut FileAnalyze) -> bool {
         let form = &buf[8..12];
         if form == b"DAM " || form == b"DAMG" {
             let pos = fa.stream_prepare(StreamKind::Audio);
-            fa.fill(StreamKind::Audio, pos, "Format", "Dolby Audio Metadata", false);
-            fa.fill(StreamKind::Audio, pos, "Format_Info", "DAM", false);
+            fa.set_field(StreamKind::Audio, pos, "Format", "Dolby Audio Metadata");
+            fa.set_field(StreamKind::Audio, pos, "Format_Info", "DAM");
             return true;
         }
     }
     if &buf[0..4] == b"DAM " {
         let pos = fa.stream_prepare(StreamKind::Audio);
-        fa.fill(StreamKind::Audio, pos, "Format", "Dolby Audio Metadata", false);
+        fa.set_field(StreamKind::Audio, pos, "Format", "Dolby Audio Metadata");
         return true;
     }
     false

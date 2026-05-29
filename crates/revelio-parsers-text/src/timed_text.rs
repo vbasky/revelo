@@ -31,7 +31,7 @@ pub fn parse_timed_text(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "Timed Text", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "Timed Text");
 
     true
 }

@@ -17,43 +17,38 @@
 //!   0x0C  ... RIFF sub-chunks (not parsed — AMV's inner chunks are
 //!              proprietary and the reference parser ignores them).
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int32u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
-const FOURCC_RIFF: Int32u = u32::from_be_bytes(*b"RIFF");
-const FOURCC_AMV: Int32u = u32::from_be_bytes(*b"AMV ");
+const FOURCC_RIFF: u32 = u32::from_be_bytes(*b"RIFF");
+const FOURCC_AMV: u32 = u32::from_be_bytes(*b"AMV ");
 
 /// Detect a RIFF/AMV container and fill `General.Format`. Returns `true`
 /// when the magic + form type match; otherwise the FileAnalyze cursor is
 /// left untouched (we only peek before committing).
 pub fn parse_amv(fa: &mut FileAnalyze) -> bool {
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
     // Peek both fourcc fields without consuming so non-AMV RIFF variants
     // (WAVE, AVI, etc.) can still be tried by sibling parsers.
-    let header = match fa.peek_raw(12) {
-        Some(b) => b,
-        None => return false,
-    };
-    let magic = Int32u::from_be_bytes([header[0], header[1], header[2], header[3]]);
-    let form = Int32u::from_be_bytes([header[8], header[9], header[10], header[11]]);
+    let header = r.peek_raw(12)?;
+    let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+    let form = u32::from_be_bytes([header[8], header[9], header[10], header[11]]);
     if magic != FOURCC_RIFF || form != FOURCC_AMV {
-        return false;
+        return None;
     }
 
-    fa.element_begin("RIFF");
-    let mut riff_id: Int32u = 0;
-    fa.get_c4(&mut riff_id, "ID");
-    let mut riff_size: Int32u = 0;
-    fa.get_l4(&mut riff_size, "Size");
-    let mut form_type: Int32u = 0;
-    fa.get_c4(&mut form_type, "Type");
-    fa.element_end();
+    r.element_begin("RIFF");
+    r.fourcc("ID")?;
+    r.le_u32("Size")?;
+    r.fourcc("Type")?;
+    r.element_end();
 
-    let _ = riff_size;
-
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "AMV", false);
-
-    true
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "AMV");
+    Some(())
 }
 
 #[cfg(test)]

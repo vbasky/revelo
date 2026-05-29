@@ -636,37 +636,36 @@ fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
         xing_nominal_kbps,
     } = info;
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "MPEG Audio", false);
+    fa.set_field(StreamKind::General, 0, "Format", "MPEG Audio");
     if let Some(lv) = lame_version {
-        fa.fill(StreamKind::General, 0, "Encoded_Library", lv, false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Library", lv);
     }
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "MPEG Audio", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "MPEG Audio");
     if let Some(lv) = lame_version {
-        fa.fill(StreamKind::Audio, 0, "Encoded_Library", lv, false);
+        fa.set_field(StreamKind::Audio, 0, "Encoded_Library", lv);
     }
-    fa.fill(StreamKind::Audio, 0, "Format_Version", VERSION_NAMES[h.version as usize], false);
-    fa.fill(StreamKind::Audio, 0, "Format_Profile", LAYER_NAMES[h.layer as usize], false);
+    fa.set_field(StreamKind::Audio, 0, "Format_Version", VERSION_NAMES[h.version as usize]);
+    fa.set_field(StreamKind::Audio, 0, "Format_Profile", LAYER_NAMES[h.layer as usize]);
     // Oracle suppresses Format_Settings_Mode for single-channel (mono)
     // MP3 — the redundant "Single channel" string is omitted when
     // Channels=1 already implies mono.
     if h.channel_mode != 3 {
-        fa.fill(
+        fa.set_field(
             StreamKind::Audio,
             0,
             "Format_Settings_Mode",
             CHANNEL_MODE_NAMES[h.channel_mode as usize],
-            false,
         );
     }
     if h.channel_mode == 1 {
         let ext = mode_extension_name(h.layer, h.mode_ext);
         if !ext.is_empty() {
-            fa.fill(StreamKind::Audio, 0, "Format_Settings_ModeExtension", ext, false);
+            fa.set_field(StreamKind::Audio, 0, "Format_Settings_ModeExtension", ext);
         }
     }
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", if is_vbr { "VBR" } else { "CBR" }, false);
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", if is_vbr { "VBR" } else { "CBR" });
     // BitRate selection:
     //   CBR: use the (constant) frame bitrate.
     //   VBR: prefer the Xing/LAME nominal-bitrate byte (matches oracle
@@ -690,16 +689,15 @@ fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
     } else {
         (h.bitrate_kbps as u32) * 1000
     };
-    fa.fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
-    fa.fill(
+    fa.set_field(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string());
+    fa.set_field(
         StreamKind::Audio,
         0,
         "Channels",
         channel_mode_to_count(h.channel_mode).to_string(),
-        false,
     );
-    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", h.samples_per_frame.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", h.sample_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "SamplesPerFrame", h.samples_per_frame.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", h.sample_rate.to_string());
 
     // VBR (Xing/VBRI): info frame is a TOC carrier with no audio samples,
     // so it doesn't count toward SamplingCount/FrameCount.
@@ -709,40 +707,40 @@ fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
     let total_frame_count = audio_frame_count + info_frame_addend;
     let sampling_count = (total_frame_count as u64) * (h.samples_per_frame as u64);
     if sampling_count > 0 {
-        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string());
     }
 
     // FrameRate = sample_rate / samples_per_frame, 3 decimal places.
     if h.samples_per_frame > 0 {
         let frame_rate = (h.sample_rate as f64) / (h.samples_per_frame as f64);
-        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+        fa.set_field(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate));
     }
-    fa.fill(StreamKind::Audio, 0, "FrameCount", total_frame_count.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", audio_bytes_consumed.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "FrameCount", total_frame_count.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", audio_bytes_consumed.to_string());
 
     // Audio Duration: frames-based.
     if h.sample_rate > 0 && sampling_count > 0 {
         let duration_ms = (sampling_count * 1000) / (h.sample_rate as u64);
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
     }
 
     // General-stream fields that aren't file-level but need the parser's
     // knowledge of ID3v2/audio_bytes vs the harness's FileSize-Audio.StreamSize
     // fallback. Use replace=true so the harness can't overwrite.
-    fa.fill(StreamKind::General, 0, "StreamSize", id3v2_size.to_string(), true);
+    fa.force_field(StreamKind::General, 0, "StreamSize", id3v2_size.to_string());
     if bitrate_bps > 0 {
         // General Duration = Audio.StreamSize * 8000 / BitRate_bps — gives a
         // round duration like 1.536s for a 24576-byte/128kbps stream, which
         // is what the oracle reports.
         let general_duration_ms = (audio_bytes_consumed * 8 * 1000) / (bitrate_bps as u64);
-        fa.fill(StreamKind::General, 0, "Duration", general_duration_ms.to_string(), true);
+        fa.force_field(StreamKind::General, 0, "Duration", general_duration_ms.to_string());
         // OverallBitRate for CBR MPEG Audio is the audio bitrate itself —
         // the C++ side bypasses the FileSize/Duration computation in this
         // case. replace=true to override the harness fallback.
-        fa.fill(StreamKind::General, 0, "OverallBitRate", bitrate_bps.to_string(), true);
+        fa.force_field(StreamKind::General, 0, "OverallBitRate", bitrate_bps.to_string());
     }
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 }
 
 #[cfg(test)]

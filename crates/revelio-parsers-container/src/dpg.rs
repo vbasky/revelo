@@ -20,89 +20,74 @@
 //!   0x1C  L4  Video_Offset
 //!   0x20  L4  Video_Size
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const DPG_HEADER_SIZE: usize = 36;
 
 pub fn parse_dpg(fa: &mut FileAnalyze) -> bool {
-    let header = match fa.peek_raw(DPG_HEADER_SIZE) {
-        Some(b) => b,
-        None => return false,
-    };
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    let header = r.peek_raw(DPG_HEADER_SIZE)?;
 
     // Magic = "DPG" + ASCII digit.
     if &header[0..3] != b"DPG" || !header[3].is_ascii_digit() {
-        return false;
+        return None;
     }
     // The reference C++ enforces that bytes 0x10..0x14 are exactly zero;
     // matching that gate keeps us from misidentifying buffers that just
     // happen to start with "DPG<digit>".
-    if Int32u::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]) != 0 {
-        return false;
+    if u32::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]) != 0 {
+        return None;
     }
 
     let version_digit = header[3] - b'0';
 
-    fa.element_begin("DPG");
-    let mut _signature: Int32u = 0;
-    fa.get_c4(&mut _signature, "Signature");
-    let mut frame_count: Int32u = 0;
-    fa.get_l4(&mut frame_count, "Frame count");
-    let mut frame_rate_fp: Int32u = 0;
-    fa.get_l4(&mut frame_rate_fp, "Frame rate");
-    let mut sampling_rate: Int32u = 0;
-    fa.get_l4(&mut sampling_rate, "Sampling rate");
-    let mut _zero: Int32u = 0;
-    fa.get_l4(&mut _zero, "0x00000000");
-    let mut audio_offset: Int32u = 0;
-    fa.get_l4(&mut audio_offset, "Audio Offset");
-    let mut audio_size: Int32u = 0;
-    fa.get_l4(&mut audio_size, "Audio Size");
-    let mut video_offset: Int32u = 0;
-    fa.get_l4(&mut video_offset, "Video Offset");
-    let mut video_size: Int32u = 0;
-    fa.get_l4(&mut video_size, "Video Size");
-    fa.element_end();
+    r.element_begin("DPG");
+    r.fourcc("Signature")?;
+    let frame_count = r.le_u32("Frame count")?;
+    let frame_rate_fp = r.le_u32("Frame rate")?;
+    let sampling_rate = r.le_u32("Sampling rate")?;
+    r.le_u32("0x00000000")?;
+    r.le_u32("Audio Offset")?;
+    let audio_size = r.le_u32("Audio Size")?;
+    r.le_u32("Video Offset")?;
+    let video_size = r.le_u32("Video Size")?;
+    r.element_end();
 
-    let _ = (audio_offset, video_offset);
-
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DPG", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version_digit.to_string(), false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "DPG");
+    r.set_field(StreamKind::General, 0, "Format_Version", version_digit.to_string());
 
     // Video stream — mirrors the C++ `Stream_Prepare(Stream_Video)` block.
-    fa.stream_prepare(StreamKind::Video);
+    r.stream_prepare(StreamKind::Video);
     // FrameRate is stored as a 16.8 fixed-point value: integer fps in the
     // high 24 bits and a /256 fractional part in the low 8.
     let frame_rate = (frame_rate_fp as f64) / 256.0;
     if frame_rate > 0.0 {
         // Three decimal places match the C++ `Fill(..., FrameRate, ..., 3)`.
-        fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+        r.set_field(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate));
     }
     if frame_count > 0 {
-        fa.fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
+        r.set_field(StreamKind::Video, 0, "FrameCount", frame_count.to_string());
     }
     if video_size > 0 {
-        fa.fill(StreamKind::Video, 0, "StreamSize", video_size.to_string(), false);
+        r.set_field(StreamKind::Video, 0, "StreamSize", video_size.to_string());
     }
-    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
+    r.set_field(StreamKind::General, 0, "VideoCount", "1");
 
     // Audio stream — DPG always carries one MPEG audio track.
-    fa.stream_prepare(StreamKind::Audio);
+    r.stream_prepare(StreamKind::Audio);
     if sampling_rate > 0 {
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_rate.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "SamplingRate", sampling_rate.to_string());
     }
     if audio_size > 0 {
-        fa.fill(StreamKind::Audio, 0, "StreamSize", audio_size.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "StreamSize", audio_size.to_string());
     }
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
-
-    // Reference the Int8u import explicitly so a future header byte read
-    // (e.g. inspecting the DPG4 GOP table) keeps the use statement honest.
-    let _: Int8u = 0;
-
-    true
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
+    Some(())
 }
 
 #[cfg(test)]

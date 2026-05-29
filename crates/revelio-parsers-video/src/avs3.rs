@@ -18,8 +18,8 @@ pub fn parse_avs3(fa: &mut FileAnalyze) -> bool {
             && buf[4] == 0xB0)
     {
         let pos = fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, pos, "Format", "AVS3", false);
-        fa.fill(StreamKind::Video, pos, "Format_Info", "Chinese AVS3 standard", false);
+        fa.set_field(StreamKind::Video, pos, "Format", "AVS3");
+        fa.set_field(StreamKind::Video, pos, "Format_Info", "Chinese AVS3 standard");
         return true;
     }
     false

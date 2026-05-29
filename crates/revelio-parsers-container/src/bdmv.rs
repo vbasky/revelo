@@ -68,9 +68,9 @@ pub fn parse_bdmv(fa: &mut FileAnalyze) -> bool {
     );
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "BDMV", false);
-    fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version, false);
+    fa.set_field(StreamKind::General, 0, "Format", "BDMV");
+    fa.set_field(StreamKind::General, 0, "Format_Profile", profile);
+    fa.set_field(StreamKind::General, 0, "Format_Version", version);
     true
 }
 

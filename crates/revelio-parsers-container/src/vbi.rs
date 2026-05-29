@@ -23,7 +23,7 @@ pub fn parse_vbi(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "VBI", true);
+    fa.force_field(StreamKind::General, 0, "Format", "VBI");
     true
 }
 
@@ -56,8 +56,8 @@ mod tests {
         let data = [0xAAu8; 8];
         let mut fa = FileAnalyze::new(&data);
         assert!(parse_vbi(&mut fa));
-        assert_eq!(fa.count_get(StreamKind::General), 1);
-        assert_eq!(fa.count_get(StreamKind::Video), 0);
-        assert_eq!(fa.count_get(StreamKind::Audio), 0);
+        assert_eq!(fa.stream_count(StreamKind::General), 1);
+        assert_eq!(fa.stream_count(StreamKind::Video), 0);
+        assert_eq!(fa.stream_count(StreamKind::Audio), 0);
     }
 }

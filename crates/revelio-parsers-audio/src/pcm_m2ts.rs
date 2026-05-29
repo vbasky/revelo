@@ -9,9 +9,9 @@ pub fn parse_pcm_m2ts(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "PCM", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "Blu-ray LPCM", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Big", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "PCM");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "Blu-ray LPCM");
+    fa.set_field(StreamKind::Audio, pos, "Format_Settings_Endianness", "Big");
     true
 }
 #[cfg(test)]

@@ -7,7 +7,7 @@
 //!   bsid<5 bits>  | bsmod<3 bits>         (1 byte)
 //!   acmod<3 bits> | ... (rest of bit-packed flags)
 
-use revelio_core::{FileAnalyze, StreamKind};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const AC3_SYNC: [u8; 2] = [0x0B, 0x77];
 
@@ -68,34 +68,27 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
     }
 
     // Bit-level read for the BSI fields after frmsizecod.
-    fa.skip_hexa(5, "sync_crc_fscod_frmsize");
-    fa.bs_begin();
-    let mut bsid: zenlib::Int8u = 0;
-    fa.get_s1(5, &mut bsid, "bsid");
-    let mut bsmod: zenlib::Int8u = 0;
-    fa.get_s1(3, &mut bsmod, "bsmod");
-    let mut acmod: zenlib::Int8u = 0;
-    fa.get_s1(3, &mut acmod, "acmod");
-    // Conditional cmixlev (when center channel present).
-    if (acmod & 0x01) != 0 && acmod != 0x01 {
-        let mut _cmixlev: zenlib::Int8u = 0;
-        fa.get_s1(2, &mut _cmixlev, "");
-    }
-    // Conditional surmixlev (when surround channel present).
-    if (acmod & 0x04) != 0 {
-        let mut _surmixlev: zenlib::Int8u = 0;
-        fa.get_s1(2, &mut _surmixlev, "");
-    }
-    let mut dsurmod: zenlib::Int8u = 0;
-    if acmod == 0x02 {
-        fa.get_s1(2, &mut dsurmod, "dsurmod");
-    }
-    let mut lfeon: zenlib::Int8u = 0;
-    fa.get_s1(1, &mut lfeon, "lfeon");
-    let mut dialnorm: zenlib::Int8u = 0;
-    fa.get_s1(5, &mut dialnorm, "dialnorm");
-    fa.bs_end();
-    let _ = bsmod;
+    let r = &mut Reader::wrap(fa);
+    r.skip(5); // sync_crc_fscod_frmsize
+    let Some((bsid, acmod, dsurmod, lfeon, dialnorm)) = r.bits(|b| {
+        let bsid = b.read::<u8>(5, "bsid")?;
+        b.read::<u8>(3, "bsmod")?;
+        let acmod = b.read::<u8>(3, "acmod")?;
+        // Conditional cmixlev (when center channel present).
+        if (acmod & 0x01) != 0 && acmod != 0x01 {
+            b.read::<u8>(2, "")?;
+        }
+        // Conditional surmixlev (when surround channel present).
+        if (acmod & 0x04) != 0 {
+            b.read::<u8>(2, "")?;
+        }
+        let dsurmod = if acmod == 0x02 { b.read::<u8>(2, "dsurmod")? } else { 0 };
+        let lfeon = b.read::<u8>(1, "lfeon")?;
+        let dialnorm = b.read::<u8>(5, "dialnorm")?;
+        Some((bsid, acmod, dsurmod, lfeon, dialnorm))
+    }) else {
+        return false;
+    };
 
     let sample_rate = FSCOD_TO_SAMPLE_RATE[fscod as usize];
     let bitrate_kbps = BITRATE_KBPS[(frmsizecod >> 1) as usize];
@@ -127,9 +120,17 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
 /// Layout after the 0x0B77 sync: strmtyp(2) substreamid(3) frmsiz(11)
 /// fscod(2) {fscod2(2) | numblkscod(2)} acmod(3) lfeon(1) bsid(5)
 /// dialnorm(5) …
+///
+/// Atmos detection: strmtyp==1 indicates a dependent substream carrying
+/// Atmos/JOC data. When paired with an independent substream (strmtyp==0),
+/// the combination is Dolby Atmos.
 fn parse_eac3(fa: &mut FileAnalyze, file_size: usize, fb: &[u8; 8]) -> bool {
     let frmsiz = get_bits(fb, 21, 11);
     let fscod = get_bits(fb, 32, 2) as usize;
+
+    // Extract strmtyp for Atmos detection (bits 16-17 of bitstream,
+    // = byte 2 bits 7-6 in the first 8-byte buffer)
+    let strmtyp = get_bits(fb, 16, 2) as u8;
 
     let (sample_rate, numblks) = if fscod == 3 {
         // Reduced sample rates; numblkscod implied to 3 (6 blocks).
@@ -148,6 +149,10 @@ fn parse_eac3(fa: &mut FileAnalyze, file_size: usize, fb: &[u8; 8]) -> bool {
     let bsid = get_bits(fb, 40, 5) as u8;
     let dialnorm = get_bits(fb, 45, 5) as u8;
 
+    // Atmos detection: dependent substream (strmtyp==1) carries
+    // Atmos/JOC. Also check spkid==0x0F in addbsi extension.
+    let has_atmos = strmtyp == 1;
+
     let samples_per_frame = 256 * numblks;
     // CBR bitrate from the per-frame word count: (frmsiz+1) 16-bit words.
     let bytes_per_frame = ((frmsiz + 1) * 2) as u64;
@@ -156,10 +161,13 @@ fn parse_eac3(fa: &mut FileAnalyze, file_size: usize, fb: &[u8; 8]) -> bool {
     let channels = channel_count(acmod, lfeon);
     let channel_layout = channel_layout(acmod);
 
+    let commercial_name =
+        if has_atmos { "Dolby Digital Plus with Atmos" } else { "Dolby Digital Plus" };
+
     fill_streams(
         fa,
         "E-AC-3",
-        "Dolby Digital Plus",
+        commercial_name,
         file_size,
         sample_rate,
         bitrate_bps,
@@ -172,7 +180,16 @@ fn parse_eac3(fa: &mut FileAnalyze, file_size: usize, fb: &[u8; 8]) -> bool {
         lfeon,
         dialnorm,
     );
+    if has_atmos {
+        fill_atmos_fields(fa);
+    }
     true
+}
+
+/// Fill Atmos-specific fields on the parsed audio stream.
+fn fill_atmos_fields(fa: &mut FileAnalyze) {
+    fa.set_field(StreamKind::Audio, 0, "Format_AdditionalFeatures", "Atmos");
+    fa.set_field(StreamKind::Audio, 0, "HDR_Format", "Dolby Atmos");
 }
 
 /// Read `n` bits big-endian from `data` starting at absolute bit `off`.
@@ -227,23 +244,23 @@ fn fill_streams(
     dialnorm: u8,
 ) {
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", format, false);
-    fa.fill(StreamKind::General, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", format);
+    fa.set_field(StreamKind::General, 0, "Format_Commercial_IfAny", commercial);
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", format, false);
-    fa.fill(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial, false);
-    fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Format", format);
+    fa.set_field(StreamKind::Audio, 0, "Format_Commercial_IfAny", commercial);
+    fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
+    fa.set_field(StreamKind::Audio, 0, "BitRate", bitrate_bps.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
     if let Some((p, l)) = channel_layout {
-        fa.fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
-        fa.fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
+        fa.set_field(StreamKind::Audio, 0, "ChannelPositions", p);
+        fa.set_field(StreamKind::Audio, 0, "ChannelLayout", l);
     }
-    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
 
     // MediaInfo derives the time/size fields in a chain rooted at a
     // millisecond Duration: Duration_ms = round(file_size·8000 / BitRate),
@@ -258,55 +275,54 @@ fn fill_streams(
             (bitrate_bps as u64) * samples_per_frame as u64 / (8 * sample_rate as u64);
         if frame_bytes > 0 {
             let frame_count = (file_size as u64) / frame_bytes;
-            fa.fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
+            fa.set_field(StreamKind::Audio, 0, "FrameCount", frame_count.to_string());
         }
         let duration_ms = ((file_size as f64) * 8000.0 / (bitrate_bps as f64)).round() as u64;
         let sampling_count = duration_ms * sample_rate as u64 / 1000;
         let stream_size = ((duration_ms as f64) * (bitrate_bps as f64) / 8000.0).round() as u64;
-        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string());
         let frame_rate = (sample_rate as f64) / (samples_per_frame as f64);
-        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-        fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate));
+        fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+        fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+        fa.set_field(StreamKind::Audio, 0, "StreamSize", stream_size.to_string());
         // General StreamSize = container overhead = file_size − elementary.
         // Only emitted when non-negative (the oracle omits it when the
         // derived StreamSize already exceeds the file, as for E-AC-3).
         if stream_size <= file_size as u64 {
-            fa.fill(
+            fa.set_field(
                 StreamKind::General,
                 0,
                 "StreamSize",
                 (file_size as u64 - stream_size).to_string(),
-                true,
             );
         }
         return fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
     }
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", file_size.to_string());
     fill_extra(fa, bsid, acmod, dsurmod, lfeon, dialnorm);
 }
 
 fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8, dialnorm: u8) {
     // ServiceKind defaults to "CM" (Complete Main) for typical AC-3 —
     // bsmod=0 means main service, complete description.
-    fa.fill(StreamKind::Audio, 0, "ServiceKind", "CM", false);
+    fa.set_field(StreamKind::Audio, 0, "ServiceKind", "CM");
     // <extra> section: BSI fields straight from the frame header.
     // dialnorm stored as the encoded 5-bit value, displayed as a
     // negative dBFS level.
-    fa.fill(StreamKind::Audio, 0, "bsid", bsid.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "bsid", bsid.to_string());
     let dialnorm_display = if dialnorm == 0 { -31i32 } else { -(dialnorm as i32) };
-    fa.fill(StreamKind::Audio, 0, "dialnorm", dialnorm_display.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "dialnorm", dialnorm_display.to_string());
     // dsurmod (Dolby Surround mode) is only present in the bitstream for
     // 2/0 stereo (acmod==2); the oracle omits it otherwise.
     if acmod == 0x02 {
-        fa.fill(StreamKind::Audio, 0, "dsurmod", dsurmod.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "dsurmod", dsurmod.to_string());
     }
-    fa.fill(StreamKind::Audio, 0, "acmod", acmod.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "lfeon", lfeon.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "dialnorm_Average", dialnorm_display.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "dialnorm_Minimum", dialnorm_display.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "acmod", acmod.to_string());
+    fa.set_field(StreamKind::Audio, 0, "lfeon", lfeon.to_string());
+    fa.set_field(StreamKind::Audio, 0, "dialnorm_Average", dialnorm_display.to_string());
+    fa.set_field(StreamKind::Audio, 0, "dialnorm_Minimum", dialnorm_display.to_string());
 }
 
 #[cfg(test)]

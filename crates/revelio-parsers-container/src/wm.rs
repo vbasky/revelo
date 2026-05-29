@@ -31,7 +31,7 @@ pub fn parse_wm(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Windows Media", true);
+    fa.force_field(StreamKind::General, 0, "Format", "Windows Media");
 
     true
 }

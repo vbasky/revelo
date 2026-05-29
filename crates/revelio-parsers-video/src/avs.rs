@@ -13,8 +13,8 @@ pub fn parse_avs(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "AVS", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "Chinese AVS standard", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "AVS");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "Chinese AVS standard");
     true
 }
 #[cfg(test)]

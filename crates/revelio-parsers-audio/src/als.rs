@@ -43,19 +43,19 @@ pub fn parse_als(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "ALS", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "ALS");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "ALS", false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "ALS", false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "ALS");
+    fa.set_field(StreamKind::Audio, 0, "Codec", "ALS");
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingCount", samples.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
 
     true
 }

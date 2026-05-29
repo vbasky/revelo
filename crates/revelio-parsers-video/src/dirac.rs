@@ -13,8 +13,8 @@ pub fn parse_dirac(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "Dirac", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "BBC Dirac wavelet", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "Dirac");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "BBC Dirac wavelet");
     true
 }
 #[cfg(test)]

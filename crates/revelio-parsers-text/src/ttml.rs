@@ -61,9 +61,9 @@ pub fn parse_ttml(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "TTML", true);
+    fa.force_field(StreamKind::General, 0, "Format", "TTML");
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "TTML", true);
+    fa.force_field(StreamKind::Text, 0, "Format", "TTML");
     true
 }
 

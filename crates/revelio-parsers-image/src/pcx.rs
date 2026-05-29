@@ -48,21 +48,21 @@ pub fn parse_pcx(fa: &mut FileAnalyze) -> bool {
     let height = (y_max - y_min) as u32;
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "PCX", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "PCX");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "PCX", false);
+    fa.set_field(StreamKind::Image, 0, "Format", "PCX");
     let v = pcx_version_info(version);
     if !v.is_empty() {
-        fa.fill(StreamKind::Image, 0, "Format_Version", v, false);
+        fa.set_field(StreamKind::Image, 0, "Format_Version", v);
     }
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "BitDepth", bits_per_pixel.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Image, 0, "BitDepth", bits_per_pixel.to_string());
     // PCX uses RLE (encoding byte = 1) — always lossless.
-    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Image, 0, "DPI", format!("{} x {}", vert_dpi, hor_dpi), false);
+    fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossless");
+    fa.set_field(StreamKind::Image, 0, "DPI", format!("{} x {}", vert_dpi, hor_dpi));
     true
 }
 

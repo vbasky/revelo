@@ -84,27 +84,21 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
                     && x > 0.0
                     && y > 0.0
                 {
-                    fa.fill(
-                        StreamKind::Video,
-                        0,
-                        "PixelAspectRatio",
-                        format!("{:.3}", x / y),
-                        false,
-                    );
+                    fa.set_field(StreamKind::Video, 0, "PixelAspectRatio", format!("{:.3}", x / y));
                 }
             }
             b'C' => {
                 // Color space — the token is e.g. "C420" or "C420jpeg".
                 // Compare the full token (param) rather than stripping 'C'.
                 if param == "C420jpeg" || param == "C420paldv" || param == "C420" {
-                    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:0", false);
+                    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:2:0");
                     multiplier = 3;
                     divisor = 2;
                 } else if param == "C422" {
-                    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:2:2", false);
+                    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:2:2");
                     multiplier = 2;
                 } else if param == "C444" {
-                    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", "4:4:4", false);
+                    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:4:4");
                     multiplier = 3;
                 }
             }
@@ -117,32 +111,32 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
                     && d > 0.0
                 {
                     frame_rate = n / d;
-                    fa.fill(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+                    fa.set_field(StreamKind::Video, 0, "FrameRate", format!("{:.3}", frame_rate));
                 }
             }
             b'H' => {
                 if let Ok(h) = param[1..].parse::<u64>() {
                     height = h;
-                    fa.fill(StreamKind::Video, 0, "Height", h.to_string(), false);
+                    fa.set_field(StreamKind::Video, 0, "Height", h.to_string());
                 }
             }
             b'I' if param.len() == 2 => match bytes[1] {
-                b'p' => fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false),
+                b'p' => fa.set_field(StreamKind::Video, 0, "ScanType", "Progressive"),
                 b't' => {
-                    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
-                    fa.fill(StreamKind::Video, 0, "ScanOrder", "TFF", false);
+                    fa.set_field(StreamKind::Video, 0, "ScanType", "Progressive");
+                    fa.set_field(StreamKind::Video, 0, "ScanOrder", "TFF");
                 }
                 b'b' => {
-                    fa.fill(StreamKind::Video, 0, "ScanType", "Progressive", false);
-                    fa.fill(StreamKind::Video, 0, "ScanOrder", "BFF", false);
+                    fa.set_field(StreamKind::Video, 0, "ScanType", "Progressive");
+                    fa.set_field(StreamKind::Video, 0, "ScanOrder", "BFF");
                 }
-                b'm' => fa.fill(StreamKind::Video, 0, "ScanType", "Mixed", false),
+                b'm' => fa.set_field(StreamKind::Video, 0, "ScanType", "Mixed"),
                 _ => {}
             },
             b'W' => {
                 if let Ok(w) = param[1..].parse::<u64>() {
                     width = w;
-                    fa.fill(StreamKind::Video, 0, "Width", w.to_string(), false);
+                    fa.set_field(StreamKind::Video, 0, "Width", w.to_string());
                 }
             }
             _ => {}
@@ -157,19 +151,19 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
         let file_size = fa.element_size() as u64;
         if frame_byte_size > 0 {
             let frame_count = file_size / frame_byte_size;
-            fa.fill(StreamKind::Video, 0, "FrameCount", frame_count.to_string(), false);
+            fa.set_field(StreamKind::Video, 0, "FrameCount", frame_count.to_string());
             if frame_rate > 0.0 {
                 let bitrate = (width * height * multiplier / divisor) as f64 * 8.0 * frame_rate;
-                fa.fill(StreamKind::Video, 0, "BitRate", format!("{:.0}", bitrate), false);
+                fa.set_field(StreamKind::Video, 0, "BitRate", format!("{:.0}", bitrate));
             }
         }
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "YUV4MPEG2", false);
+    fa.set_field(StreamKind::General, 0, "Format", "YUV4MPEG2");
     fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "YUV", false);
-    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.set_field(StreamKind::Video, 0, "Format", "YUV");
+    fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
 
     true
 }

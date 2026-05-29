@@ -14,8 +14,7 @@
 //!    10 bits  Frame size (in 8-byte blocks)
 //!   ... padding to `Size`
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_EA3: [u8; 3] = *b"EA3";
 
@@ -79,89 +78,89 @@ fn channel_layout(code: u8) -> &'static str {
 }
 
 pub fn parse_open_mg(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < 3 {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < 3 {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(3)) {
-        Some(h) if h.len() == 3 => h,
-        _ => return false,
-    };
+    let head = r.peek_raw(3)?;
     // Accept both "EA3" and lowercase "ea3" — the task spec mentions both, even
     // though the C++ only checks the uppercase form.
     if head != MAGIC_EA3 && head != *b"ea3" {
-        return false;
+        return None;
     }
     // Minimum header is 3 + 1 + 2 + 26 + 1 = 33 bytes before the optional
     // ATRAC3 sub-header.
-    if fa.remain() < 33 {
-        return false;
+    if r.remain() < 33 {
+        return None;
     }
 
-    let file_size = fa.remain() as u64;
+    let file_size = r.remain() as u64;
 
-    fa.element_begin("OpenMG");
-    fa.skip_hexa(3, "Code");
-    fa.skip_b1("Flags");
-    let mut size: Int16u = 0;
-    fa.get_b2(&mut size, "Size");
-    fa.skip_hexa(26, "Unknown");
-    let mut codec_id: Int8u = 0;
-    fa.get_b1(&mut codec_id, "CodecID");
+    r.element_begin("OpenMG");
+    r.skip(3)?; // "EA3" Code
+    r.be_u8("Flags")?;
+    let size = r.be_u16("Size")?;
+    r.skip(26)?; // Unknown
+    let codec_id = r.be_u8("CodecID")?;
 
-    let mut joint_stereo: u8 = 0;
-    let mut sr_code: u8 = 0;
-    let mut ch_code: u8 = 0;
-    let mut frame_size_raw: Int16u = 0;
-    if codec_id <= 1 {
-        fa.bs_begin();
-        fa.skip_s1(7, "Unknown");
-        fa.get_s1(1, &mut joint_stereo, "Joint Stereo");
-        fa.get_s1(3, &mut sr_code, "Sampling Rate");
-        fa.get_s1(3, &mut ch_code, "Channels");
-        fa.get_s2(10, &mut frame_size_raw, "Frame size");
-        fa.bs_end();
-    }
-    let consumed = fa.element_offset();
+    let (joint_stereo, sr_code, ch_code, frame_size_raw) = if codec_id <= 1 {
+        r.bits(|b| {
+            b.skip(7); // Unknown
+            let joint_stereo = b.read::<u8>(1, "Joint Stereo")?;
+            let sr_code = b.read::<u8>(3, "Sampling Rate")?;
+            let ch_code = b.read::<u8>(3, "Channels")?;
+            let frame_size_raw = b.read::<u16>(10, "Frame size")?;
+            Some((joint_stereo, sr_code, ch_code, frame_size_raw))
+        })?
+    } else {
+        (0, 0, 0, 0)
+    };
+
+    let consumed = r.element_offset();
     let header_size = size as usize;
-    if header_size > consumed && fa.remain() >= header_size - consumed {
-        fa.skip_hexa(header_size - consumed, "Unknown");
+    if header_size > consumed && r.remain() >= header_size - consumed {
+        r.skip(header_size - consumed)?; // Unknown padding
     }
-    fa.element_end();
+    r.element_end();
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "OpenMG", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "OpenMG");
 
-    fa.stream_prepare(StreamKind::Audio);
+    r.stream_prepare(StreamKind::Audio);
     let fmt = codec_format(codec_id);
     if !fmt.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Format", fmt, false);
+        r.set_field(StreamKind::Audio, 0, "Format", fmt);
     }
     let enc = codec_encryption(codec_id);
     if !enc.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Encryption", enc, false);
+        r.set_field(StreamKind::Audio, 0, "Encryption", enc);
     }
 
     let header_consumed = (size as u64).max(consumed as u64);
     let stream_size = file_size.saturating_sub(header_consumed);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+    r.set_field(StreamKind::Audio, 0, "StreamSize", stream_size.to_string());
 
     if codec_id <= 1 {
         let ch = channels(ch_code);
-        fa.fill(StreamKind::Audio, 0, "Channels", ch.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "Channels", ch.to_string());
         let positions = channel_positions(ch_code);
         if !positions.is_empty() {
-            fa.fill(StreamKind::Audio, 0, "ChannelPositions", positions, false);
+            r.set_field(StreamKind::Audio, 0, "ChannelPositions", positions);
         }
         let layout = channel_layout(ch_code);
         if !layout.is_empty() {
-            fa.fill(StreamKind::Audio, 0, "ChannelLayout", layout, false);
+            r.set_field(StreamKind::Audio, 0, "ChannelLayout", layout);
         }
         if ch_code == 1 && joint_stereo != 0 {
-            fa.fill(StreamKind::Audio, 0, "Format_Settings_Mode", "Joint Stereo", false);
+            r.set_field(StreamKind::Audio, 0, "Format_Settings_Mode", "Joint Stereo");
         }
         let sr = sampling_rate(sr_code);
         if sr != 0 {
-            fa.fill(StreamKind::Audio, 0, "SamplingRate", sr.to_string(), false);
+            r.set_field(StreamKind::Audio, 0, "SamplingRate", sr.to_string());
         }
         // C++: codec_id==1 (SDMI) adds 1 to FrameSize before the <<3.
         let mut fs = frame_size_raw as u32;
@@ -171,15 +170,14 @@ pub fn parse_open_mg(fa: &mut FileAnalyze) -> bool {
         let frame_size_bytes = fs << 3;
         if sr != 0 && frame_size_bytes != 0 {
             let bitrate = (sr as u64) * (frame_size_bytes as u64) / 256;
-            fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+            r.set_field(StreamKind::Audio, 0, "BitRate", bitrate.to_string());
             if bitrate != 0 {
                 let duration_ms = stream_size * 8 * 1000 / bitrate;
-                fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+                r.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
             }
         }
     }
-
-    true
+    Some(())
 }
 
 #[cfg(test)]

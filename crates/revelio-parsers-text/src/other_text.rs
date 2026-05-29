@@ -65,14 +65,14 @@ pub fn parse_other_text(fa: &mut FileAnalyze) -> bool {
     };
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", m.format, true);
+    fa.force_field(StreamKind::General, 0, "Format", m.format);
     if let Some(info) = m.format_info {
-        fa.fill(StreamKind::General, 0, "Format_Info", info, true);
+        fa.force_field(StreamKind::General, 0, "Format_Info", info);
     }
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", m.format, true);
-    fa.fill(StreamKind::Text, 0, "Codec", m.codec, true);
+    fa.force_field(StreamKind::Text, 0, "Format", m.format);
+    fa.force_field(StreamKind::Text, 0, "Codec", m.codec);
     true
 }
 

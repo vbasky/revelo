@@ -69,7 +69,7 @@ pub fn parse_dash_mpd(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DASH MPD", true);
+    fa.force_field(StreamKind::General, 0, "Format", "DASH MPD");
     true
 }
 

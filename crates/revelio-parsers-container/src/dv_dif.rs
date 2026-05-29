@@ -45,7 +45,7 @@ pub fn parse_dv_dif(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DV", true);
+    fa.force_field(StreamKind::General, 0, "Format", "DV");
     true
 }
 

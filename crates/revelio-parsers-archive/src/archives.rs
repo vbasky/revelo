@@ -2,9 +2,9 @@ use revelio_core::{FileAnalyze, StreamKind};
 
 fn fill_archive(fa: &mut FileAnalyze, format: &str, extra: &[(&str, &str)]) {
     let pos = fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, pos, "Format", format, false);
+    fa.set_field(StreamKind::General, pos, "Format", format);
     for (k, v) in extra {
-        fa.fill(StreamKind::General, pos, k, *v, false);
+        fa.set_field(StreamKind::General, pos, k, *v);
     }
 }
 

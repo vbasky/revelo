@@ -258,10 +258,10 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
     let _ = (ga_width, ga_height);
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Amiga Icon", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Amiga Icon");
     let profile = amiga_icon_type(icon_type);
     if !profile.is_empty() {
-        fa.fill(StreamKind::General, 0, "Format_Profile", profile, false);
+        fa.set_field(StreamKind::General, 0, "Format_Profile", profile);
     }
 
     if let Some((w, h, d)) = classic
@@ -270,12 +270,12 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
         && h > 0
     {
         let pos = fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
-        fa.fill(StreamKind::Image, pos, "Format_Profile", "Classic", false);
-        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "BitDepth", d.to_string(), false);
+        fa.set_field(StreamKind::Image, pos, "Format", "Raw");
+        fa.set_field(StreamKind::Image, pos, "Format_Profile", "Classic");
+        fa.set_field(StreamKind::Image, pos, "ColorSpace", "RGB");
+        fa.set_field(StreamKind::Image, pos, "Width", w.to_string());
+        fa.set_field(StreamKind::Image, pos, "Height", h.to_string());
+        fa.set_field(StreamKind::Image, pos, "BitDepth", d.to_string());
     }
 
     if let Some((w, h)) = new_icon
@@ -283,31 +283,31 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
         && h > 0
     {
         let pos = fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
-        fa.fill(StreamKind::Image, pos, "Format_Profile", "NewIcon", false);
-        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
+        fa.set_field(StreamKind::Image, pos, "Format", "Raw");
+        fa.set_field(StreamKind::Image, pos, "Format_Profile", "NewIcon");
+        fa.set_field(StreamKind::Image, pos, "ColorSpace", "RGB");
+        fa.set_field(StreamKind::Image, pos, "Width", w.to_string());
+        fa.set_field(StreamKind::Image, pos, "Height", h.to_string());
     }
 
     if let Some((w, h, depth, fmt)) = glow {
         let pos = fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, pos, "Format", if fmt == 1 { "RLE" } else { "Raw" }, false);
-        fa.fill(StreamKind::Image, pos, "Format_Profile", "GlowIcon", false);
-        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGB", false);
-        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "BitDepth", depth.to_string(), false);
+        fa.set_field(StreamKind::Image, pos, "Format", if fmt == 1 { "RLE" } else { "Raw" });
+        fa.set_field(StreamKind::Image, pos, "Format_Profile", "GlowIcon");
+        fa.set_field(StreamKind::Image, pos, "ColorSpace", "RGB");
+        fa.set_field(StreamKind::Image, pos, "Width", w.to_string());
+        fa.set_field(StreamKind::Image, pos, "Height", h.to_string());
+        fa.set_field(StreamKind::Image, pos, "BitDepth", depth.to_string());
     }
 
     if let Some((w, h)) = argb {
         let pos = fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, pos, "Format", "Raw", false);
-        fa.fill(StreamKind::Image, pos, "Format_Profile", "ARGB", false);
-        fa.fill(StreamKind::Image, pos, "ColorSpace", "RGBA", false);
-        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "Height", h.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "BitDepth", "32", false);
+        fa.set_field(StreamKind::Image, pos, "Format", "Raw");
+        fa.set_field(StreamKind::Image, pos, "Format_Profile", "ARGB");
+        fa.set_field(StreamKind::Image, pos, "ColorSpace", "RGBA");
+        fa.set_field(StreamKind::Image, pos, "Width", w.to_string());
+        fa.set_field(StreamKind::Image, pos, "Height", h.to_string());
+        fa.set_field(StreamKind::Image, pos, "BitDepth", "32");
     }
 
     true

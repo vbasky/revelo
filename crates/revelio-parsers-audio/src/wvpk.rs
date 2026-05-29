@@ -112,25 +112,25 @@ pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
     let compression_mode = if hybrid { "Lossy" } else { "Lossless" };
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "WavPack", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "WavPack");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "WavPack", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Profile", version_profile, false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "Wavpack", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", compression_mode, false);
-    fa.fill(StreamKind::Audio, 0, "Codec_Settings", compression_mode, false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "WavPack");
+    fa.set_field(StreamKind::Audio, 0, "Format_Profile", version_profile);
+    fa.set_field(StreamKind::Audio, 0, "Codec", "Wavpack");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", compression_mode);
+    fa.set_field(StreamKind::Audio, 0, "Codec_Settings", compression_mode);
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
     // For DSD (dsf=1) the effective audio rate is 8× the index value.
     let effective_rate: u64 = if dsf { (sample_rate as u64) * 8 } else { sample_rate as u64 };
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", effective_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", effective_rate.to_string());
     if !dsf {
-        fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string());
     } else {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Mode", "DSD", false);
-        fa.fill(StreamKind::Audio, 0, "Format_Settings", "DSD", false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Mode", "DSD");
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings", "DSD");
     }
 
     // Duration from total_samples in the first block — only trustworthy if
@@ -138,7 +138,7 @@ pub fn parse_wvpk(fa: &mut FileAnalyze) -> bool {
     // C++'s `if (block_index==0)` guard.
     if _block_index == 0 && total_samples != 0 && total_samples != u32::MAX && sample_rate != 0 {
         let duration_ms = (total_samples as u64) * 1000 / (sample_rate as u64);
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
     }
 
     let _ = ck_size;

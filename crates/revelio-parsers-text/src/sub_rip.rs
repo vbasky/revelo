@@ -38,11 +38,11 @@ pub fn parse_sub_rip(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "SubRip", false);
+    fa.set_field(StreamKind::General, 0, "Format", "SubRip");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "SubRip", false);
-    fa.fill(StreamKind::Text, 0, "Codec", "SubRip", false);
+    fa.set_field(StreamKind::Text, 0, "Format", "SubRip");
+    fa.set_field(StreamKind::Text, 0, "Codec", "SubRip");
 
     true
 }

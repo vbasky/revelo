@@ -13,33 +13,32 @@
 //!       (other chunks ignored)
 
 use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u};
 
-const FOURCC_RIFF: Int32u = u32::from_be_bytes(*b"RIFF");
-const FOURCC_WAVE: Int32u = u32::from_be_bytes(*b"WAVE");
-const FOURCC_FMT: Int32u = u32::from_be_bytes(*b"fmt ");
-const FOURCC_DATA: Int32u = u32::from_be_bytes(*b"data");
-const FOURCC_BEXT: Int32u = u32::from_be_bytes(*b"bext");
-const FOURCC_IXML: Int32u = u32::from_be_bytes(*b"iXML");
-const FOURCC_AXML: Int32u = u32::from_be_bytes(*b"axml");
-const FOURCC_UMID: Int32u = u32::from_be_bytes(*b"umid");
+const FOURCC_RIFF: u32 = u32::from_be_bytes(*b"RIFF");
+const FOURCC_WAVE: u32 = u32::from_be_bytes(*b"WAVE");
+const FOURCC_FMT: u32 = u32::from_be_bytes(*b"fmt ");
+const FOURCC_DATA: u32 = u32::from_be_bytes(*b"data");
+const FOURCC_BEXT: u32 = u32::from_be_bytes(*b"bext");
+const FOURCC_IXML: u32 = u32::from_be_bytes(*b"iXML");
+const FOURCC_AXML: u32 = u32::from_be_bytes(*b"axml");
+const FOURCC_UMID: u32 = u32::from_be_bytes(*b"umid");
 
 // Common WAVEFORMATEX format codes — only the ones we handle by name.
-const WAVE_FORMAT_PCM: Int16u = 0x0001;
-const WAVE_FORMAT_IEEE_FLOAT: Int16u = 0x0003;
-const WAVE_FORMAT_ALAW: Int16u = 0x0006;
-const WAVE_FORMAT_MULAW: Int16u = 0x0007;
-const WAVE_FORMAT_EXTENSIBLE: Int16u = 0xFFFE;
+const WAVE_FORMAT_PCM: u16 = 0x0001;
+const WAVE_FORMAT_IEEE_FLOAT: u16 = 0x0003;
+const WAVE_FORMAT_ALAW: u16 = 0x0006;
+const WAVE_FORMAT_MULAW: u16 = 0x0007;
+const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 
 #[derive(Debug, Default)]
 struct FmtChunk {
-    audio_format: Int16u,
-    num_channels: Int16u,
-    sample_rate: Int32u,
+    audio_format: u16,
+    num_channels: u16,
+    sample_rate: u32,
     #[allow(dead_code)]
-    byte_rate: Int32u,
-    block_align: Int16u,
-    bits_per_sample: Int16u,
+    byte_rate: u32,
+    block_align: u16,
+    bits_per_sample: u16,
 }
 
 #[derive(Debug, Default)]
@@ -137,19 +136,19 @@ fn parse_bext_chunk(fa: &mut FileAnalyze, chunk_size: usize) -> BwfInfo {
 /// provided FileAnalyze. Returns `true` if a valid RIFF/WAVE container
 /// was recognized.
 pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
-    let mut magic: Int32u = 0;
-    fa.peek_b4(&mut magic);
+    let mut magic: u32 = 0;
+    magic = fa.peek_b4();
     if magic != FOURCC_RIFF {
         return false;
     }
 
     fa.element_begin("RIFF");
-    let mut riff_id: Int32u = 0;
-    fa.get_c4(&mut riff_id, "ID");
-    let mut riff_size: Int32u = 0;
-    fa.get_l4(&mut riff_size, "Size");
-    let mut form_type: Int32u = 0;
-    fa.get_c4(&mut form_type, "Type");
+    let mut riff_id: u32 = 0;
+    riff_id = fa.get_c4("ID");
+    let mut riff_size: u32 = 0;
+    riff_size = fa.get_l4("Size");
+    let mut form_type: u32 = 0;
+    form_type = fa.get_c4("Type");
 
     if form_type != FOURCC_WAVE {
         fa.element_end();
@@ -161,10 +160,10 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     let mut bwf: Option<BwfInfo> = None;
 
     while fa.remain() >= 8 {
-        let mut chunk_id: Int32u = 0;
-        fa.get_c4(&mut chunk_id, "ChunkID");
-        let mut chunk_size: Int32u = 0;
-        fa.get_l4(&mut chunk_size, "ChunkSize");
+        let mut chunk_id: u32 = 0;
+        chunk_id = fa.get_c4("ChunkID");
+        let mut chunk_size: u32 = 0;
+        chunk_size = fa.get_l4("ChunkSize");
 
         let chunk_size_usize = chunk_size as usize;
         if fa.remain() < chunk_size_usize {
@@ -174,18 +173,18 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
         match chunk_id {
             FOURCC_FMT => {
                 fa.element_begin("fmt");
-                let mut audio_format: Int16u = 0;
-                fa.get_l2(&mut audio_format, "AudioFormat");
-                let mut num_channels: Int16u = 0;
-                fa.get_l2(&mut num_channels, "NumChannels");
-                let mut sample_rate: Int32u = 0;
-                fa.get_l4(&mut sample_rate, "SampleRate");
-                let mut byte_rate: Int32u = 0;
-                fa.get_l4(&mut byte_rate, "ByteRate");
-                let mut block_align: Int16u = 0;
-                fa.get_l2(&mut block_align, "BlockAlign");
-                let mut bits_per_sample: Int16u = 0;
-                fa.get_l2(&mut bits_per_sample, "BitsPerSample");
+                let mut audio_format: u16 = 0;
+                audio_format = fa.get_l2("AudioFormat");
+                let mut num_channels: u16 = 0;
+                num_channels = fa.get_l2("NumChannels");
+                let mut sample_rate: u32 = 0;
+                sample_rate = fa.get_l4("SampleRate");
+                let mut byte_rate: u32 = 0;
+                byte_rate = fa.get_l4("ByteRate");
+                let mut block_align: u16 = 0;
+                block_align = fa.get_l2("BlockAlign");
+                let mut bits_per_sample: u16 = 0;
+                bits_per_sample = fa.get_l2("BitsPerSample");
 
                 // Consume any trailing extension bytes within this chunk.
                 let consumed_in_fmt: usize = 16;
@@ -193,8 +192,8 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                     fa.skip_hexa(chunk_size_usize - consumed_in_fmt, "Extension");
                 }
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: Int8u = 0;
-                    fa.get_b1(&mut _pad, "Padding");
+                    let mut _pad: u8 = 0;
+                    _pad = fa.get_b1("Padding");
                 }
 
                 fa.element_end();
@@ -212,8 +211,8 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 data_size = chunk_size;
                 fa.skip_hexa(chunk_size_usize, "Samples");
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: Int8u = 0;
-                    fa.get_b1(&mut _pad, "Padding");
+                    let mut _pad: u8 = 0;
+                    _pad = fa.get_b1("Padding");
                 }
                 fa.element_end();
             }
@@ -258,8 +257,8 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 // Unknown chunk — skip it, honoring word-alignment.
                 fa.skip_hexa(chunk_size_usize, "Unknown");
                 if chunk_size_usize % 2 == 1 {
-                    let mut _pad: Int8u = 0;
-                    fa.get_b1(&mut _pad, "Padding");
+                    let mut _pad: u8 = 0;
+                    _pad = fa.get_b1("Padding");
                 }
             }
         }
@@ -277,106 +276,103 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
 
 fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Option<BwfInfo>) {
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Wave", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Wave");
 
     if fmt.audio_format == WAVE_FORMAT_PCM {
-        fa.fill(StreamKind::General, 0, "Format_Settings", "PcmWaveformat", false);
+        fa.set_field(StreamKind::General, 0, "Format_Settings", "PcmWaveformat");
     }
 
     fa.stream_prepare(StreamKind::Audio);
     let (fmt_name, endianness, sign) = wav_format_descriptors(fmt);
-    fa.fill(StreamKind::Audio, 0, "Format", fmt_name, false);
+    fa.set_field(StreamKind::Audio, 0, "Format", fmt_name);
     if let Some(e) = endianness {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", e, false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", e);
     }
     if let Some(s) = sign {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Sign", s, false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Sign", s);
     }
-    fa.fill(StreamKind::Audio, 0, "CodecID", fmt.audio_format.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "CodecID", fmt.audio_format.to_string());
 
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
 
     let bitrate =
         (fmt.sample_rate as u64) * (fmt.num_channels as u64) * (fmt.bits_per_sample as u64);
     if bitrate > 0 {
-        fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "BitRate", bitrate.to_string());
     }
 
-    fa.fill(StreamKind::Audio, 0, "Channels", fmt.num_channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", fmt.sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", fmt.bits_per_sample.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", data_size.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Channels", fmt.num_channels.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", fmt.sample_rate.to_string());
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", fmt.bits_per_sample.to_string());
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", data_size.to_string());
 
     if fmt.block_align > 0 {
         let sample_count = data_size as u64 / fmt.block_align as u64;
-        fa.fill(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string());
         if fmt.sample_rate > 0 {
             // Duration in milliseconds, matching C++ output convention.
             let duration_ms = (sample_count * 1000) / fmt.sample_rate as u64;
-            fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+            fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
         }
     }
 
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     if let Some(bwf) = bwf {
         if bwf.description.is_some() || bwf.originator.is_some() {
-            fa.fill(StreamKind::General, 0, "Format_Commercial", "Broadcast Wave", false);
+            fa.set_field(StreamKind::General, 0, "Format_Commercial", "Broadcast Wave");
         }
         if let Some(ref d) = bwf.description {
-            fa.fill(StreamKind::General, 0, "Title", d.clone(), false);
+            fa.set_field(StreamKind::General, 0, "Title", d.clone());
         }
         if let Some(ref o) = bwf.originator {
-            fa.fill(StreamKind::General, 0, "Encoded_Library", o.clone(), false);
+            fa.set_field(StreamKind::General, 0, "Encoded_Library", o.clone());
         }
         if let Some(ref r) = bwf.originator_ref {
-            fa.fill(StreamKind::General, 0, "Encoded_Library_Settings", r.clone(), false);
+            fa.set_field(StreamKind::General, 0, "Encoded_Library_Settings", r.clone());
         }
         if let Some(ref d) = bwf.origination_date {
-            fa.fill(StreamKind::General, 0, "Recorded_Date", d.clone(), false);
+            fa.set_field(StreamKind::General, 0, "Recorded_Date", d.clone());
         }
         if let Some(ref t) = bwf.origination_time {
-            fa.fill(StreamKind::General, 0, "Recorded_Time", t.clone(), false);
+            fa.set_field(StreamKind::General, 0, "Recorded_Time", t.clone());
         }
         if let Some(tr) = bwf.time_reference {
-            fa.fill(StreamKind::General, 0, "TimeReference", tr.to_string(), false);
+            fa.set_field(StreamKind::General, 0, "TimeReference", tr.to_string());
         }
         if let Some(v) = bwf.bwf_version {
-            fa.fill(StreamKind::General, 0, "Format_Version", v.to_string(), false);
+            fa.set_field(StreamKind::General, 0, "Format_Version", v.to_string());
         }
         if let Some(ref u) = bwf.umid {
-            fa.fill(StreamKind::General, 0, "UMID", u.clone(), false);
+            fa.set_field(StreamKind::General, 0, "UMID", u.clone());
         }
         if let Some(lv) = bwf.loudness_value {
             if lv != -32768 {
-                fa.fill(
+                fa.set_field(
                     StreamKind::Audio,
                     0,
                     "Loudness_Value",
                     format!("{:.1} LUFS", lv as f64 * 0.1),
-                    false,
                 );
             }
         }
         if let Some(lr) = bwf.loudness_range {
             if lr != -32768 {
-                fa.fill(
+                fa.set_field(
                     StreamKind::Audio,
                     0,
                     "Loudness_Range",
                     format!("{:.1} LU", lr as f64 * 0.1),
-                    false,
                 );
             }
         }
         if let Some(pt) = bwf.max_true_peak {
             if pt != -32768 {
-                fa.fill(
+                fa.set_field(
                     StreamKind::Audio,
                     0,
                     "Loudness_MaxTruePeakLevel",
                     format!("{:.1} dBTP", pt as f64 * 0.1),
-                    false,
                 );
             }
         }

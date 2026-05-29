@@ -22,86 +22,76 @@
 //!   uint8   flags
 //!   uint32  crc32
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_LA: [u8; 2] = *b"LA";
 const HEADER_LEN: usize = 45;
 
 pub fn parse_la(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < HEADER_LEN {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < HEADER_LEN {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(2)) {
-        Some(h) if h.len() == 2 => h,
-        _ => return false,
-    };
-    if head != MAGIC_LA {
-        return false;
+    if r.peek_raw(2)? != MAGIC_LA {
+        return None;
     }
 
-    fa.element_begin("LA");
-    let mut signature: Int16u = 0;
-    fa.get_l2(&mut signature, "signature");
-    let mut major: Int8u = 0;
-    let mut minor: Int8u = 0;
-    fa.get_l1(&mut major, "major_version");
-    fa.get_l1(&mut minor, "minor_version");
-    let mut uncompressed_size: Int32u = 0;
-    fa.get_l4(&mut uncompressed_size, "uncompressed_size");
-    fa.skip_l4("chunk");
-    fa.skip_l4("fmt_size");
-    fa.skip_l4("fmt_chunk");
-    fa.skip_l4("fmt_size");
-    let mut raw_format: Int16u = 0;
-    fa.get_l2(&mut raw_format, "raw_format");
-    let mut channels: Int16u = 0;
-    fa.get_l2(&mut channels, "channels");
-    let mut sample_rate: Int32u = 0;
-    fa.get_l4(&mut sample_rate, "sample_rate");
-    fa.skip_l4("bytes_per_second");
-    fa.skip_l2("bytes_per_sample");
-    let mut bits_per_sample: Int16u = 0;
-    fa.get_l2(&mut bits_per_sample, "bits_per_sample");
-    let mut samples: Int32u = 0;
-    fa.get_l4(&mut samples, "samples");
-    fa.skip_l1("flags");
-    fa.skip_l4("crc");
-    fa.element_end();
+    r.element_begin("LA");
+    r.le_u16("signature")?;
+    let major = r.le_u8("major_version")?;
+    let minor = r.le_u8("minor_version")?;
+    r.le_u32("uncompressed_size")?;
+    r.le_u32("chunk")?;
+    r.le_u32("fmt_size")?;
+    r.le_u32("fmt_chunk")?;
+    r.le_u32("fmt_size")?;
+    r.le_u16("raw_format")?;
+    let channels = r.le_u16("channels")?;
+    let sample_rate = r.le_u32("sample_rate")?;
+    r.le_u32("bytes_per_second")?;
+    r.le_u16("bytes_per_sample")?;
+    let bits_per_sample = r.le_u16("bits_per_sample")?;
+    let samples = r.le_u32("samples")?;
+    r.le_u8("flags")?;
+    r.le_u32("crc")?;
+    r.element_end();
 
     if sample_rate == 0 || channels == 0 || bits_per_sample == 0 {
-        return false;
+        return None;
     }
     // C++ reference notes samples is per-channel-pair-doubled; dividing by
     // Channels gives the correct duration.
     let duration_ms: u64 = (samples as u64 / channels as u64) * 1000 / sample_rate as u64;
     if duration_ms == 0 {
-        return false;
+        return None;
     }
     let uncompressed: u64 = (samples as u64) * (channels as u64) * (bits_per_sample as u64 / 8);
     if uncompressed == 0 {
-        return false;
+        return None;
     }
 
     let version_str = format!("{}.{}", major, minor);
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "LA", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "LA");
+    r.set_field(StreamKind::General, 0, "Format_Version", version_str.clone());
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "LA", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
-    fa.fill(StreamKind::Audio, 0, "Codec", "LA", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-
-    true
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "LA");
+    r.set_field(StreamKind::Audio, 0, "Format_Version", version_str);
+    r.set_field(StreamKind::Audio, 0, "Codec", "LA");
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    r.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    r.set_field(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string());
+    r.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    r.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    r.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+    Some(())
 }
 
 #[cfg(test)]

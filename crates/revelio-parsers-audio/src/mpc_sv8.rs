@@ -15,9 +15,9 @@ pub fn parse_mpc_sv8(fa: &mut FileAnalyze) -> bool {
     }
 
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "Musepack", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Version", "SV8", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "Musepack SV8", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "Musepack");
+    fa.set_field(StreamKind::Audio, pos, "Format_Version", "SV8");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "Musepack SV8");
     true
 }
 

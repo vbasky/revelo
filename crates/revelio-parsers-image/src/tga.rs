@@ -91,26 +91,26 @@ pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
 
     // General is filled after Image so Format_Version (via Streams_Finish in C++) lands at the end.
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "TGA", false);
+    fa.set_field(StreamKind::General, 0, "Format", "TGA");
     if !image_id.is_empty() {
-        fa.fill(StreamKind::General, 0, "Title", image_id, false);
+        fa.set_field(StreamKind::General, 0, "Title", image_id);
     }
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
     // Oracle only emits Format_Version when the v2 footer signature is
     // present (mirrors C++: `if (Version) Fill(...)` where Version stays
     // at 0 for files without the trailing TRUEVISION-XFILE marker).
     if version == 2 {
-        fa.fill(StreamKind::General, 0, "Format_Version", "Version 2", false);
+        fa.set_field(StreamKind::General, 0, "Format_Version", "Version 2");
     }
 
-    fa.fill(StreamKind::Image, 0, "Format", format, false);
-    fa.fill(StreamKind::Image, 0, "CodecID", image_type.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Format", format);
+    fa.set_field(StreamKind::Image, 0, "CodecID", image_type.to_string());
     if !color_space.is_empty() {
-        fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+        fa.set_field(StreamKind::Image, 0, "ColorSpace", color_space);
     }
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "BitDepth", pixel_depth.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Image, 0, "BitDepth", pixel_depth.to_string());
     true
 }
 

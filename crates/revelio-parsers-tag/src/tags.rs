@@ -8,7 +8,7 @@ fn fill_tags(fa: &mut FileAnalyze, tags: &[TagEntry]) {
     }
     let pos = fa.stream_prepare(StreamKind::General);
     for (key, value) in tags {
-        fa.fill(StreamKind::General, pos, key, value.as_str(), false);
+        fa.set_field(StreamKind::General, pos, key, value.as_str());
     }
 }
 

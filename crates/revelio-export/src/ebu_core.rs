@@ -6,7 +6,7 @@ pub fn to_ebu_core(streams: &StreamCollection, file_path: &str) -> String {
     out.push_str("<ebucore:coreMetadata>\n");
     out.push_str(&format!("<ebucore:identifier>{file_path}</ebucore:identifier>\n"));
     for kind in [StreamKind::General, StreamKind::Video, StreamKind::Audio] {
-        let c = streams.count_get(kind);
+        let c = streams.stream_count(kind);
         for p in 0..c {
             if let Some(s) = streams.stream(kind, p) {
                 out.push_str(&format!("<ebucore:format type=\"{}\">\n", kind.name()));
@@ -32,7 +32,7 @@ mod tests {
     #[test]
     fn test() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", Ztring::from("MP4"), false);
+        c.set_field(StreamKind::General, 0, "Format", Ztring::from("MP4"));
         let xml = to_ebu_core(&c, "/x.mp4");
         assert!(xml.contains("ebucore:ebuCoreMain"));
         assert!(xml.contains("/x.mp4"));

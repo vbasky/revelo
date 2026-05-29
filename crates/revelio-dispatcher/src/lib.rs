@@ -164,44 +164,44 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 177] {
         parse_huffyuv,  // HuffYUV
         parse_lagarith, // Lagarith
         // ── Audio codecs ────────────────────────────────────────
-        parse_ac3,             // AC-3
-        parse_ac4,             // AC-4
-        parse_dts,             // DTS
-        parse_dts_uhd,         // DTS-UHD
-        parse_aac_adts,        // AAC ADTS
-        parse_iab,             // IAB
-        parse_iamf,            // IAMF
-        parse_als,             // ALS
-        parse_ape,             // Monkey's Audio
-        parse_au,              // AU
-        parse_amr,             // AMR
-        parse_speex,           // Speex
-        parse_mpc,             // Musepack
-        parse_la,              // LA
-        parse_tak,             // TAK
-        parse_tta,             // True Audio
-        parse_wvpk,            // WavPack
-        parse_twin_vq,         // TwinVQ
-        parse_extended_module, // Extended Module
-        parse_dat,             // DAT
-        parse_rkau,            // Rkau
-        parse_aptx100,         // aptX 100
-        parse_open_mg,         // OpenMG
-        parse_midi,            // MIDI
-        parse_module,          // Module
-        parse_impulse_tracker, // Impulse Tracker
-        parse_scream_tracker3, // Scream Tracker 3
-        parse_mp3,             // MP3
-        parse_celt,            // CELT
-        parse_dolby_e,         // Dolby E
-        parse_mpegh3da,        // MPEG-H 3D Audio
-        parse_mpc_sv8,         // Musepack SV8
-        parse_ps2_audio,       // PS2 Audio
-        parse_truehd,          // TrueHD
-        parse_smpte_st0302,    // SMPTE ST 302
-        parse_smpte_st0331,    // SMPTE ST 331
-        parse_smpte_st0337,    // SMPTE ST 337
-        parse_channel_grouping, // Channel Grouping
+        parse_ac3,               // AC-3
+        parse_ac4,               // AC-4
+        parse_dts,               // DTS
+        parse_dts_uhd,           // DTS-UHD
+        parse_aac_adts,          // AAC ADTS
+        parse_iab,               // IAB
+        parse_iamf,              // IAMF
+        parse_als,               // ALS
+        parse_ape,               // Monkey's Audio
+        parse_au,                // AU
+        parse_amr,               // AMR
+        parse_speex,             // Speex
+        parse_mpc,               // Musepack
+        parse_la,                // LA
+        parse_tak,               // TAK
+        parse_tta,               // True Audio
+        parse_wvpk,              // WavPack
+        parse_twin_vq,           // TwinVQ
+        parse_extended_module,   // Extended Module
+        parse_dat,               // DAT
+        parse_rkau,              // Rkau
+        parse_aptx100,           // aptX 100
+        parse_open_mg,           // OpenMG
+        parse_midi,              // MIDI
+        parse_module,            // Module
+        parse_impulse_tracker,   // Impulse Tracker
+        parse_scream_tracker3,   // Scream Tracker 3
+        parse_mp3,               // MP3
+        parse_celt,              // CELT
+        parse_dolby_e,           // Dolby E
+        parse_mpegh3da,          // MPEG-H 3D Audio
+        parse_mpc_sv8,           // Musepack SV8
+        parse_ps2_audio,         // PS2 Audio
+        parse_truehd,            // TrueHD
+        parse_smpte_st0302,      // SMPTE ST 302
+        parse_smpte_st0331,      // SMPTE ST 331
+        parse_smpte_st0337,      // SMPTE ST 337
+        parse_channel_grouping,  // Channel Grouping
         parse_channel_splitting, // Channel Splitting
         // ── Images (fallback / extension) ───────────────────────
         parse_tga,      // TGA

@@ -40,8 +40,7 @@
 //!   uint16 LE  Channels
 //!   uint32 LE  SampleRate
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u, Int128u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_MAC_SPACE: u32 = u32::from_be_bytes(*b"MAC ");
 const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
@@ -49,13 +48,13 @@ const MAGIC_MAC_F: u32 = u32::from_be_bytes(*b"MACF");
 /// Decoded APE stream header fields, shared by the legacy and modern parsers.
 #[derive(Default)]
 struct ApeHeader {
-    compression_level: Int16u,
-    channels: Int16u,
-    resolution: Int16u,
-    sample_rate: Int32u,
-    total_frames: Int32u,
-    final_frame_samples: Int32u,
-    samples_per_frame: Int32u,
+    compression_level: u16,
+    channels: u16,
+    resolution: u16,
+    sample_rate: u32,
+    total_frames: u32,
+    final_frame_samples: u32,
+    samples_per_frame: u32,
 }
 
 /// Parse Monkey's Audio (APE) lossless stream.
@@ -63,53 +62,52 @@ struct ApeHeader {
 /// Detection: `MAC 3.97` magic.
 /// Fills: Compression level, channels, sample rate, bit depth, APE tag.
 pub fn parse_ape(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < 8 {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < 8 {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(4)) {
-        Some(h) if h.len() == 4 => h,
-        _ => return false,
-    };
+    let head = r.peek_raw(4)?;
+    if head.len() < 4 {
+        return None;
+    }
     let magic = u32::from_be_bytes([head[0], head[1], head[2], head[3]]);
     if magic != MAGIC_MAC_SPACE && magic != MAGIC_MAC_F {
-        return false;
+        return None;
     }
 
-    fa.element_begin("APE");
-    let mut identifier: Int32u = 0;
-    fa.get_c4(&mut identifier, "Identifier");
-    let mut version: Int16u = 0;
-    fa.get_l2(&mut version, "Version");
-
+    r.element_begin("APE");
+    let identifier = r.fourcc("Identifier")?;
+    let version = r.le_u16("Version")?;
     let header =
-        if version < 3980 { parse_legacy_header(fa, version) } else { parse_modern_header(fa) };
-    fa.element_end();
-    let Some(h) = header else {
-        return false;
-    };
+        if version < 3980 { parse_legacy_header(r, version) } else { parse_modern_header(r) };
+    r.element_end();
 
+    let h = header?;
     if h.total_frames == 0 || h.sample_rate == 0 || h.channels == 0 || h.resolution == 0 {
-        return false;
+        return None;
     }
-    let samples: u64 =
-        (h.total_frames as u64 - 1) * (h.samples_per_frame as u64) + (h.final_frame_samples as u64);
+    let samples =
+        (h.total_frames as u64 - 1) * h.samples_per_frame as u64 + h.final_frame_samples as u64;
     if samples == 0 {
-        return false;
+        return None;
     }
 
     fill_streams(fa, identifier, version, &h, samples);
-    true
+    Some(())
 }
 
-fn parse_legacy_header(fa: &mut FileAnalyze, version: Int16u) -> Option<ApeHeader> {
+fn parse_legacy_header(r: &mut Reader<'_, '_>, version: u16) -> Option<ApeHeader> {
     // Legacy header is 26 bytes after Version (+ optional 44-byte RIFF + seek table).
-    if fa.remain() < 32 {
+    if r.remain() < 32 {
         return None;
     }
     let mut h = ApeHeader::default();
-    fa.get_l2(&mut h.compression_level, "CompressionLevel");
-    let mut flags: Int16u = 0;
-    fa.get_l2(&mut flags, "FormatFlags");
+    h.compression_level = r.le_u16("CompressionLevel")?;
+    let flags = r.le_u16("FormatFlags")?;
     let resolution8 = (flags & 0x0001) != 0;
     let resolution24 = (flags & 0x0008) != 0;
     let no_wav_header = (flags & 0x0020) != 0;
@@ -120,59 +118,56 @@ fn parse_legacy_header(fa: &mut FileAnalyze, version: Int16u) -> Option<ApeHeade
     } else {
         16
     };
-    fa.get_l2(&mut h.channels, "Channels");
-    fa.get_l4(&mut h.sample_rate, "SampleRate");
-    fa.skip_l4("WavHeaderDataBytes");
-    fa.skip_l4("WavTerminatingBytes");
-    fa.get_l4(&mut h.total_frames, "TotalFrames");
-    fa.get_l4(&mut h.final_frame_samples, "FinalFrameSamples");
+    h.channels = r.le_u16("Channels")?;
+    h.sample_rate = r.le_u32("SampleRate")?;
+    r.le_u32("WavHeaderDataBytes")?;
+    r.le_u32("WavTerminatingBytes")?;
+    h.total_frames = r.le_u32("TotalFrames")?;
+    h.final_frame_samples = r.le_u32("FinalFrameSamples")?;
     h.samples_per_frame = ape_samples_per_frame(version, h.compression_level);
-    fa.skip_l4("PeakLevel");
-    let mut seek_elements: Int32u = 0;
-    fa.get_l4(&mut seek_elements, "SeekElements");
+    r.le_u32("PeakLevel")?;
+    let seek_elements = r.le_u32("SeekElements")?;
     if !no_wav_header {
-        if fa.remain() < 44 {
+        if r.remain() < 44 {
             return None;
         }
-        fa.skip_hexa(44, "RIFF header");
+        r.skip(44)?;
     }
-    let seek_bytes = (seek_elements as usize) * 4;
-    if fa.remain() < seek_bytes {
+    let seek_bytes = seek_elements as usize * 4;
+    if r.remain() < seek_bytes {
         return None;
     }
-    fa.skip_hexa(seek_bytes, "Seek table");
+    r.skip(seek_bytes)?;
     Some(h)
 }
 
-fn parse_modern_header(fa: &mut FileAnalyze) -> Option<ApeHeader> {
+fn parse_modern_header(r: &mut Reader<'_, '_>) -> Option<ApeHeader> {
     // Descriptor (46) + header (24) bytes after the version field.
-    if fa.remain() < 70 {
+    if r.remain() < 70 {
         return None;
     }
     let mut h = ApeHeader::default();
-    fa.skip_l2("Version_High");
-    fa.skip_l4("DescriptorBytes");
-    fa.skip_l4("HeaderBytes");
-    fa.skip_l4("SeekTableBytes");
-    fa.skip_l4("WavHeaderDataBytes");
-    fa.skip_l4("APEFrameDataBytes");
-    fa.skip_l4("APEFrameDataBytesHigh");
-    fa.skip_l4("WavTerminatingDataBytes");
-    let mut _md5: Int128u = 0;
-    fa.get_l16(&mut _md5, "FileMD5");
-    fa.get_l2(&mut h.compression_level, "CompressionLevel");
-    let mut _flags: Int16u = 0;
-    fa.get_l2(&mut _flags, "FormatFlags");
-    fa.get_l4(&mut h.samples_per_frame, "BlocksPerFrame");
-    fa.get_l4(&mut h.final_frame_samples, "FinalFrameBlocks");
-    fa.get_l4(&mut h.total_frames, "TotalFrames");
-    fa.get_l2(&mut h.resolution, "BitsPerSample");
-    fa.get_l2(&mut h.channels, "Channels");
-    fa.get_l4(&mut h.sample_rate, "SampleRate");
+    r.le_u16("Version_High")?;
+    r.le_u32("DescriptorBytes")?;
+    r.le_u32("HeaderBytes")?;
+    r.le_u32("SeekTableBytes")?;
+    r.le_u32("WavHeaderDataBytes")?;
+    r.le_u32("APEFrameDataBytes")?;
+    r.le_u32("APEFrameDataBytesHigh")?;
+    r.le_u32("WavTerminatingDataBytes")?;
+    r.skip(16)?; // FileMD5 (unused)
+    h.compression_level = r.le_u16("CompressionLevel")?;
+    r.le_u16("FormatFlags")?;
+    h.samples_per_frame = r.le_u32("BlocksPerFrame")?;
+    h.final_frame_samples = r.le_u32("FinalFrameBlocks")?;
+    h.total_frames = r.le_u32("TotalFrames")?;
+    h.resolution = r.le_u16("BitsPerSample")?;
+    h.channels = r.le_u16("Channels")?;
+    h.sample_rate = r.le_u32("SampleRate")?;
     Some(h)
 }
 
-fn ape_samples_per_frame(version: Int16u, compression_level: Int16u) -> Int32u {
+fn ape_samples_per_frame(version: u16, compression_level: u16) -> u32 {
     if version >= 3950 {
         73728 * 4
     } else if version >= 3900 {
@@ -184,7 +179,7 @@ fn ape_samples_per_frame(version: Int16u, compression_level: Int16u) -> Int32u {
     }
 }
 
-fn ape_codec_settings(level: Int16u) -> &'static str {
+fn ape_codec_settings(level: u16) -> &'static str {
     match level {
         1000 => "Fast",
         2000 => "Normal",
@@ -195,43 +190,37 @@ fn ape_codec_settings(level: Int16u) -> &'static str {
     }
 }
 
-fn fill_streams(
-    fa: &mut FileAnalyze,
-    identifier: Int32u,
-    version: Int16u,
-    h: &ApeHeader,
-    samples: u64,
-) {
+fn fill_streams(fa: &mut FileAnalyze, identifier: u32, version: u16, h: &ApeHeader, samples: u64) {
     let &ApeHeader { compression_level, channels, resolution, sample_rate, .. } = h;
     let duration_ms: u64 = samples * 1000 / (sample_rate as u64);
     let uncompressed_size: u64 = samples * (channels as u64) * (resolution as u64 / 8);
     let version_str = format!("{:.3}", (version as f64) / 1000.0);
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Monkey's Audio", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.set_field(StreamKind::General, 0, "Format", "Monkey's Audio");
+    fa.set_field(StreamKind::General, 0, "Format_Version", version_str.clone());
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
+    fa.force_field(StreamKind::General, 0, "StreamSize", "0");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "Monkey's Audio", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "Monkey's Audio");
+    fa.set_field(StreamKind::Audio, 0, "Format_Version", version_str);
     // "MACF" magic indicates floating-point samples.
     if identifier == MAGIC_MAC_F {
-        fa.fill(StreamKind::Audio, 0, "Format_Profile", "Float", false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Profile", "Float");
     }
     let settings = ape_codec_settings(compression_level);
     if !settings.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Encoded_Library_Settings", settings, false);
+        fa.set_field(StreamKind::Audio, 0, "Encoded_Library_Settings", settings);
     }
-    fa.fill(StreamKind::Audio, 0, "Codec", "APE", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", resolution.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingCount", samples.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Codec", "APE");
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", resolution.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingCount", samples.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
     let _ = uncompressed_size;
 }
 

@@ -9,8 +9,8 @@ pub fn parse_adm(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "ADM", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "SMPTE ST 2076 Audio Definition Model", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "ADM");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "SMPTE ST 2076 Audio Definition Model");
     true
 }
 #[cfg(test)]

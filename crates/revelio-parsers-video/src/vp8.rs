@@ -11,76 +11,68 @@
 //!   2 bytes LE width  (14 bits valid, top 2 bits for scaling)
 //!   2 bytes LE height (14 bits valid, top 2 bits for scaling)
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
-const VP8_START_CODE: Int32u = 0x9D012A;
+const VP8_START_CODE: u32 = 0x9D012A;
 
 pub fn parse_vp8(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < 10 {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < 10 {
+        return None;
     }
 
-    fa.element_begin("VP8");
-
-    // VP8 bitstream header (LE bit-packed)
-    fa.bs_begin();
-
-    let mut frame_type: u8 = 0;
-    fa.get_s1(1, &mut frame_type, "frame type");
-
-    fa.skip_s1(3, "version number");
-    fa.skip_s1(1, "show_frame flag");
-    fa.skip_s4(19, "size of the first data partition");
-    fa.bs_end();
+    r.element_begin("VP8");
+    // Frame tag: frame_type(1) | version(3) | show_frame(1) | partition_size(19).
+    let frame_type = r.bits(|b| {
+        let ft = b.read::<u8>(1, "frame type")?;
+        b.skip(3); // version
+        b.skip(1); // show_frame
+        b.skip(19); // first partition size
+        Some(ft)
+    })?;
 
     if frame_type == 0 {
         // I-Frame
-        let mut start_code: Int32u = 0;
-        fa.get_b3(&mut start_code, "start code");
-
+        let start_code = r.be_u24("start code")?;
         if start_code != VP8_START_CODE {
-            fa.element_end();
-            return false;
+            r.element_end();
+            return None;
         }
-
-        let mut width: Int16u = 0;
-        let mut height: Int16u = 0;
-        fa.get_l2(&mut width, "width");
-        fa.get_l2(&mut height, "height");
-
+        let width = r.le_u16("width")?;
+        let height = r.le_u16("height")?;
         let w = (width & 0x3FFF) as u32;
         let h = (height & 0x3FFF) as u32;
-
-        fa.element_end();
+        r.element_end();
 
         fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, 0, "Format", "VP8", false);
-        fa.fill(StreamKind::Video, 0, "Codec", "VP8", false);
-        fa.fill(StreamKind::Video, 0, "BitDepth", "8", false);
-        fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
-        fa.fill(StreamKind::Video, 0, "Width", w.to_string(), false);
-        fa.fill(StreamKind::Video, 0, "Height", h.to_string(), false);
+        fa.set_field(StreamKind::Video, 0, "Format", "VP8");
+        fa.set_field(StreamKind::Video, 0, "Codec", "VP8");
+        fa.set_field(StreamKind::Video, 0, "BitDepth", "8");
+        fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
+        fa.set_field(StreamKind::Video, 0, "Width", w.to_string());
+        fa.set_field(StreamKind::Video, 0, "Height", h.to_string());
 
         fa.stream_prepare(StreamKind::General);
-        fa.fill(StreamKind::General, 0, "Format", "VP8", false);
-
-        return true;
+        fa.set_field(StreamKind::General, 0, "Format", "VP8");
+        return Some(());
     }
 
     // P-Frame (no resolution info)
-    fa.element_end();
+    r.element_end();
 
     fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "VP8", false);
-    fa.fill(StreamKind::Video, 0, "Codec", "VP8", false);
-    fa.fill(StreamKind::Video, 0, "BitDepth", "8", false);
-    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.set_field(StreamKind::Video, 0, "Format", "VP8");
+    fa.set_field(StreamKind::Video, 0, "Codec", "VP8");
+    fa.set_field(StreamKind::Video, 0, "BitDepth", "8");
+    fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "VP8", false);
-
-    true
+    fa.set_field(StreamKind::General, 0, "Format", "VP8");
+    Some(())
 }
 
 #[cfg(test)]

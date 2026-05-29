@@ -90,10 +90,10 @@ pub fn parse_arib_std_b24_b37(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "ARIB STD B24/B37", true);
+    fa.force_field(StreamKind::General, 0, "Format", "ARIB STD B24/B37");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "ARIB STD B24/B37", true);
+    fa.force_field(StreamKind::Text, 0, "Format", "ARIB STD B24/B37");
     true
 }
 

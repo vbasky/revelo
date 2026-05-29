@@ -171,12 +171,12 @@ pub fn parse_mxf(fa: &mut FileAnalyze) -> bool {
     let timecode = extract_mxf_timecode(buf);
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "MXF", false);
+    fa.set_field(StreamKind::General, 0, "Format", "MXF");
 
     // Emit timecode if found
     if let Some(tc) = timecode {
-        fa.fill(StreamKind::General, 0, "TimeCode_FirstFrame", tc, false);
-        fa.fill(StreamKind::General, 0, "TimeCode_Source", "Material Package", false);
+        fa.set_field(StreamKind::General, 0, "TimeCode_FirstFrame", tc);
+        fa.set_field(StreamKind::General, 0, "TimeCode_Source", "Material Package");
     }
 
     true

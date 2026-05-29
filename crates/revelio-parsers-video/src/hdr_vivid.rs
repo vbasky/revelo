@@ -11,9 +11,9 @@ pub fn parse_hdr_vivid(fa: &mut FileAnalyze) -> bool {
     }
     if &buf[0..4] == b"HDRV" || &buf[0..4] == b"HVIV" {
         let pos = fa.stream_prepare(StreamKind::Video);
-        fa.fill(StreamKind::Video, pos, "Format", "HDR Vivid", false);
-        fa.fill(StreamKind::Video, pos, "HDR_Format", "HDR Vivid", false);
-        fa.fill(StreamKind::Video, pos, "Format_Info", "Chinese HDR Vivid", false);
+        fa.set_field(StreamKind::Video, pos, "Format", "HDR Vivid");
+        fa.set_field(StreamKind::Video, pos, "HDR_Format", "HDR Vivid");
+        fa.set_field(StreamKind::Video, pos, "Format_Info", "Chinese HDR Vivid");
         return true;
     }
     false

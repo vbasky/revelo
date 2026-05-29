@@ -71,7 +71,7 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
         map_encoding(encoding).unwrap_or(("PCM", "", 0, true));
 
     // Prefer file-size-derived data_size when available (matches C++:
-    // File_Size!=(Int64u)-1 ⇒ data_size = File_Size - data_start).
+    // File_Size!=(u64)-1 ⇒ data_size = File_Size - data_start).
     let effective_data_size: u64 = if (file_size as u64) >= data_offset as u64 {
         (file_size as u64) - (data_offset as u64)
     } else if data_size != 0 && data_size != 0xFFFF_FFFF {
@@ -81,31 +81,30 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
     };
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "AU", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "AU");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", format, false);
+    fa.set_field(StreamKind::Audio, 0, "Format", format);
     if !codec.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "CodecID", codec, false);
-        fa.fill(StreamKind::Audio, 0, "Codec", codec, false);
+        fa.set_field(StreamKind::Audio, 0, "CodecID", codec);
+        fa.set_field(StreamKind::Audio, 0, "Codec", codec);
     }
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
     if bit_depth > 0 {
-        fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string());
     }
     // AU PCM and companding codecs are big-endian by definition.
     if format == "PCM" || format == "ADPCM" {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big");
     }
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.fill(
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
+    fa.set_field(
         StreamKind::Audio,
         0,
         "Compression_Mode",
         if lossless { "Lossless" } else { "Lossy" },
-        false,
     );
 
     // Duration: C++ uses data_size*1000/sample_rate, which is bytes/Hz —
@@ -113,17 +112,17 @@ pub fn parse_au(fa: &mut FileAnalyze) -> bool {
     // in the original Sun definition. Replicate exactly for byte parity.
     if sample_rate > 0 && effective_data_size > 0 {
         let duration_ms = effective_data_size * 1000 / sample_rate as u64;
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
 
         // BitRate derivable for PCM where bit_depth & channels known.
         if bit_depth > 0 && channels > 0 {
             let bitrate = (sample_rate as u64) * (bit_depth as u64) * (channels as u64);
-            fa.fill(StreamKind::Audio, 0, "BitRate", bitrate.to_string(), false);
+            fa.set_field(StreamKind::Audio, 0, "BitRate", bitrate.to_string());
         }
     }
 
     let stream_size = (file_size as u64).saturating_sub(data_offset as u64);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", stream_size.to_string());
 
     true
 }

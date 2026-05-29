@@ -506,12 +506,90 @@ fn parse_content_light_level_sei(payload: &[u8]) -> Option<(u16, u16)> {
     Some((max_content, max_frame_avg))
 }
 
+/// Parse HDR10+ (Samsung ST 2094-40) dynamic metadata from
+/// user_data_registered SEI (payload type 4).
+fn parse_hdr10plus_sei(payload: &[u8]) -> Option<String> {
+    // HDR10+ is carried as ITU-T T35 SEI message:
+    //   itu_t_t35_country_code (8 bits) = 0xB5
+    //   itu_t_t35_provider_code (16 bits) = 0x003C (Samsung)
+    //   application_identifier (8 bits) = 4 (ST 2094-40)
+    //   application_version (8 bits) = 1
+    //   num_windows (1..3)
+    //   window_upper_left_x/y, window_lower_right_x/y (16 bits each)
+    //   ... per-window luminance ...
+    if payload.len() < 5 {
+        return None;
+    }
+    let country_code = payload[0];
+    if country_code != 0xB5 {
+        return None;
+    }
+    let provider = u16::from_be_bytes([payload[1], payload[2]]);
+    if provider != 0x003C {
+        return None;
+    }
+    let app_id = payload[3];
+    if app_id != 4 {
+        return None;
+    }
+    // Application version
+    let _app_ver = payload[4];
+
+    // Build a summary string from the HDR10+ payload
+    let mut summary = String::from("HDR10+");
+    if payload.len() > 5 {
+        let num_windows = (payload[5] >> 5) + 1;
+        summary.push_str(&format!(" ({} window", num_windows));
+        if num_windows > 1 {
+            summary.push('s');
+        }
+        summary.push(')');
+    }
+
+    Some(summary)
+}
+
+/// Parse SL-HDR1 SEI (payload type 172, ETSI TS 103 433).
+fn parse_sl_hdr1_sei(payload: &[u8]) -> Option<String> {
+    if payload.len() < 2 {
+        return None;
+    }
+    // SL-HDR1 metadata descriptor: signalling_method_id (8), ...
+    let method_id = payload[0];
+    let num_windows = (payload[1] >> 5) + 1;
+    let desc = format!(
+        "SL-HDR1 (method {}, {} window{})",
+        method_id,
+        num_windows,
+        if num_windows > 1 { "s" } else { "" }
+    );
+    Some(desc)
+}
+
+/// Parse CTA-861 HDR static metadata extension tags.
+/// These can appear in user_data_registered SEI with specific T35 codes,
+/// or as part of the video signal metadata.
+fn parse_cta861_sei(payload: &[u8]) -> Option<String> {
+    if payload.len() < 4 {
+        return None;
+    }
+    let country_code = payload[0];
+    // CTA-861: country_code == 0xB5 (Korea/Samsung) or other
+    // provider codes depending on implementation
+    if country_code != 0xB5 && country_code != 0x00 {
+        return None;
+    }
+    Some(format!("CTA-861 ({})", payload.len()))
+}
+
 /// Extract HDR metadata from SEI NAL units.
+/// Returns (mastering_display, light_level, hdr10plus_summary).
 pub fn extract_hdr_from_sei_nalus(
     sei_nalus: &[&[u8]],
-) -> Option<(Option<([(u16, u16); 3], (u16, u16), u32, u32)>, Option<(u16, u16)>)> {
+) -> Option<(Option<([(u16, u16); 3], (u16, u16), u32, u32)>, Option<(u16, u16)>, Option<String>)> {
     let mut mastering = None;
     let mut light_level = None;
+    let mut hdr10plus = None;
 
     for nal in sei_nalus {
         // Skip NAL header (2 bytes for HEVC)
@@ -551,6 +629,16 @@ pub fn extract_hdr_from_sei_nalus(
             let payload = &nal[pos..pos + payload_size];
 
             match payload_type {
+                4 => {
+                    // user_data_registered — HDR10+ lives here (Samsung ST 2094-40)
+                    if hdr10plus.is_none() {
+                        hdr10plus = parse_hdr10plus_sei(payload);
+                        // Also check for CTA-861 metadata in the same path
+                        if hdr10plus.is_none() {
+                            hdr10plus = parse_cta861_sei(payload);
+                        }
+                    }
+                }
                 137 => {
                     if let Some(md) = parse_mastering_display_sei(payload) {
                         mastering = Some(md);
@@ -559,6 +647,12 @@ pub fn extract_hdr_from_sei_nalus(
                 144 => {
                     if let Some(ll) = parse_content_light_level_sei(payload) {
                         light_level = Some(ll);
+                    }
+                }
+                172 | 173 | 174 => {
+                    // SL-HDR1 metadata descriptor (ETSI TS 103 433)
+                    if hdr10plus.is_none() {
+                        hdr10plus = parse_sl_hdr1_sei(payload);
                     }
                 }
                 _ => {}
@@ -573,7 +667,11 @@ pub fn extract_hdr_from_sei_nalus(
         }
     }
 
-    if mastering.is_some() || light_level.is_some() { Some((mastering, light_level)) } else { None }
+    if mastering.is_some() || light_level.is_some() || hdr10plus.is_some() {
+        Some((mastering, light_level, hdr10plus))
+    } else {
+        None
+    }
 }
 
 /// Parse HEVC SPS and extract info including VUI colour information.
@@ -978,27 +1076,27 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::Video);
 
-    fa.fill(StreamKind::Video, 0, "Format", "HEVC", false);
+    fa.set_field(StreamKind::Video, 0, "Format", "HEVC");
     let profile = if bit_depth <= 8 { "Main" } else { profile_name(profile_idc) };
-    fa.fill(StreamKind::Video, 0, "Format_Profile", profile, false);
-    fa.fill(StreamKind::Video, 0, "Format_Level", level_name(level_idc), false);
+    fa.set_field(StreamKind::Video, 0, "Format_Profile", profile);
+    fa.set_field(StreamKind::Video, 0, "Format_Level", level_name(level_idc));
 
     if tier_flag {
-        fa.fill(StreamKind::Video, 0, "Format_Tier", "High", false);
+        fa.set_field(StreamKind::Video, 0, "Format_Tier", "High");
     } else {
-        fa.fill(StreamKind::Video, 0, "Format_Tier", "Main", false);
+        fa.set_field(StreamKind::Video, 0, "Format_Tier", "Main");
     }
 
-    fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Sampled_Width", width.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Sampled_Height", height.to_string(), false);
+    fa.set_field(StreamKind::Video, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Video, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Video, 0, "Sampled_Width", width.to_string());
+    fa.set_field(StreamKind::Video, 0, "Sampled_Height", height.to_string());
 
     if height > 0 {
         let dar = width as f64 / height as f64;
-        fa.fill(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.set_field(StreamKind::Video, 0, "DisplayAspectRatio", format!("{:.3}", dar));
     }
-    fa.fill(StreamKind::Video, 0, "PixelAspectRatio", "1.000", false);
+    fa.set_field(StreamKind::Video, 0, "PixelAspectRatio", "1.000");
 
     let chroma_sub = match chroma_format_idc {
         0 => "4:0:0",
@@ -1007,15 +1105,15 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         3 => "4:4:4",
         _ => "4:2:0",
     };
-    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub, false);
-    fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", chroma_sub);
+    fa.set_field(StreamKind::Video, 0, "BitDepth", bit_depth.to_string());
+    fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
 
     // Fill HDR metadata if present
-    if let Some((mastering, light_level)) = hdr_metadata {
+    if let Some((mastering, light_level, hdr10plus)) = hdr_metadata {
         if let Some((primaries, white_point, max_lum, min_lum)) = mastering {
-            fa.fill(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2086", false);
-            fa.fill(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10", false);
+            fa.set_field(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2086");
+            fa.set_field(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10");
             // Mastering display primaries (convert from 0.00002 units)
             let r_x = primaries[0].0 as f64 * 0.00002;
             let r_y = primaries[0].1 as f64 * 0.00002;
@@ -1025,44 +1123,47 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
             let b_y = primaries[2].1 as f64 * 0.00002;
             let w_x = white_point.0 as f64 * 0.00002;
             let w_y = white_point.1 as f64 * 0.00002;
-            fa.fill(StreamKind::Video, 0, "MasteringDisplay_ColorPrimaries", 
-                format!("Red: ({:.5}, {:.5}), Green: ({:.5}, {:.5}), Blue: ({:.5}, {:.5}), White: ({:.5}, {:.5})", 
-                    r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y), false);
+            fa.set_field(StreamKind::Video, 0, "MasteringDisplay_ColorPrimaries", format!("Red: ({:.5}, {:.5}), Green: ({:.5}, {:.5}), Blue: ({:.5}, {:.5}), White: ({:.5}, {:.5})", r_x, r_y, g_x, g_y, b_x, b_y, w_x, w_y));
             // Luminance in cd/m^2 (convert from 0.0001 units)
             let max_lum_cd = max_lum as f64 * 0.0001;
             let min_lum_cd = min_lum as f64 * 0.0001;
-            fa.fill(
+            fa.set_field(
                 StreamKind::Video,
                 0,
                 "MasteringDisplay_Luminance",
                 format!("min: {:.4} cd/m², max: {:.0} cd/m²", min_lum_cd, max_lum_cd),
-                false,
             );
         }
         if let Some((max_content, max_frame_avg)) = light_level {
-            fa.fill(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content), false);
-            fa.fill(StreamKind::Video, 0, "MaxFALL", format!("{} cd/m²", max_frame_avg), false);
+            fa.set_field(StreamKind::Video, 0, "MaxCLL", format!("{} cd/m²", max_content));
+            fa.set_field(StreamKind::Video, 0, "MaxFALL", format!("{} cd/m²", max_frame_avg));
+        }
+        // HDR10+ dynamic metadata (SMPTE ST 2094-40)
+        if let Some(ref hdr10plus_str) = hdr10plus {
+            fa.set_field(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2094-40");
+            fa.set_field(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10+");
+            fa.set_field(StreamKind::Video, 0, "HDR_Format_Version", hdr10plus_str.as_str());
         }
     }
 
     // Encoder info from SEI user_data_unregistered
     if let Some(ref enc) = encoder_info {
-        fa.fill(StreamKind::Video, 0, "Encoded_Library", enc.library.as_str(), false);
+        fa.set_field(StreamKind::Video, 0, "Encoded_Library", enc.library.as_str());
         if let Some(ref name) = enc.name {
-            fa.fill(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str(), false);
+            fa.set_field(StreamKind::Video, 0, "Encoded_Library_Name", name.as_str());
         }
         if let Some(ref ver) = enc.version {
-            fa.fill(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str(), false);
+            fa.set_field(StreamKind::Video, 0, "Encoded_Library_Version", ver.as_str());
         }
         if let Some(ref settings) = enc.settings {
-            fa.fill(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str(), false);
+            fa.set_field(StreamKind::Video, 0, "Encoded_Library_Settings", settings.as_str());
         }
     }
 
     // General stream
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "HEVC", false);
-    fa.fill(StreamKind::General, 0, "VideoCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "HEVC");
+    fa.set_field(StreamKind::General, 0, "VideoCount", "1");
 
     fa.element_end();
     true

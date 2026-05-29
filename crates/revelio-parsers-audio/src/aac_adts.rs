@@ -77,14 +77,14 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "ADTS", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
-    fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
+    fa.set_field(StreamKind::General, 0, "Format", "ADTS");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
+    fa.force_field(StreamKind::General, 0, "StreamSize", "0");
+    fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "VBR");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "AAC", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Version", if id == 0 { "4" } else { "2" }, false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "AAC");
+    fa.set_field(StreamKind::Audio, 0, "Format_Version", if id == 0 { "4" } else { "2" });
     let profile_name = match profile {
         0 => Some("Main"),
         1 => Some("LC"),
@@ -93,30 +93,30 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
         _ => None,
     };
     if let Some(p) = profile_name {
-        fa.fill(StreamKind::Audio, 0, "Format_AdditionalFeatures", p, false);
+        fa.set_field(StreamKind::Audio, 0, "Format_AdditionalFeatures", p);
     }
     // CodecID = AOT (profile + 1)
-    fa.fill(StreamKind::Audio, 0, "CodecID", (profile + 1).to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
+    fa.set_field(StreamKind::Audio, 0, "CodecID", (profile + 1).to_string());
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
     if channels_count > 0 {
-        fa.fill(StreamKind::Audio, 0, "Channels", channels_count.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Channels", channels_count.to_string());
         let (positions, layout) = channel_layout(channels_count);
         if let Some(p) = positions {
-            fa.fill(StreamKind::Audio, 0, "ChannelPositions", p, false);
+            fa.set_field(StreamKind::Audio, 0, "ChannelPositions", p);
         }
         if let Some(l) = layout {
-            fa.fill(StreamKind::Audio, 0, "ChannelLayout", l, false);
+            fa.set_field(StreamKind::Audio, 0, "ChannelLayout", l);
         }
     }
-    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", "1024", false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "SamplesPerFrame", "1024");
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
     if frame_count > 0 {
-        fa.fill(StreamKind::Audio, 0, "FrameCount", frame_count.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "FrameCount", frame_count.to_string());
         let frame_rate = (sample_rate as f64) / 1024.0;
-        fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+        fa.set_field(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate));
     }
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", file_size.to_string());
     true
 }
 

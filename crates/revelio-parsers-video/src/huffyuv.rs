@@ -13,8 +13,8 @@ pub fn parse_huffyuv(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "HuffYUV", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "HuffYUV lossless", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "HuffYUV");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "HuffYUV lossless");
     true
 }
 #[cfg(test)]

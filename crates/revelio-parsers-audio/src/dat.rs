@@ -74,27 +74,27 @@ pub fn parse_dat(fa: &mut FileAnalyze) -> bool {
     let bit_depth = DAT_QUANTIZATION[quantization as usize];
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DAT", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DAT");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "PCM", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "PCM");
     // BitRate = 1536000 × 441 / 480 = 1411200; replicates the C++ literal.
-    fa.fill(StreamKind::Audio, 0, "BitRate", "1411200", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sampling_rate_hz.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
+    fa.set_field(StreamKind::Audio, 0, "BitRate", "1411200");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sampling_rate_hz.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
     if let Some(e) = DAT_EMPHASIS[emphasis as usize] {
-        fa.fill(StreamKind::Audio, 0, "Format_Settings_Emphasis", e, false);
+        fa.set_field(StreamKind::Audio, 0, "Format_Settings_Emphasis", e);
     }
 
     // StreamSize: C++ computes (FileSize / 5822) × 5760 × 441 / 480 ≈ audio
     // payload retimed to the nominal 1411200 bps. Replicate exactly.
     let file_size = total as u64;
     let stream_size = ((file_size / DAT_FRAME_SIZE as u64) * DAT_AUDIO_SIZE as u64) * 441 / 480;
-    fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "StreamSize", stream_size.to_string());
 
     true
 }

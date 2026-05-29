@@ -13,80 +13,68 @@
 //!   uint8   quality            // 0 = lossless, !=0 = lossy
 //!   uint8   flags              // bit0 joint_stereo, bit1 streaming, bit2 vrq_lossy
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_RKA: [u8; 3] = *b"RKA";
 const HEADER_LEN: usize = 15;
 
 pub fn parse_rkau(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < HEADER_LEN {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < HEADER_LEN {
+        return None;
     }
-    let head = match fa.peek_raw(fa.remain().min(3)) {
-        Some(h) if h.len() == 3 => h,
-        _ => return false,
-    };
-    if head != MAGIC_RKA {
-        return false;
+    if r.peek_raw(3)? != MAGIC_RKA {
+        return None;
     }
 
-    fa.element_begin("RKAU");
-    fa.skip_hexa(3, "Signature");
-    let mut version_bytes = [0u8; 1];
-    if let Some(b) = fa.peek_raw(1) {
-        version_bytes[0] = b[0];
-    }
-    fa.skip_l1("Version");
-    let mut source_bytes: Int32u = 0;
-    fa.get_l4(&mut source_bytes, "SourceBytes");
-    let mut sample_rate: Int32u = 0;
-    fa.get_l4(&mut sample_rate, "SampleRate");
-    let mut channels: Int8u = 0;
-    fa.get_l1(&mut channels, "Channels");
-    let mut bits_per_sample: Int8u = 0;
-    fa.get_l1(&mut bits_per_sample, "BitsPerSample");
-    let mut quality: Int8u = 0;
-    fa.get_l1(&mut quality, "Quality");
-    let mut flags: Int8u = 0;
-    fa.get_l1(&mut flags, "Flags");
-    fa.element_end();
+    r.element_begin("RKAU");
+    r.skip(3)?; // "RKA" signature
+    let version = r.le_u8("Version")?;
+    let source_bytes = r.le_u32("SourceBytes")?;
+    let sample_rate = r.le_u32("SampleRate")?;
+    let channels = r.le_u8("Channels")?;
+    let bits_per_sample = r.le_u8("BitsPerSample")?;
+    let quality = r.le_u8("Quality")?;
+    r.le_u8("Flags")?;
+    r.element_end();
 
     if sample_rate == 0 || channels == 0 || bits_per_sample == 0 {
-        return false;
+        return None;
     }
     // Mirror the C++ duration formula: (source_bytes * 1000 / 4) / sample_rate.
     let duration_ms: u64 = ((source_bytes as u64) * 1000 / 4) / sample_rate as u64;
     if duration_ms == 0 {
-        return false;
+        return None;
     }
     let uncompressed: u64 = (channels as u64) * (bits_per_sample as u64 / 8);
     if uncompressed == 0 {
-        return false;
+        return None;
     }
 
     // C++ stores the version byte as an ASCII character and concatenates it
     // with the literal "1.0" prefix to form e.g. "1.01".
-    let version_str = format!("1.0{}", version_bytes[0] as char);
+    let version_str = format!("1.0{}", version as char);
     let compression_mode = if quality == 0 { "Lossless" } else { "Lossy" };
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "RKAU", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version_str.clone(), false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "RKAU");
+    r.set_field(StreamKind::General, 0, "Format_Version", version_str.clone());
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 
-    fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "RKAU", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Version", version_str, false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", compression_mode, false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "VBR", false);
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-
-    let _ = flags;
-    true
+    r.stream_prepare(StreamKind::Audio);
+    r.set_field(StreamKind::Audio, 0, "Format", "RKAU");
+    r.set_field(StreamKind::Audio, 0, "Format_Version", version_str);
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", compression_mode);
+    r.set_field(StreamKind::Audio, 0, "BitRate_Mode", "VBR");
+    r.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
+    r.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    r.set_field(StreamKind::Audio, 0, "BitDepth", bits_per_sample.to_string());
+    r.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+    Some(())
 }
 
 #[cfg(test)]

@@ -32,19 +32,19 @@ pub fn parse_psd(fa: &mut FileAnalyze) -> bool {
     let color_space = psd_color_mode(color_mode);
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", format, false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", format);
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", format, false);
-    fa.fill(StreamKind::Image, 0, "Format_Version", version.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Format", format);
+    fa.set_field(StreamKind::Image, 0, "Format_Version", version.to_string());
     if !color_space.is_empty() {
-        fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
+        fa.set_field(StreamKind::Image, 0, "ColorSpace", color_space);
     }
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "BitDepth", bits.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Image, 0, "BitDepth", bits.to_string());
+    fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossless");
     true
 }
 

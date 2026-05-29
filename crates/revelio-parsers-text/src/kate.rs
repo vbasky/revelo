@@ -26,8 +26,7 @@
 //!   16 bytes : language (UTF-8, NUL-padded)
 //!   16 bytes : category (UTF-8, NUL-padded)
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const KATE_MAGIC: &[u8; 8] = b"\x80kate\x00\x00\x00";
 const IDENTIFICATION_MIN_SIZE: usize = 64;
@@ -37,54 +36,47 @@ const IDENTIFICATION_MIN_SIZE: usize = 64;
 /// Detection: `kate\0\0\0\x80` magic.
 /// Fills: Format.
 pub fn parse_kate(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.remain().min(8));
-    let Some(h) = head else { return false };
-    if h.len() < 8 || h != KATE_MAGIC {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let language;
+    let category;
+    {
+        let r = &mut Reader::wrap(fa);
+        let h = r.peek_raw(8)?;
+        if h.len() < 8 || h != KATE_MAGIC {
+            return None;
+        }
+        if r.remain() < IDENTIFICATION_MIN_SIZE {
+            return None;
+        }
+
+        r.element_begin("Kate");
+        r.skip(8)?; // Signature
+
+        r.le_u8("Reserved")?;
+        r.le_u8("version major")?;
+        r.le_u8("version minor")?;
+        r.le_u8("num headers")?;
+        r.le_u8("text encoding")?;
+        r.le_u8("directionality")?;
+        r.le_u8("Reserved")?;
+        r.le_u8("granule shift")?;
+        r.le_u32("Reserved")?;
+        r.le_u16("cw sh + canvas width")?;
+        r.le_u16("ch sh + canvas height")?;
+        r.le_u32("granule rate numerator")?;
+        r.le_u32("granule rate denominator")?;
+
+        language = parse_nul_terminated_utf8(r.read_raw(16)?);
+        category = parse_nul_terminated_utf8(r.read_raw(16)?);
+
+        r.element_end();
     }
-    if fa.remain() < IDENTIFICATION_MIN_SIZE {
-        return false;
-    }
-
-    fa.element_begin("Kate");
-    fa.skip_hexa(8, "Signature");
-
-    let mut _reserved0: Int8u = 0;
-    let mut _version_major: Int8u = 0;
-    let mut _version_minor: Int8u = 0;
-    let mut _num_headers: Int8u = 0;
-    let mut _text_encoding: Int8u = 0;
-    let mut _directionality: Int8u = 0;
-    let mut _reserved1: Int8u = 0;
-    let mut _granule_shift: Int8u = 0;
-    let mut _width: Int16u = 0;
-    let mut _height: Int16u = 0;
-    let mut _gr_num: Int32u = 0;
-    let mut _gr_den: Int32u = 0;
-
-    fa.get_l1(&mut _reserved0, "Reserved");
-    fa.get_l1(&mut _version_major, "version major");
-    fa.get_l1(&mut _version_minor, "version minor");
-    fa.get_l1(&mut _num_headers, "num headers");
-    fa.get_l1(&mut _text_encoding, "text encoding");
-    fa.get_l1(&mut _directionality, "directionality");
-    fa.get_l1(&mut _reserved1, "Reserved");
-    fa.get_l1(&mut _granule_shift, "granule shift");
-    fa.skip_l4("Reserved");
-    fa.get_l2(&mut _width, "cw sh + canvas width");
-    fa.get_l2(&mut _height, "ch sh + canvas height");
-    fa.get_l4(&mut _gr_num, "granule rate numerator");
-    fa.get_l4(&mut _gr_den, "granule rate denominator");
-
-    let lang_bytes = fa.read_raw(16).to_vec();
-    let cat_bytes = fa.read_raw(16).to_vec();
-    let language = parse_nul_terminated_utf8(&lang_bytes);
-    let category = parse_nul_terminated_utf8(&cat_bytes);
-
-    fa.element_end();
 
     fill_streams(fa, &language, &category);
-    true
+    Some(())
 }
 
 fn parse_nul_terminated_utf8(bytes: &[u8]) -> String {
@@ -116,17 +108,17 @@ fn map_category(category: &str) -> &str {
 
 fn fill_streams(fa: &mut FileAnalyze, language: &str, category: &str) {
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Kate", false);
-    fa.fill(StreamKind::General, 0, "TextCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Kate");
+    fa.set_field(StreamKind::General, 0, "TextCount", "1");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "Kate", false);
-    fa.fill(StreamKind::Text, 0, "Codec", "Kate", false);
+    fa.set_field(StreamKind::Text, 0, "Format", "Kate");
+    fa.set_field(StreamKind::Text, 0, "Codec", "Kate");
     if !language.is_empty() {
-        fa.fill(StreamKind::Text, 0, "Language", language, false);
+        fa.set_field(StreamKind::Text, 0, "Language", language);
     }
     if !category.is_empty() {
-        fa.fill(StreamKind::Text, 0, "Language_More", map_category(category), false);
+        fa.set_field(StreamKind::Text, 0, "Language_More", map_category(category));
     }
 }
 

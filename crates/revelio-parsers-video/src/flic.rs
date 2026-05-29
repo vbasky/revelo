@@ -15,8 +15,8 @@ pub fn parse_flic(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "Format", "FLIC", false);
-    fa.fill(StreamKind::Video, pos, "Format_Info", "Autodesk Animator", false);
+    fa.set_field(StreamKind::Video, pos, "Format", "FLIC");
+    fa.set_field(StreamKind::Video, pos, "Format_Info", "Autodesk Animator");
     true
 }
 #[cfg(test)]

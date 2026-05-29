@@ -52,7 +52,7 @@ pub fn parse_cdxa(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "CDXA", false);
+    fa.set_field(StreamKind::General, 0, "Format", "CDXA");
 
     true
 }

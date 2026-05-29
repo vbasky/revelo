@@ -99,20 +99,20 @@ struct Vc3Info {
 fn fill_vc3_streams(fa: &mut FileAnalyze, info: Vc3Info) {
     let Vc3Info { version, width, height, cid, sst, profile, level, bit_depth } = info;
     fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "VC-3", false);
-    fa.fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", version), false);
-    fa.fill(StreamKind::Video, 0, "Format_Profile", format!("{}@{}", profile, level), false);
-    fa.fill(StreamKind::Video, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "BitDepth", bit_depth.to_string(), false);
+    fa.set_field(StreamKind::Video, 0, "Format", "VC-3");
+    fa.set_field(StreamKind::Video, 0, "Format_Version", format!("Version {}", version));
+    fa.set_field(StreamKind::Video, 0, "Format_Profile", format!("{}@{}", profile, level));
+    fa.set_field(StreamKind::Video, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Video, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Video, 0, "BitDepth", bit_depth.to_string());
 
     let scan = if sst == 0 { "Progressive" } else { "Interlaced" };
-    fa.fill(StreamKind::Video, 0, "ScanType", scan, false);
+    fa.set_field(StreamKind::Video, 0, "ScanType", scan);
 
     let chroma = if cid == 1256 || cid == 1270 { "4:4:4" } else { "4:2:2" };
-    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
-    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
-    fa.fill(StreamKind::Video, 0, "BitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", chroma);
+    fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
+    fa.set_field(StreamKind::Video, 0, "BitRate_Mode", "CBR");
 }
 
 #[cfg(test)]

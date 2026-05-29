@@ -53,25 +53,25 @@ pub fn parse_bpg(fa: &mut FileAnalyze) -> bool {
     let (height, _) = read_vsi(&h[6 + w_used..]);
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "BPG", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "BPG");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "BPG", false);
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "Format", "BPG");
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     let cs = bpg_color_space(color_space);
     if !cs.is_empty() {
-        fa.fill(StreamKind::Image, 0, "ColorSpace", cs, false);
+        fa.set_field(StreamKind::Image, 0, "ColorSpace", cs);
     }
     let cm = bpg_pixel_format(pixel_format);
     if !cm.is_empty() && pixel_format != 0 {
-        fa.fill(StreamKind::Image, 0, "ChromaSubsampling", cm, false);
+        fa.set_field(StreamKind::Image, 0, "ChromaSubsampling", cm);
     }
-    fa.fill(StreamKind::Image, 0, "BitDepth", (bit_depth_minus_8 as u32 + 8).to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "BitDepth", (bit_depth_minus_8 as u32 + 8).to_string());
     let cp = bpg_colour_primaries(color_space);
     if !cp.is_empty() {
-        fa.fill(StreamKind::Image, 0, "colour_primaries", cp, false);
+        fa.set_field(StreamKind::Image, 0, "colour_primaries", cp);
     }
     true
 }

@@ -12,14 +12,8 @@ pub fn parse_dtvcc_transport(fa: &mut FileAnalyze) -> bool {
     if buf[0] == 0x03 && buf[1] == 0x00 {
         // CC_type_1 in CTA-708
         let pos = fa.stream_prepare(StreamKind::Text);
-        fa.fill(StreamKind::Text, pos, "Format", "DTVCC", false);
-        fa.fill(
-            StreamKind::Text,
-            pos,
-            "Format_Info",
-            "Digital Television Closed Captioning",
-            false,
-        );
+        fa.set_field(StreamKind::Text, pos, "Format", "DTVCC");
+        fa.set_field(StreamKind::Text, pos, "Format_Info", "Digital Television Closed Captioning");
         return true;
     }
     false

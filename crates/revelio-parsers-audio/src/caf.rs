@@ -17,7 +17,7 @@
 //!   ChunkSize bytes payload
 //!
 //! Audio Description chunk ("desc"), payload 32 bytes:
-//!   8 bytes BE Float64: SampleRate
+//!   8 bytes BE f64: SampleRate
 //!   4 bytes FourCC:     FormatID
 //!   4 bytes BE u32:     FormatFlags
 //!   4 bytes BE u32:     BytesPerPacket
@@ -25,7 +25,7 @@
 //!   4 bytes BE u32:     ChannelsPerFrame
 //!   4 bytes BE u32:     BitsPerChannel
 
-use revelio_core::{FileAnalyze, StreamKind};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_CAFF: u32 = u32::from_be_bytes(*b"caff");
 const CHUNK_DESC: u32 = u32::from_be_bytes(*b"desc");
@@ -45,125 +45,114 @@ struct AudioDesc {
 /// Detection: `caff` magic.
 /// Fills: Format, channels, sample rate, codec descriptor.
 pub fn parse_caf(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(fa.remain().min(8));
-    let Some(h) = head else { return false };
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    let h = r.peek_raw(8)?;
     if h.len() < 8 {
-        return false;
+        return None;
     }
     let magic = u32::from_be_bytes([h[0], h[1], h[2], h[3]]);
     if magic != MAGIC_CAFF {
-        return false;
+        return None;
     }
     let file_version = u16::from_be_bytes([h[4], h[5]]);
 
-    fa.element_begin("CAF");
-    let mut magic_consume: u32 = 0;
-    fa.get_c4(&mut magic_consume, "FileType");
-    let mut ver: u16 = 0;
-    fa.get_b2(&mut ver, "FileVersion");
-    let mut flags: u16 = 0;
-    fa.get_b2(&mut flags, "FileFlags");
+    r.element_begin("CAF");
+    r.fourcc("FileType")?;
+    r.be_u16("FileVersion")?;
+    r.be_u16("FileFlags")?;
 
     let mut desc: Option<AudioDesc> = None;
 
     // Only Version 1 is supported by MediaInfoLib; for other versions we
     // still emit General.Format=CAF and stop parsing chunks.
     if file_version == 1 {
-        while fa.remain() >= 12 {
-            let mut chunk_type: u32 = 0;
-            fa.get_c4(&mut chunk_type, "ChunkType");
-            let mut chunk_size: u64 = 0;
-            fa.get_b8(&mut chunk_size, "ChunkSize");
+        while r.remain() >= 12 {
+            let chunk_type = r.fourcc("ChunkType")?;
+            let chunk_size = r.be_u64("ChunkSize")?;
             let csize = chunk_size as usize;
             // The `data` chunk may declare size=-1 (to EOF) — clamp to remaining bytes.
             let effective =
-                if chunk_size as i64 == -1 || csize > fa.remain() { fa.remain() } else { csize };
+                if chunk_size as i64 == -1 || csize > r.remain() { r.remain() } else { csize };
 
             if chunk_type == CHUNK_DESC && effective >= 32 {
-                fa.element_begin("desc");
-                desc = Some(parse_desc(fa));
-                fa.element_end();
+                r.element_begin("desc");
+                desc = Some(parse_desc(r)?);
+                r.element_end();
                 if effective > 32 {
-                    fa.skip_hexa(effective - 32, "Extension");
+                    r.skip(effective - 32)?; // Extension
                 }
-            } else {
-                if effective > 0 {
-                    fa.skip_hexa(effective, "Chunk");
-                }
+            } else if effective > 0 {
+                r.skip(effective)?; // Chunk
             }
         }
     }
 
-    fa.element_end();
+    r.element_end();
 
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "CAF", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", format!("Version {}", file_version), false);
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "CAF");
+    r.set_field(StreamKind::General, 0, "Format_Version", format!("Version {}", file_version));
 
-    fa.stream_prepare(StreamKind::Audio);
+    r.stream_prepare(StreamKind::Audio);
     if let Some(d) = desc {
-        fill_audio(fa, &d);
+        fill_audio(r, &d);
     }
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
-
-    true
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
+    Some(())
 }
 
-fn parse_desc(fa: &mut FileAnalyze) -> AudioDesc {
-    let mut sample_rate: f64 = 0.0;
-    fa.get_bf8(&mut sample_rate, "SampleRate");
-    let mut format_id: u32 = 0;
-    fa.get_c4(&mut format_id, "FormatID");
-    let mut format_flags: u32 = 0;
-    fa.get_b4(&mut format_flags, "FormatFlags");
-    let mut bytes_per_packet: u32 = 0;
-    fa.get_b4(&mut bytes_per_packet, "BytesPerPacket");
-    let mut frames_per_packet: u32 = 0;
-    fa.get_b4(&mut frames_per_packet, "FramesPerPacket");
-    let mut channels_per_frame: u32 = 0;
-    fa.get_b4(&mut channels_per_frame, "ChannelsPerFrame");
-    let mut bits_per_channel: u32 = 0;
-    fa.get_b4(&mut bits_per_channel, "BitsPerChannel");
+fn parse_desc(r: &mut Reader<'_, '_>) -> Option<AudioDesc> {
+    let sample_rate = r.be_f64("SampleRate")?;
+    let format_id = r.fourcc("FormatID")?;
+    r.be_u32("FormatFlags")?;
+    let bytes_per_packet = r.be_u32("BytesPerPacket")?;
+    let frames_per_packet = r.be_u32("FramesPerPacket")?;
+    let channels_per_frame = r.be_u32("ChannelsPerFrame")?;
+    let bits_per_channel = r.be_u32("BitsPerChannel")?;
 
-    AudioDesc {
+    Some(AudioDesc {
         sample_rate,
         format_id,
         bytes_per_packet,
         frames_per_packet,
         channels_per_frame,
         bits_per_channel,
-    }
+    })
 }
 
-fn fill_audio(fa: &mut FileAnalyze, d: &AudioDesc) {
+fn fill_audio(r: &mut Reader<'_, '_>, d: &AudioDesc) {
     // FormatID is a 4-character codec tag (e.g. "lpcm", "aac ", "alac").
     // MediaInfoLib runs it through CodecID_Fill; we emit the raw FourCC
     // here and let downstream codec-id mapping (when added) refine it.
     let fourcc = format_id_to_string(d.format_id);
     if !fourcc.is_empty() {
-        fa.fill(StreamKind::Audio, 0, "Format", fourcc.as_str(), false);
+        r.set_field(StreamKind::Audio, 0, "Format", fourcc.as_str());
     }
 
     if d.sample_rate > 0.0 {
-        // SampleRate is Float64 but values are typically integral (44100, 48000…).
+        // SampleRate is f64 but values are typically integral (44100, 48000…).
         let sr = d.sample_rate;
         let sr_str = if (sr - sr.round()).abs() < 1e-6 {
             (sr.round() as u64).to_string()
         } else {
             format!("{}", sr)
         };
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", sr_str, false);
+        r.set_field(StreamKind::Audio, 0, "SamplingRate", sr_str);
     }
     if d.channels_per_frame > 0 {
-        fa.fill(StreamKind::Audio, 0, "Channels", d.channels_per_frame.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "Channels", d.channels_per_frame.to_string());
     }
     if d.bits_per_channel > 0 {
-        fa.fill(StreamKind::Audio, 0, "BitDepth", d.bits_per_channel.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "BitDepth", d.bits_per_channel.to_string());
     }
     if d.bytes_per_packet > 0 && d.frames_per_packet > 0 && d.sample_rate > 0.0 {
         let bitrate =
             d.sample_rate * (d.bytes_per_packet as f64) * 8.0 / (d.frames_per_packet as f64);
-        fa.fill(StreamKind::Audio, 0, "BitRate", (bitrate.round() as u64).to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "BitRate", (bitrate.round() as u64).to_string());
     }
 }
 

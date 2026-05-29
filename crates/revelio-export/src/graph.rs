@@ -8,7 +8,7 @@ pub fn to_graph(streams: &StreamCollection) -> String {
         StreamKind::Text,
         StreamKind::Image,
     ] {
-        for p in 0..streams.count_get(kind) {
+        for p in 0..streams.stream_count(kind) {
             if let Some(s) = streams.stream(kind, p) {
                 out.push_str(&format!("  \"{}\" [shape=box];\n", kind.name()));
                 for (k, _) in s.iter() {
@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn test() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", Ztring::from("MP4"), false);
+        c.set_field(StreamKind::General, 0, "Format", Ztring::from("MP4"));
         assert!(to_graph(&c).contains("digraph"));
     }
 }

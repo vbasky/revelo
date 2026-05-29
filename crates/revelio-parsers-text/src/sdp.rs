@@ -11,8 +11,8 @@ pub fn parse_sdp(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "SDP", false);
-    fa.fill(StreamKind::Text, pos, "Format_Info", "Session Description Protocol", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "SDP");
+    fa.set_field(StreamKind::Text, pos, "Format_Info", "Session Description Protocol");
     true
 }
 #[cfg(test)]

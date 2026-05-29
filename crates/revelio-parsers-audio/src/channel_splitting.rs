@@ -10,8 +10,8 @@ pub fn parse_channel_splitting(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "Channel Splitting", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "Multi-channel splitting", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "Channel Splitting");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "Multi-channel splitting");
     true
 }
 #[cfg(test)]

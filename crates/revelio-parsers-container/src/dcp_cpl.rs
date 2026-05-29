@@ -68,7 +68,7 @@ pub fn parse_dcp_cpl(fa: &mut FileAnalyze) -> bool {
 
     let format = if is_dcp { "DCP CPL" } else { "IMF CPL" };
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", format, true);
+    fa.force_field(StreamKind::General, 0, "Format", format);
     true
 }
 

@@ -77,7 +77,7 @@ fn segmentation_type_name(t: u8) -> &'static str {
 /// Detection: first byte is 0xFC (table_id for splice_info_section).
 pub fn parse_scte35(fa: &mut FileAnalyze) -> bool {
     let mut magic: u32 = 0;
-    fa.peek_b4(&mut magic);
+    magic = fa.peek_b4();
     if magic != 0xFC && (magic >> 24) as u8 != 0xFC {
         return false;
     }
@@ -152,7 +152,7 @@ pub fn parse_scte35(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::Other);
-    fa.fill(StreamKind::Other, 0, "Format", "SCTE 35", false);
+    fa.set_field(StreamKind::Other, 0, "Format", "SCTE 35");
 
     let cmd_name = match splice_command_type {
         0x00 => "splice_null",
@@ -162,15 +162,15 @@ pub fn parse_scte35(fa: &mut FileAnalyze) -> bool {
         0x07 => "bandwidth_reservation",
         _ => "reserved",
     };
-    fa.fill(StreamKind::Other, 0, "Format_Info", format!("SCTE 35 {} command", cmd_name), false);
+    fa.set_field(StreamKind::Other, 0, "Format_Info", format!("SCTE 35 {} command", cmd_name));
 
-    fa.fill(StreamKind::Other, 0, "SpliceCommandType", splice_command_type.to_string(), false);
-    fa.fill(StreamKind::Other, 0, "SpliceCommandName", cmd_name, false);
-    fa.fill(StreamKind::Other, 0, "Tier", tier.to_string(), false);
-    fa.fill(StreamKind::Other, 0, "CWIndex", cw_index.to_string(), false);
+    fa.set_field(StreamKind::Other, 0, "SpliceCommandType", splice_command_type.to_string());
+    fa.set_field(StreamKind::Other, 0, "SpliceCommandName", cmd_name);
+    fa.set_field(StreamKind::Other, 0, "Tier", tier.to_string());
+    fa.set_field(StreamKind::Other, 0, "CWIndex", cw_index.to_string());
 
     let pts_secs = pts_adjustment as f64 / 90000.0;
-    fa.fill(StreamKind::Other, 0, "PTSAdjustment", format!("{:.3}", pts_secs), false);
+    fa.set_field(StreamKind::Other, 0, "PTSAdjustment", format!("{:.3}", pts_secs));
 
     true
 }
@@ -251,13 +251,7 @@ fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mu
         dpos += 5;
         if seg_dur > 0 {
             let dur_secs = seg_dur as f64 / 90000.0;
-            fa.fill(
-                StreamKind::Other,
-                0,
-                "SegmentationDuration",
-                format!("{:.3}", dur_secs),
-                false,
-            );
+            fa.set_field(StreamKind::Other, 0, "SegmentationDuration", format!("{:.3}", dur_secs));
         }
     } else {
         seg_dur = 0;
@@ -271,8 +265,8 @@ fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mu
     let seg_type = buf[dpos];
     let seg_type_name = segmentation_type_name(seg_type);
     dpos += 2;
-    fa.fill(StreamKind::Other, 0, "SegmentationTypeID", seg_type.to_string(), false);
-    fa.fill(StreamKind::Other, 0, "SegmentationTypeName", seg_type_name, false);
+    fa.set_field(StreamKind::Other, 0, "SegmentationTypeID", seg_type.to_string());
+    fa.set_field(StreamKind::Other, 0, "SegmentationTypeName", seg_type_name);
 
     if upid_len > 0 && dpos + upid_len <= buf.len() {
         let upid_type = buf[dpos];
@@ -285,7 +279,7 @@ fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mu
                     if !s.is_empty()
                         && s.chars().all(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
                     {
-                        fa.fill(StreamKind::Other, 0, "UPID", s, false);
+                        fa.set_field(StreamKind::Other, 0, "UPID", s);
                     }
                 }
             }

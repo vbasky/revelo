@@ -13,7 +13,7 @@
 //! Common attributes:
 //!   "compression"   type "compression" (1 byte): codec id
 //!   "displayWindow" type "box2i" (16 bytes): xMin/yMin/xMax/yMax → Width/Height
-//!   "pixelAspectRatio" type "float" (4 bytes LE Float32)
+//!   "pixelAspectRatio" type "float" (4 bytes LE f32)
 //!   "framesPerSecond"  type "rational" (4+4 bytes: n, d) → FrameRate
 
 use revelio_core::{FileAnalyze, StreamKind};
@@ -109,35 +109,35 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "EXR", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", version.to_string(), false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "EXR");
+    fa.set_field(StreamKind::General, 0, "Format_Version", version.to_string());
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
     if let Some(c) = comments {
-        fa.fill(StreamKind::General, 0, "Comment", c, false);
+        fa.set_field(StreamKind::General, 0, "Comment", c);
     }
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "EXR", false);
-    fa.fill(StreamKind::Image, 0, "Format_Version", version.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Format_Profile", if is_tile { "Tile" } else { "Line" }, false);
+    fa.set_field(StreamKind::Image, 0, "Format", "EXR");
+    fa.set_field(StreamKind::Image, 0, "Format_Version", version.to_string());
+    fa.set_field(StreamKind::Image, 0, "Format_Profile", if is_tile { "Tile" } else { "Line" });
     if let Some(c) = compression {
-        fa.fill(StreamKind::Image, 0, "Format_Compression", c, false);
+        fa.set_field(StreamKind::Image, 0, "Format_Compression", c);
     }
     if width > 0 {
-        fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
     }
     if height > 0 {
-        fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
+        fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
     }
     if width > 0 && height > 0 {
         let dar = width as f64 / height as f64;
-        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.set_field(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar));
     }
     if let Some(par) = pixel_aspect_ratio {
-        fa.fill(StreamKind::Image, 0, "PixelAspectRatio", format!("{:.3}", par), false);
+        fa.set_field(StreamKind::Image, 0, "PixelAspectRatio", format!("{:.3}", par));
     }
     if let Some(fr) = frame_rate {
-        fa.fill(StreamKind::Image, 0, "FrameRate", format!("{:.3}", fr), false);
+        fa.set_field(StreamKind::Image, 0, "FrameRate", format!("{:.3}", fr));
     }
     // EXR compression codes 0-4 are lossless; 5+ are lossy.
     if compression.is_some() {
@@ -145,17 +145,16 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
             compression,
             Some("raw") | Some("RLZ") | Some("ZIPS") | Some("ZIP") | Some("PIZ")
         );
-        fa.fill(
+        fa.set_field(
             StreamKind::Image,
             0,
             "Compression_Mode",
             if lossless { "Lossless" } else { "Lossy" },
-            false,
         );
     }
     let file_size = fa.remain();
-    fa.fill(StreamKind::Image, 0, "StreamSize", file_size.to_string(), false);
-    fa.fill(StreamKind::General, 0, "StreamSize", "0", true);
+    fa.set_field(StreamKind::Image, 0, "StreamSize", file_size.to_string());
+    fa.force_field(StreamKind::General, 0, "StreamSize", "0");
     true
 }
 

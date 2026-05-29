@@ -14,8 +14,8 @@ pub fn parse_ps2_audio(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "PS2 Audio", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "PlayStation 2 ADPCM", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "PS2 Audio");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "PlayStation 2 ADPCM");
     true
 }
 #[cfg(test)]

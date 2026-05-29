@@ -70,24 +70,23 @@ fn fill_opus_streams(
 ) {
     let pos = fa.stream_prepare(StreamKind::Audio);
 
-    fa.fill(StreamKind::Audio, pos, "Format", "Opus", false);
-    fa.fill(StreamKind::Audio, pos, "Codec", "Opus", false);
-    fa.fill(StreamKind::Audio, pos, "Channels", channel_count.to_string(), false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "Opus");
+    fa.set_field(StreamKind::Audio, pos, "Codec", "Opus");
+    fa.set_field(StreamKind::Audio, pos, "Channels", channel_count.to_string());
 
     let sr = if sample_rate > 0 { sample_rate } else { 48000 };
-    fa.fill(StreamKind::Audio, pos, "SamplingRate", sr.to_string(), false);
+    fa.set_field(StreamKind::Audio, pos, "SamplingRate", sr.to_string());
 
     if channel_map == 0 || channel_map == 1 {
         let ch = channel_count as usize;
         if ch > 0 && ch <= 8 {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Audio,
                 pos,
                 "ChannelPositions",
                 OPUS_CHANNEL_POSITIONS[ch - 1],
-                false,
             );
-            fa.fill(StreamKind::Audio, pos, "ChannelLayout", OPUS_CHANNEL_LAYOUT[ch - 1], false);
+            fa.set_field(StreamKind::Audio, pos, "ChannelLayout", OPUS_CHANNEL_LAYOUT[ch - 1]);
         }
     }
 }

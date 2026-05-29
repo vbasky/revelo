@@ -401,19 +401,19 @@ fn fill_streams(
     let &AviStreamData { streams, movi_sizes, movi_chunk_counts } = stream_data;
     fa.stream_prepare(StreamKind::General);
     fa.element_end();
-    fa.fill(StreamKind::General, 0, "Format", "AVI", false);
+    fa.set_field(StreamKind::General, 0, "Format", "AVI");
 
     let video_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_VIDS).count();
     let audio_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_AUDS).count();
     let text_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_TXTS).count();
     if video_count > 0 {
-        fa.fill(StreamKind::General, 0, "VideoCount", video_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "VideoCount", video_count.to_string());
     }
     if audio_count > 0 {
-        fa.fill(StreamKind::General, 0, "AudioCount", audio_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "AudioCount", audio_count.to_string());
     }
     if text_count > 0 {
-        fa.fill(StreamKind::General, 0, "TextCount", text_count.to_string(), false);
+        fa.set_field(StreamKind::General, 0, "TextCount", text_count.to_string());
     }
 
     // Format_Settings: one descriptor per stream kind. Pure video + PCM
@@ -423,79 +423,72 @@ fn fill_streams(
         s.strh.fcc_type == STRH_AUDS && s.audio.as_ref().is_some_and(|a| a.format_tag == 0x0001)
     });
     if has_video && has_pcm {
-        fa.fill(
-            StreamKind::General,
-            0,
-            "Format_Settings",
-            "BitmapInfoHeader / PcmWaveformat",
-            false,
-        );
+        fa.set_field(StreamKind::General, 0, "Format_Settings", "BitmapInfoHeader / PcmWaveformat");
     } else if has_video {
-        fa.fill(StreamKind::General, 0, "Format_Settings", "BitmapInfoHeader", false);
+        fa.set_field(StreamKind::General, 0, "Format_Settings", "BitmapInfoHeader");
     }
 
     // AVI samples are interleaved (the format's whole purpose).
     if has_video && audio_count > 0 {
-        fa.fill(StreamKind::General, 0, "Interleaved", "Yes", false);
+        fa.set_field(StreamKind::General, 0, "Interleaved", "Yes");
     }
 
     // Duration from avih: microseconds_per_frame × total_frames → ms.
-    let duration_ms_general: Option<u64> = if header.microseconds_per_frame > 0
-        && header.total_frames > 0
-    {
-        let d = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
-        fa.fill(StreamKind::General, 0, "Duration", d.to_string(), false);
+    let duration_ms_general: Option<u64> =
+        if header.microseconds_per_frame > 0 && header.total_frames > 0 {
+            let d = (header.microseconds_per_frame as u64 * header.total_frames as u64) / 1000;
+            fa.set_field(StreamKind::General, 0, "Duration", d.to_string());
 
-        // Calculate OverallBitRate = FileSize * 8 / Duration_ms * 1000
-        if d > 0 && file_size > 0 {
-            let overall_bitrate = (file_size as u64 * 8 * 1000) / d;
-            fa.fill(StreamKind::General, 0, "OverallBitRate", overall_bitrate.to_string(), false);
-            fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "VBR", false);
-        }
+            // Calculate OverallBitRate = FileSize * 8 / Duration_ms * 1000
+            if d > 0 && file_size > 0 {
+                let overall_bitrate = (file_size as u64 * 8 * 1000) / d;
+                fa.set_field(StreamKind::General, 0, "OverallBitRate", overall_bitrate.to_string());
+                fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "VBR");
+            }
 
-        Some(d)
-    } else {
-        None
-    };
+            Some(d)
+        } else {
+            None
+        };
 
     if let Some(isft) = isft {
-        fa.fill(StreamKind::General, 0, "Encoded_Application", isft, false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Application", isft);
     }
     if let Some(ref s) = meta.artist {
-        fa.fill(StreamKind::General, 0, "Performer", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Performer", s.clone());
     }
     if let Some(ref s) = meta.comments {
-        fa.fill(StreamKind::General, 0, "Comment", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Comment", s.clone());
     }
     if let Some(ref s) = meta.copyright {
-        fa.fill(StreamKind::General, 0, "Copyright", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Copyright", s.clone());
     }
     if let Some(ref s) = meta.creation_date {
-        fa.fill(StreamKind::General, 0, "Recorded_Date", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Recorded_Date", s.clone());
     }
     if let Some(ref s) = meta.genre {
-        fa.fill(StreamKind::General, 0, "Genre", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Genre", s.clone());
     }
     if let Some(ref s) = meta.keywords {
-        fa.fill(StreamKind::General, 0, "Keywords", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Keywords", s.clone());
     }
     if let Some(ref s) = meta.medium {
-        fa.fill(StreamKind::General, 0, "Medium", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Medium", s.clone());
     }
     if let Some(ref s) = meta.title {
-        fa.fill(StreamKind::General, 0, "Title", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Title", s.clone());
     }
     if let Some(ref s) = meta.product {
-        fa.fill(StreamKind::General, 0, "Product", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Product", s.clone());
     }
     if let Some(ref s) = meta.subject {
-        fa.fill(StreamKind::General, 0, "Subject", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Subject", s.clone());
     }
     if let Some(ref s) = meta.source {
-        fa.fill(StreamKind::General, 0, "Source", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Source", s.clone());
     }
     if let Some(ref s) = meta.technician {
-        fa.fill(StreamKind::General, 0, "Encoded_By", s.clone(), false);
+        fa.set_field(StreamKind::General, 0, "Encoded_By", s.clone());
     }
 
     // Interleave_VideoFrames / Interleave_Duration: derived once across
@@ -558,84 +551,84 @@ fn fill_video(
     movi_bytes: u64,
 ) {
     let pos = fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, pos, "StreamOrder", stream_order.to_string(), false);
-    fa.fill(StreamKind::Video, pos, "ID", stream_order.to_string(), false);
+    fa.set_field(StreamKind::Video, pos, "StreamOrder", stream_order.to_string());
+    fa.set_field(StreamKind::Video, pos, "ID", stream_order.to_string());
     let format = vf.map(|v| video_format_from_fourcc(v.compression)).unwrap_or("");
     if !format.is_empty() {
-        fa.fill(StreamKind::Video, pos, "Format", format, false);
+        fa.set_field(StreamKind::Video, pos, "Format", format);
     }
     let mut is_lossy_codec = false;
     if let Some(v) = vf {
         if v.compression != 0 {
-            fa.fill(StreamKind::Video, pos, "CodecID", fourcc_to_string(v.compression), false);
+            fa.set_field(StreamKind::Video, pos, "CodecID", fourcc_to_string(v.compression));
             is_lossy_codec = matches!(
                 format,
                 "AVC" | "HEVC" | "VP8" | "VP9" | "MPEG-4 Visual" | "MPEG Video" | "JPEG"
             );
         }
         if v.width > 0 {
-            fa.fill(StreamKind::Video, pos, "Width", v.width.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "Sampled_Width", v.width.to_string(), false);
+            fa.set_field(StreamKind::Video, pos, "Width", v.width.to_string());
+            fa.set_field(StreamKind::Video, pos, "Sampled_Width", v.width.to_string());
         }
         if v.height > 0 {
-            fa.fill(StreamKind::Video, pos, "Height", v.height.to_string(), false);
-            fa.fill(StreamKind::Video, pos, "Sampled_Height", v.height.to_string(), false);
+            fa.set_field(StreamKind::Video, pos, "Height", v.height.to_string());
+            fa.set_field(StreamKind::Video, pos, "Sampled_Height", v.height.to_string());
         }
         if v.width > 0 && v.height > 0 {
-            fa.fill(StreamKind::Video, pos, "PixelAspectRatio", "1.000", false);
+            fa.set_field(StreamKind::Video, pos, "PixelAspectRatio", "1.000");
             let dar = v.width as f64 / v.height as f64;
-            fa.fill(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar), false);
+            fa.set_field(StreamKind::Video, pos, "DisplayAspectRatio", format!("{:.3}", dar));
         }
         if v.bit_count > 0 && v.compression == 0 {
-            fa.fill(StreamKind::Video, pos, "BitDepth", v.bit_count.to_string(), false);
+            fa.set_field(StreamKind::Video, pos, "BitDepth", v.bit_count.to_string());
         } else if is_lossy_codec {
             // Standard 8-bit YUV 4:2:0 defaults for typical AVI lossy
             // codecs. Real codec-config parsing would override these.
-            fa.fill(StreamKind::Video, pos, "BitDepth", "8", false);
-            fa.fill(StreamKind::Video, pos, "ColorSpace", "YUV", false);
-            fa.fill(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0", false);
+            fa.set_field(StreamKind::Video, pos, "BitDepth", "8");
+            fa.set_field(StreamKind::Video, pos, "ColorSpace", "YUV");
+            fa.set_field(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0");
         }
     }
     if strh.rate > 0 && strh.scale > 0 {
         let fr = strh.rate as f64 / strh.scale as f64;
-        fa.fill(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr), false);
-        fa.fill(StreamKind::Video, pos, "FrameRate_Num", strh.rate.to_string(), false);
-        fa.fill(StreamKind::Video, pos, "FrameRate_Den", strh.scale.to_string(), false);
+        fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr));
+        fa.set_field(StreamKind::Video, pos, "FrameRate_Num", strh.rate.to_string());
+        fa.set_field(StreamKind::Video, pos, "FrameRate_Den", strh.scale.to_string());
     }
     if strh.length > 0 && strh.rate > 0 && strh.scale > 0 {
         let dur_ms = (strh.length as u64 * 1000 * strh.scale as u64) / strh.rate as u64;
-        fa.fill(StreamKind::Video, pos, "Duration", dur_ms.to_string(), false);
-        fa.fill(StreamKind::Video, pos, "FrameCount", strh.length.to_string(), false);
+        fa.set_field(StreamKind::Video, pos, "Duration", dur_ms.to_string());
+        fa.set_field(StreamKind::Video, pos, "FrameCount", strh.length.to_string());
     }
     if is_lossy_codec {
-        fa.fill(StreamKind::Video, pos, "ScanType", "Progressive", false);
-        fa.fill(StreamKind::Video, pos, "Compression_Mode", "Lossy", false);
-        fa.fill(StreamKind::Video, pos, "Delay", "0.000", false);
+        fa.set_field(StreamKind::Video, pos, "ScanType", "Progressive");
+        fa.set_field(StreamKind::Video, pos, "Compression_Mode", "Lossy");
+        fa.set_field(StreamKind::Video, pos, "Delay", "0.000");
     }
     // MPEG-4 Visual Format_Settings defaults (per VOL header). These
     // match ffmpeg's typical "Simple Profile" output; a real VOL parse
     // would override them when the bitstream signals otherwise.
     if matches!(format, "MPEG-4 Visual") {
-        fa.fill(StreamKind::Video, pos, "Format_Profile", "Simple", false);
-        fa.fill(StreamKind::Video, pos, "Format_Level", "1", false);
-        fa.fill(StreamKind::Video, pos, "Format_Settings_BVOP", "No", false);
-        fa.fill(StreamKind::Video, pos, "Format_Settings_QPel", "No", false);
-        fa.fill(StreamKind::Video, pos, "Format_Settings_GMC", "0", false);
-        fa.fill(StreamKind::Video, pos, "Format_Settings_Matrix", "Default (H.263)", false);
+        fa.set_field(StreamKind::Video, pos, "Format_Profile", "Simple");
+        fa.set_field(StreamKind::Video, pos, "Format_Level", "1");
+        fa.set_field(StreamKind::Video, pos, "Format_Settings_BVOP", "No");
+        fa.set_field(StreamKind::Video, pos, "Format_Settings_QPel", "No");
+        fa.set_field(StreamKind::Video, pos, "Format_Settings_GMC", "0");
+        fa.set_field(StreamKind::Video, pos, "Format_Settings_Matrix", "Default (H.263)");
     }
     // Video.StreamSize from the summed movi chunk payloads for this
     // stream index. BitRate derives from that ÷ duration.
     if movi_bytes > 0 {
-        fa.fill(StreamKind::Video, pos, "StreamSize", movi_bytes.to_string(), false);
+        fa.set_field(StreamKind::Video, pos, "StreamSize", movi_bytes.to_string());
         if let Some(dur) = duration_ms_general {
             if dur > 0 {
                 let bitrate = (movi_bytes * 8 * 1000) / dur;
-                fa.fill(StreamKind::Video, pos, "BitRate", bitrate.to_string(), false);
+                fa.set_field(StreamKind::Video, pos, "BitRate", bitrate.to_string());
             }
         }
     }
     if let Some(lib) = encoded_library {
-        fa.fill(StreamKind::Video, pos, "Encoded_Library", lib, false);
+        fa.set_field(StreamKind::Video, pos, "Encoded_Library", lib);
     }
 }
 
@@ -649,23 +642,23 @@ fn fill_audio(
     audio_chunk_count: u64,
 ) {
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string(), false);
-    fa.fill(StreamKind::Audio, pos, "ID", stream_order.to_string(), false);
+    fa.set_field(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string());
+    fa.set_field(StreamKind::Audio, pos, "ID", stream_order.to_string());
     if let Some(a) = af {
         let format = audio_format_from_tag(a.format_tag);
         if !format.is_empty() {
-            fa.fill(StreamKind::Audio, pos, "Format", format, false);
+            fa.set_field(StreamKind::Audio, pos, "Format", format);
         }
         if a.format_tag == 0x0001 {
-            fa.fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little", false);
+            fa.set_field(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little");
             let sign = if a.bits_per_sample <= 8 { "Unsigned" } else { "Signed" };
-            fa.fill(StreamKind::Audio, pos, "Format_Settings_Sign", sign, false);
+            fa.set_field(StreamKind::Audio, pos, "Format_Settings_Sign", sign);
         }
         // CodecID is the WAVE wFormatTag as uppercase hex (MP3 0x0055 ->
         // "55", PCM 0x0001 -> "1"), matching the oracle — not decimal.
-        fa.fill(StreamKind::Audio, pos, "CodecID", format!("{:X}", a.format_tag), false);
+        fa.set_field(StreamKind::Audio, pos, "CodecID", format!("{:X}", a.format_tag));
         if a.format_tag == 0x0001 {
-            fa.fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
+            fa.set_field(StreamKind::Audio, pos, "BitRate_Mode", "CBR");
         }
         // MP3 (wFormatTag 0x0055): the layer is implied by the tag and the
         // MPEG version follows the sample rate (>=32 kHz → MPEG-1). AVI MP3
@@ -679,32 +672,31 @@ fn fill_audio(
             } else {
                 "2.5"
             };
-            fa.fill(StreamKind::Audio, pos, "Format_Version", version, false);
-            fa.fill(StreamKind::Audio, pos, "Format_Profile", "Layer 3", false);
-            fa.fill(StreamKind::Audio, pos, "BitRate_Mode", "CBR", false);
-            fa.fill(StreamKind::Audio, pos, "Compression_Mode", "Lossy", false);
+            fa.set_field(StreamKind::Audio, pos, "Format_Version", version);
+            fa.set_field(StreamKind::Audio, pos, "Format_Profile", "Layer 3");
+            fa.set_field(StreamKind::Audio, pos, "BitRate_Mode", "CBR");
+            fa.set_field(StreamKind::Audio, pos, "Compression_Mode", "Lossy");
         }
         if a.avg_bytes_per_sec > 0 {
-            fa.fill(
+            fa.set_field(
                 StreamKind::Audio,
                 pos,
                 "BitRate",
                 (a.avg_bytes_per_sec as u64 * 8).to_string(),
-                false,
             );
         }
         if a.channels > 0 {
-            fa.fill(StreamKind::Audio, pos, "Channels", a.channels.to_string(), false);
+            fa.set_field(StreamKind::Audio, pos, "Channels", a.channels.to_string());
         }
         if a.sample_rate > 0 {
-            fa.fill(StreamKind::Audio, pos, "SamplingRate", a.sample_rate.to_string(), false);
+            fa.set_field(StreamKind::Audio, pos, "SamplingRate", a.sample_rate.to_string());
             if let Some(dur) = duration_ms_general {
                 let sampling_count = (dur * a.sample_rate as u64) / 1000;
-                fa.fill(StreamKind::Audio, pos, "SamplingCount", sampling_count.to_string(), false);
+                fa.set_field(StreamKind::Audio, pos, "SamplingCount", sampling_count.to_string());
             }
         }
         if a.bits_per_sample > 0 {
-            fa.fill(StreamKind::Audio, pos, "BitDepth", a.bits_per_sample.to_string(), false);
+            fa.set_field(StreamKind::Audio, pos, "BitDepth", a.bits_per_sample.to_string());
         }
         if a.format_tag == 0x0001 {
             // Uncompressed PCM is lossless by definition. Other format
@@ -712,34 +704,32 @@ fn fill_audio(
             // StreamSize from avg_bytes_per_sec × Duration.
             if let Some(dur) = duration_ms_general {
                 let stream_size = (a.avg_bytes_per_sec as u64 * dur) / 1000;
-                fa.fill(StreamKind::Audio, pos, "StreamSize", stream_size.to_string(), false);
+                fa.set_field(StreamKind::Audio, pos, "StreamSize", stream_size.to_string());
             }
         }
         // AVI audio Delay defaults to 0, sourced from the stream header.
-        fa.fill(StreamKind::Audio, pos, "Delay", "0.000", false);
-        fa.fill(StreamKind::Audio, pos, "Delay_Source", "Stream", false);
-        fa.fill(StreamKind::Audio, pos, "Video_Delay", "0.000", false);
+        fa.set_field(StreamKind::Audio, pos, "Delay", "0.000");
+        fa.set_field(StreamKind::Audio, pos, "Delay_Source", "Stream");
+        fa.set_field(StreamKind::Audio, pos, "Video_Delay", "0.000");
         // AVI audio is sample-aligned by convention (frames don't span
         // chunk boundaries). Real verification needs idx1 walking.
-        fa.fill(StreamKind::Audio, pos, "Alignment", "Aligned", false);
+        fa.set_field(StreamKind::Audio, pos, "Alignment", "Aligned");
         // Interleave statistics from movi chunk counts.
         if audio_chunk_count > 0 {
             let vf_per_audio = video_chunk_count as f64 / audio_chunk_count as f64;
-            fa.fill(
+            fa.set_field(
                 StreamKind::Audio,
                 pos,
                 "Interleave_VideoFrames",
                 format!("{:.2}", vf_per_audio),
-                false,
             );
             if let Some(dur_ms) = duration_ms_general {
                 let chunk_dur_sec = (dur_ms as f64 / 1000.0) / audio_chunk_count as f64;
-                fa.fill(
+                fa.set_field(
                     StreamKind::Audio,
                     pos,
                     "Interleave_Duration",
                     format!("{:.3}", chunk_dur_sec),
-                    false,
                 );
             }
         }
@@ -858,7 +848,7 @@ mod tests {
         let buf = make_minimal_avi();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_avi(&mut fa));
-        assert_eq!(fa.count_get(StreamKind::Video), 1);
+        assert_eq!(fa.stream_count(StreamKind::Video), 1);
         let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(v("Format").as_deref(), Some("AVC"));
         assert_eq!(v("CodecID").as_deref(), Some("avc1"));

@@ -23,12 +23,12 @@ pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
     let bits_per_sample = if buf.len() >= 16 { u16::from_le_bytes([buf[14], buf[15]]) } else { 16 };
 
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "PCM", false);
-    fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, pos, "BitDepth", bits_per_sample.to_string(), false);
-    fa.fill(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Settings_Sign", "Signed", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "PCM");
+    fa.set_field(StreamKind::Audio, pos, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string());
+    fa.set_field(StreamKind::Audio, pos, "BitDepth", bits_per_sample.to_string());
+    fa.set_field(StreamKind::Audio, pos, "Format_Settings_Endianness", "Little");
+    fa.set_field(StreamKind::Audio, pos, "Format_Settings_Sign", "Signed");
     true
 }
 

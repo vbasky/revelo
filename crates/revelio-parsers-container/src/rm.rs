@@ -32,7 +32,7 @@ pub fn parse_rm(fa: &mut FileAnalyze) -> bool {
     fa.element_end();
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "RealMedia", false);
+    fa.set_field(StreamKind::General, 0, "Format", "RealMedia");
 
     true
 }

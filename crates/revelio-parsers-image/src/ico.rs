@@ -61,20 +61,20 @@ pub fn parse_ico(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", if kind == 1 { "ICO" } else { "CUR" }, false);
-    fa.fill(StreamKind::General, 0, "ImageCount", count.to_string(), false);
+    fa.set_field(StreamKind::General, 0, "Format", if kind == 1 { "ICO" } else { "CUR" });
+    fa.set_field(StreamKind::General, 0, "ImageCount", count.to_string());
     // General.StreamSize = file overhead = file_size − total bitmap data.
     let overhead = file_size as u64 - total_data;
-    fa.fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
+    fa.force_field(StreamKind::General, 0, "StreamSize", overhead.to_string());
 
     for (w, h_, bpp, size) in entries {
         let pos = fa.stream_prepare(StreamKind::Image);
-        fa.fill(StreamKind::Image, pos, "Width", w.to_string(), false);
-        fa.fill(StreamKind::Image, pos, "Height", h_.to_string(), false);
+        fa.set_field(StreamKind::Image, pos, "Width", w.to_string());
+        fa.set_field(StreamKind::Image, pos, "Height", h_.to_string());
         if kind == 1 {
-            fa.fill(StreamKind::Image, pos, "BitDepth", bpp.to_string(), false);
+            fa.set_field(StreamKind::Image, pos, "BitDepth", bpp.to_string());
         }
-        fa.fill(StreamKind::Image, pos, "StreamSize", size.to_string(), false);
+        fa.set_field(StreamKind::Image, pos, "StreamSize", size.to_string());
     }
     true
 }
@@ -143,6 +143,6 @@ mod tests {
         let buf = build_minimal_ico(&[(16, 16, 8, 50), (32, 32, 32, 100), (48, 48, 32, 200)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ico(&mut fa));
-        assert_eq!(fa.count_get(StreamKind::Image), 3);
+        assert_eq!(fa.stream_count(StreamKind::Image), 3);
     }
 }

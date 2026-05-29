@@ -27,10 +27,10 @@ pub fn parse_dvb_subtitle(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DVB Subtitle", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DVB Subtitle");
 
     fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, 0, "Format", "DVB Subtitle", false);
+    fa.set_field(StreamKind::Text, 0, "Format", "DVB Subtitle");
 
     true
 }

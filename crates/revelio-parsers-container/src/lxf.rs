@@ -25,7 +25,7 @@ pub fn parse_lxf(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "LXF", false);
+    fa.set_field(StreamKind::General, 0, "Format", "LXF");
 
     true
 }

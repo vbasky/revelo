@@ -40,7 +40,7 @@ pub fn to_json(streams: &StreamCollection, file_path: &str, library_version: &st
     ];
     let mut first_track = true;
     for kind in kinds {
-        let count = streams.count_get(kind);
+        let count = streams.stream_count(kind);
         for pos in 0..count {
             let Some(stream) = streams.stream(kind, pos) else { continue };
             if !first_track {
@@ -164,8 +164,8 @@ mod tests {
     #[test]
     fn json_emits_canonical_order_and_pretty_fields() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", Ztring::from("MPEG-4"), false);
-        c.fill(StreamKind::General, 0, "FileSize", Ztring::from("100"), false);
+        c.set_field(StreamKind::General, 0, "Format", Ztring::from("MPEG-4"));
+        c.set_field(StreamKind::General, 0, "FileSize", Ztring::from("100"));
         let j = to_json(&c, "/x", "1.0");
         // first field right after @type (comma, no newline); later fields on own lines
         assert!(
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn json_renders_duration_as_seconds() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::Audio, 0, "Duration", Ztring::from("209831"), false);
+        c.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("209831"));
         let j = to_json(&c, "/x", "1.0");
         assert!(j.contains("\"Duration\":\"209.831\""), "{j}");
     }
@@ -185,8 +185,8 @@ mod tests {
     #[test]
     fn json_extra_block_is_compact() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", Ztring::from("MPEG Audio"), false);
-        c.fill_extra(StreamKind::General, 0, "comment", Ztring::from("hi"), false);
+        c.set_field(StreamKind::General, 0, "Format", Ztring::from("MPEG Audio"));
+        c.set_extra_field(StreamKind::General, 0, "comment", Ztring::from("hi"));
         let j = to_json(&c, "/x", "1.0");
         assert!(j.contains("\"extra\":{\"comment\":\"hi\"}"), "{j}");
     }
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn json_escapes_quotes() {
         let mut c = StreamCollection::new();
-        c.fill(StreamKind::General, 0, "Format", Ztring::from("A \"B\""), false);
+        c.set_field(StreamKind::General, 0, "Format", Ztring::from("A \"B\""));
         let j = to_json(&c, "/x", "1.0");
         assert!(j.contains("A \\\"B\\\""), "{j}");
     }

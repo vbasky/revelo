@@ -25,8 +25,8 @@ pub fn parse_ptx(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "Pro Tools Session", false);
-    fa.fill(StreamKind::General, 0, "Format_Version", "Version 10", false);
+    fa.set_field(StreamKind::General, 0, "Format", "Pro Tools Session");
+    fa.set_field(StreamKind::General, 0, "Format_Version", "Version 10");
     true
 }
 

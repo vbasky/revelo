@@ -13,8 +13,8 @@ pub fn parse_mga(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, pos, "Format", "MPEG Audio", false);
-    fa.fill(StreamKind::Audio, pos, "Format_Info", "MPEG-4 General Audio", false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "MPEG Audio");
+    fa.set_field(StreamKind::Audio, pos, "Format_Info", "MPEG-4 General Audio");
     true
 }
 #[cfg(test)]

@@ -163,25 +163,25 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
     }
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DTS", false);
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
-    fa.fill(StreamKind::General, 0, "OverallBitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::General, 0, "Format", "DTS");
+    fa.set_field(StreamKind::General, 0, "AudioCount", "1");
+    fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "CBR");
     if bit_rate > 0 {
         // Pre-fill OverallBitRate with the exact CBR value; the harness'
         // generic filesize/duration estimator would round it inaccurately.
-        fa.fill(StreamKind::General, 0, "OverallBitRate", bit_rate.to_string(), true);
+        fa.force_field(StreamKind::General, 0, "OverallBitRate", bit_rate.to_string());
     }
 
     fa.stream_prepare(StreamKind::Audio);
-    fa.fill(StreamKind::Audio, 0, "Format", "DTS", false);
+    fa.set_field(StreamKind::Audio, 0, "Format", "DTS");
     // Sync 0x7FFE8001 means 16-bit big-endian Core (the only variant we parse).
-    fa.fill(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big", false);
-    fa.fill(StreamKind::Audio, 0, "Format_Settings_Mode", "16", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    fa.set_field(StreamKind::Audio, 0, "Format_Settings_Endianness", "Big");
+    fa.set_field(StreamKind::Audio, 0, "Format_Settings_Mode", "16");
+    fa.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
     if bit_rate > 0 {
-        fa.fill(StreamKind::Audio, 0, "BitRate", bit_rate.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "BitRate", bit_rate.to_string());
     }
-    fa.fill(StreamKind::Audio, 0, "Channels", channels.to_string(), false);
+    fa.set_field(StreamKind::Audio, 0, "Channels", channels.to_string());
     let pos_layout = (amode_idx).min(15);
     let mut positions = DTS_CHANNEL_POSITIONS[pos_layout].to_string();
     let mut layout = DTS_CHANNEL_LAYOUT[pos_layout].to_string();
@@ -189,26 +189,26 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
         positions.push_str(", LFE");
         layout.push_str(" LFE");
     }
-    fa.fill(StreamKind::Audio, 0, "ChannelPositions", positions, false);
-    fa.fill(StreamKind::Audio, 0, "ChannelLayout", layout, false);
-    fa.fill(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossy", false);
-    fa.fill(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string(), false);
-    fa.fill(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate), false);
+    fa.set_field(StreamKind::Audio, 0, "ChannelPositions", positions);
+    fa.set_field(StreamKind::Audio, 0, "ChannelLayout", layout);
+    fa.set_field(StreamKind::Audio, 0, "SamplingRate", sample_rate.to_string());
+    fa.set_field(StreamKind::Audio, 0, "BitDepth", bit_depth.to_string());
+    fa.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossy");
+    fa.set_field(StreamKind::Audio, 0, "SamplesPerFrame", samples_per_frame.to_string());
+    fa.set_field(StreamKind::Audio, 0, "FrameRate", format!("{:.3}", frame_rate));
     // Oracle computes Duration = round(FileSize×8000/BitRate) ms for DTS
     // Core (it's CBR, so byte-accounting is authoritative). SamplingCount
     // and StreamSize derive from that Duration, not from frame counting.
     if bit_rate > 0 && sample_rate > 0 {
         let duration_ms = ((file_size as f64 * 8000.0) / bit_rate as f64).round() as u64;
-        fa.fill(StreamKind::Audio, 0, "Duration", duration_ms.to_string(), false);
-        fa.fill(StreamKind::General, 0, "Duration", duration_ms.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
+        fa.set_field(StreamKind::General, 0, "Duration", duration_ms.to_string());
         let sampling_count = ((duration_ms as f64) * sample_rate as f64 / 1000.0).round() as u64;
-        fa.fill(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "SamplingCount", sampling_count.to_string());
         let stream_size = ((bit_rate as u64) * duration_ms + 4000) / 8000;
-        fa.fill(StreamKind::Audio, 0, "StreamSize", stream_size.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "StreamSize", stream_size.to_string());
     } else {
-        fa.fill(StreamKind::Audio, 0, "StreamSize", file_size.to_string(), false);
+        fa.set_field(StreamKind::Audio, 0, "StreamSize", file_size.to_string());
     }
     let _ = frame_count;
 

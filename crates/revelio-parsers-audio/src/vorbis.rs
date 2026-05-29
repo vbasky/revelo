@@ -49,10 +49,10 @@ fn fill_vorbis_streams(
 ) {
     let pos = fa.stream_prepare(StreamKind::Audio);
 
-    fa.fill(StreamKind::Audio, pos, "Format", "Vorbis", false);
-    fa.fill(StreamKind::Audio, pos, "Codec", "Vorbis", false);
-    fa.fill(StreamKind::Audio, pos, "Channels", channels.to_string(), false);
-    fa.fill(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string(), false);
+    fa.set_field(StreamKind::Audio, pos, "Format", "Vorbis");
+    fa.set_field(StreamKind::Audio, pos, "Codec", "Vorbis");
+    fa.set_field(StreamKind::Audio, pos, "Channels", channels.to_string());
+    fa.set_field(StreamKind::Audio, pos, "SamplingRate", sample_rate.to_string());
 
     let brm = if bitrate_nominal > 0
         && bitrate_max == bitrate_nominal
@@ -62,11 +62,11 @@ fn fill_vorbis_streams(
     } else {
         "VBR"
     };
-    fa.fill(StreamKind::Audio, pos, "BitRate_Mode", brm, false);
+    fa.set_field(StreamKind::Audio, pos, "BitRate_Mode", brm);
 
     // A positive i32 is already < 2^31, so the upper bound is implicit.
     if bitrate_nominal > 0 {
-        fa.fill(StreamKind::Audio, pos, "BitRate", bitrate_nominal.to_string(), false);
+        fa.set_field(StreamKind::Audio, pos, "BitRate", bitrate_nominal.to_string());
     }
 }
 

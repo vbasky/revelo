@@ -20,29 +20,28 @@
 //!       "DST " <u64 BE size> ...                                        // compressed variant
 //!   Chunk bodies are padded to even byte boundary (1-byte pad if size is odd).
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::{Int8u, Int16u, Int32u, Int64u};
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
-const FOURCC_FRM8: Int32u = u32::from_be_bytes(*b"FRM8");
-const FOURCC_DSD_FORMTYPE: Int32u = u32::from_be_bytes(*b"DSD ");
-const FOURCC_FVER: Int32u = u32::from_be_bytes(*b"FVER");
-const FOURCC_PROP: Int32u = u32::from_be_bytes(*b"PROP");
-const FOURCC_SND: Int32u = u32::from_be_bytes(*b"SND ");
-const FOURCC_FS: Int32u = u32::from_be_bytes(*b"FS  ");
-const FOURCC_CHNL: Int32u = u32::from_be_bytes(*b"CHNL");
-const FOURCC_CMPR: Int32u = u32::from_be_bytes(*b"CMPR");
-const FOURCC_DSD_DATA: Int32u = u32::from_be_bytes(*b"DSD ");
-const FOURCC_DST_DATA: Int32u = u32::from_be_bytes(*b"DST ");
+const FOURCC_FRM8: u32 = u32::from_be_bytes(*b"FRM8");
+const FOURCC_DSD_FORMTYPE: u32 = u32::from_be_bytes(*b"DSD ");
+const FOURCC_FVER: u32 = u32::from_be_bytes(*b"FVER");
+const FOURCC_PROP: u32 = u32::from_be_bytes(*b"PROP");
+const FOURCC_SND: u32 = u32::from_be_bytes(*b"SND ");
+const FOURCC_FS: u32 = u32::from_be_bytes(*b"FS  ");
+const FOURCC_CHNL: u32 = u32::from_be_bytes(*b"CHNL");
+const FOURCC_CMPR: u32 = u32::from_be_bytes(*b"CMPR");
+const FOURCC_DSD_DATA: u32 = u32::from_be_bytes(*b"DSD ");
+const FOURCC_DST_DATA: u32 = u32::from_be_bytes(*b"DST ");
 
-const CMPR_DSD: Int32u = u32::from_be_bytes(*b"DSD ");
-const CMPR_DST: Int32u = u32::from_be_bytes(*b"DST ");
+const CMPR_DSD: u32 = u32::from_be_bytes(*b"DSD ");
+const CMPR_DST: u32 = u32::from_be_bytes(*b"DST ");
 
 #[derive(Debug, Default)]
 struct DsdiffInfo {
-    sample_rate: Int32u,
-    num_channels: Int16u,
+    sample_rate: u32,
+    num_channels: u16,
     format: Option<&'static str>,
-    audio_stream_size: Int64u,
+    audio_stream_size: u64,
 }
 
 /// Parse DSD Interchange File Format.
@@ -50,34 +49,34 @@ struct DsdiffInfo {
 /// Detection: `FRM8` + DSD header.
 /// Fills: Channels, sample rate, DSD properties.
 pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
-    if fa.remain() < 16 {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.remain() < 16 {
+        return None;
     }
-    let mut magic: Int32u = 0;
-    fa.peek_b4(&mut magic);
-    if magic != FOURCC_FRM8 {
-        return false;
+    if r.peek_be_u32()? != FOURCC_FRM8 {
+        return None;
     }
 
-    fa.element_begin("FRM8");
-    let mut frm8_id: Int32u = 0;
-    fa.get_c4(&mut frm8_id, "ID");
-    let mut form_size: Int64u = 0;
-    fa.get_b8(&mut form_size, "Size");
-    let mut form_type: Int32u = 0;
-    fa.get_c4(&mut form_type, "FormType");
+    r.element_begin("FRM8");
+    r.fourcc("ID")?;
+    r.be_u64("Size")?;
+    let form_type = r.fourcc("FormType")?;
 
     if form_type != FOURCC_DSD_FORMTYPE {
-        fa.element_end();
-        return false;
+        r.element_end();
+        return None;
     }
 
     let mut info = DsdiffInfo::default();
 
     // Top-level chunks under the DSD form.
-    walk_chunks(fa, &mut info, /*inside_prop=*/ false);
+    walk_chunks(r, &mut info, /*inside_prop=*/ false);
 
-    fa.element_end();
+    r.element_end();
 
     // If CMPR was absent, MediaInfoLib leaves Audio.Format empty; we
     // default to "DSD" because the form type IS "DSD " — that's the
@@ -87,136 +86,124 @@ pub fn parse_dsdiff(fa: &mut FileAnalyze) -> bool {
         info.format = Some("DSD");
     }
 
-    fill_streams(fa, &info);
-    true
+    fill_streams(r, &info);
+    Some(())
 }
 
 /// Walk a sequence of chunks until the buffer is exhausted. When
 /// `inside_prop` is true, we're scanning the PROP/SND payload's
 /// sub-chunks rather than top-level FRM8 children — same on-disk
 /// shape, different semantics on a few IDs.
-fn walk_chunks(fa: &mut FileAnalyze, info: &mut DsdiffInfo, inside_prop: bool) {
-    while fa.remain() >= 12 {
-        let mut chunk_id: Int32u = 0;
-        fa.get_c4(&mut chunk_id, "ChunkID");
-        let mut chunk_size: Int64u = 0;
-        fa.get_b8(&mut chunk_size, "ChunkSize");
+fn walk_chunks(r: &mut Reader<'_, '_>, info: &mut DsdiffInfo, inside_prop: bool) {
+    while r.remain() >= 12 {
+        let chunk_id = r.fourcc("ChunkID").unwrap_or(0);
+        let chunk_size = r.be_u64("ChunkSize").unwrap_or(0);
 
         // Guard against malformed sizes that exceed the buffer.
         let body_len =
-            if (chunk_size as usize) > fa.remain() { fa.remain() } else { chunk_size as usize };
-        let body_start = fa.element_offset();
+            if (chunk_size as usize) > r.remain() { r.remain() } else { chunk_size as usize };
+        let body_start = r.element_offset();
         let body_end = body_start + body_len;
 
         if !inside_prop {
             match chunk_id {
                 FOURCC_PROP => {
-                    fa.element_begin("PROP");
+                    r.element_begin("PROP");
                     // PROP starts with the 4-byte propType ("SND ").
-                    if fa.remain() >= 4 {
-                        let mut prop_type: Int32u = 0;
-                        fa.get_c4(&mut prop_type, "propType");
+                    if r.remain() >= 4 {
+                        let prop_type = r.fourcc("propType").unwrap_or(0);
                         if prop_type == FOURCC_SND {
                             // Recurse into sub-chunks until the PROP body ends.
                             let sub_end = body_end;
-                            while fa.element_offset() + 12 <= sub_end {
-                                parse_prop_subchunk(fa, info, sub_end);
+                            while r.element_offset() + 12 <= sub_end {
+                                parse_prop_subchunk(r, info, sub_end);
                             }
                         }
                     }
                     // Skip any trailing bytes inside PROP we didn't consume.
-                    if fa.element_offset() < body_end {
-                        fa.skip_hexa(body_end - fa.element_offset(), "Unknown");
+                    if r.element_offset() < body_end {
+                        r.skip(body_end - r.element_offset());
                     }
-                    fa.element_end();
+                    r.element_end();
                 }
                 FOURCC_DSD_DATA => {
-                    fa.element_begin("DSD");
-                    info.audio_stream_size = body_len as Int64u;
-                    fa.skip_hexa(body_len, "DSDsoundData");
-                    fa.element_end();
+                    r.element_begin("DSD");
+                    info.audio_stream_size = body_len as u64;
+                    r.skip(body_len);
+                    r.element_end();
                 }
                 FOURCC_DST_DATA => {
-                    fa.element_begin("DST");
-                    info.audio_stream_size = body_len as Int64u;
-                    fa.skip_hexa(body_len, "DSTsoundData");
-                    fa.element_end();
+                    r.element_begin("DST");
+                    info.audio_stream_size = body_len as u64;
+                    r.skip(body_len);
+                    r.element_end();
                 }
                 FOURCC_FVER => {
-                    fa.skip_hexa(body_len, "FVER");
+                    r.skip(body_len);
                 }
                 _ => {
-                    fa.skip_hexa(body_len, "Unknown");
+                    r.skip(body_len);
                 }
             }
         }
 
         // Realign past any malformed gap (defensive — body parsers above
         // should always advance to body_end exactly).
-        if fa.element_offset() < body_end {
-            fa.skip_hexa(body_end - fa.element_offset(), "Trailer");
+        if r.element_offset() < body_end {
+            r.skip(body_end - r.element_offset());
         }
 
         // Per-spec 1-byte pad when chunk size is odd.
-        if chunk_size % 2 == 1 && fa.remain() >= 1 {
-            let mut _pad: Int8u = 0;
-            fa.get_b1(&mut _pad, "pad");
+        if chunk_size % 2 == 1 && r.remain() >= 1 {
+            r.be_u8("pad");
         }
     }
 }
 
-fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usize) {
-    let mut sub_id: Int32u = 0;
-    fa.get_c4(&mut sub_id, "ChunkID");
-    let mut sub_size: Int64u = 0;
-    fa.get_b8(&mut sub_size, "ChunkSize");
+fn parse_prop_subchunk(r: &mut Reader<'_, '_>, info: &mut DsdiffInfo, sub_end: usize) {
+    let sub_id = r.fourcc("ChunkID").unwrap_or(0);
+    let sub_size = r.be_u64("ChunkSize").unwrap_or(0);
 
-    let max_body = sub_end.saturating_sub(fa.element_offset());
+    let max_body = sub_end.saturating_sub(r.element_offset());
     let body_len = (sub_size as usize).min(max_body);
-    let body_start = fa.element_offset();
+    let body_start = r.element_offset();
     let body_end = body_start + body_len;
 
     match sub_id {
         FOURCC_FS => {
             if body_len >= 4 {
-                let mut sr: Int32u = 0;
-                fa.get_b4(&mut sr, "sampleRate");
-                info.sample_rate = sr;
+                info.sample_rate = r.be_u32("sampleRate").unwrap_or(0);
                 if body_len > 4 {
-                    fa.skip_hexa(body_len - 4, "Extra");
+                    r.skip(body_len - 4);
                 }
             } else {
-                fa.skip_hexa(body_len, "FS_truncated");
+                r.skip(body_len);
             }
         }
         FOURCC_CHNL => {
             if body_len >= 2 {
-                let mut num_channels: Int16u = 0;
-                fa.get_b2(&mut num_channels, "numChannels");
-                info.num_channels = num_channels;
+                info.num_channels = r.be_u16("numChannels").unwrap_or(0);
                 // chID list follows (4 bytes each). We don't need them
                 // for the minimum-viable fields — skip to chunk end.
                 let consumed = 2usize;
                 if body_len > consumed {
-                    fa.skip_hexa(body_len - consumed, "chIDs");
+                    r.skip(body_len - consumed);
                 }
             } else {
-                fa.skip_hexa(body_len, "CHNL_truncated");
+                r.skip(body_len);
             }
         }
         FOURCC_CMPR => {
             if body_len >= 5 {
-                let mut compression_type: Int32u = 0;
-                fa.get_b4(&mut compression_type, "compressionType");
-                let mut name_count: Int8u = 0;
-                fa.get_b1(&mut name_count, "Count");
+                let compression_type = r.be_u32("compressionType").unwrap_or(0);
+                let name_count = r.be_u8("Count").unwrap_or(0);
                 let name_take = (name_count as usize).min(body_len.saturating_sub(5));
                 if name_take > 0 {
-                    fa.skip_hexa(name_take, "compressionName");
+                    r.skip(name_take);
                 }
                 let consumed = 5 + name_take;
                 if body_len > consumed {
-                    fa.skip_hexa(body_len - consumed, "Extra");
+                    r.skip(body_len - consumed);
                 }
                 info.format = Some(match compression_type {
                     CMPR_DSD => "DSD",
@@ -224,52 +211,51 @@ fn parse_prop_subchunk(fa: &mut FileAnalyze, info: &mut DsdiffInfo, sub_end: usi
                     _ => "DSD",
                 });
             } else {
-                fa.skip_hexa(body_len, "CMPR_truncated");
+                r.skip(body_len);
             }
         }
         _ => {
-            fa.skip_hexa(body_len, "Unknown");
+            r.skip(body_len);
         }
     }
 
     // Defensive: ensure we land on body_end.
-    if fa.element_offset() < body_end {
-        fa.skip_hexa(body_end - fa.element_offset(), "Trailer");
+    if r.element_offset() < body_end {
+        r.skip(body_end - r.element_offset());
     }
 
     // Pad if odd-sized sub-chunk.
-    if sub_size % 2 == 1 && fa.element_offset() < sub_end {
-        let mut _pad: Int8u = 0;
-        fa.get_b1(&mut _pad, "pad");
+    if sub_size % 2 == 1 && r.element_offset() < sub_end {
+        r.be_u8("pad");
     }
 }
 
-fn fill_streams(fa: &mut FileAnalyze, info: &DsdiffInfo) {
-    fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "DSDIFF", false);
+fn fill_streams(r: &mut Reader<'_, '_>, info: &DsdiffInfo) {
+    r.stream_prepare(StreamKind::General);
+    r.set_field(StreamKind::General, 0, "Format", "DSDIFF");
 
-    fa.stream_prepare(StreamKind::Audio);
+    r.stream_prepare(StreamKind::Audio);
     if let Some(fmt) = info.format {
-        fa.fill(StreamKind::Audio, 0, "Format", fmt, false);
+        r.set_field(StreamKind::Audio, 0, "Format", fmt);
     }
     if info.sample_rate > 0 {
-        fa.fill(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "SamplingRate", info.sample_rate.to_string());
     }
     if info.num_channels > 0 {
-        fa.fill(StreamKind::Audio, 0, "Channels", info.num_channels.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "Channels", info.num_channels.to_string());
     }
     // DSD is by construction 1-bit-per-sample-per-channel; this is the
     // defining property of Direct Stream Digital and the reason MediaInfo
     // doesn't carry a BitDepth field in CMPR.
-    fa.fill(StreamKind::Audio, 0, "BitDepth", "1", false);
-    fa.fill(StreamKind::Audio, 0, "Compression_Mode", "Lossless", false);
-    fa.fill(StreamKind::Audio, 0, "BitRate_Mode", "CBR", false);
+    r.set_field(StreamKind::Audio, 0, "BitDepth", "1");
+    r.set_field(StreamKind::Audio, 0, "Compression_Mode", "Lossless");
+    r.set_field(StreamKind::Audio, 0, "BitRate_Mode", "CBR");
 
     if info.audio_stream_size > 0 {
-        fa.fill(StreamKind::Audio, 0, "StreamSize", info.audio_stream_size.to_string(), false);
+        r.set_field(StreamKind::Audio, 0, "StreamSize", info.audio_stream_size.to_string());
     }
 
-    fa.fill(StreamKind::General, 0, "AudioCount", "1", false);
+    r.set_field(StreamKind::General, 0, "AudioCount", "1");
 }
 
 #[cfg(test)]

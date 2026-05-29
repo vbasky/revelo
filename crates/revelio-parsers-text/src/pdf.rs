@@ -13,7 +13,7 @@ pub fn parse_pdf(fa: &mut FileAnalyze) -> bool {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Text);
-    fa.fill(StreamKind::Text, pos, "Format", "PDF", false);
+    fa.set_field(StreamKind::Text, pos, "Format", "PDF");
     true
 }
 #[cfg(test)]

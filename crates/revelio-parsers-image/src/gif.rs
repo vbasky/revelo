@@ -24,20 +24,20 @@ pub fn parse_gif(fa: &mut FileAnalyze) -> bool {
     let height = u16::from_le_bytes([h[8], h[9]]);
 
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "GIF", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "GIF");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "GIF", false);
-    fa.fill(StreamKind::Image, 0, "Format_Profile", profile, false);
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
+    fa.set_field(StreamKind::Image, 0, "Format", "GIF");
+    fa.set_field(StreamKind::Image, 0, "Format_Profile", profile);
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Image, 0, "PixelAspectRatio", "1.000");
     if width > 0 && height > 0 {
         let dar = (width as f64) / (height as f64);
-        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.set_field(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar));
     }
-    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossless");
     true
 }
 

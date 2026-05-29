@@ -1,6 +1,5 @@
-//! Pin the small set of `zenlib` type aliases the crate uses internally,
-//! so submodules can `use crate::zenlib_re_export::Int64u` without each
-//! file pulling in the full `zenlib` prelude.
-
-#[allow(unused_imports)]
-pub(crate) use zenlib::{Float32, Float64, Float80, Int8u, Int16u, Int32u, Int64u, Int128u};
+//! Re-exports from `zenlib` for internal use by the core crate.
+//! All Int*u / Float* aliases have been removed — parsers now use
+//! native Rust types (u8, u16, u32, u64, u128, f32, f64).
+//! This module is retained as a placeholder for any future zenlib
+//! re-exports needed by core sub-modules.

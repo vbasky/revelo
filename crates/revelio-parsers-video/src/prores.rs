@@ -93,8 +93,8 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
 
 fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
     fa.stream_prepare(StreamKind::Video);
-    fa.fill(StreamKind::Video, 0, "Format", "ProRes", false);
-    fa.fill(StreamKind::Video, 0, "Format_Version", format!("Version {}", info.version), false);
+    fa.set_field(StreamKind::Video, 0, "Format", "ProRes");
+    fa.set_field(StreamKind::Video, 0, "Format_Version", format!("Version {}", info.version));
 
     let profile = match info.chrominance_factor {
         0 => "422 Proxy",
@@ -111,18 +111,18 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
             }
         }
     };
-    fa.fill(StreamKind::Video, 0, "Format_Profile", profile, false);
+    fa.set_field(StreamKind::Video, 0, "Format_Profile", profile);
 
-    fa.fill(StreamKind::Video, 0, "Width", info.width.to_string(), false);
-    fa.fill(StreamKind::Video, 0, "Height", info.height.to_string(), false);
+    fa.set_field(StreamKind::Video, 0, "Width", info.width.to_string());
+    fa.set_field(StreamKind::Video, 0, "Height", info.height.to_string());
 
     let chroma = match info.chrominance_factor {
         2 => "4:2:2",
         3 | 4 => "4:4:4",
         _ => "4:2:2",
     };
-    fa.fill(StreamKind::Video, 0, "ChromaSubsampling", chroma, false);
-    fa.fill(StreamKind::Video, 0, "ColorSpace", "YUV", false);
+    fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", chroma);
+    fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
 
     let scan = match info.frame_type {
         0 => "Progressive",
@@ -130,7 +130,7 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
         _ => "",
     };
     if !scan.is_empty() {
-        fa.fill(StreamKind::Video, 0, "ScanType", scan, false);
+        fa.set_field(StreamKind::Video, 0, "ScanType", scan);
     }
 
     let creator = match info.creator_id {
@@ -140,7 +140,7 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
         _ => "",
     };
     if !creator.is_empty() {
-        fa.fill(StreamKind::Video, 0, "Encoded_Library", creator, false);
+        fa.set_field(StreamKind::Video, 0, "Encoded_Library", creator);
     }
 
     if info.primaries != 0 {
@@ -149,7 +149,7 @@ fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
             9 => "BT.2020",
             _ => "BT.709",
         };
-        fa.fill(StreamKind::Video, 0, "colour_primaries", prim, false);
+        fa.set_field(StreamKind::Video, 0, "colour_primaries", prim);
     }
 }
 

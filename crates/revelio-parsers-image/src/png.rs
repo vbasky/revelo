@@ -14,45 +14,41 @@
 //!   1 byte:     filter_method (always 0)
 //!   1 byte:     interlace_method (0=none, 1=Adam7)
 
-use revelio_core::{FileAnalyze, StreamKind};
-use zenlib::Int32u;
+use revelio_core::{FileAnalyze, Reader, StreamKind};
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1A\n";
 
 /// Detection: 8-byte PNG signature (0x89 0x50 0x4E 0x47 …).
 /// Fills: IHDR (width, height, bit depth, color type), pHYs DPI, iTXt/tEXt metadata.
 pub fn parse_png(fa: &mut FileAnalyze) -> bool {
-    let head = fa.peek_raw(8);
-    let Some(h) = head else { return false };
-    if h != PNG_SIGNATURE {
-        return false;
+    parse(fa).is_some()
+}
+
+fn parse(fa: &mut FileAnalyze) -> Option<()> {
+    let r = &mut Reader::wrap(fa);
+    if r.peek_raw(8)? != PNG_SIGNATURE {
+        return None;
     }
 
-    let file_size = fa.remain();
-    fa.skip_hexa(8, "signature");
+    let file_size = r.remain();
+    r.skip(8)?; // signature
 
     // First chunk must be IHDR.
-    if fa.remain() < 8 {
-        return false;
+    if r.remain() < 8 {
+        return None;
     }
-    let mut length: Int32u = 0;
-    fa.get_b4(&mut length, "IHDR_length");
-    let mut chunk_type: Int32u = 0;
-    fa.get_c4(&mut chunk_type, "chunk_type");
+    let length = r.be_u32("IHDR_length")?;
+    let chunk_type = r.fourcc("chunk_type")?;
     if chunk_type != u32::from_be_bytes(*b"IHDR") || length < 13 {
-        return false;
+        return None;
     }
-    let mut width: Int32u = 0;
-    fa.get_b4(&mut width, "Width");
-    let mut height: Int32u = 0;
-    fa.get_b4(&mut height, "Height");
-    let mut bit_depth: zenlib::Int8u = 0;
-    fa.get_b1(&mut bit_depth, "BitDepth");
-    let mut color_type: zenlib::Int8u = 0;
-    fa.get_b1(&mut color_type, "ColorType");
+    let width = r.be_u32("Width")?;
+    let height = r.be_u32("Height")?;
+    let bit_depth = r.be_u8("BitDepth")?;
+    let color_type = r.be_u8("ColorType")?;
     // Skip rest of IHDR (compression, filter, interlace) + 4-byte CRC.
     let ihdr_consumed = 10; // already consumed 10 IHDR body bytes
-    fa.skip_hexa((length as usize).saturating_sub(ihdr_consumed) + 4, "ihdr_tail_crc");
+    r.skip((length as usize).saturating_sub(ihdr_consumed) + 4)?; // ihdr_tail_crc
 
     // Walk remaining chunks. Oracle's General.StreamSize counts ONLY
     // the textual-metadata chunks (tEXt/iTXt/zTXt) — the bookkeeping
@@ -67,13 +63,11 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
     let mut creation_time: Option<String> = None;
     let mut comment: Option<String> = None;
 
-    while fa.remain() >= 12 {
-        let mut len: Int32u = 0;
-        fa.get_b4(&mut len, "chunk_length");
-        let mut ty: Int32u = 0;
-        fa.get_c4(&mut ty, "chunk_type");
+    while r.remain() >= 12 {
+        let len = r.be_u32("chunk_length")?;
+        let ty = r.fourcc("chunk_type")?;
         let payload_len = len as usize;
-        if fa.remain() < payload_len + 4 {
+        if r.remain() < payload_len + 4 {
             break;
         }
         let chunk_total_bytes = 4 + 4 + payload_len as u64 + 4;
@@ -87,8 +81,8 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
         if is_text {
             text_metadata_bytes += chunk_total_bytes;
             // Extract keywords from tEXt/iTXt for metadata fields.
-            let payload = fa.read_raw(payload_len).to_vec();
-            fa.skip_hexa(4, "crc");
+            let payload = r.read_raw(payload_len)?.to_vec();
+            r.skip(4)?; // crc
 
             // Parse tEXt chunk: keyword\0text
             if ty == u32::from_be_bytes(*b"tEXt") {
@@ -149,7 +143,7 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
             }
             // zTXt is compressed text, skip for now
         } else {
-            fa.skip_hexa(payload_len + 4, "chunk_payload_crc");
+            r.skip(payload_len + 4)?; // chunk_payload_crc
         }
         if is_iend {
             break;
@@ -177,12 +171,12 @@ pub fn parse_png(fa: &mut FileAnalyze) -> bool {
             comment,
         },
     );
-    true
+    Some(())
 }
 
 struct PngMeta {
-    width: Int32u,
-    height: Int32u,
+    width: u32,
+    height: u32,
     bit_depth: u8,
     color_type: u8,
     overhead: u64,
@@ -213,44 +207,44 @@ fn fill_streams(fa: &mut FileAnalyze, file_size: usize, meta: PngMeta) {
         comment,
     } = meta;
     fa.stream_prepare(StreamKind::General);
-    fa.fill(StreamKind::General, 0, "Format", "PNG", false);
-    fa.fill(StreamKind::General, 0, "ImageCount", "1", false);
+    fa.set_field(StreamKind::General, 0, "Format", "PNG");
+    fa.set_field(StreamKind::General, 0, "ImageCount", "1");
     // General.StreamSize = total bytes of text-metadata chunks
     // (tEXt/iTXt/zTXt) including their headers and CRCs. Other chunks
     // (IHDR/IDAT/IEND/pHYs/sBIT/...) are folded into Image.StreamSize.
-    fa.fill(StreamKind::General, 0, "StreamSize", overhead.to_string(), true);
+    fa.force_field(StreamKind::General, 0, "StreamSize", overhead.to_string());
     if let Some(app) = encoded_application {
-        fa.fill(StreamKind::General, 0, "Encoded_Application", app, false);
+        fa.set_field(StreamKind::General, 0, "Encoded_Application", app);
     }
     if let Some(t) = title {
-        fa.fill(StreamKind::General, 0, "Title", t, false);
+        fa.set_field(StreamKind::General, 0, "Title", t);
     }
     if let Some(a) = author {
-        fa.fill(StreamKind::General, 0, "Performer", a, false);
+        fa.set_field(StreamKind::General, 0, "Performer", a);
     }
     if let Some(d) = description {
-        fa.fill(StreamKind::General, 0, "Description", d, false);
+        fa.set_field(StreamKind::General, 0, "Description", d);
     }
     if let Some(c) = copyright {
-        fa.fill(StreamKind::General, 0, "Copyright", c, false);
+        fa.set_field(StreamKind::General, 0, "Copyright", c);
     }
     if let Some(ct) = creation_time {
-        fa.fill(StreamKind::General, 0, "Recorded_Date", ct, false);
+        fa.set_field(StreamKind::General, 0, "Recorded_Date", ct);
     }
     if let Some(c) = comment {
-        fa.fill(StreamKind::General, 0, "Comment", c, false);
+        fa.set_field(StreamKind::General, 0, "Comment", c);
     }
 
     fa.stream_prepare(StreamKind::Image);
-    fa.fill(StreamKind::Image, 0, "Format", "PNG", false);
-    fa.fill(StreamKind::Image, 0, "Format_Compression", "Deflate", false);
-    fa.fill(StreamKind::Image, 0, "Format_Settings_Packing", "Linear", false);
-    fa.fill(StreamKind::Image, 0, "Width", width.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Height", height.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "PixelAspectRatio", "1.000", false);
+    fa.set_field(StreamKind::Image, 0, "Format", "PNG");
+    fa.set_field(StreamKind::Image, 0, "Format_Compression", "Deflate");
+    fa.set_field(StreamKind::Image, 0, "Format_Settings_Packing", "Linear");
+    fa.set_field(StreamKind::Image, 0, "Width", width.to_string());
+    fa.set_field(StreamKind::Image, 0, "Height", height.to_string());
+    fa.set_field(StreamKind::Image, 0, "PixelAspectRatio", "1.000");
     if width > 0 && height > 0 {
         let dar = (width as f64) / (height as f64);
-        fa.fill(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar), false);
+        fa.set_field(StreamKind::Image, 0, "DisplayAspectRatio", format!("{:.3}", dar));
     }
     let color_space = match color_type {
         0 => "Y",
@@ -260,14 +254,14 @@ fn fill_streams(fa: &mut FileAnalyze, file_size: usize, meta: PngMeta) {
         6 => "RGBA",
         _ => "Unknown",
     };
-    fa.fill(StreamKind::Image, 0, "ColorSpace", color_space, false);
-    fa.fill(StreamKind::Image, 0, "BitDepth", bit_depth.to_string(), false);
-    fa.fill(StreamKind::Image, 0, "Compression_Mode", "Lossless", false);
+    fa.set_field(StreamKind::Image, 0, "ColorSpace", color_space);
+    fa.set_field(StreamKind::Image, 0, "BitDepth", bit_depth.to_string());
+    fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossless");
     // Image.StreamSize = file_size - text-metadata bytes. Includes IDAT
     // payloads plus all non-text-chunk overhead (signature, IHDR/IEND,
     // CRCs, pHYs/sBIT/gAMA/...).
     let image_size = (file_size as u64).saturating_sub(overhead);
-    fa.fill(StreamKind::Image, 0, "StreamSize", image_size.to_string(), false);
+    fa.set_field(StreamKind::Image, 0, "StreamSize", image_size.to_string());
     let _ = idat_total;
 }
 
