@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Text and subtitle parsers for revelo (SubRip, WebVTT, TTML, teletext, ...)."
+readme = "README.md"
 
 [lib]
 name = "revelo_parsers_text"

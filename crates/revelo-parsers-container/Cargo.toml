@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Container-format parsers for revelo (MP4, MKV, MPEG-TS, AVI, WAV, ...)."
+readme = "README.md"
 
 [lib]
 name = "revelo_parsers_container"

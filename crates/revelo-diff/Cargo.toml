@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 publish = false
 description = "Differential testing against mediainfo oracle"
+readme = "README.md"
 
 [[bin]]
 name = "revelo-diff"

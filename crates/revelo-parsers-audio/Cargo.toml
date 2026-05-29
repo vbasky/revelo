@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Audio-codec parsers for revelo (AAC, AC-3, DTS, FLAC, Opus, IAMF, ...)."
+readme = "README.md"
 
 [lib]
 name = "revelo_parsers_audio"

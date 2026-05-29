@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Tag and metadata parsers for revelo (ID3, APE, Vorbis comments, XMP, ...)."
+readme = "README.md"
 
 [lib]
 name = "revelo_parsers_tag"

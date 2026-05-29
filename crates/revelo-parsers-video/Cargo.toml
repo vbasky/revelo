@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Video-codec parsers for revelo (AVC, HEVC, AV1, APV, VP9, ...)."
+readme = "README.md"
 
 [lib]
 name = "revelo_parsers_video"

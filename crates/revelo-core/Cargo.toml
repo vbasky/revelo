@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core engine for revelo: the FileAnalyze byte reader, stream collection, element tree, and ergonomic Reader API."
+readme = "README.md"
 
 [lib]
 name = "revelo_core"

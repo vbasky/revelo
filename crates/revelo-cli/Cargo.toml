@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "revelo CLI"
+readme = "README.md"
 
 [[bin]]
 name = "revelo"

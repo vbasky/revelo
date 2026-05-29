@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "C ABI shim exposing MediaInfo_* entry points"
+readme = "README.md"
 
 [lib]
 name = "revelo_cdylib"
