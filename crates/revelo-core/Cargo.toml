@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core engine for revelo: the FileAnalyze byte reader, stream collection, element tree, and ergonomic Reader API."
+keywords = ["media", "metadata", "parser", "mediainfo", "reader"]
+categories = ["multimedia", "parsing", "parser-implementations"]
 readme = "README.md"
 
 [lib]

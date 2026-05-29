@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Image-format parsers for revelo (JPEG, PNG, TIFF, WebP, HEIF, ...)."
+keywords = ["image", "jpeg", "png", "heif", "parser"]
+categories = ["parser-implementations", "multimedia::images", "parsing"]
 readme = "README.md"
 
 [lib]

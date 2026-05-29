@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Audio-codec parsers for revelo (AAC, AC-3, DTS, FLAC, Opus, IAMF, ...)."
+keywords = ["audio", "aac", "flac", "opus", "parser"]
+categories = ["parser-implementations", "multimedia::audio", "parsing"]
 readme = "README.md"
 
 [lib]

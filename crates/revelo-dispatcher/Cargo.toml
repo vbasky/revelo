@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Parallel format-detection dispatch table for revelo's media parsers."
+keywords = ["media", "format", "detection", "parser", "dispatch"]
+categories = ["multimedia", "parsing", "concurrency"]
 readme = "README.md"
 
 [lints]

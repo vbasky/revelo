@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "revelo CLI"
+keywords = ["mediainfo", "metadata", "media", "parser", "ffprobe"]
+categories = ["command-line-utilities", "multimedia", "parser-implementations"]
 readme = "README.md"
 
 [[bin]]

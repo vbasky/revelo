@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Input/reader layer for revelo (file and directory sources)."
+keywords = ["file", "reader", "io", "media", "input"]
+categories = ["filesystem", "multimedia"]
 readme = "README.md"
 [lib]
 name = "revelo_reader"

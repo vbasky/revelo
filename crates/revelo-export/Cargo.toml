@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Output formatters for revelo: XML, JSON, Text, EBUCore, MPEG-7, PBCore, NISO, FIMS, Graph, RevTMD."
+keywords = ["metadata", "export", "json", "xml", "mediainfo"]
+categories = ["encoding", "multimedia", "value-formatting"]
 readme = "README.md"
 
 [lib]

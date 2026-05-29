@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Low-level string, number, and bitstream primitives (Ztring, radix conversion) underpinning revelo."
+keywords = ["bitstream", "string", "ztring", "primitives", "parsing"]
+categories = ["parsing", "value-formatting"]
 readme = "README.md"
 
 [lib]

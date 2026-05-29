@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Archive-format parsers for revelo (ZIP, 7z, RAR, tar, gzip, ...)."
+keywords = ["archive", "zip", "tar", "parser", "metadata"]
+categories = ["parser-implementations", "compression", "parsing"]
 readme = "README.md"
 
 [lib]
