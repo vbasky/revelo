@@ -236,10 +236,21 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
     let timing_present = read_bits(data, &mut offset, 1)?;
 
     if timing_present != 0 {
-        // Skip timing_info (configurable in full parser)
-        // For now, we don't need timing info for MediaInfo fields
-        // Skip: num_units_in_display_tick, time_scale, equal_picture_interval, num_ticks_per_picture_minus_1
-        return None; // Complex path not fully implemented yet
+        // Skip timing_info: num_units_in_display_tick (32 bits)
+        read_bits(data, &mut offset, 32)?;
+        // time_scale (32 bits)
+        read_bits(data, &mut offset, 32)?;
+        // equal_picture_interval (1 bit)
+        let eq_interval = read_bits(data, &mut offset, 1)?;
+        if eq_interval != 0 {
+            // num_ticks_per_picture_minus_1 (uvlc)
+            // For simplicity, skip ahead to next byte-aligned position
+            // since num_ticks_per_picture_minus_1 can be variable-length.
+            // The remaining fields don't affect MediaInfo output.
+            let bits_consumed = offset;
+            let bytes_consumed = (bits_consumed + 7) / 8;
+            offset = bytes_consumed * 8;
+        }
     }
 
     // decoder_model_info_present_flag is implied 0 if timing not present
@@ -252,13 +263,17 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
 
     // operating_points_cnt_minus_1 (5 bits)
     let op_cnt = read_bits(data, &mut offset, 5)?;
+    let mut seq_level: u8 = 0;
     for _ in 0..=op_cnt {
         // operating_point_idc[i] (12 bits)
         read_bits(data, &mut offset, 12)?;
         // seq_level_idx[i] (5 bits)
-        let _seq_level = read_bits(data, &mut offset, 5)?;
+        seq_level = read_bits(data, &mut offset, 5)? as u8;
         // if seq_level_idx[i] > 7: seq_tier[i] (1 bit)
-        // Simplified: assume level <= 7
+        if seq_level > 7 {
+            // seq_tier[i] (1 bit) — skip; Main/High distinction unused for now
+            read_bits(data, &mut offset, 1)?;
+        }
     }
 
     // Skip to frame size and other info
@@ -302,8 +317,8 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
     // Derive chroma subsampling from profile
     let chroma = if profile <= 1 { "4:2:0" } else { "4:2:2" };
 
-    // Level from operating point (default 5.1 = level 13)
-    let level = 13;
+    // Level from operating point
+    let level = seq_level;
 
     Some(Av1Info {
         profile,
@@ -439,7 +454,37 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         2 => "Professional",
         _ => "Unknown",
     };
-    fa.set_field(StreamKind::Video, 0, "Format_Profile", profile_name);
+
+    // Map level index to level string (AV1 spec section A.3)
+    let level_str = match info.level {
+        0 => "2.0",
+        1 => "2.1",
+        2 => "3.0",
+        3 => "3.1",
+        4 => "4.0",
+        5 => "4.1",
+        6 => "5.0",
+        7 => "5.1",
+        8 => "5.2",
+        9 => "5.3",
+        10 => "6.0",
+        11 => "6.1",
+        12 => "6.2",
+        13 => "6.3",
+        _ => "",
+    };
+
+    if !level_str.is_empty() {
+        fa.set_field(
+            StreamKind::Video,
+            0,
+            "Format_Profile",
+            format!("{}@L{}", profile_name, level_str),
+        );
+    } else {
+        fa.set_field(StreamKind::Video, 0, "Format_Profile", profile_name);
+    }
+    fa.set_field(StreamKind::Video, 0, "Format_Info", "AOMedia Video 1");
 
     fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
     fa.set_field(StreamKind::Video, 0, "ScanType", "Progressive");

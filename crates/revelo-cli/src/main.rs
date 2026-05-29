@@ -9,7 +9,7 @@ use revelo_core::multi_file::MultiFileLoader;
 use revelo_core::multi_file::find_duplicate_streams;
 use revelo_core::{FileAnalyze, FileLevelInfo, StreamKind, fill_file_level_fields};
 use revelo_dispatcher::detect;
-use revelo_export::{to_json, to_text, to_xml};
+use revelo_export::{to_csv, to_json, to_summary, to_text, to_xml};
 
 mod cli;
 use cli::Cli;
@@ -136,10 +136,23 @@ fn main() -> process::ExitCode {
                 to_json(fa.streams(), &path, env!("CARGO_PKG_VERSION"))
             } else if cli.xml {
                 to_xml(fa.streams(), &path, env!("CARGO_PKG_VERSION"))
+            } else if cli.csv {
+                to_csv(fa.streams(), &path)
+            } else if cli.summary {
+                to_summary(fa.streams(), &path)
             } else {
-                to_text(fa.streams(), &path)
+                format_text_output(
+                    &to_text(fa.streams(), &path),
+                    cli.inform_version,
+                    cli.inform_timestamp,
+                )
             };
-            println!("{output}");
+
+            if let Some(ref log_file) = cli.log_file {
+                let _ = fs::write(log_file, &output);
+            } else {
+                println!("{output}");
+            }
         }
     }
 
@@ -149,6 +162,26 @@ fn main() -> process::ExitCode {
     }
 
     process::ExitCode::SUCCESS
+}
+
+/// Add library version and/or timestamp header to text output if requested.
+fn format_text_output(text: &str, add_version: bool, add_timestamp: bool) -> String {
+    if !add_version && !add_timestamp {
+        return text.to_owned();
+    }
+    let mut header = String::new();
+    if add_timestamp {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        header.push_str(&format!("Report created: {}\n", now));
+    }
+    if add_version {
+        header.push_str(&format!("Library version: revelo {}\n", env!("CARGO_PKG_VERSION")));
+    }
+    if !header.is_empty() {
+        header.push('\n');
+    }
+    header + text
 }
 
 /// Local timezone offset in seconds east of UTC, via `date +%z`

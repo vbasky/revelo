@@ -326,11 +326,12 @@ Planned features and high-impact areas for the next development phase:
 
 ### Output & Reporting
 
-- **CSV / YAML export** — Machine-friendly formats for pipeline integration
-  (straightforward addition to `revelo-export`).
+- ✅ **CSV export** — Machine-friendly format for pipeline integration
+  (`--csv`).
+- **YAML export** — YAML output format for pipeline integration.
 - **HTML report** — Self-contained visual report with collapsible sections and
   summary cards.
-- **Summary mode** — Aggregate statistics across a file collection: codec
+- ✅ **Summary mode** — Aggregate statistics across a file collection: codec
   distribution, resolution ranges, bitrate profiles, container breakdown.
 
 ### Batch & Comparison
@@ -367,9 +368,11 @@ Planned features and high-impact areas for the next development phase:
 
 ### Quality of life
 
-- **Stream filtering** — `--video-only`, `--audio-only`, `--stream 0:1` to
+- ✅ **Stream filtering** — `--video-only`, `--audio-only`, `--stream KIND:INDEX` to
   select specific tracks by index.
-- **Container verification** — Structural integrity checks: MOOV atom
-  completeness, EBML well-formedness, RIFF size consistency.
+- ✅ **Container verification** — `--verify` flag with `IsComplete` field for
+  structural integrity checks.
+- ✅ **Format metadata** — `--inform-version`, `--inform-timestamp` for provenance.
+- ✅ **Log file** — `--log-file <FILE>` to redirect output to a file.
 - **Format conversion** — `revelo --to-json --from-xml` to transform between
   export formats without re-parsing.

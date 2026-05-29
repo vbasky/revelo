@@ -29,6 +29,14 @@ pub(crate) struct Cli {
     #[arg(short = 't', long)]
     pub text: bool,
 
+    /// CSV output
+    #[arg(long)]
+    pub csv: bool,
+
+    /// Summary output (aggregate statistics)
+    #[arg(long)]
+    pub summary: bool,
+
     /// Demux level
     #[arg(
         short = 'd',
@@ -71,6 +79,18 @@ pub(crate) struct Cli {
     /// Print structural integrity information
     #[arg(long)]
     pub verify: bool,
+
+    /// Add library version to text output
+    #[arg(long)]
+    pub inform_version: bool,
+
+    /// Add timestamp to text output
+    #[arg(long)]
+    pub inform_timestamp: bool,
+
+    /// Write output to file instead of stdout
+    #[arg(long, value_name = "FILE")]
+    pub log_file: Option<String>,
 
     #[command(subcommand)]
     pub command: Option<Command>,

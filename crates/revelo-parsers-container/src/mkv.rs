@@ -983,7 +983,35 @@ fn fill_streams(
                         2 => "Professional",
                         _ => "Unknown",
                     };
-                    fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
+                    // Map level index to level string (AV1 spec section A.3)
+                    let level_str = match info.level {
+                        0 => "2.0",
+                        1 => "2.1",
+                        2 => "3.0",
+                        3 => "3.1",
+                        4 => "4.0",
+                        5 => "4.1",
+                        6 => "5.0",
+                        7 => "5.1",
+                        8 => "5.2",
+                        9 => "5.3",
+                        10 => "6.0",
+                        11 => "6.1",
+                        12 => "6.2",
+                        13 => "6.3",
+                        _ => "",
+                    };
+                    if !level_str.is_empty() {
+                        fa.set_field(
+                            StreamKind::Video,
+                            pos,
+                            "Format_Profile",
+                            format!("{}@L{}", profile_name, level_str),
+                        );
+                    } else {
+                        fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
+                    }
+                    fa.set_field(StreamKind::Video, pos, "Format_Info", "AOMedia Video 1");
                 }
 
                 // For VP9, try to parse CodecPrivate for profile, level, bit depth.

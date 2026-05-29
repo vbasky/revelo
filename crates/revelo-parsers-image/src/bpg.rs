@@ -136,15 +136,24 @@ mod tests {
     use super::*;
 
     fn vsi_encode(v: u64) -> Vec<u8> {
-        // Encode as the smallest VSI that fits.
         if v < (1 << 7) {
             vec![v as u8]
         } else if v < (1 << 14) {
             vec![0x80 | ((v >> 8) as u8 & 0x3F), v as u8]
         } else if v < (1 << 21) {
             vec![0xC0 | ((v >> 16) as u8 & 0x1F), (v >> 8) as u8, v as u8]
+        } else if v < (1 << 28) {
+            vec![0xE0 | ((v >> 24) as u8 & 0x0F), (v >> 16) as u8, (v >> 8) as u8, v as u8]
+        } else if v < (1 << 35) {
+            vec![
+                0xF0 | ((v >> 32) as u8 & 0x07),
+                (v >> 24) as u8,
+                (v >> 16) as u8,
+                (v >> 8) as u8,
+                v as u8,
+            ]
         } else {
-            // Larger values not used in tests.
+            // Values >= 2^35 not used in tests.
             unimplemented!()
         }
     }
