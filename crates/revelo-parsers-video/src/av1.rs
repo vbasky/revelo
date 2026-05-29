@@ -593,7 +593,11 @@ pub fn parse_av1_from_codec_config(config: &[u8]) -> Option<Av1Info> {
 
             if header_len + obu_size <= obus.len() {
                 let payload = &obus[header_len..header_len + obu_size];
-                if let Some(info) = parse_av1_sequence_header(payload) {
+                if let Some(mut info) = parse_av1_sequence_header(payload) {
+                    // The codec config record's seq_level_idx_0 is
+                    // authoritative for Format_Profile — not the sequence
+                    // header's last operating point.
+                    info.level = level;
                     return Some(info);
                 }
             }

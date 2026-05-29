@@ -566,6 +566,17 @@ fn fill_streams(
     if crc32_at_level1 {
         fa.set_field(StreamKind::General, 0, "ErrorDetectionType", "Per level 1");
     }
+    // Global tag → General stream fields
+    for tag in tag_pairs {
+        if tag.target_track_uid == 0 {
+            if tag.name.eq_ignore_ascii_case("TITLE")
+                || tag.name.eq_ignore_ascii_case("HANDLER_NAME")
+            {
+                fa.set_field(StreamKind::General, 0, "Title", tag.value.as_str());
+                break;
+            }
+        }
+    }
 
     let timecode_scale_ns: f64 = movie.timecode_scale.unwrap_or(1_000_000) as f64;
     let duration_seconds: Option<f64> =
@@ -837,6 +848,11 @@ fn fill_streams(
                 }
                 if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
                     fa.set_field(StreamKind::Audio, pos, "Language", lang);
+                }
+                if let Some(name) = track.name.as_deref() {
+                    fa.set_field(StreamKind::Audio, pos, "Title", name);
+                } else if let Some(tag_title) = track_name_from_tags(tag_pairs, track.uid) {
+                    fa.set_field(StreamKind::Audio, pos, "Title", tag_title.as_str());
                 }
                 let audio_default = track.flag_default.unwrap_or(true);
                 fa.set_field(
@@ -1336,6 +1352,8 @@ fn fill_streams(
                 }
                 if let Some(name) = track.name.as_deref() {
                     fa.set_field(StreamKind::Video, pos, "Title", name);
+                } else if let Some(tag_title) = track_name_from_tags(tag_pairs, track.uid) {
+                    fa.set_field(StreamKind::Video, pos, "Title", tag_title.as_str());
                 }
                 if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
                     fa.set_field(StreamKind::Video, pos, "Language", lang);
@@ -1518,6 +1536,21 @@ fn channel_layout_for_codec(
         return (Some("Front: C"), Some("M"));
     }
     channel_layout(channels)
+}
+
+/// Look up a track's name from Tags by its track UID.
+/// Checks for TITLE and HANDLER_NAME tags targeted at the track.
+fn track_name_from_tags(tag_pairs: &[TagEntry], track_uid: Option<u64>) -> Option<String> {
+    let uid = track_uid?;
+    for tag in tag_pairs {
+        if tag.target_track_uid == uid
+            && (tag.name.eq_ignore_ascii_case("TITLE")
+                || tag.name.eq_ignore_ascii_case("HANDLER_NAME"))
+        {
+            return Some(tag.value.clone());
+        }
+    }
+    None
 }
 
 fn mkv_codec_to_format(codec_id: &str) -> Option<&'static str> {
