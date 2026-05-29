@@ -1,15 +1,10 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- APV (Advanced Professional Video) parser (`revelo_parsers_video::apv`) — detects the `aPv1` signature, walks to the first frame/access-unit PBU, and fills profile\@level, dimensions, chroma format, bit depth, and colour description. Ported from MediaInfoLib's `File_Apv.cpp`.
-
 ## [0.2.0] - 2026-05-29
 
 ### Added
 
+- APV (Advanced Professional Video) parser (`revelo_parsers_video::apv`) — detects the `aPv1` signature, walks to the first frame/access-unit PBU, and fills profile\@level, dimensions, chroma format, bit depth, and colour description. Ported from MediaInfoLib's `File_Apv.cpp`.
 - Ergonomic `Reader` API (`revelo_core::reader`) — fluent, value-returning byte/bits reader wrapping `FileAnalyze` (native `u8`/`u16`/`u32` types, `Option`/`?`-based reads, no out-parameters)
 - `revelo_core::prelude` module
 - Workspace lints table (`Cargo.toml`) — `unreachable_pub`, `clippy::unwrap_used`, `clippy::doc_markdown`, `clippy::cast_possible_truncation`, `clippy::cast_sign_loss`
@@ -30,7 +25,7 @@
 - Toolchain switched from nightly to **stable** — edition 2024 and let-chains are both stabilized, so no nightly features are required
 - Renamed `diff-harness` → `revelo-diff`; it now uses `revelo_dispatcher::detect()` instead of a hand-maintained parser table
 - Parser dispatch table (`revelo-dispatcher`) now carries inline format-name comments
-- `revelo-util` `FromRadix`/`FromRadixSigned` traits changed to `pub(super)`; `revelo-util_re_export` re-exports to `pub(crate)`
+- `revelo-util` `FromRadix`/`FromRadixSigned` traits changed to `pub(super)`; `revelo_util_re_export` re-exports to `pub(crate)`
 - `[workspace.lints.rustdoc]` allows intentional byte-layout notation (`invalid_html_tags`, `broken_intra_doc_links`)
 - Bare URLs in doc comments wrapped in `<>`
 - CI no longer fails the build on warnings (`-D warnings` dropped); `cargo fmt --check` is reported but non-blocking
