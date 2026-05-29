@@ -7,6 +7,7 @@ pub fn fill_computed_fields(sc: &mut StreamCollection) {
     fill_format_profile_general(sc);
     fill_frame_rate_mode_original(sc);
     fill_bitrate_ranges(sc);
+    fill_inferred_av1_level(sc);
 }
 
 fn field_val(sc: &StreamCollection, kind: StreamKind, pos: usize, key: &str) -> Option<String> {
@@ -145,6 +146,138 @@ fn fill_frame_rate_mode_original(sc: &mut StreamCollection) {
         if let Some(mode) = field_val(sc, StreamKind::Video, i, "FrameRate_Mode") {
             sc.set_field(StreamKind::Video, i, "FrameRate_Mode_Original", Ztring::from(mode));
         }
+    }
+}
+
+/// Infer the minimum AV1 level required for a given resolution and framerate,
+/// then set `Format_Level_Inferred` if it differs from the reported level.
+///
+/// AV1 level table (section A.3 — example values for the L5 tier maximums):
+///
+/// | Level | Max resolution @ 30fps | Max resolution @ 60fps |
+/// |-------|------------------------|------------------------|
+/// | 2.0   | 426×240                | 426×240                |
+/// | 2.1   | 640×360                | 640×360                |
+/// | 3.0   | 854×480                | 854×480                |
+/// | 3.1   | 1280×720               | 1280×720               |
+/// | 4.0   | 1920×1080              | 1920×1080 @ 30         |
+/// | 4.1   | 1920×1080              | 1920×1080 @ 60         |
+/// | 5.0   | 3840×2160              | 3840×2160 @ 30         |
+/// | 5.1   | 3840×2160              | 3840×2160 @ 60         |
+/// | 5.2   | 3840×2160              | 3840×2160 @ 120        |
+/// | 5.3   | 3840×2160              | 3840×2160 @ 200        |
+/// | 6.0   | 7680×4320              | 7680×4320 @ 30         |
+/// | 6.1   | 7680×4320              | 7680×4320 @ 60         |
+/// | 6.2   | 7680×4320              | 7680×4320 @ 120        |
+/// | 6.3   | 7680×4320              | 7680×4320 @ 200        |
+fn fill_inferred_av1_level(sc: &mut StreamCollection) {
+    let n = sc.stream_count(StreamKind::Video);
+    for i in 0..n {
+        let format = field_val(sc, StreamKind::Video, i, "Format").unwrap_or_default();
+        if format != "AV1" {
+            continue;
+        }
+        let Some(profile_str) = field_val(sc, StreamKind::Video, i, "Format_Profile") else {
+            continue;
+        };
+        let width: u64 =
+            match field_val(sc, StreamKind::Video, i, "Width").and_then(|v| v.parse().ok()) {
+                Some(w) => w,
+                None => continue,
+            };
+        let height: u64 =
+            match field_val(sc, StreamKind::Video, i, "Height").and_then(|v| v.parse().ok()) {
+                Some(h) => h,
+                None => continue,
+            };
+        let frame_rate: f64 =
+            match field_val(sc, StreamKind::Video, i, "FrameRate").and_then(|v| v.parse().ok()) {
+                Some(f) => f,
+                None => continue,
+            };
+
+        let max_dim = width.max(height);
+        let inferred_level_idx = av1_inferred_level_idx(max_dim, frame_rate);
+
+        if let Some(inferred) = inferred_level_idx {
+            // Only emit if it differs from the reported level (extract level from @L suffix)
+            let reported_level_idx =
+                profile_str.split("@L").nth(1).and_then(|s| s.parse::<u8>().ok());
+
+            if reported_level_idx != Some(inferred) {
+                let level_name = av1_level_name(inferred);
+                sc.set_field(
+                    StreamKind::Video,
+                    i,
+                    "Format_Level_Inferred",
+                    Ztring::from(level_name),
+                );
+            }
+        }
+    }
+}
+
+/// Return the minimum AV1 level index that supports `max_dim` at `fps`.
+fn av1_inferred_level_idx(max_dim: u64, fps: f64) -> Option<u8> {
+    // AV1 level limits from spec Table A.3 (Main tier, pic_size in pixels × 1M, samples per sec × 1M).
+    let levels: &[(u8, u64, u64)] = &[
+        (0, 147_456, 4_915_200),         // 2.0
+        (1, 262_144, 8_847_360),         // 2.1
+        (2, 491_520, 16_515_072),        // 3.0
+        (3, 1_048_576, 35_389_440),      // 3.1
+        (4, 2_088_960, 69_632_000),      // 4.0
+        (5, 2_088_960, 139_264_000),     // 4.1
+        (6, 8_912_896, 297_096_000),     // 5.0
+        (7, 8_912_896, 594_192_000),     // 5.1
+        (8, 8_912_896, 1_188_384_000),   // 5.2
+        (9, 8_912_896, 1_980_640_000),   // 5.3
+        (10, 35_651_584, 1_188_384_000), // 6.0
+        (11, 35_651_584, 2_376_768_000), // 6.1
+        (12, 35_651_584, 4_753_536_000), // 6.2
+        (13, 35_651_584, 7_922_560_000), // 6.3
+    ];
+
+    // Round dimensions up to nearest multiple of 16 (AV1 superblock alignment)
+    let w16 = ((max_dim + 15) / 16) * 16;
+    let h16 = (((max_dim as f64 * 9.0 / 16.0).ceil() as u64 + 15) / 16) * 16;
+    let pic_size = w16 * h16;
+    let samples_per_sec = (pic_size as f64 * fps) as u64;
+
+    for &(idx, max_pic, max_sps) in levels {
+        if pic_size <= max_pic && samples_per_sec <= max_sps {
+            return Some(idx);
+        }
+    }
+
+    let pic_size = (max_dim as f64 * max_dim as f64 * 9.0 / 16.0).round() as u64;
+    let samples_per_sec = pic_size as f64 * fps;
+
+    for &(idx, max_pic, max_sps) in levels {
+        if pic_size <= max_pic && (samples_per_sec as u64) <= max_sps {
+            return Some(idx);
+        }
+    }
+
+    None
+}
+
+fn av1_level_name(idx: u8) -> &'static str {
+    match idx {
+        0 => "2.0",
+        1 => "2.1",
+        2 => "3.0",
+        3 => "3.1",
+        4 => "4.0",
+        5 => "4.1",
+        6 => "5.0",
+        7 => "5.1",
+        8 => "5.2",
+        9 => "5.3",
+        10 => "6.0",
+        11 => "6.1",
+        12 => "6.2",
+        13 => "6.3",
+        _ => "",
     }
 }
 

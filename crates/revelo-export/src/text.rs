@@ -111,6 +111,7 @@ fn display_fields(kind: StreamKind) -> &'static [&'static str] {
             "transfer_characteristics",
             "matrix_coefficients",
             "CodecConfigurationBox",
+            "Format_Level_Inferred",
         ],
         StreamKind::Audio => &[
             "ID",
@@ -217,6 +218,11 @@ fn render(
         "IsComplete" => {
             let v = s.get("IsComplete")?.as_str();
             Some(("Is complete", if v == "Yes" { "Yes" } else { v }.to_owned()))
+        }
+
+        "Format_Level_Inferred" => {
+            let v = s.get("Format_Level_Inferred")?.as_str();
+            Some(("Inferred level", v.to_owned()))
         }
 
         "Format" => {
