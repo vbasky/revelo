@@ -1,18 +1,18 @@
 # Output Fidelity Gaps
 
-revelio's correctness bar is **byte-match with the `mediainfo` oracle**, not
+revelo's correctness bar is **byte-match with the `mediainfo` oracle**, not
 "a parser exists" or "tests pass". This doc records the known gaps between
-revelio's XML and the oracle's, grouped by root cause, so they're not
+revelo's XML and the oracle's, grouped by root cause, so they're not
 mistaken for missing parsers.
 
 ## How to measure
 
-The differential harness diffs revelio's XML against the installed
+The differential harness diffs revelo's XML against the installed
 `mediainfo`. Use `--strict` for true byte-fidelity — the default diff is
 set-based and hides field-ordering / duplicate differences:
 
 ```sh
-cargo run --release -p revelio-diff -- --strict /path/to/file
+cargo run --release -p revelo-diff -- --strict /path/to/file
 ```
 
 `BYTE-EQUAL N/N` means line-for-line identical. `M only in oracle, K only
@@ -44,13 +44,13 @@ remaining diffs are value/presence.)
 ## Category A — Precision (per-sample / frame-accurate math)
 
 The values are close but not exact because the oracle computes them from a
-full per-sample/per-frame scan that revelio approximates from headers.
+full per-sample/per-frame scan that revelo approximates from headers.
 
 - **AAC `StreamSize` (edit-list trim).** Oracle reports the elementary size
   *after* the edit list trims encoder priming/padding frames
   (e.g. 8722 vs the raw 8992; the raw value is correct as `Source_StreamSize`).
   The byte delta depends on the exact sizes of the trimmed frames, which
-  needs per-sample `stsz` aligned to the edit list — revelio stores only the
+  needs per-sample `stsz` aligned to the edit list — revelo stores only the
   first/last sample sizes, so there's no clean formula (2-frame trim loses
   270 B here, a 1-frame trim elsewhere loses 325 B).
 - **Duration / SamplingCount / BitRate** off-by-small (±1 ms, ±a few samples,
@@ -68,7 +68,7 @@ scan, repeated per container. Until then these fields are missing/approximate:
   (the largest non-AV1 gap).
 - **VP9-in-MKV/WebM** — the VP9 uncompressed frame header (profile, real
   colour space/range, bit depth) lives in the first cluster SimpleBlock;
-  revelio currently falls back to codec-private/defaults.
+  revelo currently falls back to codec-private/defaults.
 - **FLV** — per-tag AVC/AAC bitstream details.
 - **AVI MP3** — `BitRate` when `nAvgBytesPerSec == 0`, and the LAME
   `Encoded_Library` string, both require the first MP3 frame from the movi
@@ -81,7 +81,7 @@ frequently-edited container parsers.
 
 ## Category C — Blocked fields (parser never fills them)
 
-Emitted by the oracle but not derivable from what revelio currently parses:
+Emitted by the oracle but not derivable from what revelo currently parses:
 
 - `FrameRate_Mode_Original` (VFR flag) on Video.
 - `Format_Settings_SBR` for HE-AAC (AOT 5/29) — only the AAC-LC "No (Explicit)"

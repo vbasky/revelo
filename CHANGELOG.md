@@ -4,14 +4,14 @@
 
 ### Added
 
-- APV (Advanced Professional Video) parser (`revelio_parsers_video::apv`) — detects the `aPv1` signature, walks to the first frame/access-unit PBU, and fills profile\@level, dimensions, chroma format, bit depth, and colour description. Ported from MediaInfoLib's `File_Apv.cpp`.
+- APV (Advanced Professional Video) parser (`revelo_parsers_video::apv`) — detects the `aPv1` signature, walks to the first frame/access-unit PBU, and fills profile\@level, dimensions, chroma format, bit depth, and colour description. Ported from MediaInfoLib's `File_Apv.cpp`.
 
 ## [0.2.0] - 2026-05-29
 
 ### Added
 
-- Ergonomic `Reader` API (`revelio_core::reader`) — fluent, value-returning byte/bits reader wrapping `FileAnalyze` (native `u8`/`u16`/`u32` types, `Option`/`?`-based reads, no out-parameters)
-- `revelio_core::prelude` module
+- Ergonomic `Reader` API (`revelo_core::reader`) — fluent, value-returning byte/bits reader wrapping `FileAnalyze` (native `u8`/`u16`/`u32` types, `Option`/`?`-based reads, no out-parameters)
+- `revelo_core::prelude` module
 - Workspace lints table (`Cargo.toml`) — `unreachable_pub`, `clippy::unwrap_used`, `clippy::doc_markdown`, `clippy::cast_possible_truncation`, `clippy::cast_sign_loss`
 - `rustfmt.toml` — edition 2024, max_width 100, reorder_imports
 - `#![deny(unsafe_code)]` on all 12 non-cdylib crate roots
@@ -28,8 +28,8 @@
 
 - Migrated parsers off the C++-style `FileAnalyze::get_*` out-parameter API to the ergonomic `Reader` API across the audio, video, image, text, and container crates (including the 3.4k-line `mp4`); behavior-preserving, verified by the workspace test suite
 - Toolchain switched from nightly to **stable** — edition 2024 and let-chains are both stabilized, so no nightly features are required
-- Renamed `diff-harness` → `revelio-diff`; it now uses `revelio_dispatcher::detect()` instead of a hand-maintained parser table
-- Parser dispatch table (`revelio-dispatcher`) now carries inline format-name comments
+- Renamed `diff-harness` → `revelo-diff`; it now uses `revelo_dispatcher::detect()` instead of a hand-maintained parser table
+- Parser dispatch table (`revelo-dispatcher`) now carries inline format-name comments
 - `zenlib` `FromRadix`/`FromRadixSigned` traits changed to `pub(super)`; `zenlib_re_export` re-exports to `pub(crate)`
 - `[workspace.lints.rustdoc]` allows intentional byte-layout notation (`invalid_html_tags`, `broken_intra_doc_links`)
 - Bare URLs in doc comments wrapped in `<>`
@@ -47,10 +47,10 @@
 ## 0.1.0
 
 - 177 parsers across 7 domain crates (archive, audio, container, image, tag, text, video)
-- Core engine (`revelio-core`): `FileAnalyze` byte reader, `StreamCollection`, `ElementTree`, bitstream mode
-- Parallel parser dispatch via `rayon` (`revelio-dispatcher`)
+- Core engine (`revelo-core`): `FileAnalyze` byte reader, `StreamCollection`, `ElementTree`, bitstream mode
+- Parallel parser dispatch via `rayon` (`revelo-dispatcher`)
 - 10 output formatters: XML, JSON, Text, EBUCore, MPEG-7, PBCore, NISO, FIMS, Graph, RevTMD
-- C ABI shim (`revelio-cdylib`) — drop-in replacement for `libmediainfo`
-- CLI (`revelio-cli`) with `--xml`, `--json`, `--multi-file`, `--demux`, `--trace`
+- C ABI shim (`revelo-cdylib`) — drop-in replacement for `libmediainfo`
+- CLI (`revelo-cli`) with `--xml`, `--json`, `--multi-file`, `--demux`, `--trace`
 - 579 unit tests
 - Differential testing harness against `mediainfo` oracle

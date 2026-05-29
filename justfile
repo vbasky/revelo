@@ -1,4 +1,4 @@
-# revelio developer tasks — `just` command runner
+# revelo developer tasks — `just` command runner
 
 _default:
     @just --list
@@ -37,27 +37,27 @@ docs:
 
 # Open docs in browser
 docs-open: docs
-    open target/doc/revelio_core/index.html
+    open target/doc/revelo_core/index.html
 
 # Run the diff harness against a file
 diff file:
-    cargo run --release -p revelio-diff -- {{file}}
+    cargo run --release -p revelo-diff -- {{file}}
 
 # Run diff with strict (order-sensitive) comparison
 diff-strict file:
-    cargo run --release -p revelio-diff -- --strict {{file}}
+    cargo run --release -p revelo-diff -- --strict {{file}}
 
 # Inspect a file with the CLI (text output)
 inspect file:
-    cargo run -p revelio-cli -- {{file}}
+    cargo run -p revelo-cli -- {{file}}
 
 # Inspect with XML output
 inspect-xml file:
-    cargo run -p revelio-cli -- --xml {{file}}
+    cargo run -p revelo-cli -- --xml {{file}}
 
 # Inspect with JSON output
 inspect-json file:
-    cargo run -p revelio-cli -- --json {{file}}
+    cargo run -p revelo-cli -- --json {{file}}
 
 # Run all checks: fmt, clippy, test, doc
 check-all: fmt-check

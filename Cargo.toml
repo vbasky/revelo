@@ -1,27 +1,27 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/revelio-diff",
-    "crates/revelio-cli",
-    "crates/revelio-core",
-    "crates/revelio-export",
-    "crates/revelio-parsers-archive",
-    "crates/revelio-reader",
-    "crates/revelio-dispatcher",
-    "crates/revelio-parsers-audio",
-    "crates/revelio-parsers-container",
-    "crates/revelio-parsers-image",
-    "crates/revelio-parsers-tag",
-    "crates/revelio-parsers-text",
-    "crates/revelio-parsers-video",
+    "crates/revelo-diff",
+    "crates/revelo-cli",
+    "crates/revelo-core",
+    "crates/revelo-export",
+    "crates/revelo-parsers-archive",
+    "crates/revelo-reader",
+    "crates/revelo-dispatcher",
+    "crates/revelo-parsers-audio",
+    "crates/revelo-parsers-container",
+    "crates/revelo-parsers-image",
+    "crates/revelo-parsers-tag",
+    "crates/revelo-parsers-text",
+    "crates/revelo-parsers-video",
     "crates/zenlib",
-    "crates/revelio-cdylib",
+    "crates/revelo-cdylib",
 ]
 
 [workspace.package]
 edition = "2024"
 license = "BSD-2-Clause"
-repository = "https://github.com/vbasky/revelio"
+repository = "https://github.com/vbasky/revelo"
 
 [workspace.lints.rust]
 unreachable_pub = "warn"

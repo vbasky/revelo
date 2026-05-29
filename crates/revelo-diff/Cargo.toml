@@ -1,0 +1,19 @@
+[package]
+name = "revelo-diff"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Differential testing against mediainfo oracle"
+
+[[bin]]
+name = "revelo-diff"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+revelo-core = { path = "../revelo-core" }
+revelo-dispatcher = { path = "../revelo-dispatcher" }
+revelo-export = { path = "../revelo-export" }

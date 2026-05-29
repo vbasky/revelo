@@ -1,4 +1,0 @@
-  🦀 revelio
-
-  🎬 media inspector
-  150+ formats — codec, container, bitrate, resolution, metadata

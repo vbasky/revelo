@@ -1,4 +1,4 @@
-# 🦀 revelio
+# 🦀 revelo
 
 **Read technical metadata from any media file — in pure Rust.**
 
@@ -8,13 +8,13 @@ byte-for-byte against the C++ `mediainfo` oracle through differential testing.
 
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/vbasky/revelio)
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/vbasky/revelo)
 [![Parsers](https://img.shields.io/badge/parsers-193-blue.svg)](docs/formats.md)
-[![Tests](https://img.shields.io/badge/tests-579%20passing-brightgreen.svg)](https://github.com/vbasky/revelio)
+[![Tests](https://img.shields.io/badge/tests-579%20passing-brightgreen.svg)](https://github.com/vbasky/revelo)
 
 ## How it reads a file
 
-First revelio detects the format (every parser races to claim the bytes), then it
+First revelo detects the format (every parser races to claim the bytes), then it
 walks the container's *native* on-disk structure, reading fields box-by-box. An
 MP4/MOV file is a tree of boxes ("atoms") — `moov` holds the metadata, `mdat` the
 coded samples:
@@ -41,7 +41,7 @@ coded samples:
   mdat                          coded samples — sized; scanned for x264/x265 tags
 ```
 
-(`▸` marks a box that just wraps the next.) revelio walks every container's
+(`▸` marks a box that just wraps the next.) revelo walks every container's
 *native* structure the same way — here are the other big families.
 
 **Matroska / WebM** — EBML elements (`id ▸ size ▸ data`) under one Segment:
@@ -81,15 +81,15 @@ file plus one stream per track — **Video · Audio · Text · Image · Menu · 
 
 ## MediaInfoLib comparison
 
-Revelio is a from-scratch port of MediaInfoLib v26.05. Every line is new Rust —
+Revelo is a from-scratch port of MediaInfoLib v26.05. Every line is new Rust —
 no C++ translation, no FFI wrappers, no generated bindings.
 
-| | MediaInfoLib | Revelio |
+| | MediaInfoLib | Revelo |
 |---|---|---|
 | **Language** | C++ | Pure Rust |
 | **Memory safety** | Manual | Compile-time guaranteed |
 | **Build** | `./Configure` + `make` + 10 system deps | `cargo build` (no system libs) |
-| **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelio-cli` |
+| **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelo-cli` |
 | **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table, parallel race via rayon |
 | **Output fidelity** | Reference oracle | Byte-equal XML (differential harness) |
 | **License** | BSD-2-Clause | BSD-2-Clause |
@@ -131,17 +131,17 @@ The crate stack, from consumers at the top down to the foundation:
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│  CLI (revelio)        C ABI (revelio-cdylib)                 │  frontends
+│  CLI (revelo)        C ABI (revelo-cdylib)                 │  frontends
 ├────────────────────────────────────────────────────────────┤
-│  revelio-export       revelio-reader                         │  output / input
+│  revelo-export       revelo-reader                         │  output / input
 ├────────────────────────────────────────────────────────────┤
-│  revelio-dispatcher — parser table + parallel detect()       │  dispatch
+│  revelo-dispatcher — parser table + parallel detect()       │  dispatch
 ├────────────────────────────────────────────────────────────┤
 │  container · audio · video · image · text · tag · archive    │  parsers (193)
 ├────────────────────────────────────────────────────────────┤
-│  revelio-core (FileAnalyze engine)     zenlib                │  foundation
+│  revelo-core (FileAnalyze engine)     zenlib                │  foundation
 └────────────────────────────────────────────────────────────┘
-   revelio-diff — differential harness, diffs output vs the mediainfo oracle
+   revelo-diff — differential harness, diffs output vs the mediainfo oracle
 ```
 
 ## Crates
@@ -154,63 +154,63 @@ output/API surface, and the differential test harness.
 | Crate | Role | Status |
 | --- | --- | --- |
 | `zenlib` | ZenLib port — `Ztring`, bit reader, integer/float types | Stable |
-| `revelio-core` | Analysis engine — `FileAnalyze` byte reader, stream model, demux/trace, config dispatch, computed fields | Stable |
-| `revelio-dispatcher` | Parser table (single source of truth) + parallel `detect()` | Stable |
+| `revelo-core` | Analysis engine — `FileAnalyze` byte reader, stream model, demux/trace, config dispatch, computed fields | Stable |
+| `revelo-dispatcher` | Parser table (single source of truth) + parallel `detect()` | Stable |
 
 ### Format parsers
 
 | Crate | Role | Status |
 | --- | --- | --- |
-| `revelio-parsers-container` | 42 containers — MP4, MKV, AVI, MPEG-TS/PS, WAV, Ogg, MXF, … | Stable |
-| `revelio-parsers-audio` | 56 audio codecs — AAC, MP3, AC-3/4, DTS, FLAC, Opus, TrueHD, … | Stable |
-| `revelio-parsers-video` | 28 video codecs — AVC, HEVC, VVC, AV1, VP9, ProRes, … | Stable |
-| `revelio-parsers-image` | 19 image formats — JPEG, PNG, TIFF, WebP, DPX, EXR, … | Stable |
-| `revelio-parsers-text` | 21 subtitle/caption formats — SubRip, PGS, Teletext, EIA-608/708, … | Stable |
-| `revelio-parsers-tag` | 12 tag formats — ID3v1/v2, EXIF, XMP, Vorbis Comment, … | Stable |
-| `revelio-parsers-archive` | 11 archive/binary formats — ZIP, 7z, RAR, TAR, ELF, Mach-O, … | Stable |
+| `revelo-parsers-container` | 42 containers — MP4, MKV, AVI, MPEG-TS/PS, WAV, Ogg, MXF, … | Stable |
+| `revelo-parsers-audio` | 56 audio codecs — AAC, MP3, AC-3/4, DTS, FLAC, Opus, TrueHD, … | Stable |
+| `revelo-parsers-video` | 28 video codecs — AVC, HEVC, VVC, AV1, VP9, ProRes, … | Stable |
+| `revelo-parsers-image` | 19 image formats — JPEG, PNG, TIFF, WebP, DPX, EXR, … | Stable |
+| `revelo-parsers-text` | 21 subtitle/caption formats — SubRip, PGS, Teletext, EIA-608/708, … | Stable |
+| `revelo-parsers-tag` | 12 tag formats — ID3v1/v2, EXIF, XMP, Vorbis Comment, … | Stable |
+| `revelo-parsers-archive` | 11 archive/binary formats — ZIP, 7z, RAR, TAR, ELF, Mach-O, … | Stable |
 
 ### Output & API
 
 | Crate | Role | Status |
 | --- | --- | --- |
-| `revelio-export` | 10 output formatters — XML, Text, JSON + EBUCore/MPEG-7/PBCore/NISO/FIMS/Graph/reVTMD | Stable |
-| `revelio-reader` | Input layer — File, Directory, HTTP, MMS | Stable |
-| `revelio-cli` | The `revelio` command-line binary | Stable |
-| `revelio-cdylib` | C ABI (`MediaInfo_*`) — drop-in replacement for libmediainfo | Stable |
+| `revelo-export` | 10 output formatters — XML, Text, JSON + EBUCore/MPEG-7/PBCore/NISO/FIMS/Graph/reVTMD | Stable |
+| `revelo-reader` | Input layer — File, Directory, HTTP, MMS | Stable |
+| `revelo-cli` | The `revelo` command-line binary | Stable |
+| `revelo-cdylib` | C ABI (`MediaInfo_*`) — drop-in replacement for libmediainfo | Stable |
 
 ### Tooling
 
 | Crate | Role | Status |
 | --- | --- | --- |
-| `revelio-diff` | Differential harness — diffs revelio's output against the `mediainfo` oracle | Stable |
+| `revelo-diff` | Differential harness — diffs revelo's output against the `mediainfo` oracle | Stable |
 
 ## Installation
 
 ```sh
-cargo install revelio-cli                   # CLI only (binary)
-cargo add revelio-core                      # library (core + dispatcher)
-cargo add revelio-export                    # library (output formatters)
+cargo install revelo-cli                   # CLI only (binary)
+cargo add revelo-core                      # library (core + dispatcher)
+cargo add revelo-export                    # library (output formatters)
 ```
 
 Or add individual parser crates as needed:
 
 ```sh
-cargo add revelio-parsers-container
-cargo add revelio-parsers-audio
-cargo add revelio-parsers-video
-cargo add revelio-parsers-image
-cargo add revelio-parsers-text
-cargo add revelio-parsers-tag
-cargo add revelio-parsers-archive
+cargo add revelo-parsers-container
+cargo add revelo-parsers-audio
+cargo add revelo-parsers-video
+cargo add revelo-parsers-image
+cargo add revelo-parsers-text
+cargo add revelo-parsers-tag
+cargo add revelo-parsers-archive
 ```
 
 ## Library usage
 
-Probe a file from Rust — the full analysis engine is exposed through `revelio-core`:
+Probe a file from Rust — the full analysis engine is exposed through `revelo-core`:
 
 ```rust
-use revelio_core::{FileAnalyze, FileLevelInfo, fill_file_level_fields};
-use revelio_dispatcher::detect;
+use revelo_core::{FileAnalyze, FileLevelInfo, fill_file_level_fields};
+use revelo_dispatcher::detect;
 
 let bytes = std::fs::read("video.mp4")?;
 
@@ -241,7 +241,7 @@ for stream in fa.streams() {
 For XML output (byte-equal with mediainfo):
 
 ```rust
-use revelio_export::to_xml;
+use revelo_export::to_xml;
 let xml = to_xml(fa.streams(), "video.mp4", "26.05");
 ```
 
@@ -270,15 +270,15 @@ let xml = to_xml(fa.streams(), "video.mp4", "26.05");
 cargo build --release
 
 # inspect a file (text / json / xml)
-cargo run -p revelio-cli -- --text path/to/media.mp4
-cargo run -p revelio-cli -- --json path/to/media.mp4
-cargo run -p revelio-cli -- --xml  path/to/media.mp4
+cargo run -p revelo-cli -- --text path/to/media.mp4
+cargo run -p revelo-cli -- --json path/to/media.mp4
+cargo run -p revelo-cli -- --xml  path/to/media.mp4
 
 # build the C ABI shared library (libmediainfo drop-in)
-cargo build -p revelio-cdylib --release
+cargo build -p revelo-cdylib --release
 
-# diff revelio's output against the mediainfo oracle
-cargo run -p revelio-diff -- path/to/file
+# diff revelo's output against the mediainfo oracle
+cargo run -p revelo-diff -- path/to/file
 ```
 
 ## Status

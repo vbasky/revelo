@@ -1,6 +1,6 @@
 # Field Coverage Reference
 
-Every field revelio's parsers write into the output stream, organized by
+Every field revelo's parsers write into the output stream, organized by
 `StreamKind`. Generated from the codebase — grep through all `fa.Fill()`
 call sites across every parser crate.
 

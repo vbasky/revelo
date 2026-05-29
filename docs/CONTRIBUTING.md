@@ -1,4 +1,4 @@
-# Contributing to revelio
+# Contributing to revelo
 
 A guide for anyone who wants to add a parser, fix a bug, or understand how
 the engine works.
@@ -10,19 +10,19 @@ the engine works.
 ```bash
 Cargo workspace root
 ├─ crates/zenlib              C++-style integer types + bitstream helpers
-├─ crates/revelio-core        The parser engine (FileAnalyze, streams, config)
-├─ crates/revelio-export      Output formatters (XML, Text, JSON, EBUCore, …)
-├─ crates/revelio-cli         CLI tool (cargo run --bin revelio -- path/to/file)
-├─ crates/revelio-cdylib      C dynamic library (MediaInfo_New/Open/Inform/…)
-├─ crates/revelio-reader      Reader layer (File, Directory, HTTP, MMS)
-├─ crates/revelio-diff        Differential testing against `mediainfo` oracle
-├─ crates/revelio-parsers-audio       Audio codec parsers (56 parsers)
-├─ crates/revelio-parsers-container   Container parsers (42 parsers)
-├─ crates/revelio-parsers-image       Image format parsers (19 parsers)
-├─ crates/revelio-parsers-tag         Tag/metadata parsers (12 parsers)
-├─ crates/revelio-parsers-text        Text/subtitle parsers (21 parsers)
-├─ crates/revelio-parsers-video       Video codec parsers (29 parsers)
-└─ crates/revelio-parsers-archive     Archive format parsers (11 parsers)
+├─ crates/revelo-core        The parser engine (FileAnalyze, streams, config)
+├─ crates/revelo-export      Output formatters (XML, Text, JSON, EBUCore, …)
+├─ crates/revelo-cli         CLI tool (cargo run --bin revelo -- path/to/file)
+├─ crates/revelo-cdylib      C dynamic library (MediaInfo_New/Open/Inform/…)
+├─ crates/revelo-reader      Reader layer (File, Directory, HTTP, MMS)
+├─ crates/revelo-diff        Differential testing against `mediainfo` oracle
+├─ crates/revelo-parsers-audio       Audio codec parsers (56 parsers)
+├─ crates/revelo-parsers-container   Container parsers (42 parsers)
+├─ crates/revelo-parsers-image       Image format parsers (19 parsers)
+├─ crates/revelo-parsers-tag         Tag/metadata parsers (12 parsers)
+├─ crates/revelo-parsers-text        Text/subtitle parsers (21 parsers)
+├─ crates/revelo-parsers-video       Video codec parsers (29 parsers)
+└─ crates/revelo-parsers-archive     Archive format parsers (11 parsers)
 ```
 
 ### How a file gets parsed
@@ -56,10 +56,10 @@ Cargo workspace root
 
 ### Step 1: Create the file
 
-Create `crates/revelio-parsers-<domain>/src/<format>.rs`:
+Create `crates/revelo-parsers-<domain>/src/<format>.rs`:
 
 ```rust
-use revelio_core::{FileAnalyze, StreamKind};
+use revelo_core::{FileAnalyze, StreamKind};
 
 /// [Format name] parser.
 ///
@@ -105,7 +105,7 @@ mod tests {
 
 ### Step 2: Register in `lib.rs`
 
-In `crates/revelio-parsers-<domain>/src/lib.rs`:
+In `crates/revelo-parsers-<domain>/src/lib.rs`:
 
 ```rust
 pub mod my_format;
@@ -114,9 +114,9 @@ pub use my_format::parse_my_format;
 
 ### Step 3: Add to the parser table
 
-In `crates/revelio-cli/src/main.rs` and `crates/revelio-cdylib/src/lib.rs`:
+In `crates/revelo-cli/src/main.rs` and `crates/revelo-cdylib/src/lib.rs`:
 
-1. Add `parse_my_format` to the `use revelio_parsers_*` import.
+1. Add `parse_my_format` to the `use revelo_parsers_*` import.
 2. Add `parse_my_format` to the parser array.
 3. Update the array size count: `[fn(&mut FileAnalyze) -> bool; 151]`
 
@@ -124,10 +124,10 @@ In `crates/revelio-cli/src/main.rs` and `crates/revelio-cdylib/src/lib.rs`:
 
 Add your format to `docs/formats.md` with detection method and spec reference.
 
-### Step 5: Run revelio-diff
+### Step 5: Run revelo-diff
 
 ```bash
-cargo run --bin revelio-diff -- /path/to/sample.myformat
+cargo run --bin revelo-diff -- /path/to/sample.myformat
 ```
 
 If the output doesn't byte-match `mediainfo`, fix fields until it does.
@@ -208,5 +208,5 @@ Common field names by stream kind:
 - **Every parser returns `bool`:** `true` if it recognized the format, `false` otherwise.
 - **First match wins:** The parser table is ordered. Containers run before elementary codec parsers.
 - **Tests are mandatory:** Every parser module must have at least one `#[test]` that validates the parser recognizes valid input and rejects invalid input.
-- **Field names must match MediaInfoLib exactly:** revelio-diff does byte-level comparison of XML output.
+- **Field names must match MediaInfoLib exactly:** revelo-diff does byte-level comparison of XML output.
 - **Doc comments use `//!`** for module-level docs and `///` for function/struct docs.

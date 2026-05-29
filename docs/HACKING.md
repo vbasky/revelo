@@ -1,4 +1,4 @@
-# Hacking on revelio
+# Hacking on revelo
 
 Quick reference for the development workflow.
 
@@ -7,25 +7,25 @@ Quick reference for the development workflow.
 ```bash
 cargo build                    # Debug build
 cargo build --release          # Optimized build
-cargo run --bin revelio -- --text /path/to/file.mp4
-cargo run --bin revelio -- --json /path/to/file.mp4
+cargo run --bin revelo -- --text /path/to/file.mp4
+cargo run --bin revelo -- --json /path/to/file.mp4
 ```
 
 ## Test
 
 ```bash
 cargo test                     # All 576 tests
-cargo test -p revelio-core     # Core engine tests only
+cargo test -p revelo-core     # Core engine tests only
 cargo test -- avc              # Filter by name
 ```
 
 ## Diff harness
 
-The diff harness runs revelio against MediaInfoLib's `mediainfo` binary
+The diff harness runs revelo against MediaInfoLib's `mediainfo` binary
 and compares output byte-for-byte or by structural equivalence.
 
 ```bash
-cargo run --bin revelio-diff -- /path/to/media/file.mp4
+cargo run --bin revelo-diff -- /path/to/media/file.mp4
 ```
 
 Requires `mediainfo` on `$PATH`.
@@ -33,12 +33,12 @@ Requires `mediainfo` on `$PATH`.
 ## CLI options
 
 ```bash
-revelio --text video.mp4       # Text output (default)
-revelio --xml video.mp4        # XML output
-revelio --json video.mp4       # JSON output
-revelio --demux=frame video.ts # Set demux level
-revelio --trace=8 video.mp4    # Set trace verbosity
-revelio --multi-file bdmv/     # Scan companion files
+revelo --text video.mp4       # Text output (default)
+revelo --xml video.mp4        # XML output
+revelo --json video.mp4       # JSON output
+revelo --demux=frame video.ts # Set demux level
+revelo --trace=8 video.mp4    # Set trace verbosity
+revelo --multi-file bdmv/     # Scan companion files
 ```
 
 ## Lint
@@ -51,7 +51,7 @@ cargo clippy -- -D warnings    # Treat warnings as errors
 ## File structure
 
 ```bash
-crates/revelio-core/src/
+crates/revelo-core/src/
 ├── file_analyze.rs    Parser byte-reader engine (get_b4, fill, remain, …)
 ├── stream.rs          Stream kind, stream fields, stream collection
 ├── element.rs         Trace tree node + element_end/begin/param
@@ -67,7 +67,7 @@ crates/revelio-core/src/
 ├── timecode.rs        SMPTE timecode parser (DF/NDF)
 └── lib.rs             Crate root (module declarations)
 
-crates/revelio-parsers-<domain>/src/
+crates/revelo-parsers-<domain>/src/
 ├── lib.rs             Module declarations + re-exports
 └── <format>.rs        One parser per format (parse_<format>)
 ```
@@ -98,11 +98,11 @@ The `replace` parameter: `false` = don't overwrite existing value,
 ## Debugging parsers
 
 Add `#[test]` functions that validate each field the parser fills.
-Use revelio-diff to compare against oracle output:
+Use revelo-diff to compare against oracle output:
 
 ```bash
 # Run against a real file and see what's missing
-cargo run --bin revelio-diff -- /path/to/sample.mp4
+cargo run --bin revelo-diff -- /path/to/sample.mp4
 
 # If XML doesn't match byte-for-byte, check:
 # 1. Are all field names correct?

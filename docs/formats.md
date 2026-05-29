@@ -1,7 +1,7 @@
 # Media Format Reference
 
-A living document cataloging every format revelio parses, organized by family.
-Each entry covers: what the format is, where it appears, how revelio detects it,
+A living document cataloging every format revelo parses, organized by family.
+Each entry covers: what the format is, where it appears, how revelo detects it,
 and references the relevant specification.
 
 ---
@@ -9,8 +9,9 @@ and references the relevant specification.
 ## Containers
 
 ### ISO Base Media File Format (MP4/MOV/3GP)
+
 **Spec:** ISO/IEC 14496-12, ISO/IEC 14496-14, Apple QuickTime File Format
-**Detection:** Walk `ftyp` box → major_brand identifies variant (`mp42`, `qt  `, `3gp4`, `mif1`, `heic`).
+**Detection:** Walk `ftyp` box → major_brand identifies variant (`mp42`, `qt`, `3gp4`, `mif1`, `heic`).
 Inner boxes walked recursively: `moov` → `trak` → `mdia` → `minf` → `stbl`.
 Key sub-boxes: `stsd` (codec entries), `stsz`/`stts` (frame tables), `mdhd` (duration),
 `mvhd` (timescale), `tkhd` (dimensions), `udta` (iTunes metadata).
@@ -19,6 +20,7 @@ HDR metadata, AAC esds descriptor parsing, x264/x265 encoder SEI extraction,
 iTunes ilst/QuickTime mdta metadata, Nero chpl chapters.
 
 ### Matroska / WebM (MKV)
+
 **Spec:** [matroska.org/technical/elements.html](https://www.matroska.org/technical/elements.html)
 **Detection:** EBML header → `DocType` = `matroska` or `webm`.
 Segment elements: Info, Tracks (CodecID + CodecPrivate), Chapters, Tags, Attachments.
@@ -27,6 +29,7 @@ CodecPrivate decoding for AVC/HEVC SPS, AV1 OBU header, OpusHead, Vorbis headers
 V_DOLBYVISION/HEVC), CRC-32 detection, Colour elements, UniqueIDs.
 
 ### MPEG Transport Stream (MPEG-TS)
+
 **Spec:** ITU-T H.222.0 (ISO/IEC 13818-1), ATSC A/53, DVB SI (ETSI EN 300 468)
 **Detection:** Sync byte `0x47` every 188 bytes. PAT (PID 0x0000) → PMT PIDs →
 stream_type + ES_PID + descriptors.
@@ -34,29 +37,34 @@ stream_type + ES_PID + descriptors.
 ISO 639 language (0x0A — 3-letter codes), AC-3 descriptor (0x6A/0x7A).
 
 ### MPEG Program Stream (MPEG-PS) / VOB
+
 **Spec:** ISO/IEC 13818-1, DVD-Video specifications
 **Detection:** Pack start code `0x000001BA` + PES packets (stream_id 0xE0=video, 0xC0=audio).
 **Output:** System header info, MPEG-2 Sequence Header sniffing, AAC/M2TS payloads.
 
 ### AVI (Audio Video Interleave)
+
 **Spec:** [Microsoft AVI RIFF File Reference](https://docs.microsoft.com/en-us/windows/win32/directshow/avi-riff-file-reference)
-**Detection:** `RIFF` + `AVI ` → hdrl (stream headers with strh/strf) + movi (interleaved data).
+**Detection:** `RIFF` + `AVI` → hdrl (stream headers with strh/strf) + movi (interleaved data).
 Two-pass: header pass for BITMAPINFOHEADER/WAVEFORMATEX, movi pass for frame counts.
 
 ### WAV (Waveform Audio)
+
 **Spec:** Multimedia Programming Interface and Data Specifications 1.0 (IBM/Microsoft),
 EBU Tech 3285 (BWF), EBU Tech 3293 (iXML/aXML)
-**Detection:** `RIFF` + `WAVE` → `fmt ` (WAVEFORMATEX) + `data` chunks.
+**Detection:** `RIFF` + `WAVE` → `fmt` (WAVEFORMATEX) + `data` chunks.
 **BWF (Broadcast Wave):** `bext` chunk → Description, Originator, OriginationDate/Time,
 TimeReference (sample count), BWFVersion, UMID, LoudnessValue/Range/MaxTruePeak.
 `iXML`/`aXML` chunks → embedded XML metadata with scene/take/note fields.
 
 ### Ogg
+
 **Spec:** RFC 3533
 **Detection:** `OggS` page headers with serial numbers and granule positions.
 Vorbis/Opus/Theora/FLAC/Speex identification header parsing.
 
 ### Other Containers
+
 | Format | Magic | Notes |
 |---|---|---|
 | FLV | `FLV\x01` | Adobe Flash Video, AMF metadata |
@@ -69,6 +77,7 @@ Vorbis/Opus/Theora/FLAC/Speex identification header parsing.
 | SWF | `FWS`/`CWS`/`ZWS` | Adobe Flash |
 
 ### SCTE-35 (Digital Program Insertion / Ad Cueing)
+
 **Spec:** ANSI/SCTE 35
 **Detection:** Table ID `0xFC` (splice_info_section) in MPEG-TS or raw binary.
 Commands: splice_insert (0x05), time_signal (0x06). Segmentation descriptors
@@ -80,6 +89,7 @@ Identifier) with UPID type names (Ad ID, ISAN, EIDR, URI, UUID, etc.).
 ## Video Codecs
 
 ### AVC/H.264 (MPEG-4 Part 10)
+
 **Spec:** ITU-T H.264, ISO/IEC 14496-10
 **Detection:** Annex B start codes → NAL parsing. SPS type 7 → profile_idc, level_idc,
 frame dimensions, chroma_format_idc, bit_depth. PPS type 8 → CABAC flag.
@@ -90,6 +100,7 @@ x264 SEI → EncoderInfo struct (library/name/version/settings). GOP detection:
 slice type sequence → M (P-frame distance) + N (GOP length).
 
 ### HEVC/H.265 (MPEG-H Part 2)
+
 **Spec:** ITU-T H.265, ISO/IEC 23008-2
 **Detection:** Annex B NALs → VPS(32)/SPS(33)/PPS(34)/SEI(39/40). SPS →
 profile_tier_level(1,max_sublayers-1), pic dimensions, conformance window.
@@ -109,6 +120,7 @@ parameters, L8 VDR metadata → per-frame HDR luminance values.
 `MaxCLL`, `MaxFALL`, `HDR_Format: SMPTE ST 2086`, `HDR_Format_Compatibility: HDR10`.
 
 ### AV1 (AOMedia Video 1)
+
 **Spec:** [AOMedia AV1 Specification](https://aomediacodec.github.io/av1-spec/)
 **Detection:** OBU sequence header (type=1). Profile-based bit depth (0→8-bit,
 1→10-bit, 2→12-bit) and chroma subsampling (0-1→4:2:0, 2→4:2:2).
@@ -117,6 +129,7 @@ Level from operating point.
 `0xB5`, provider `0x003C`, application `4` → `HDR_Format: ST 2094-40`.
 
 ### APV (Advanced Professional Video)
+
 **Spec:** APV bitstream — intra-only professional codec
 **Detection:** `aPv1` signature at byte offset 4 (after the `au_size` field).
 **Fields:** Walks to the first frame / access-unit-information PBU and reads
@@ -125,11 +138,13 @@ ChromaSubsampling (from `chroma_format_idc`), BitDepth (`bit_depth_minus8` + 8),
 and CICP colour description (primaries/transfer/matrix/range) when present.
 
 ### VP8 / VP9
+
 **Spec:** RFC 6386 (VP8), WebM VP9 spec
 **Detection:** VP8 keyframe magic `0x9D012A`. VP9 frame marker + profile bits.
 VP9 CodecPrivate (vpcC) → profile, bit_depth, chroma_subsampling, color_space.
 
 ### Others
+
 | Codec | Magic/Detection | Notes |
 |---|---|---|
 | VVC/H.266 | Annex B SPS type 15 | ITU-T H.266 |
@@ -162,7 +177,7 @@ VP9 CodecPrivate (vpcC) → profile, bit_depth, chroma_subsampling, color_space.
 ### Container-level HDR signalling
 
 | Container | Detection | HDR_Format output |
-|---|---|---|
+| --- | --- | --- |
 | MP4 | `colr` box `transfer_characteristics` = 16 (PQ) / 18 (HLG) | `SMPTE ST 2084` / `ARIB STD-B67` |
 | Matroska | `Colour` element `TransferCharacteristics` | `SMPTE ST 2084` / `ARIB STD-B67` |
 
@@ -171,35 +186,43 @@ VP9 CodecPrivate (vpcC) → profile, bit_depth, chroma_subsampling, color_space.
 ## Audio Codecs
 
 ### AAC / ADTS (Advanced Audio Coding)
+
 **Spec:** ISO/IEC 14496-3, ISO/IEC 13818-7
 **Detection:** Raw ADTS: sync `0xFFF` → MPEG version, layer, profile, SR, channels.
 MP4 esds: AudioSpecificConfig → audioObjectType, frequency index, channel config.
 **Output:** CodecID, SamplingRate, Channels, Format_Profile (LC/HE-AAC/HE-AACv2), SBR/PS signaling.
 
 ### ADM (Audio Definition Model)
+
 **Spec:** SMPTE ST 2076
 **Detection:** `ADM` magic or `axml` chunk. Next-gen broadcast audio with object-based,
 scene-based, and channel-based representations.
 
 ### Dolby Audio Metadata
+
 **Spec:** Dolby DAM format. Detection: RIFF `DAM` or `DAMG` form types, or raw `DAM` magic.
 
 ### PcmVob
+
 **Detection:** `DVD` magic or `LPCM` chunk. Big-endian PCM in DVD-Video VOB files.
 
 ### PcmM2ts
+
 **Detection:** `HDMV` magic. Big-endian LPCM embedded in Blu-ray M2TS streams.
 
 ### MGA (MPEG-4 General Audio)
+
 **Detection:** `MGA` magic. Generic MPEG-4 audio container (pre-AAC era). MP4 esds: AudioSpecificConfig.
 **Output:** CodecID (mp4a.40.2), SamplingRate, Channels, Format_Profile (LC/HE-AAC/HE-AACv2).
 
 ### MP3 (MPEG Audio Layer III)
+
 **Spec:** ISO/IEC 11172-3, ISO/IEC 13818-3
 **Detection:** Frame sync `0xFFF` + layer=3. Xing/VBRI headers → VBR/CBR, frame count.
 **Output:** Duration, BitRate, BitRate_Mode, Encoded_Library (LAME), stereo mode.
 
 ### AC-3 / E-AC-3 (Dolby Digital + Dolby Digital Plus)
+
 **Spec:** ATSC A/52:2018
 **Detection:** Sync word `0x0B77`. bsid → AC-3(8-10), E-AC-3(16).
 **Output:** BitRate, Channels+LFE, dialnorm, dsurmod, bitstream mode.
@@ -208,26 +231,31 @@ scene-based, and channel-based representations.
 `HDR_Format: Dolby Atmos`.
 
 ### DTS / DTS-UHD
+
 **Spec:** ETSI TS 102 114
 **Detection:** Sync word `0x7FFE8001`. Core + XLL/XLL2 profile for lossless UHD.
 **Output:** BitRate, Channels, SamplingRate, Format_Profile (Core/UHD/HD MA).
 
 ### FLAC (Free Lossless Audio Codec)
+
 **Spec:** [xiph.org/flac/format.html](https://xiph.org/flac/format.html)
 **Detection:** `fLaC` marker → STREAMINFO metadata block (20+3+5+36 bit-packed fields).
 **Output:** Channels, SamplingRate, BitDepth, Duration, VorbisComment metadata.
 
 ### Opus
+
 **Spec:** RFC 6716, RFC 7845
 **Detection:** `OpusHead` packet → version, channel_count, preskip, sample_rate.
 Channel mapping family 0 (mono/stereo) / 1 (Vorbis order, table lookup).
 
 ### Vorbis
+
 **Spec:** [xiph.org/vorbis/doc/Vorbis_I_spec.html](https://xiph.org/vorbis/doc/Vorbis_I_spec.html)
 **Detection:** Packet type 1 + "vorbis" magic. Version 0 only.
 **Output:** Channels, SamplingRate, BitRate, Mode (CBR/VBR), VorbisComment metadata.
 
 ### TrueHD / MLP (Dolby TrueHD + Dolby Atmos)
+
 **Spec:** Dolby TrueHD Bitstream Specification
 **Detection:** Sync `0xF8726FBA` (TrueHD) / `0xF8726FBB` (AC-3 core + TrueHD).
 SR index, channel count, bit depth lookup. Output: Lossless, VBR.
@@ -235,6 +263,7 @@ SR index, channel count, bit depth lookup. Output: Lossless, VBR.
 type sniffing → `Format_AdditionalFeatures: Atmos`, `HDR_Format: Dolby Atmos`.
 
 ### AC-4 (Dolby AC-4)
+
 **Spec:** ETSI TS 103 190, ATSC A/342
 **Detection:** Sync word `0xAC40` (with CRC) / `0xAC41` (without CRC).
 **Frame header:** CBR/VBR flag, frame length, substream table (up to 16 substreams)
@@ -244,6 +273,7 @@ JOC (Joint Object Coding) object count, loudness/dialnorm.
 `Dialnorm`. IMS → `Format_Commercial: Dolby AC-4 Immersive`.
 
 ### IAMF / Eclipsa Audio
+
 **Spec:** [AOMedia IAMF Specification](https://aomediacodec.github.io/iamf/)
 **Detection:** OBU sequence magic — IA Sequence Header OBU (type=0) with codec
 config, followed by Audio Element OBUs (type=2).
@@ -255,6 +285,7 @@ labels. Stream parameters merged across all elements.
 `SamplingRate`, `Format_Commercial: Eclipsa Audio`.
 
 ### Other Codecs
+
 - USAC/xHE-AAC (MPEG-D), MPEG-H 3D Audio
 - CELT (ultra-low-delay), PCM (WAVEFORMATEX), ADPCM, WavPack, TAK, TTA
 - Musepack SV7/SV8, Monkey's Audio (APE), Speex, ALAC (CAF), ALS
@@ -266,7 +297,7 @@ labels. Stream parameters merged across all elements.
 ## Image Formats
 
 | Format | Detection | Spec |
-|---|---|---|
+| --- | --- | --- |
 | JPEG | SOI 0xFFD8 | ISO/IEC 10918-1 |
 | PNG | `\x89PNG\r\n\x1A\n` | ISO/IEC 15948:2004 |
 | GIF | `GIF87a`/`GIF89a` | CompuServe GIF89a |
@@ -277,7 +308,7 @@ labels. Stream parameters merged across all elements.
 | PSD | `8BPS` | Adobe Photoshop |
 | DPX | SDPX/XDPX | SMPTE 268M |
 | EXR | `v/1\x01` | OpenEXR |
-| DDS | `DDS ` | DirectDraw Surface |
+| DDS | `DDS` | DirectDraw Surface |
 | BPG | `BPG\xFB` | HEVC intra |
 | PCX | 0x0A+version | ZSoft PCX |
 | TGA | Image ID field | Truevision TARGA |
@@ -293,7 +324,7 @@ labels. Stream parameters merged across all elements.
 ## Text / Subtitles
 
 | Format | Magic/Detection | Spec |
-|---|---|---|
+| --- | --- | --- |
 | SubRip | `-->` timecode separator | De facto |
 | WebVTT | `WEBVTT\n` header | W3C WebVTT |
 | TTML | `<tt>` XML root | W3C TTML |
@@ -340,36 +371,43 @@ Apple PropertyList (plist XML), SphericalVideo (ProjectionType/StereoMode XML).
 ## Core Infrastructure
 
 ### IBI (Index of Binary Information)
+
 Frame-accurate seek table mapping byte offsets → timestamps.
 Used by MPEG-TS/PS to enable random access in transport streams.
 
 ### MIME Type Mapping
+
 Container-to-MIME and codec-to-MIME lookup tables covering all 185 formats.
 Examples: `mp42→video/mp4`, `av01→video/AV1`, `opus→audio/opus`.
 
 ### Reference File Tracker
+
 Tracks multi-file references (BDMV playlists, segmented MP4, SMPTE interop
 packages) linking primary media to companion files.
 
 ### Channel Splitting / Grouping (SMPTE ST 337)
+
 Deinterleaves multi-channel PCM into independent AES3 channel pairs
 for downstream SMPTE 337M/338M/339M parsing. 4-channel → 2 stereo pairs,
 6-channel → 3 stereo pairs. Reverse direction merges mono streams
 into interleaved output (16/20/24-bit support).
 
 ### Demux / Event Framework
+
 4-level demux bitmask: Frame(1), Container(2), Elementary(4), Ancillary(8).
 DemuxState tracks events per stream with PTS/DTS, stream IDs, offsets,
 random_access flags. DemuxEvent emitted per frame/packet for downstream
 consumers (CDI, DTVCC, PCM un-packetizing).
 
 ### Trace System
+
 4 output formats: Tree (MediaInfo-like hierarchy), CSV, XML, MicroXml.
 TraceNode with hierarchical parent/child structure, file offsets, sizes,
 named values, and info sections. Used by all container parsers for
 trace/debug output.
 
 ### Field Ordering / Interlacement
+
 FieldTracker counts top/bottom/progressive fields to infer ScanOrder
 (Progressive/TFF/BFF/Mixed) and InterlacementMode (PPF/Interlaced/
 TFF/BFF/PsF). Maps to Video_ScanOrder/Video_Interlacement output fields.
@@ -377,23 +415,29 @@ TFF/BFF/PsF). Maps to Video_ScanOrder/Video_Interlacement output fields.
 ## References
 
 ### Container
+
 - ISO/IEC 14496-12, [Matroska](https://www.matroska.org/technical/elements.html),
   ITU-T H.222.0, [AVI](https://docs.microsoft.com/en-us/windows/win32/directshow/avi-riff-file-reference), RFC 3533
 
 ### Video
+
 - ITU-T H.264, H.265, H.266, [AV1](https://aomediacodec.github.io/av1-spec/),
   SMPTE 421M (VC-1), SMPTE ST 2019 (VC-3), Apple ProRes (2018)
 
 ### Audio
+
 - ISO/IEC 14496-3, ATSC A/52, RFC 6716 (Opus),
   [FLAC](https://xiph.org/flac/format.html), [Vorbis](https://xiph.org/vorbis/doc/Vorbis_I_spec.html)
 
 ### Image
+
 - ISO/IEC 10918-1 (JPEG), ISO/IEC 15948 (PNG), EXIF 2.32, ICC.1:2010, TIFF 6.0 (Adobe)
 
 ### HDR
+
 - SMPTE ST 2084 (PQ), SMPTE ST 2086, SMPTE ST 2094-40 (HDR10+), CTA-861-G,
   Dolby Vision Profiles, ARIB STD-B67 (HLG), ETSI TS 103 433 (SL-HDR1)
 
 ### Text
+
 - [W3C WebVTT](https://www.w3.org/TR/webvtt1/), W3C TTML1/2, SMPTE ST 2052-1
