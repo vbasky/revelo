@@ -1,6 +1,6 @@
 [package]
 name = "revelo-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -15,7 +15,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.0" }
-revelo-core = { path = "../revelo-core", version = "0.2.0" }
-revelo-export = { path = "../revelo-export", version = "0.2.0" }
-revelo-util = { path = "../revelo-util", version = "0.2.0" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.1" }
+revelo-core = { path = "../revelo-core", version = "0.2.1" }
+revelo-export = { path = "../revelo-export", version = "0.2.1" }
+revelo-util = { path = "../revelo-util", version = "0.2.1" }
