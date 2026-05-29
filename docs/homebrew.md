@@ -1,50 +1,65 @@
-# Homebrew tap
+# Publishing to Homebrew
 
-Revelo publishes pre-built binaries for macOS (ARM + Intel) and Linux to every
-GitHub Release. The CI workflow (`.github/workflows/release.yml`) builds them and
-generates a Homebrew formula with the correct SHA256 checksums.
+Revelo aims to be installable via `brew install revelo` directly from
+[Homebrew/homebrew-core](https://github.com/Homebrew/homebrew-core).
 
-## Setup
+## Current status
 
-```sh
-brew tap vbasky/revelo
-brew install revelo
-```
+Not yet submitted. The formula is created from source, so it must build
+on Homebrew's CI (which it does — `cargo build` with no system deps).
 
-## How it works
+## Submit homebrew-core PR
 
-Separate repos:
-
-| Repo | Purpose |
-| --- | --- |
-| `vbasky/revelo` | Source code, CI, release builds |
-| `vbasky/homebrew-revelo` | Homebrew tap — contains `Formula/revelo.rb` |
-
-On every `v*` tag push the release workflow:
-
-1. Builds release binaries for `aarch64-apple-darwin`, `x86_64-apple-darwin`,
-   and `x86_64-unknown-linux-gnu`.
-2. Creates a GitHub Release and uploads the tarballs + SHA256 files.
-3. Generates a Homebrew formula (`revelo.rb`) with the checksums baked in.
-4. Pushes the formula to `vbasky/homebrew-revelo` (if `TAP_REPO` secret is set).
-
-## Manual formula update
-
-If you don't want auto-push, download the `homebrew-formula` artifact from the
-release run and copy it into the tap repo manually:
+After each release, open a PR against `Homebrew/homebrew-core`:
 
 ```sh
-# In the homebrew-tap repo
-cp ~/Downloads/revelo.rb Formula/
-git add Formula/revelo.rb
-git commit -m "revelo v<VERSION>"
-git push
+# Clone the homebrew-core tap
+git clone https://github.com/Homebrew/homebrew-core.git
+cd homebrew-core
+
+# Create a branch
+git checkout -b revelo-<version>
+
+# Use brew to generate the formula stub
+brew extract --version <version> revelo homebrew/core
+
+# Or write manually:
+cat > Formula/r/revelo.rb <<EOF
+class Revelo < Formula
+  desc "Read technical metadata from any media file, in pure Rust"
+  homepage "https://github.com/vbasky/revelo"
+  url "https://github.com/vbasky/revelo/archive/refs/tags/v<VERSION>.tar.gz"
+  sha256 "<SHA256_OF_SOURCE_TARBALL>"
+  license "BSD-2-Clause"
+  depends_on "rust" => :build
+  def install
+    system "cargo", "install", *std_cargo_args(path: "crates/revelo-cli")
+  end
+  test do
+    assert_match version.to_s, shell_output("\#{bin}/revelo --version")
+  end
+end
+EOF
+
+# Test locally
+brew install --build-from-source Formula/r/revelo.rb
+
+# Commit and push
+git add Formula/r/revelo.rb
+git commit -m "revelo <VERSION> (new formula)"
+gh pr create --repo Homebrew/homebrew-core --fill
 ```
 
-## Bootstrap the tap repo (one-time)
+## CI formula artifact
 
-```sh
-scripts/bootstrap-homebrew-tap.sh
-```
+The release workflow (`.github/workflows/release.yml`) prints the formula
+with the correct SHA to its build log in the `formula` job. Find it under
+the workflow run for the release tag.
 
-This creates `vbasky/homebrew-revelo` on GitHub with the initial formula.
+## Requirements for homebrew-core acceptance
+
+- Formula builds on macOS (ARM + Intel) and Linux — CI verifies this
+- `brew audit --strict revelo` passes
+- `brew test revelo` passes
+- No vendored dependencies (cargo handles this)
+- No system dependencies (pure Rust)
