@@ -6,11 +6,12 @@ A library and CLI for containers, audio & video codecs, image formats, subtitle
 streams, archives, and embedded tags. A port of MediaInfoLib, validated
 byte-for-byte against the C++ `mediainfo` oracle through differential testing.
 
-[![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.85+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/vbasky/revelo)
-[![Parsers](https://img.shields.io/badge/parsers-193-blue.svg)](docs/formats.md)
-[![Tests](https://img.shields.io/badge/tests-579%20passing-brightgreen.svg)](https://github.com/vbasky/revelo)
+[![crates.io](https://img.shields.io/crates/v/revelo-core?logo=rust&color=orange)](https://crates.io/crates/revelo-core)
+[![docs.rs](https://img.shields.io/docsrs/revelo-core?logo=docsdotrs)](https://docs.rs/revelo-core)
+[![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=master&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
+[![License](https://img.shields.io/crates/l/revelo-core)](LICENSE)
+[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://www.rust-lang.org)
+[![Parsers](https://img.shields.io/badge/parsers-194-blueviolet)](docs/formats.md)
 
 ## How it reads a file
 
