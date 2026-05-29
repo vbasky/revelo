@@ -7,12 +7,13 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     strategy:
       matrix:
         include:
@@ -31,8 +32,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
       - name: Install Rust
         run: |
@@ -75,8 +74,6 @@ jobs:
 
       - name: Download all binaries
         uses: actions/download-artifact@v4
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
         with:
           pattern: "*"
           merge-multiple: true
@@ -92,13 +89,11 @@ jobs:
       - name: Generate release notes
         run: |
           VERSION="${{ github.ref_name }}"
-          # Extract the changelog section for this version
           awk -v ver="[${VERSION}]" '
             $0 ~ "^## " ver " - " { found=1; next }
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > /tmp/release-notes.md
-          echo "body_path=/tmp/release-notes.md" >> "$GITHUB_ENV"
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
@@ -109,9 +104,46 @@ jobs:
           files: /tmp/assets/*
           fail_on_unmatched_files: true
 
+  publish:
+    name: Publish to crates.io
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+
+      - name: Publish crates (dependency order)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          CRATES=(
+            revelo-util
+            revelo-core
+            revelo-parsers-video
+            revelo-parsers-archive
+            revelo-parsers-audio
+            revelo-parsers-image
+            revelo-parsers-tag
+            revelo-parsers-text
+            revelo-parsers-container
+            revelo-reader
+            revelo-export
+            revelo-dispatcher
+            revelo-cli
+            revelo-cdylib
+          )
+          for c in "${CRATES[@]}"; do
+            echo "==> cargo publish ${c}"
+            cargo publish -p "${c}"
+          done
+
   formula:
     name: Homebrew formula
-    needs: [release]
+    needs: [publish]
     runs-on: ubuntu-latest
     steps:
       - name: Fetch source tarball SHA
