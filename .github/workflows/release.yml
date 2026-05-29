@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     strategy:
       matrix:
         include:
@@ -29,6 +31,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
       - name: Install Rust
         run: |
@@ -71,6 +75,8 @@ jobs:
 
       - name: Download all binaries
         uses: actions/download-artifact@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
         with:
           pattern: "*"
           merge-multiple: true
@@ -83,12 +89,23 @@ jobs:
             [[ "$f" != *.sha256 ]] && shasum -a 256 "$f" > "$f.sha256"
           done
 
+      - name: Generate release notes
+        run: |
+          VERSION="${{ github.ref_name }}"
+          # Extract the changelog section for this version
+          awk -v ver="[${VERSION}]" '
+            $0 ~ "^## " ver " - " { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          echo "body_path=/tmp/release-notes.md" >> "$GITHUB_ENV"
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: revelo ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: /tmp/release-notes.md
           files: /tmp/assets/*
           fail_on_unmatched_files: true
 
