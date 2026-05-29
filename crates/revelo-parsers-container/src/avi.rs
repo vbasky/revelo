@@ -620,11 +620,11 @@ fn fill_video(
     // stream index. BitRate derives from that ÷ duration.
     if movi_bytes > 0 {
         fa.set_field(StreamKind::Video, pos, "StreamSize", movi_bytes.to_string());
-        if let Some(dur) = duration_ms_general {
-            if dur > 0 {
-                let bitrate = (movi_bytes * 8 * 1000) / dur;
-                fa.set_field(StreamKind::Video, pos, "BitRate", bitrate.to_string());
-            }
+        if let Some(dur) = duration_ms_general
+            && dur > 0
+        {
+            let bitrate = (movi_bytes * 8 * 1000) / dur;
+            fa.set_field(StreamKind::Video, pos, "BitRate", bitrate.to_string());
         }
     }
     if let Some(lib) = encoded_library {

@@ -243,13 +243,13 @@ fn parse_vorbis_secondary_packet(packet: &[u8], stream: &mut OggStream) {
         if pos + clen > packet.len() {
             return;
         }
-        if let Ok(c) = std::str::from_utf8(&packet[pos..pos + clen]) {
-            if let Some(eq) = c.find('=') {
-                let key = &c[..eq];
-                let val = &c[eq + 1..];
-                if key.eq_ignore_ascii_case("encoder") {
-                    stream.encoder_comment = Some(val.to_string());
-                }
+        if let Ok(c) = std::str::from_utf8(&packet[pos..pos + clen])
+            && let Some(eq) = c.find('=')
+        {
+            let key = &c[..eq];
+            let val = &c[eq + 1..];
+            if key.eq_ignore_ascii_case("encoder") {
+                stream.encoder_comment = Some(val.to_string());
             }
         }
         pos += clen;

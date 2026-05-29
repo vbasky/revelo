@@ -8,8 +8,8 @@
 //! canonical place every parser writes into under the direction of a
 //! [`FileAnalyze`](super::FileAnalyze).
 
-use std::collections::BTreeMap;
 use revelo_util::Ztring;
+use std::collections::BTreeMap;
 
 /// `stream_t` from `MediaInfo_Const.h`. Same discriminants so external
 /// consumers binding through the C ABI later get matching values.

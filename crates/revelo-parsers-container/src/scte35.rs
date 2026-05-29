@@ -94,7 +94,7 @@ pub fn parse_scte35(fa: &mut FileAnalyze) -> bool {
     }
 
     let section_length = ((owned[1] as usize & 0x0F) << 8) | owned[2] as usize;
-    if section_length < 4 || section_length > 4091 {
+    if !(4..=4091).contains(&section_length) {
         return false;
     }
     if owned.len() < section_length + 3 {
@@ -273,14 +273,12 @@ fn parse_segmentation_descriptor(buf: &[u8], offset: usize, dlen: usize, fa: &mu
         dpos += 1;
         if upid_len > 1 && dpos < buf.len() {
             let upid_data = &buf[dpos..buf.len().min(dpos + upid_len - 1)];
-            if !upid_data.is_empty() {
-                if let Ok(s) = std::str::from_utf8(upid_data) {
-                    if !s.is_empty()
-                        && s.chars().all(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
-                    {
-                        fa.set_field(StreamKind::Other, 0, "UPID", s);
-                    }
-                }
+            if !upid_data.is_empty()
+                && let Ok(s) = std::str::from_utf8(upid_data)
+                && !s.is_empty()
+                && s.chars().all(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
+            {
+                fa.set_field(StreamKind::Other, 0, "UPID", s);
             }
         }
     }

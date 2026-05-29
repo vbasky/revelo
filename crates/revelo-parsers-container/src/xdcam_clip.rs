@@ -28,10 +28,10 @@ pub fn parse_xdcam_clip(fa: &mut FileAnalyze) -> bool {
 }
 
 fn strip_xml_prolog(s: &str) -> &str {
-    if let Some(rest) = s.strip_prefix("<?xml") {
-        if let Some(end) = rest.find("?>") {
-            return rest[end + 2..].trim_start();
-        }
+    if let Some(rest) = s.strip_prefix("<?xml")
+        && let Some(end) = rest.find("?>")
+    {
+        return rest[end + 2..].trim_start();
     }
     s
 }

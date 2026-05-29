@@ -68,10 +68,10 @@ pub fn parse_gxf(fa: &mut FileAnalyze) -> bool {
     // window, validate its leader + trailer. If it's past the window,
     // accept on the strength of the first header alone (matches the
     // C++ "need more data" branch which keeps the file accepted).
-    if let Some(next) = buf.get(size..size + PACKET_HEADER_SIZE) {
-        if !is_packet_header(next) {
-            return false;
-        }
+    if let Some(next) = buf.get(size..size + PACKET_HEADER_SIZE)
+        && !is_packet_header(next)
+    {
+        return false;
     }
 
     fa.stream_prepare(StreamKind::General);

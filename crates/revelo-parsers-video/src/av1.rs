@@ -398,19 +398,17 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         } else if obu_type == OBU_METADATA {
             // Check for HDR10+ in Metadata OBU (metadata_type == 1 = ITU-T T35)
             let payload_start = pos + header_size;
-            if payload_start + 1 <= data.len() {
+            if payload_start < data.len() {
                 let md_type = data[payload_start];
-                if md_type == 1 {
-                    if payload_start + obu_size <= data.len() {
-                        let t35_payload = &data[payload_start + 1..payload_start + obu_size];
-                        // HDR10+ detection: country=0xB5, provider=0x003C, app_id=4
-                        if t35_payload.len() >= 5
-                            && t35_payload[0] == 0xB5
-                            && u16::from_be_bytes([t35_payload[1], t35_payload[2]]) == 0x003C
-                            && t35_payload[3] == 4
-                        {
-                            hdr10plus_detected = true;
-                        }
+                if md_type == 1 && payload_start + obu_size <= data.len() {
+                    let t35_payload = &data[payload_start + 1..payload_start + obu_size];
+                    // HDR10+ detection: country=0xB5, provider=0x003C, app_id=4
+                    if t35_payload.len() >= 5
+                        && t35_payload[0] == 0xB5
+                        && u16::from_be_bytes([t35_payload[1], t35_payload[2]]) == 0x003C
+                        && t35_payload[3] == 4
+                    {
+                        hdr10plus_detected = true;
                     }
                 }
             }

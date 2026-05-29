@@ -49,11 +49,10 @@ use revelo_parsers_text::{
 };
 use revelo_parsers_video::{
     parse_afd_bar_data, parse_aic, parse_apv, parse_av1, parse_avc, parse_avs, parse_avs3,
-    parse_canopus,
-    parse_cineform, parse_dirac, parse_dolby_vision, parse_ffv1, parse_flic, parse_fraps,
-    parse_h263, parse_hdr_vivid, parse_hevc, parse_huffyuv, parse_lagarith, parse_mpeg2,
-    parse_mpeg4v, parse_prores, parse_theora, parse_vc1, parse_vc3, parse_vp8, parse_vp9,
-    parse_vvc, parse_y4m,
+    parse_canopus, parse_cineform, parse_dirac, parse_dolby_vision, parse_ffv1, parse_flic,
+    parse_fraps, parse_h263, parse_hdr_vivid, parse_hevc, parse_huffyuv, parse_lagarith,
+    parse_mpeg2, parse_mpeg4v, parse_prores, parse_theora, parse_vc1, parse_vc3, parse_vp8,
+    parse_vp9, parse_vvc, parse_y4m,
 };
 
 /// Returns the complete parser dispatch table (178 entries).

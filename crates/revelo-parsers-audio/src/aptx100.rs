@@ -83,7 +83,7 @@ pub fn parse_aptx100(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let duration_ms = (end_ms - start_ms) as i64;
+    let duration_ms = end_ms - start_ms;
 
     // Consume the header now that validation passed.
     fa.element_begin("APT-X100");

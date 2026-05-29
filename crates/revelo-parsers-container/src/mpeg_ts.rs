@@ -162,22 +162,21 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         }
 
         // Try to parse complete section(s) from the accumulator.
-        if let Some(buf) = psi_buffers.get(&pid) {
-            if buf.len() >= 3 {
-                let section_length = (((buf[1] & 0x0F) as usize) << 8) | (buf[2] as usize);
-                let total = 3 + section_length;
-                if buf.len() >= total {
-                    let section = buf[..total].to_vec();
-                    if is_pat && !pat_seen {
-                        parse_pat(&section, &mut programs_by_pmt_pid);
-                        pat_seen = true;
-                    } else if is_pmt {
-                        if let Some(prog) = programs_by_pmt_pid.get_mut(&pid) {
-                            if prog.streams.is_empty() {
-                                parse_pmt(&section, prog);
-                            }
-                        }
-                    }
+        if let Some(buf) = psi_buffers.get(&pid)
+            && buf.len() >= 3
+        {
+            let section_length = (((buf[1] & 0x0F) as usize) << 8) | (buf[2] as usize);
+            let total = 3 + section_length;
+            if buf.len() >= total {
+                let section = buf[..total].to_vec();
+                if is_pat && !pat_seen {
+                    parse_pat(&section, &mut programs_by_pmt_pid);
+                    pat_seen = true;
+                } else if is_pmt
+                    && let Some(prog) = programs_by_pmt_pid.get_mut(&pid)
+                    && prog.streams.is_empty()
+                {
+                    parse_pmt(&section, prog);
                 }
             }
         }
@@ -230,15 +229,15 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 pos += stride;
                 continue;
             }
-            if let Some(accum) = aac_pids.get_mut(&pid) {
-                if accum.len() < 1024 {
-                    accum.extend_from_slice(&pkt[payload_off..]);
-                }
+            if let Some(accum) = aac_pids.get_mut(&pid)
+                && accum.len() < 1024
+            {
+                accum.extend_from_slice(&pkt[payload_off..]);
             }
-            if let Some(accum) = avc_pids.get_mut(&pid) {
-                if accum.len() < 32 * 1024 {
-                    accum.extend_from_slice(&pkt[payload_off..]);
-                }
+            if let Some(accum) = avc_pids.get_mut(&pid)
+                && accum.len() < 32 * 1024
+            {
+                accum.extend_from_slice(&pkt[payload_off..]);
             }
             pos += stride;
         }
@@ -246,15 +245,15 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         // then find ADTS sync.
         for prog in programs_by_pmt_pid.values_mut() {
             for es in prog.streams.iter_mut() {
-                if matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
-                    if let Some(accum) = aac_pids.get(&es.pid) {
-                        es.aac = sniff_aac_adts(accum);
-                    }
+                if matches!(es.stream_type, 0x0F | 0x11 | 0x1C)
+                    && let Some(accum) = aac_pids.get(&es.pid)
+                {
+                    es.aac = sniff_aac_adts(accum);
                 }
-                if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
-                    if let Some(accum) = avc_pids.get(&es.pid) {
-                        es.avc_encoder = sniff_x264_encoder(accum);
-                    }
+                if matches!(es.stream_type, 0x1B | 0x1F | 0x20)
+                    && let Some(accum) = avc_pids.get(&es.pid)
+                {
+                    es.avc_encoder = sniff_x264_encoder(accum);
                 }
             }
         }
@@ -512,7 +511,7 @@ fn estimate_duration_and_bitrate(
     if pcr_values.len() < 2 {
         // Not enough PCR values to estimate duration
         // Fall back to simple bitrate estimation from file size
-        if buf.len() > 0 {
+        if !buf.is_empty() {
             // Assume some default duration if we can't calculate
             return (None, None);
         }

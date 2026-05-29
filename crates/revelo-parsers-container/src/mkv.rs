@@ -436,7 +436,7 @@ fn extract_chapter_name(fa: &mut FileAnalyze, size: usize) -> Option<String> {
                 walk_elements(fa, sz, &mut |fa, id2, sz2, _| match id2 {
                     CHAP_STRING => {
                         let data = fa.read_raw(sz2);
-                        if let Ok(s) = std::str::from_utf8(&data) {
+                        if let Ok(s) = std::str::from_utf8(data) {
                             name = Some(s.to_string());
                         }
                     }
@@ -481,7 +481,7 @@ fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<St
         match id {
             FILE_NAME => {
                 let data = fa.read_raw(sz);
-                if let Ok(name) = std::str::from_utf8(&data) {
+                if let Ok(name) = std::str::from_utf8(data) {
                     let lower = name.to_lowercase();
                     // Common cover art filenames
                     if lower.contains("cover")
@@ -498,7 +498,7 @@ fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<St
             }
             FILE_MIME_TYPE => {
                 let data = fa.read_raw(sz);
-                if let Ok(mime) = std::str::from_utf8(&data) {
+                if let Ok(mime) = std::str::from_utf8(data) {
                     mime_type = Some(mime.to_string());
                     // Image MIME types indicate potential cover
                     if mime.starts_with("image/") {
@@ -508,7 +508,7 @@ fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<St
             }
             FILE_DESCRIPTION => {
                 let data = fa.read_raw(sz);
-                if let Ok(desc) = std::str::from_utf8(&data) {
+                if let Ok(desc) = std::str::from_utf8(data) {
                     let lower = desc.to_lowercase();
                     if lower.contains("cover") || lower.contains("poster") {
                         is_cover = true;
@@ -540,14 +540,14 @@ fn fill_streams(
     let &MkvContainerInfo { doc_type, doc_type_version, is_streamable, crc32_at_level1 } =
         container;
     fa.stream_prepare(StreamKind::General);
-    if let Some(uuid) = movie.segment_uuid.as_ref() {
-        if uuid.len() == 16 {
-            let mut v: u128 = 0;
-            for b in uuid {
-                v = (v << 8) | (*b as u128);
-            }
-            fa.set_field(StreamKind::General, 0, "UniqueID", v.to_string());
+    if let Some(uuid) = movie.segment_uuid.as_ref()
+        && uuid.len() == 16
+    {
+        let mut v: u128 = 0;
+        for b in uuid {
+            v = (v << 8) | (*b as u128);
         }
+        fa.set_field(StreamKind::General, 0, "UniqueID", v.to_string());
     }
     // DocType drives the Format string: webm files report "WebM",
     // matroska files report "Matroska".
@@ -622,177 +622,169 @@ fn fill_streams(
                 }
 
                 // Parse CodecPrivate for Opus to get accurate sample rate and channel mapping
-                if track.codec_id.as_deref() == Some("A_OPUS") {
-                    if let Some(ref private) = track.codec_private {
-                        if private.len() >= 19 && &private[0..8] == b"OpusHead" {
-                            // OpusHead format:
-                            // 0-7: "OpusHead" magic
-                            // 8: version (should be 1)
-                            // 9: channel count
-                            // 10-11: pre-skip (u16le)
-                            // 12-15: sample rate (u32le)
-                            // 16-17: output gain (s16le)
-                            // 18: channel mapping family
-                            let version = private[8];
-                            if version == 1 {
-                                let channels = private[9];
-                                let sample_rate = (private[12] as u32)
-                                    | ((private[13] as u32) << 8)
-                                    | ((private[14] as u32) << 16)
-                                    | ((private[15] as u32) << 24);
-                                let _channel_mapping = private[18];
+                if track.codec_id.as_deref() == Some("A_OPUS")
+                    && let Some(ref private) = track.codec_private
+                    && private.len() >= 19
+                    && &private[0..8] == b"OpusHead"
+                {
+                    // OpusHead format:
+                    // 0-7: "OpusHead" magic
+                    // 8: version (should be 1)
+                    // 9: channel count
+                    // 10-11: pre-skip (u16le)
+                    // 12-15: sample rate (u32le)
+                    // 16-17: output gain (s16le)
+                    // 18: channel mapping family
+                    let version = private[8];
+                    if version == 1 {
+                        let channels = private[9];
+                        let sample_rate = (private[12] as u32)
+                            | ((private[13] as u32) << 8)
+                            | ((private[14] as u32) << 16)
+                            | ((private[15] as u32) << 24);
+                        let _channel_mapping = private[18];
 
-                                // Opus internally uses 48kHz, but declares output rate here
-                                if sample_rate > 0 {
-                                    fa.set_field(
-                                        StreamKind::Audio,
-                                        pos,
-                                        "SamplingRate",
-                                        sample_rate.to_string(),
-                                    );
-                                }
+                        // Opus internally uses 48kHz, but declares output rate here
+                        if sample_rate > 0 {
+                            fa.set_field(
+                                StreamKind::Audio,
+                                pos,
+                                "SamplingRate",
+                                sample_rate.to_string(),
+                            );
+                        }
 
-                                // Set channels from header if not already set
-                                if track.audio_channels.is_none() && channels > 0 {
-                                    fa.set_field(
-                                        StreamKind::Audio,
-                                        pos,
-                                        "Channels",
-                                        channels.to_string(),
-                                    );
-                                    let (positions, layout) =
-                                        channel_layout_for_codec(channels as u16, "A_OPUS");
-                                    if let Some(p) = positions {
-                                        fa.set_field(StreamKind::Audio, pos, "ChannelPositions", p);
-                                    }
-                                    if let Some(l) = layout {
-                                        fa.set_field(StreamKind::Audio, pos, "ChannelLayout", l);
-                                    }
-                                }
+                        // Set channels from header if not already set
+                        if track.audio_channels.is_none() && channels > 0 {
+                            fa.set_field(StreamKind::Audio, pos, "Channels", channels.to_string());
+                            let (positions, layout) =
+                                channel_layout_for_codec(channels as u16, "A_OPUS");
+                            if let Some(p) = positions {
+                                fa.set_field(StreamKind::Audio, pos, "ChannelPositions", p);
+                            }
+                            if let Some(l) = layout {
+                                fa.set_field(StreamKind::Audio, pos, "ChannelLayout", l);
                             }
                         }
                     }
                 }
 
                 // Parse CodecPrivate for Vorbis to get sample rate and channels
-                if track.codec_id.as_deref() == Some("A_VORBIS") {
-                    if let Some(ref private) = track.codec_private {
-                        // Vorbis identification header starts with packet type (1) + "vorbis"
-                        // But in MKV, CodecPrivate for Vorbis contains 3 Vorbis headers packed together
-                        // Format: [id_header_length] [id_header] [comment_header_length] [comment_header] [setup_header_length] [setup_header]
-                        // Lengths are 4-byte LE
-                        if private.len() >= 4 + 7 + 11 {
-                            let id_len = (private[0] as usize)
-                                | ((private[1] as usize) << 8)
-                                | ((private[2] as usize) << 16)
-                                | ((private[3] as usize) << 24);
+                if track.codec_id.as_deref() == Some("A_VORBIS")
+                    && let Some(ref private) = track.codec_private
+                {
+                    // Vorbis identification header starts with packet type (1) + "vorbis"
+                    // But in MKV, CodecPrivate for Vorbis contains 3 Vorbis headers packed together
+                    // Format: [id_header_length] [id_header] [comment_header_length] [comment_header] [setup_header_length] [setup_header]
+                    // Lengths are 4-byte LE
+                    if private.len() >= 4 + 7 + 11 {
+                        let id_len = (private[0] as usize)
+                            | ((private[1] as usize) << 8)
+                            | ((private[2] as usize) << 16)
+                            | ((private[3] as usize) << 24);
 
-                            if id_len >= 7 && private.len() >= 4 + id_len {
-                                let id_header = &private[4..4 + id_len];
+                        if id_len >= 7 && private.len() >= 4 + id_len {
+                            let id_header = &private[4..4 + id_len];
 
-                                // Check for Vorbis identification header: packet type 1 + "vorbis"
-                                if id_header.len() >= 7
-                                    && id_header[0] == 1
-                                    && &id_header[1..7] == b"vorbis"
-                                {
-                                    if id_header.len() >= 11 {
-                                        // vorbis_version (4 bytes LE, should be 0)
-                                        let vorbis_version = (id_header[7] as u32)
-                                            | ((id_header[8] as u32) << 8)
-                                            | ((id_header[9] as u32) << 16)
-                                            | ((id_header[10] as u32) << 24);
+                            // Check for Vorbis identification header: packet type 1 + "vorbis"
+                            if id_header.len() >= 7
+                                && id_header[0] == 1
+                                && &id_header[1..7] == b"vorbis"
+                                && id_header.len() >= 11
+                            {
+                                // vorbis_version (4 bytes LE, should be 0)
+                                let vorbis_version = (id_header[7] as u32)
+                                    | ((id_header[8] as u32) << 8)
+                                    | ((id_header[9] as u32) << 16)
+                                    | ((id_header[10] as u32) << 24);
 
-                                        if vorbis_version == 0 && id_header.len() >= 14 {
-                                            // audio_channels (1 byte)
-                                            let channels = id_header[11];
-                                            // sample_rate (4 bytes LE)
-                                            let sample_rate = (id_header[12] as u32)
-                                                | ((id_header[13] as u32) << 8)
-                                                | ((id_header[14] as u32) << 16)
-                                                | ((id_header[15] as u32) << 24);
+                                if vorbis_version == 0 && id_header.len() >= 14 {
+                                    // audio_channels (1 byte)
+                                    let channels = id_header[11];
+                                    // sample_rate (4 bytes LE)
+                                    let sample_rate = (id_header[12] as u32)
+                                        | ((id_header[13] as u32) << 8)
+                                        | ((id_header[14] as u32) << 16)
+                                        | ((id_header[15] as u32) << 24);
 
-                                            if sample_rate > 0 {
-                                                fa.set_field(
-                                                    StreamKind::Audio,
-                                                    pos,
-                                                    "SamplingRate",
-                                                    sample_rate.to_string(),
-                                                );
-                                            }
+                                    if sample_rate > 0 {
+                                        fa.set_field(
+                                            StreamKind::Audio,
+                                            pos,
+                                            "SamplingRate",
+                                            sample_rate.to_string(),
+                                        );
+                                    }
 
-                                            if track.audio_channels.is_none() && channels > 0 {
-                                                fa.set_field(
-                                                    StreamKind::Audio,
-                                                    pos,
-                                                    "Channels",
-                                                    channels.to_string(),
-                                                );
-                                                let (positions, layout) = channel_layout_for_codec(
-                                                    channels as u16,
-                                                    "A_VORBIS",
-                                                );
-                                                if let Some(p) = positions {
-                                                    fa.set_field(
-                                                        StreamKind::Audio,
-                                                        pos,
-                                                        "ChannelPositions",
-                                                        p,
-                                                    );
-                                                }
-                                                if let Some(l) = layout {
-                                                    fa.set_field(
-                                                        StreamKind::Audio,
-                                                        pos,
-                                                        "ChannelLayout",
-                                                        l,
-                                                    );
-                                                }
-                                            }
+                                    if track.audio_channels.is_none() && channels > 0 {
+                                        fa.set_field(
+                                            StreamKind::Audio,
+                                            pos,
+                                            "Channels",
+                                            channels.to_string(),
+                                        );
+                                        let (positions, layout) =
+                                            channel_layout_for_codec(channels as u16, "A_VORBIS");
+                                        if let Some(p) = positions {
+                                            fa.set_field(
+                                                StreamKind::Audio,
+                                                pos,
+                                                "ChannelPositions",
+                                                p,
+                                            );
+                                        }
+                                        if let Some(l) = layout {
+                                            fa.set_field(
+                                                StreamKind::Audio,
+                                                pos,
+                                                "ChannelLayout",
+                                                l,
+                                            );
+                                        }
+                                    }
 
-                                            // bit_rate_maximum (4 bytes LE, signed) - offset 16
-                                            if id_header.len() >= 20 {
-                                                let bitrate_max = (id_header[16] as i32)
-                                                    | ((id_header[17] as i32) << 8)
-                                                    | ((id_header[18] as i32) << 16)
-                                                    | ((id_header[19] as i32) << 24);
-                                                if bitrate_max > 0 {
-                                                    fa.set_field(
-                                                        StreamKind::Audio,
-                                                        pos,
-                                                        "BitRate_Maximum",
-                                                        bitrate_max.to_string(),
-                                                    );
-                                                }
-                                            }
+                                    // bit_rate_maximum (4 bytes LE, signed) - offset 16
+                                    if id_header.len() >= 20 {
+                                        let bitrate_max = (id_header[16] as i32)
+                                            | ((id_header[17] as i32) << 8)
+                                            | ((id_header[18] as i32) << 16)
+                                            | ((id_header[19] as i32) << 24);
+                                        if bitrate_max > 0 {
+                                            fa.set_field(
+                                                StreamKind::Audio,
+                                                pos,
+                                                "BitRate_Maximum",
+                                                bitrate_max.to_string(),
+                                            );
+                                        }
+                                    }
 
-                                            // bit_rate_nominal (4 bytes LE, signed) - offset 20
-                                            if id_header.len() >= 24 {
-                                                let bitrate_nominal = (id_header[20] as i32)
-                                                    | ((id_header[21] as i32) << 8)
-                                                    | ((id_header[22] as i32) << 16)
-                                                    | ((id_header[23] as i32) << 24);
-                                                if bitrate_nominal > 0 {
-                                                    fa.set_field(
-                                                        StreamKind::Audio,
-                                                        pos,
-                                                        "BitRate",
-                                                        bitrate_nominal.abs().to_string(),
-                                                    );
-                                                    fa.set_field(
-                                                        StreamKind::Audio,
-                                                        pos,
-                                                        "BitRate_Mode",
-                                                        "CBR",
-                                                    );
-                                                } else {
-                                                    fa.set_field(
-                                                        StreamKind::Audio,
-                                                        pos,
-                                                        "BitRate_Mode",
-                                                        "VBR",
-                                                    );
-                                                }
-                                            }
+                                    // bit_rate_nominal (4 bytes LE, signed) - offset 20
+                                    if id_header.len() >= 24 {
+                                        let bitrate_nominal = (id_header[20] as i32)
+                                            | ((id_header[21] as i32) << 8)
+                                            | ((id_header[22] as i32) << 16)
+                                            | ((id_header[23] as i32) << 24);
+                                        if bitrate_nominal > 0 {
+                                            fa.set_field(
+                                                StreamKind::Audio,
+                                                pos,
+                                                "BitRate",
+                                                bitrate_nominal.abs().to_string(),
+                                            );
+                                            fa.set_field(
+                                                StreamKind::Audio,
+                                                pos,
+                                                "BitRate_Mode",
+                                                "CBR",
+                                            );
+                                        } else {
+                                            fa.set_field(
+                                                StreamKind::Audio,
+                                                pos,
+                                                "BitRate_Mode",
+                                                "VBR",
+                                            );
                                         }
                                     }
                                 }
@@ -935,16 +927,16 @@ fn fill_streams(
                 // frame_rate = 1e9 / default_duration_ns. CFR when
                 // DefaultDuration is set (MKV doesn't expose per-frame
                 // deltas without walking clusters).
-                if let Some(ns) = track.default_duration_ns {
-                    if ns > 0 {
-                        let fr = 1_000_000_000.0 / ns as f64;
-                        fa.set_field(StreamKind::Video, pos, "FrameRate_Mode", "CFR");
-                        fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{fr:.3}"));
-                        // FrameCount = Duration / DefaultDuration.
-                        if let Some(s) = duration_seconds {
-                            let fc = (s * 1_000_000_000.0 / ns as f64).round() as u64;
-                            fa.set_field(StreamKind::Video, pos, "FrameCount", fc.to_string());
-                        }
+                if let Some(ns) = track.default_duration_ns
+                    && ns > 0
+                {
+                    let fr = 1_000_000_000.0 / ns as f64;
+                    fa.set_field(StreamKind::Video, pos, "FrameRate_Mode", "CFR");
+                    fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{fr:.3}"));
+                    // FrameCount = Duration / DefaultDuration.
+                    if let Some(s) = duration_seconds {
+                        let fc = (s * 1_000_000_000.0 / ns as f64).round() as u64;
+                        fa.set_field(StreamKind::Video, pos, "FrameCount", fc.to_string());
                     }
                 }
                 if let Some(bd) = track.video_bit_depth {
@@ -954,101 +946,77 @@ fn fill_streams(
                 // we recognize in MKV (AVC/HEVC/VP9/AV1).
 
                 // For AV1, try to parse codec config for more accurate info.
-                if track.codec_id.as_deref() == Some("V_AV1") {
-                    if let Some(ref private) = track.codec_private {
-                        if let Some(info) =
-                            revelo_parsers_video::parse_av1_from_codec_config(private)
-                        {
-                            // MKV's container PixelWidth/PixelHeight and
-                            // BitsPerChannel are authoritative — oracle
-                            // reports those, not the AV1 sequence header.
-                            // Only fill from the codec config when the
-                            // container didn't supply them (avoids the
-                            // AV1-OBU parse clobbering 1080x1920 with the
-                            // partially-decoded sequence-header dims).
-                            if info.width > 0 && track.video_width.is_none() {
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "Width",
-                                    info.width.to_string(),
-                                );
-                            }
-                            if info.height > 0 && track.video_height.is_none() {
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "Height",
-                                    info.height.to_string(),
-                                );
-                            }
-                            if track.video_bit_depth.is_none() {
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "BitDepth",
-                                    info.bit_depth.to_string(),
-                                );
-                            }
-                            fa.set_field(
-                                StreamKind::Video,
-                                pos,
-                                "ChromaSubsampling",
-                                info.chroma_subsampling,
-                            );
-                            let profile_name = match info.profile {
-                                0 => "Main",
-                                1 => "High",
-                                2 => "Professional",
-                                _ => "Unknown",
-                            };
-                            fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
-                        }
+                if track.codec_id.as_deref() == Some("V_AV1")
+                    && let Some(ref private) = track.codec_private
+                    && let Some(info) = revelo_parsers_video::parse_av1_from_codec_config(private)
+                {
+                    // MKV's container PixelWidth/PixelHeight and
+                    // BitsPerChannel are authoritative — oracle
+                    // reports those, not the AV1 sequence header.
+                    // Only fill from the codec config when the
+                    // container didn't supply them (avoids the
+                    // AV1-OBU parse clobbering 1080x1920 with the
+                    // partially-decoded sequence-header dims).
+                    if info.width > 0 && track.video_width.is_none() {
+                        fa.set_field(StreamKind::Video, pos, "Width", info.width.to_string());
                     }
+                    if info.height > 0 && track.video_height.is_none() {
+                        fa.set_field(StreamKind::Video, pos, "Height", info.height.to_string());
+                    }
+                    if track.video_bit_depth.is_none() {
+                        fa.set_field(
+                            StreamKind::Video,
+                            pos,
+                            "BitDepth",
+                            info.bit_depth.to_string(),
+                        );
+                    }
+                    fa.set_field(
+                        StreamKind::Video,
+                        pos,
+                        "ChromaSubsampling",
+                        info.chroma_subsampling,
+                    );
+                    let profile_name = match info.profile {
+                        0 => "Main",
+                        1 => "High",
+                        2 => "Professional",
+                        _ => "Unknown",
+                    };
+                    fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
                 }
 
                 // For VP9, try to parse CodecPrivate for profile, level, bit depth.
-                if track.codec_id.as_deref() == Some("V_VP9") {
-                    if let Some(ref private) = track.codec_private {
-                        if private.len() >= 4 {
-                            let profile = private[1];
-                            let level = private[2];
-                            let config_byte = private[3];
-                            let bit_depth = (config_byte >> 4) & 0x0F;
-                            let chroma_subsampling = (config_byte >> 1) & 0x07;
-                            let video_full_range = config_byte & 1;
+                if track.codec_id.as_deref() == Some("V_VP9")
+                    && let Some(ref private) = track.codec_private
+                    && private.len() >= 4
+                {
+                    let profile = private[1];
+                    let level = private[2];
+                    let config_byte = private[3];
+                    let bit_depth = (config_byte >> 4) & 0x0F;
+                    let chroma_subsampling = (config_byte >> 1) & 0x07;
+                    let video_full_range = config_byte & 1;
 
-                            fa.set_field(
-                                StreamKind::Video,
-                                pos,
-                                "Format_Profile",
-                                profile.to_string(),
-                            );
-                            fa.set_field(
-                                StreamKind::Video,
-                                pos,
-                                "Format_Level",
-                                format!("{:.1}", level as f64 / 10.0),
-                            );
-                            if track.video_bit_depth.is_none() {
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "BitDepth",
-                                    bit_depth.to_string(),
-                                );
-                            }
-                            let chroma = match chroma_subsampling {
-                                1 => "4:2:0",
-                                2 => "4:2:2",
-                                3 => "4:4:0",
-                                _ => "4:2:0",
-                            };
-                            fa.set_field(StreamKind::Video, pos, "ChromaSubsampling", chroma);
-                            let range = if video_full_range != 0 { "Full" } else { "Limited" };
-                            fa.set_field(StreamKind::Video, pos, "colour_range", range);
-                        }
+                    fa.set_field(StreamKind::Video, pos, "Format_Profile", profile.to_string());
+                    fa.set_field(
+                        StreamKind::Video,
+                        pos,
+                        "Format_Level",
+                        format!("{:.1}", level as f64 / 10.0),
+                    );
+                    if track.video_bit_depth.is_none() {
+                        fa.set_field(StreamKind::Video, pos, "BitDepth", bit_depth.to_string());
                     }
+                    let chroma = match chroma_subsampling {
+                        1 => "4:2:0",
+                        2 => "4:2:2",
+                        3 => "4:4:0",
+                        _ => "4:2:0",
+                    };
+                    fa.set_field(StreamKind::Video, pos, "ChromaSubsampling", chroma);
+                    let range = if video_full_range != 0 { "Full" } else { "Limited" };
+                    fa.set_field(StreamKind::Video, pos, "colour_range", range);
                 }
 
                 // For AVC tracks with CodecPrivate, parse avcC to get profile/level
@@ -1057,42 +1025,37 @@ fn fill_streams(
                     fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "AVC");
                 }
 
-                if track.codec_id.as_deref() == Some("V_MPEG4/ISO/AVC") {
-                    if let Some(ref private) = track.codec_private {
-                        if private.len() >= 4 && private[0] == 1 {
-                            let profile_idc = private[1];
-                            let level_idc = private[3];
+                if track.codec_id.as_deref() == Some("V_MPEG4/ISO/AVC")
+                    && let Some(ref private) = track.codec_private
+                    && private.len() >= 4
+                    && private[0] == 1
+                {
+                    let profile_idc = private[1];
+                    let level_idc = private[3];
 
-                            let profile_name = match profile_idc {
-                                66 => "Baseline",
-                                77 => "Main",
-                                88 => "Extended",
-                                100 => "High",
-                                110 => "High 10",
-                                122 => "High 4:2:2",
-                                244 => "High 4:4:4",
-                                44 => "CAVLC 4:4:4",
-                                _ => "Unknown",
-                            };
-                            if profile_name != "Unknown" {
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "Format_Profile",
-                                    profile_name,
-                                );
-                            }
-                            fa.set_field(
-                                StreamKind::Video,
-                                pos,
-                                "Format_Level",
-                                format!("{}.{:02}", level_idc / 10, level_idc % 10),
-                            );
-
-                            // Parse the first SPS for dimensions and colour info.
-                            fill_avc_first_sps(fa, pos, private);
-                        }
+                    let profile_name = match profile_idc {
+                        66 => "Baseline",
+                        77 => "Main",
+                        88 => "Extended",
+                        100 => "High",
+                        110 => "High 10",
+                        122 => "High 4:2:2",
+                        244 => "High 4:4:4",
+                        44 => "CAVLC 4:4:4",
+                        _ => "Unknown",
+                    };
+                    if profile_name != "Unknown" {
+                        fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
                     }
+                    fa.set_field(
+                        StreamKind::Video,
+                        pos,
+                        "Format_Level",
+                        format!("{}.{:02}", level_idc / 10, level_idc % 10),
+                    );
+
+                    // Parse the first SPS for dimensions and colour info.
+                    fill_avc_first_sps(fa, pos, private);
                 }
 
                 // For HEVC tracks with CodecPrivate, parse hvcC to get profile/tier/level
@@ -1103,188 +1066,166 @@ fn fill_streams(
                     fa.set_field(StreamKind::Video, pos, "HDR_Format", "Dolby Vision");
                     fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "HDR10");
                     // If we have CodecPrivate with hvcC, also parse HEVC details
-                    if let Some(ref private) = track.codec_private {
-                        if let Some(info) = revelo_parsers_video::parse_hevc_sps(private) {
-                            fa.set_field(StreamKind::Video, pos, "Width", info.width.to_string());
-                            fa.set_field(StreamKind::Video, pos, "Height", info.height.to_string());
-                            fa.set_field(
-                                StreamKind::Video,
-                                pos,
-                                "BitDepth",
-                                info.bit_depth.to_string(),
-                            );
-                        }
+                    if let Some(ref private) = track.codec_private
+                        && let Some(info) = revelo_parsers_video::parse_hevc_sps(private)
+                    {
+                        fa.set_field(StreamKind::Video, pos, "Width", info.width.to_string());
+                        fa.set_field(StreamKind::Video, pos, "Height", info.height.to_string());
+                        fa.set_field(
+                            StreamKind::Video,
+                            pos,
+                            "BitDepth",
+                            info.bit_depth.to_string(),
+                        );
                     }
                 }
 
-                if track.codec_id.as_deref() == Some("V_MPEGH/ISO/HEVC") {
-                    if let Some(ref private) = track.codec_private {
-                        if private.len() >= 23 && private[0] == 1 {
-                            let profile_idc = private[1] & 0x1F;
-                            let tier_flag = (private[1] >> 5) & 1;
-                            let level_idc = private[20];
+                if track.codec_id.as_deref() == Some("V_MPEGH/ISO/HEVC")
+                    && let Some(ref private) = track.codec_private
+                    && private.len() >= 23
+                    && private[0] == 1
+                {
+                    let profile_idc = private[1] & 0x1F;
+                    let tier_flag = (private[1] >> 5) & 1;
+                    let level_idc = private[20];
 
-                            let profile_name = match profile_idc {
-                                1 => "Main",
-                                2 => "Main 10",
-                                3 => "Main Still Picture",
-                                4 => "Main 12",
-                                5 => "Main 4:2:2 10",
-                                6 => "Main 4:2:2 12",
-                                7 => "Main 4:4:4",
-                                8 => "Main 4:4:4 10",
-                                9 => "Main 4:4:4 12",
-                                _ => "Unknown",
-                            };
-                            if profile_name != "Unknown" {
+                    let profile_name = match profile_idc {
+                        1 => "Main",
+                        2 => "Main 10",
+                        3 => "Main Still Picture",
+                        4 => "Main 12",
+                        5 => "Main 4:2:2 10",
+                        6 => "Main 4:2:2 12",
+                        7 => "Main 4:4:4",
+                        8 => "Main 4:4:4 10",
+                        9 => "Main 4:4:4 12",
+                        _ => "Unknown",
+                    };
+                    if profile_name != "Unknown" {
+                        fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
+                    }
+
+                    let tier_name = if tier_flag == 0 { "Main" } else { "High" };
+                    fa.set_field(StreamKind::Video, pos, "Format_Tier", tier_name);
+
+                    let level_str = if level_idc % 10 == 0 {
+                        format!("{}.0", level_idc / 30)
+                    } else {
+                        format!("{}.{}", level_idc / 30, (level_idc % 30) / 3)
+                    };
+                    fa.set_field(StreamKind::Video, pos, "Format_Level", level_str);
+
+                    // Parse NAL arrays for SPS and SEI
+                    if private.len() > 23 {
+                        let num_arrays = private[22] as usize;
+                        let mut offset = 23usize;
+                        let mut sps_data: Option<Vec<u8>> = None;
+                        let mut sei_nalus: Vec<Vec<u8>> = Vec::new();
+
+                        for _ in 0..num_arrays {
+                            if offset >= private.len() {
+                                break;
+                            }
+                            let array_header = private[offset];
+                            let nal_type = array_header & 0x3F;
+                            offset += 1;
+
+                            if offset + 2 > private.len() {
+                                break;
+                            }
+                            let num_nalus =
+                                ((private[offset] as usize) << 8) | (private[offset + 1] as usize);
+                            offset += 2;
+
+                            for _ in 0..num_nalus {
+                                if offset + 2 > private.len() {
+                                    break;
+                                }
+                                let nal_len = ((private[offset] as usize) << 8)
+                                    | (private[offset + 1] as usize);
+                                offset += 2;
+
+                                if offset + nal_len > private.len() {
+                                    break;
+                                }
+                                let nal_data = private[offset..offset + nal_len].to_vec();
+
+                                match nal_type {
+                                    33 if sps_data.is_none() => {
+                                        sps_data = Some(nal_data);
+                                    }
+                                    39 | 40 => sei_nalus.push(nal_data),
+                                    _ => {}
+                                }
+                                offset += nal_len;
+                            }
+                        }
+
+                        // Parse SPS for dimensions and colour
+                        if let Some(sps) = sps_data
+                            && let Some(sps_info) = revelo_parsers_video::parse_hevc_sps(&sps)
+                        {
+                            if sps_info.width > 0 {
                                 fa.set_field(
                                     StreamKind::Video,
                                     pos,
-                                    "Format_Profile",
-                                    profile_name,
+                                    "Width",
+                                    sps_info.width.to_string(),
                                 );
                             }
-
-                            let tier_name = if tier_flag == 0 { "Main" } else { "High" };
-                            fa.set_field(StreamKind::Video, pos, "Format_Tier", tier_name);
-
-                            let level_str = if level_idc % 10 == 0 {
-                                format!("{}.0", level_idc / 30)
-                            } else {
-                                format!("{}.{}", level_idc / 30, (level_idc % 30) / 3)
-                            };
-                            fa.set_field(StreamKind::Video, pos, "Format_Level", level_str);
-
-                            // Parse NAL arrays for SPS and SEI
-                            if private.len() > 23 {
-                                let num_arrays = private[22] as usize;
-                                let mut offset = 23usize;
-                                let mut sps_data: Option<Vec<u8>> = None;
-                                let mut sei_nalus: Vec<Vec<u8>> = Vec::new();
-
-                                for _ in 0..num_arrays {
-                                    if offset >= private.len() {
-                                        break;
-                                    }
-                                    let array_header = private[offset];
-                                    let nal_type = array_header & 0x3F;
-                                    offset += 1;
-
-                                    if offset + 2 > private.len() {
-                                        break;
-                                    }
-                                    let num_nalus = ((private[offset] as usize) << 8)
-                                        | (private[offset + 1] as usize);
-                                    offset += 2;
-
-                                    for _ in 0..num_nalus {
-                                        if offset + 2 > private.len() {
-                                            break;
-                                        }
-                                        let nal_len = ((private[offset] as usize) << 8)
-                                            | (private[offset + 1] as usize);
-                                        offset += 2;
-
-                                        if offset + nal_len > private.len() {
-                                            break;
-                                        }
-                                        let nal_data = private[offset..offset + nal_len].to_vec();
-
-                                        match nal_type {
-                                            33 => {
-                                                if sps_data.is_none() {
-                                                    sps_data = Some(nal_data);
-                                                }
-                                            }
-                                            39 | 40 => sei_nalus.push(nal_data),
-                                            _ => {}
-                                        }
-                                        offset += nal_len;
-                                    }
+                            if sps_info.height > 0 {
+                                fa.set_field(
+                                    StreamKind::Video,
+                                    pos,
+                                    "Height",
+                                    sps_info.height.to_string(),
+                                );
+                            }
+                            if sps_info.colour_description_present {
+                                if let Some(cp) =
+                                    sps_info.colour_primaries.and_then(|v| cicp_primaries(v as u16))
+                                {
+                                    fa.set_field(StreamKind::Video, pos, "colour_primaries", cp);
                                 }
-
-                                // Parse SPS for dimensions and colour
-                                if let Some(sps) = sps_data {
-                                    if let Some(sps_info) =
-                                        revelo_parsers_video::parse_hevc_sps(&sps)
-                                    {
-                                        if sps_info.width > 0 {
-                                            fa.set_field(
-                                                StreamKind::Video,
-                                                pos,
-                                                "Width",
-                                                sps_info.width.to_string(),
-                                            );
-                                        }
-                                        if sps_info.height > 0 {
-                                            fa.set_field(
-                                                StreamKind::Video,
-                                                pos,
-                                                "Height",
-                                                sps_info.height.to_string(),
-                                            );
-                                        }
-                                        if sps_info.colour_description_present {
-                                            if let Some(cp) = sps_info
-                                                .colour_primaries
-                                                .and_then(|v| cicp_primaries(v as u16))
-                                            {
-                                                fa.set_field(
-                                                    StreamKind::Video,
-                                                    pos,
-                                                    "colour_primaries",
-                                                    cp,
-                                                );
-                                            }
-                                            if let Some(tc) = sps_info
-                                                .transfer_characteristics
-                                                .and_then(|v| cicp_transfer(v as u16))
-                                            {
-                                                fa.set_field(
-                                                    StreamKind::Video,
-                                                    pos,
-                                                    "transfer_characteristics",
-                                                    tc,
-                                                );
-                                            }
-                                            if let Some(mc) = sps_info
-                                                .matrix_coefficients
-                                                .and_then(|v| cicp_matrix(v as u16))
-                                            {
-                                                fa.set_field(
-                                                    StreamKind::Video,
-                                                    pos,
-                                                    "matrix_coefficients",
-                                                    mc,
-                                                );
-                                            }
-                                        }
-                                        if let Some(vfr) = sps_info.video_full_range {
-                                            fa.set_field(
-                                                StreamKind::Video,
-                                                pos,
-                                                "colour_range",
-                                                if vfr { "Full" } else { "Limited" },
-                                            );
-                                        }
-                                    }
+                                if let Some(tc) = sps_info
+                                    .transfer_characteristics
+                                    .and_then(|v| cicp_transfer(v as u16))
+                                {
+                                    fa.set_field(
+                                        StreamKind::Video,
+                                        pos,
+                                        "transfer_characteristics",
+                                        tc,
+                                    );
                                 }
-
-                                // Extract encoder from SEI
-                                if !sei_nalus.is_empty() {
-                                    let refs: Vec<&[u8]> =
-                                        sei_nalus.iter().map(|v| v.as_slice()).collect();
-                                    if let Some(encoder) =
-                                        revelo_parsers_video::extract_encoder_from_sei_nalus(&refs)
-                                    {
-                                        fa.set_field(
-                                            StreamKind::Video,
-                                            pos,
-                                            "Encoded_Library",
-                                            encoder.library.as_str(),
-                                        );
-                                    }
+                                if let Some(mc) =
+                                    sps_info.matrix_coefficients.and_then(|v| cicp_matrix(v as u16))
+                                {
+                                    fa.set_field(StreamKind::Video, pos, "matrix_coefficients", mc);
                                 }
+                            }
+                            if let Some(vfr) = sps_info.video_full_range {
+                                fa.set_field(
+                                    StreamKind::Video,
+                                    pos,
+                                    "colour_range",
+                                    if vfr { "Full" } else { "Limited" },
+                                );
+                            }
+                        }
+
+                        // Extract encoder from SEI
+                        if !sei_nalus.is_empty() {
+                            let refs: Vec<&[u8]> = sei_nalus.iter().map(|v| v.as_slice()).collect();
+                            if let Some(encoder) =
+                                revelo_parsers_video::extract_encoder_from_sei_nalus(&refs)
+                            {
+                                fa.set_field(
+                                    StreamKind::Video,
+                                    pos,
+                                    "Encoded_Library",
+                                    encoder.library.as_str(),
+                                );
                             }
                         }
                     }
@@ -1345,27 +1286,13 @@ fn fill_streams(
                     );
                     // Set HDR_Format for HLG and PQ when transfer characteristics indicate HDR
                     match t {
-                        "PQ" => {
-                            if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() {
-                                fa.set_field(StreamKind::Video, pos, "HDR_Format", "SMPTE ST 2084");
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "HDR_Format_Compatibility",
-                                    "PQ",
-                                );
-                            }
+                        "PQ" if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() => {
+                            fa.set_field(StreamKind::Video, pos, "HDR_Format", "SMPTE ST 2084");
+                            fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "PQ");
                         }
-                        "HLG" => {
-                            if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() {
-                                fa.set_field(StreamKind::Video, pos, "HDR_Format", "ARIB STD-B67");
-                                fa.set_field(
-                                    StreamKind::Video,
-                                    pos,
-                                    "HDR_Format_Compatibility",
-                                    "HLG",
-                                );
-                            }
+                        "HLG" if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() => {
+                            fa.set_field(StreamKind::Video, pos, "HDR_Format", "ARIB STD-B67");
+                            fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "HLG");
                         }
                         _ => {}
                     }

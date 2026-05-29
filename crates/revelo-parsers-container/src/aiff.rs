@@ -135,7 +135,7 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
                         consumed += 4;
                         // Pascal string: 1-byte length + payload, then padded to
                         // even total length within the chunk body.
-                        if chunk_size_usize >= consumed + 1 {
+                        if chunk_size_usize > consumed {
                             let pa_len = r.be_u8("compressionName_length")?;
                             consumed += 1;
                             let pa_total = pa_len as usize;

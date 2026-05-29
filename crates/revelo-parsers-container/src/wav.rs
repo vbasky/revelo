@@ -212,14 +212,14 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
             }
             FOURCC_IXML => {
                 fa.element_begin("iXML");
-                if let Some(raw) = fa.peek_raw(chunk_size_usize) {
-                    if let Ok(xml) = std::str::from_utf8(raw) {
-                        let b = bwf.get_or_insert_with(BwfInfo::default);
-                        b.description = b.description.take().or_else(|| {
-                            let s = xml.trim().to_string();
-                            if s.is_empty() { None } else { Some(s) }
-                        });
-                    }
+                if let Some(raw) = fa.peek_raw(chunk_size_usize)
+                    && let Ok(xml) = std::str::from_utf8(raw)
+                {
+                    let b = bwf.get_or_insert_with(BwfInfo::default);
+                    b.description = b.description.take().or_else(|| {
+                        let s = xml.trim().to_string();
+                        if s.is_empty() { None } else { Some(s) }
+                    });
                 }
                 fa.skip_hexa(chunk_size_usize, "iXML");
                 fa.element_end();
@@ -334,35 +334,35 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Opti
         if let Some(ref u) = bwf.umid {
             fa.set_field(StreamKind::General, 0, "UMID", u.clone());
         }
-        if let Some(lv) = bwf.loudness_value {
-            if lv != -32768 {
-                fa.set_field(
-                    StreamKind::Audio,
-                    0,
-                    "Loudness_Value",
-                    format!("{:.1} LUFS", lv as f64 * 0.1),
-                );
-            }
+        if let Some(lv) = bwf.loudness_value
+            && lv != -32768
+        {
+            fa.set_field(
+                StreamKind::Audio,
+                0,
+                "Loudness_Value",
+                format!("{:.1} LUFS", lv as f64 * 0.1),
+            );
         }
-        if let Some(lr) = bwf.loudness_range {
-            if lr != -32768 {
-                fa.set_field(
-                    StreamKind::Audio,
-                    0,
-                    "Loudness_Range",
-                    format!("{:.1} LU", lr as f64 * 0.1),
-                );
-            }
+        if let Some(lr) = bwf.loudness_range
+            && lr != -32768
+        {
+            fa.set_field(
+                StreamKind::Audio,
+                0,
+                "Loudness_Range",
+                format!("{:.1} LU", lr as f64 * 0.1),
+            );
         }
-        if let Some(pt) = bwf.max_true_peak {
-            if pt != -32768 {
-                fa.set_field(
-                    StreamKind::Audio,
-                    0,
-                    "Loudness_MaxTruePeakLevel",
-                    format!("{:.1} dBTP", pt as f64 * 0.1),
-                );
-            }
+        if let Some(pt) = bwf.max_true_peak
+            && pt != -32768
+        {
+            fa.set_field(
+                StreamKind::Audio,
+                0,
+                "Loudness_MaxTruePeakLevel",
+                format!("{:.1} dBTP", pt as f64 * 0.1),
+            );
         }
     }
 }
@@ -495,7 +495,7 @@ mod tests {
         let list_size = 12u32;
 
         buf.extend_from_slice(b"RIFF");
-        let riff_size = 4 + (8 + 16) + (8 + list_size as u32) + (8 + data_size);
+        let riff_size = 4 + (8 + 16) + (8 + list_size) + (8 + data_size);
         buf.extend_from_slice(&riff_size.to_le_bytes());
         buf.extend_from_slice(b"WAVE");
 

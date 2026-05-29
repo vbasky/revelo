@@ -167,7 +167,7 @@ mod tests {
         push_bits(&mut bits, 0, nbits as usize); // Ymin
         push_bits(&mut bits, height * 20, nbits as usize); // Ymax
         // Pad to byte boundary.
-        while bits.len() % 8 != 0 {
+        while !bits.len().is_multiple_of(8) {
             bits.push(0);
         }
         body.extend(pack_bits_msb(&bits));

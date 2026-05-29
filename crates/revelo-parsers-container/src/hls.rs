@@ -37,7 +37,7 @@ const MIN_SIZE: usize = 10;
 /// Fills: Format, stream variants.
 pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
     let size = fa.remain();
-    if size < MIN_SIZE || size > MAX_SIZE {
+    if !(MIN_SIZE..=MAX_SIZE).contains(&size) {
         return false;
     }
     let Some(buf) = fa.peek_raw(size) else {
@@ -59,7 +59,7 @@ pub fn parse_hls(fa: &mut FileAnalyze) -> bool {
     // First line must equal exactly "#EXTM3U" (no trailing chars before
     // the line terminator). C++ uses ZtringList line splitting on the
     // first terminator found in the document.
-    let first_line_end = text.find(|c| c == '\r' || c == '\n').unwrap_or(text.len());
+    let first_line_end = text.find(['\r', '\n']).unwrap_or(text.len());
     let first_line = &text[..first_line_end];
     if first_line != MAGIC {
         return false;

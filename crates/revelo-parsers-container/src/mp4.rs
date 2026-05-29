@@ -479,7 +479,7 @@ fn parse_ftyp(fa: &mut FileAnalyze, box_size: usize) -> Vec<String> {
         brands.push(four_cc_str(b));
     }
     // Skip any tail bytes that aren't a multiple of 4.
-    if remain % 4 != 0 {
+    if !remain.is_multiple_of(4) {
         fa.skip_hexa(remain % 4, "ftyp_tail");
     }
     brands
@@ -977,10 +977,10 @@ fn parse_hdlr(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     // clobber the real track-type handler if we wrote unconditionally.
     if track.handler == 0 {
         track.handler = handler;
-        if let Some(n) = name {
-            if !n.is_empty() {
-                track.handler_name = Some(n);
-            }
+        if let Some(n) = name
+            && !n.is_empty()
+        {
+            track.handler_name = Some(n);
         }
     }
 }
@@ -1116,7 +1116,7 @@ fn parse_mp4a_entry(fa: &mut FileAnalyze, entry_total: usize, track: &mut TrackI
     fa.skip_hexa(2, "pre_defined_or_compression_id");
     fa.skip_hexa(2, "packet_size");
     let sr_fixed = Reader::wrap(fa).be_u32("sample_rate_16.16").unwrap_or(0);
-    let sample_rate = (sr_fixed >> 16) as u32;
+    let sample_rate = sr_fixed >> 16;
 
     track.audio_channels = Some(channel_count as u16);
     track.audio_sample_rate = Some(sample_rate);
@@ -1261,9 +1261,9 @@ fn parse_descriptor_chain_bytes(data: &[u8], track: &mut TrackInfo) {
                     parse_descriptor_chain_bytes(&data[p + 13..p + sz], track);
                 }
             }
-            0x05 => {
+            0x05
                 // AudioSpecificConfig — 5 bits AOT (if 31, +6 bits ext).
-                if sz >= 1 {
+                if sz >= 1 => {
                     let aot5 = (data[p] >> 3) & 0x1F;
                     let aot = if aot5 == 31 {
                         if sz >= 2 {
@@ -1276,7 +1276,6 @@ fn parse_descriptor_chain_bytes(data: &[u8], track: &mut TrackInfo) {
                     };
                     track.audio_object_type = Some(aot);
                 }
-            }
             _ => {}
         }
         p += sz;
@@ -1481,10 +1480,10 @@ fn parse_avcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         }
         pos += len;
     }
-    if let Some(sps) = first_sps {
-        if let Some(info) = revelo_parsers_video::parse_avc_sps(sps) {
-            track.avc_sps = Some(info);
-        }
+    if let Some(sps) = first_sps
+        && let Some(info) = revelo_parsers_video::parse_avc_sps(sps)
+    {
+        track.avc_sps = Some(info);
     }
     // PPS (optional second-pass): the entropy_coding_mode_flag is the
     // first bit of pic_parameter_set_rbsp after pic_parameter_set_id and
@@ -1592,10 +1591,10 @@ fn parse_hvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     }
 
     // Try to extract encoder string from SEI NALs
-    if !sei_nalus.is_empty() {
-        if let Some(enc) = revelo_parsers_video::extract_encoder_from_sei_nalus(&sei_nalus) {
-            track.encoder_info = Some(enc);
-        }
+    if !sei_nalus.is_empty()
+        && let Some(enc) = revelo_parsers_video::extract_encoder_from_sei_nalus(&sei_nalus)
+    {
+        track.encoder_info = Some(enc);
     }
 }
 
@@ -1889,8 +1888,7 @@ fn parse_stco(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo, is_c
     let entry_count = Reader::wrap(fa).be_u32("entry_count").unwrap_or(0);
     if entry_count > 0 {
         let offset = if is_co64 {
-            let v = Reader::wrap(fa).be_u64("chunk_offset").unwrap_or(0);
-            v
+            Reader::wrap(fa).be_u64("chunk_offset").unwrap_or(0)
         } else {
             let v = Reader::wrap(fa).be_u32("chunk_offset").unwrap_or(0);
             v as u64
@@ -2045,9 +2043,9 @@ fn fill_streams(
             ITUNES_KEY_GROUPING => {
                 fa.set_field(StreamKind::General, 0, "Grouping", value.clone());
             }
-            ITUNES_KEY_TRACK => {
+            ITUNES_KEY_TRACK
                 // Track number is typically 4 bytes: track (2 bytes) / total (2 bytes)
-                if value.len() >= 4 {
+                if value.len() >= 4 => {
                     let track = ((value.as_bytes()[2] as u16) << 8) | (value.as_bytes()[3] as u16);
                     let total = ((value.as_bytes()[0] as u16) << 8) | (value.as_bytes()[1] as u16);
                     if track > 0 {
@@ -2057,10 +2055,9 @@ fn fill_streams(
                         fa.set_field(StreamKind::General, 0, "Track/Total", total.to_string());
                     }
                 }
-            }
-            ITUNES_KEY_DISK => {
+            ITUNES_KEY_DISK
                 // Disc number is typically 4 bytes: disc (2 bytes) / total (2 bytes)
-                if value.len() >= 4 {
+                if value.len() >= 4 => {
                     let disc = ((value.as_bytes()[2] as u16) << 8) | (value.as_bytes()[3] as u16);
                     let total = ((value.as_bytes()[0] as u16) << 8) | (value.as_bytes()[1] as u16);
                     if disc > 0 {
@@ -2070,17 +2067,14 @@ fn fill_streams(
                         fa.set_field(StreamKind::General, 0, "Part/Total", total.to_string());
                     }
                 }
-            }
-            ITUNES_KEY_COMPILATION => {
-                if value.as_bytes().get(0) == Some(&1) {
+            ITUNES_KEY_COMPILATION
+                if value.as_bytes().first() == Some(&1) => {
                     fa.set_field(StreamKind::General, 0, "Compilation", "Yes");
                 }
-            }
-            ITUNES_KEY_GAPLESS => {
-                if value.as_bytes().get(0) == Some(&1) {
+            ITUNES_KEY_GAPLESS
+                if value.as_bytes().first() == Some(&1) => {
                     fa.set_field(StreamKind::General, 0, "Gapless", "Yes");
                 }
-            }
             ITUNES_KEY_LYRICS => {
                 fa.set_field(StreamKind::General, 0, "Lyrics", value.clone());
             }
@@ -2090,34 +2084,31 @@ fn fill_streams(
             ITUNES_KEY_TV_EPISODE => {
                 fa.set_field(StreamKind::General, 0, "TVEpisode", value.clone());
             }
-            ITUNES_KEY_TV_SEASON => {
+            ITUNES_KEY_TV_SEASON
                 // 4-byte integer
-                if value.len() >= 4 {
+                if value.len() >= 4 => {
                     let season = ((value.as_bytes()[0] as u32) << 24)
                         | ((value.as_bytes()[1] as u32) << 16)
                         | ((value.as_bytes()[2] as u32) << 8)
                         | (value.as_bytes()[3] as u32);
                     fa.set_field(StreamKind::General, 0, "TVSeason", season.to_string());
                 }
-            }
-            ITUNES_KEY_TV_EPISODE_NUM => {
+            ITUNES_KEY_TV_EPISODE_NUM
                 // 4-byte integer
-                if value.len() >= 4 {
+                if value.len() >= 4 => {
                     let ep = ((value.as_bytes()[0] as u32) << 24)
                         | ((value.as_bytes()[1] as u32) << 16)
                         | ((value.as_bytes()[2] as u32) << 8)
                         | (value.as_bytes()[3] as u32);
                     fa.set_field(StreamKind::General, 0, "TVEpisodeNumber", ep.to_string());
                 }
-            }
-            ITUNES_KEY_HD_VIDEO => {
-                if value.as_bytes().get(0) == Some(&1) {
+            ITUNES_KEY_HD_VIDEO
+                if value.as_bytes().first() == Some(&1) => {
                     fa.set_field(StreamKind::General, 0, "HDVideo", "Yes");
                 }
-            }
             ITUNES_KEY_MEDIA_TYPE => {
                 // Media type is a 1-byte integer
-                if let Some(&media_type) = value.as_bytes().get(0) {
+                if let Some(&media_type) = value.as_bytes().first() {
                     let media_str = match media_type {
                         0 => "Movie",
                         1 => "Music",
@@ -2134,7 +2125,7 @@ fn fill_streams(
             }
             ITUNES_KEY_RATING => {
                 // Content rating is a 1-byte integer
-                if let Some(&rating) = value.as_bytes().get(0) {
+                if let Some(&rating) = value.as_bytes().first() {
                     let rating_str = match rating {
                         0 => "None",
                         2 => "Clean",
@@ -2246,7 +2237,7 @@ fn fill_streams(
         // bare qt  still get the field).
         let mut seen: Vec<&str> = Vec::new();
         for b in ftyp_brands {
-            if !seen.iter().any(|s| *s == b.as_str()) {
+            if !seen.contains(&b.as_str()) {
                 seen.push(b.as_str());
             }
         }
@@ -2256,10 +2247,10 @@ fn fill_streams(
         // QuickTime brand also surfaces a CodecID_Version field — a
         // 16.16-fixed-point minor version (typically 0). Oracle formats
         // as "MMMM.mm".
-        if let Some(major) = ftyp_brands.first() {
-            if major == "qt  " {
-                fa.set_field(StreamKind::General, 0, "CodecID_Version", "0000.00");
-            }
+        if let Some(major) = ftyp_brands.first()
+            && major == "qt  "
+        {
+            fa.set_field(StreamKind::General, 0, "CodecID_Version", "0000.00");
         }
     }
 
@@ -2431,66 +2422,61 @@ fn fill_streams(
             // Source_* fields: pre-edit values from stsz / mdhd directly.
             if let Some(count) = track.sample_count {
                 fa.set_field(StreamKind::Audio, pos, "Source_FrameCount", count.to_string());
-                if matches!(track.audio_format, Some("AAC")) {
-                    if let Some(sr) = track.audio_sample_rate {
-                        // Source_Duration = mdhd.duration (raw, pre-elst)
-                        // converted to ms with round-to-nearest. Falls
-                        // back to the stsz-derived value if mdhd is
-                        // missing.
-                        let source_dur = if track.timescale > 0 && track.duration_units > 0 {
-                            let ts = track.timescale as u64;
-                            (track.duration_units * 1000 + ts / 2) / ts
-                        } else {
-                            ((count as u64) * 1024 * 1000 + (sr as u64) / 2) / (sr as u64)
-                        };
+                if matches!(track.audio_format, Some("AAC"))
+                    && let Some(sr) = track.audio_sample_rate
+                {
+                    // Source_Duration = mdhd.duration (raw, pre-elst)
+                    // converted to ms with round-to-nearest. Falls
+                    // back to the stsz-derived value if mdhd is
+                    // missing.
+                    let source_dur = if track.timescale > 0 && track.duration_units > 0 {
+                        let ts = track.timescale as u64;
+                        (track.duration_units * 1000 + ts / 2) / ts
+                    } else {
+                        ((count as u64) * 1024 * 1000 + (sr as u64) / 2) / (sr as u64)
+                    };
+                    fa.set_field(StreamKind::Audio, pos, "Source_Duration", source_dur.to_string());
+                    // Source_Duration_LastFrame = source_dur −
+                    // (sample_count × 1024 / sample_rate). Oracle
+                    // omits the field when the delta rounds to zero
+                    // (no detectable trailing fraction).
+                    let sr_u = sr as u64;
+                    let frame_only_dur_ms = ((count as u64) * 1024 * 1000 + sr_u / 2) / sr_u;
+                    let delta_ms = source_dur as i64 - frame_only_dur_ms as i64;
+                    if delta_ms != 0 {
                         fa.set_field(
                             StreamKind::Audio,
                             pos,
-                            "Source_Duration",
-                            source_dur.to_string(),
+                            "Source_Duration_LastFrame",
+                            delta_ms.to_string(),
                         );
-                        // Source_Duration_LastFrame = source_dur −
-                        // (sample_count × 1024 / sample_rate). Oracle
-                        // omits the field when the delta rounds to zero
-                        // (no detectable trailing fraction).
-                        let sr_u = sr as u64;
-                        let frame_only_dur_ms = ((count as u64) * 1024 * 1000 + sr_u / 2) / sr_u;
-                        let delta_ms = source_dur as i64 - frame_only_dur_ms as i64;
-                        if delta_ms != 0 {
+                    }
+                    // Source_Delay = Duration − Source_Duration, in
+                    // ms. For trimmed AAC the trimmed Duration is
+                    // shorter than the raw Source_Duration, so this
+                    // is negative. Oracle only emits this field when
+                    // |delay| ≥ ~10ms (real encoder padding from
+                    // live captures); near-zero delays from authored
+                    // MP4s are suppressed.
+                    if let Some(units) = trimmed_units
+                        && track.timescale > 0
+                    {
+                        let ts = track.timescale as u64;
+                        let dur_ms = (units * 1000 + ts / 2) / ts;
+                        let source_delay = dur_ms as i64 - source_dur as i64;
+                        if source_delay.abs() >= 10 {
                             fa.set_field(
                                 StreamKind::Audio,
                                 pos,
-                                "Source_Duration_LastFrame",
-                                delta_ms.to_string(),
+                                "Source_Delay",
+                                source_delay.to_string(),
                             );
-                        }
-                        // Source_Delay = Duration − Source_Duration, in
-                        // ms. For trimmed AAC the trimmed Duration is
-                        // shorter than the raw Source_Duration, so this
-                        // is negative. Oracle only emits this field when
-                        // |delay| ≥ ~10ms (real encoder padding from
-                        // live captures); near-zero delays from authored
-                        // MP4s are suppressed.
-                        if let Some(units) = trimmed_units {
-                            if track.timescale > 0 {
-                                let ts = track.timescale as u64;
-                                let dur_ms = (units * 1000 + ts / 2) / ts;
-                                let source_delay = dur_ms as i64 - source_dur as i64;
-                                if source_delay.abs() >= 10 {
-                                    fa.set_field(
-                                        StreamKind::Audio,
-                                        pos,
-                                        "Source_Delay",
-                                        source_delay.to_string(),
-                                    );
-                                    fa.set_field(
-                                        StreamKind::Audio,
-                                        pos,
-                                        "Source_Delay_Source",
-                                        "Container",
-                                    );
-                                }
-                            }
+                            fa.set_field(
+                                StreamKind::Audio,
+                                pos,
+                                "Source_Delay_Source",
+                                "Container",
+                            );
                         }
                     }
                 }
@@ -2513,10 +2499,10 @@ fn fill_streams(
             } else if track.alternate_group.unwrap_or(0) != 0 {
                 fa.set_field(StreamKind::Audio, pos, "Default", "Yes");
             }
-            if let Some(group) = track.alternate_group {
-                if group != 0 {
-                    fa.set_field(StreamKind::Audio, pos, "AlternateGroup", group.to_string());
-                }
+            if let Some(group) = track.alternate_group
+                && group != 0
+            {
+                fa.set_field(StreamKind::Audio, pos, "AlternateGroup", group.to_string());
             }
             if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
                 fa.set_field(StreamKind::Audio, pos, "Language", lang);
@@ -2527,10 +2513,10 @@ fn fill_streams(
             if let Some(s) = track.modification_time.and_then(mp4_date_string) {
                 fa.set_field(StreamKind::Audio, pos, "Tagged_Date", s);
             }
-            if let Some(t) = track.handler_name.as_deref() {
-                if !t.is_empty() {
-                    fa.set_field(StreamKind::Audio, pos, "Title", t.to_string());
-                }
+            if let Some(t) = track.handler_name.as_deref()
+                && !t.is_empty()
+            {
+                fa.set_field(StreamKind::Audio, pos, "Title", t.to_string());
             }
             audio_count += 1;
         } else if track.handler == HANDLER_VIDE && track.has_data {
@@ -2577,10 +2563,10 @@ fn fill_streams(
                 fa.set_field(StreamKind::Video, pos, "CodecConfigurationBox", "avcC");
             }
             // HEVC profile/level/tier from hvcC fixed header.
-            if let Some(idc) = track.hevc_profile_idc {
-                if let Some(name) = hevc_profile_name(idc) {
-                    fa.set_field(StreamKind::Video, pos, "Format_Profile", name);
-                }
+            if let Some(idc) = track.hevc_profile_idc
+                && let Some(name) = hevc_profile_name(idc)
+            {
+                fa.set_field(StreamKind::Video, pos, "Format_Profile", name);
             }
             if let Some(lvl) = track.hevc_level_idc {
                 // HEVC encodes level as `level * 30`, so 153 → "5.1".
@@ -2663,15 +2649,15 @@ fn fill_streams(
                 if let Some(dv_level) = track.dovi_level {
                     fa.set_field(StreamKind::Video, pos, "HDR_Format_Level", dv_level.to_string());
                 }
-                if track.dovi_bl_present {
-                    if let Some(cid) = track.dovi_bl_compat_id {
-                        fa.set_field(
-                            StreamKind::Video,
-                            pos,
-                            "HDR_Format_Compatibility",
-                            format!("BL:{}", cid),
-                        );
-                    }
+                if track.dovi_bl_present
+                    && let Some(cid) = track.dovi_bl_compat_id
+                {
+                    fa.set_field(
+                        StreamKind::Video,
+                        pos,
+                        "HDR_Format_Compatibility",
+                        format!("BL:{}", cid),
+                    );
                 }
             }
             if let Some(cid) = track.video_codec_id {
@@ -2766,13 +2752,13 @@ fn fill_streams(
                 }
                 frame_rate_emitted = true;
             }
-            if !frame_rate_emitted {
-                if let (Some(fc), tsc) = (track.sample_count, track.timescale) {
-                    if tsc > 0 && track.duration_units > 0 {
-                        let fr = (fc as f64) * (tsc as f64) / (track.duration_units as f64);
-                        fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr));
-                    }
-                }
+            if !frame_rate_emitted
+                && let (Some(fc), tsc) = (track.sample_count, track.timescale)
+                && tsc > 0
+                && track.duration_units > 0
+            {
+                let fr = (fc as f64) * (tsc as f64) / (track.duration_units as f64);
+                fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{:.3}", fr));
             }
             // StreamSize = sum of per-sample sizes from stsz.
             if let Some(ss) = track.source_stream_size {
@@ -2873,17 +2859,13 @@ fn fill_streams(
                 fa.set_field(StreamKind::Video, pos, "transfer_characteristics_Source", source);
                 // Set HDR_Format for HLG and PQ when transfer characteristics indicate HDR
                 match t {
-                    "PQ" => {
-                        if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() {
-                            fa.set_field(StreamKind::Video, pos, "HDR_Format", "SMPTE ST 2084");
-                            fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "PQ");
-                        }
+                    "PQ" if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() => {
+                        fa.set_field(StreamKind::Video, pos, "HDR_Format", "SMPTE ST 2084");
+                        fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "PQ");
                     }
-                    "HLG" => {
-                        if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() {
-                            fa.set_field(StreamKind::Video, pos, "HDR_Format", "ARIB STD-B67");
-                            fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "HLG");
-                        }
+                    "HLG" if fa.retrieve(StreamKind::Video, pos, "HDR_Format").is_none() => {
+                        fa.set_field(StreamKind::Video, pos, "HDR_Format", "ARIB STD-B67");
+                        fa.set_field(StreamKind::Video, pos, "HDR_Format_Compatibility", "HLG");
                     }
                     _ => {}
                 }
@@ -2896,28 +2878,28 @@ fn fill_streams(
             // differs from the displayed Height (oracle suppresses it
             // otherwise — encoded height == display height means no
             // cropping happened).
-            if let (Some(sps), Some(h)) = (track.avc_sps.as_ref(), track.video_height) {
-                if sps.stored_height != h as u32 {
-                    fa.set_field(
-                        StreamKind::Video,
-                        pos,
-                        "Stored_Height",
-                        sps.stored_height.to_string(),
-                    );
-                }
+            if let (Some(sps), Some(h)) = (track.avc_sps.as_ref(), track.video_height)
+                && sps.stored_height != h as u32
+            {
+                fa.set_field(
+                    StreamKind::Video,
+                    pos,
+                    "Stored_Height",
+                    sps.stored_height.to_string(),
+                );
             }
             // ChromaSubsampling_Position from VUI chroma_sample_loc.
             // Oracle emits the raw chroma_sample_loc_type_top_field as
             // "Type N" (no offset; matches MediaInfoLib's File_Avc).
-            if let Some(sps) = track.avc_sps.as_ref() {
-                if let Some(loc) = sps.chroma_sample_loc {
-                    fa.set_field(
-                        StreamKind::Video,
-                        pos,
-                        "ChromaSubsampling_Position",
-                        format!("Type {loc}"),
-                    );
-                }
+            if let Some(sps) = track.avc_sps.as_ref()
+                && let Some(loc) = sps.chroma_sample_loc
+            {
+                fa.set_field(
+                    StreamKind::Video,
+                    pos,
+                    "ChromaSubsampling_Position",
+                    format!("Type {loc}"),
+                );
             }
             if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
                 fa.set_field(StreamKind::Video, pos, "Language", lang);
@@ -2928,10 +2910,10 @@ fn fill_streams(
             if let Some(s) = track.modification_time.and_then(mp4_date_string) {
                 fa.set_field(StreamKind::Video, pos, "Tagged_Date", s);
             }
-            if let Some(t) = track.handler_name.as_deref() {
-                if !t.is_empty() {
-                    fa.set_field(StreamKind::Video, pos, "Title", t.to_string());
-                }
+            if let Some(t) = track.handler_name.as_deref()
+                && !t.is_empty()
+            {
+                fa.set_field(StreamKind::Video, pos, "Title", t.to_string());
             }
             video_count += 1;
         } else if track.handler == HANDLER_HINT {
@@ -3000,10 +2982,10 @@ fn fill_streams(
                 }
                 fa.set_field(StreamKind::Other, pos, "CodecID", cid);
             }
-            if let Some(t) = track.handler_name.as_deref() {
-                if !t.is_empty() {
-                    fa.set_field(StreamKind::Other, pos, "Title", t.to_string());
-                }
+            if let Some(t) = track.handler_name.as_deref()
+                && !t.is_empty()
+            {
+                fa.set_field(StreamKind::Other, pos, "Title", t.to_string());
             }
             if let Some(ss) = track.source_stream_size {
                 fa.set_field(StreamKind::Other, pos, "StreamSize", ss.to_string());

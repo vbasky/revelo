@@ -14,8 +14,8 @@ pub mod file_analyze;
 pub mod file_level;
 pub mod prelude;
 pub mod reader;
-pub mod stream;
 mod revelo_util_re_export;
+pub mod stream;
 
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;

@@ -30,7 +30,6 @@ const SAMPLE_RATES: [u32; 16] = [44100, 48000, 96000, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 // Channel mode lookup (ac4_channel_mode -> channel count).
 const CHANNEL_COUNTS: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0];
 
-
 /// Read `n` bits big-endian from `data` starting at absolute bit `off`.
 fn get_bits(data: &[u8], off: usize, n: usize) -> Option<u32> {
     if n == 0 {

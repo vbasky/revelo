@@ -71,24 +71,24 @@ pub fn parse_dv_rpu(nal_unit: &[u8]) -> Option<DolbyVisionRpuInfo> {
 
     // rpu_nal_prefix (header_data_bytes)
     // 6 bytes of RPU header prefix
-    let _rpu_prefix_byte0 = get_bits(&nal_unit, off, 8)?;
+    let _rpu_prefix_byte0 = get_bits(nal_unit, off, 8)?;
     off += 8;
-    let _rpu_prefix_byte1 = get_bits(&nal_unit, off, 8)?;
+    let _rpu_prefix_byte1 = get_bits(nal_unit, off, 8)?;
     off += 8;
-    let _rpu_prefix_byte2 = get_bits(&nal_unit, off, 8)?;
+    let _rpu_prefix_byte2 = get_bits(nal_unit, off, 8)?;
     off += 8;
-    let _rpu_prefix_byte3 = get_bits(&nal_unit, off, 8)?;
+    let _rpu_prefix_byte3 = get_bits(nal_unit, off, 8)?;
     off += 8;
-    let _rpu_prefix_byte4 = get_bits(&nal_unit, off, 8)?;
+    let _rpu_prefix_byte4 = get_bits(nal_unit, off, 8)?;
     off += 8;
-    let _rpu_prefix_byte5 = get_bits(&nal_unit, off, 8)?;
+    let _rpu_prefix_byte5 = get_bits(nal_unit, off, 8)?;
     off += 8;
 
     let mut info = DolbyVisionRpuInfo::default();
     info.has_rpu = true;
 
     // num_extensions_minus1
-    let num_ext_minus1 = get_bits(&nal_unit, off, 8)? as u32;
+    let num_ext_minus1 = get_bits(nal_unit, off, 8)?;
     off += 8;
 
     for _ext in 0..=num_ext_minus1 {
@@ -96,7 +96,7 @@ pub fn parse_dv_rpu(nal_unit: &[u8]) -> Option<DolbyVisionRpuInfo> {
         let mut ext_size = 0u32;
         let mut shift = 0;
         loop {
-            let byte = get_bits(&nal_unit, off, 8)? as u8;
+            let byte = get_bits(nal_unit, off, 8)? as u8;
             off += 8;
             ext_size |= ((byte & 0x7F) as u32) << shift;
             shift += 7;
@@ -105,7 +105,7 @@ pub fn parse_dv_rpu(nal_unit: &[u8]) -> Option<DolbyVisionRpuInfo> {
             }
         }
 
-        let ext_type = get_bits(&nal_unit, off, 8)?;
+        let ext_type = get_bits(nal_unit, off, 8)?;
         off += 8;
 
         match ext_type {
@@ -141,9 +141,9 @@ pub fn parse_dv_rpu(nal_unit: &[u8]) -> Option<DolbyVisionRpuInfo> {
                 // Parse L1 metadata for luminance
                 if ext_type == 0 && ext_size >= 8 {
                     // L1: mastering display metadata
-                    let l1_byte = get_bits(&nal_unit, off, 8)?;
-                    let max_lum_raw = get_bits(&nal_unit, off + 8, 32)?;
-                    let min_lum_raw = get_bits(&nal_unit, off + 40, 32)?;
+                    let l1_byte = get_bits(nal_unit, off, 8)?;
+                    let max_lum_raw = get_bits(nal_unit, off + 8, 32)?;
+                    let min_lum_raw = get_bits(nal_unit, off + 40, 32)?;
 
                     // luminance values are in the format (exponent, mantissa)
                     // Small parsing: store the raw values for now

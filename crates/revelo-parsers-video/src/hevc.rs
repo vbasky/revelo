@@ -629,16 +629,15 @@ pub fn extract_hdr_from_sei_nalus(
             let payload = &nal[pos..pos + payload_size];
 
             match payload_type {
-                4 => {
+                4
                     // user_data_registered — HDR10+ lives here (Samsung ST 2094-40)
-                    if hdr10plus.is_none() {
+                    if hdr10plus.is_none() => {
                         hdr10plus = parse_hdr10plus_sei(payload);
                         // Also check for CTA-861 metadata in the same path
                         if hdr10plus.is_none() {
                             hdr10plus = parse_cta861_sei(payload);
                         }
                     }
-                }
                 137 => {
                     if let Some(md) = parse_mastering_display_sei(payload) {
                         mastering = Some(md);
@@ -649,12 +648,11 @@ pub fn extract_hdr_from_sei_nalus(
                         light_level = Some(ll);
                     }
                 }
-                172 | 173 | 174 => {
+                172..=174
                     // SL-HDR1 metadata descriptor (ETSI TS 103 433)
-                    if hdr10plus.is_none() {
+                    if hdr10plus.is_none() => {
                         hdr10plus = parse_sl_hdr1_sei(payload);
                     }
-                }
                 _ => {}
             }
 

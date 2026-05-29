@@ -93,10 +93,11 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
             // System Item structure: System Metadata Pack (17 bytes) + optional timecode
             // Timecode typically starts at offset 17 within the System Item
             let tc_offset = data_offset + 17;
-            if tc_offset + 8 <= data.len() && tc_offset + 8 <= i + 16 + length {
-                if let Some(tc) = parse_mxf_timecode(&data[tc_offset..tc_offset + 8]) {
-                    return Some(tc);
-                }
+            if tc_offset + 8 <= data.len()
+                && tc_offset + 8 <= i + 16 + length
+                && let Some(tc) = parse_mxf_timecode(&data[tc_offset..tc_offset + 8])
+            {
+                return Some(tc);
             }
         }
     }
@@ -127,10 +128,11 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
 
             // Timecode Component data starts with 16-byte UID, then timecode
             let tc_offset = data_offset + 16;
-            if tc_offset + 8 <= data.len() && tc_offset + 8 <= i + 16 + length {
-                if let Some(tc) = parse_mxf_timecode(&data[tc_offset..tc_offset + 8]) {
-                    return Some(tc);
-                }
+            if tc_offset + 8 <= data.len()
+                && tc_offset + 8 <= i + 16 + length
+                && let Some(tc) = parse_mxf_timecode(&data[tc_offset..tc_offset + 8])
+            {
+                return Some(tc);
             }
         }
     }
@@ -150,7 +152,7 @@ pub fn parse_mxf(fa: &mut FileAnalyze) -> bool {
     let Some(buf) = fa.peek_raw(want) else { return false };
 
     // Reject AAF — the CDF magic that MXF defensively excludes.
-    if buf.len() >= 8 && &buf[..8] == &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] {
+    if buf.len() >= 8 && buf[..8] == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] {
         return false;
     }
 

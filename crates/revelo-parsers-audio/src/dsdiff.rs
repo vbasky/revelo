@@ -170,49 +170,37 @@ fn parse_prop_subchunk(r: &mut Reader<'_, '_>, info: &mut DsdiffInfo, sub_end: u
     let body_end = body_start + body_len;
 
     match sub_id {
-        FOURCC_FS => {
-            if body_len >= 4 {
-                info.sample_rate = r.be_u32("sampleRate").unwrap_or(0);
-                if body_len > 4 {
-                    r.skip(body_len - 4);
-                }
-            } else {
-                r.skip(body_len);
+        FOURCC_FS if body_len >= 4 => {
+            info.sample_rate = r.be_u32("sampleRate").unwrap_or(0);
+            if body_len > 4 {
+                r.skip(body_len - 4);
             }
         }
-        FOURCC_CHNL => {
-            if body_len >= 2 {
-                info.num_channels = r.be_u16("numChannels").unwrap_or(0);
-                // chID list follows (4 bytes each). We don't need them
-                // for the minimum-viable fields — skip to chunk end.
-                let consumed = 2usize;
-                if body_len > consumed {
-                    r.skip(body_len - consumed);
-                }
-            } else {
-                r.skip(body_len);
+        FOURCC_CHNL if body_len >= 2 => {
+            info.num_channels = r.be_u16("numChannels").unwrap_or(0);
+            // chID list follows (4 bytes each). We don't need them
+            // for the minimum-viable fields — skip to chunk end.
+            let consumed = 2usize;
+            if body_len > consumed {
+                r.skip(body_len - consumed);
             }
         }
-        FOURCC_CMPR => {
-            if body_len >= 5 {
-                let compression_type = r.be_u32("compressionType").unwrap_or(0);
-                let name_count = r.be_u8("Count").unwrap_or(0);
-                let name_take = (name_count as usize).min(body_len.saturating_sub(5));
-                if name_take > 0 {
-                    r.skip(name_take);
-                }
-                let consumed = 5 + name_take;
-                if body_len > consumed {
-                    r.skip(body_len - consumed);
-                }
-                info.format = Some(match compression_type {
-                    CMPR_DSD => "DSD",
-                    CMPR_DST => "DST",
-                    _ => "DSD",
-                });
-            } else {
-                r.skip(body_len);
+        FOURCC_CMPR if body_len >= 5 => {
+            let compression_type = r.be_u32("compressionType").unwrap_or(0);
+            let name_count = r.be_u8("Count").unwrap_or(0);
+            let name_take = (name_count as usize).min(body_len.saturating_sub(5));
+            if name_take > 0 {
+                r.skip(name_take);
             }
+            let consumed = 5 + name_take;
+            if body_len > consumed {
+                r.skip(body_len - consumed);
+            }
+            info.format = Some(match compression_type {
+                CMPR_DSD => "DSD",
+                CMPR_DST => "DST",
+                _ => "DSD",
+            });
         }
         _ => {
             r.skip(body_len);
