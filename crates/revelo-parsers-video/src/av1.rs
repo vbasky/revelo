@@ -589,7 +589,7 @@ mod tests {
         payload.push(((w_bits - 1) << 4) | (h_bits - 1));
 
         let mut bits_left = w_bits;
-        let mut val = w_val;
+        let val = w_val;
         while bits_left > 0 {
             let chunk = bits_left.min(8);
             let shift = bits_left - chunk;
@@ -597,7 +597,7 @@ mod tests {
             bits_left -= chunk;
         }
         let mut bits_left = h_bits;
-        let mut val = h_val;
+        let val = h_val;
         while bits_left > 0 {
             let chunk = bits_left.min(8);
             let shift = bits_left - chunk;

@@ -1,6 +1,6 @@
-<p align="center">
-  <img src="docs/banner.png" alt="revelo — read technical metadata from any media file, in pure Rust">
-</p>
+# Revelo
+
+![revelo — read technical metadata from any media file, in pure Rust](docs/banner.png)
 
 A library and CLI for containers, audio & video codecs, image formats, subtitle
 streams, archives, and embedded tags. A port of MediaInfoLib, validated
@@ -88,7 +88,7 @@ Revelo is a from-scratch port of MediaInfoLib v26.05. Every line is new Rust —
 no C++ translation, no FFI wrappers, no generated bindings.
 
 | | MediaInfoLib | Revelo |
-|---|---|---|
+| --- | --- | --- |
 | **Language** | C++ | Pure Rust |
 | **Memory safety** | Manual | Compile-time guaranteed |
 | **Build** | `./Configure` + `make` + 10 system deps | `cargo build` (no system libs) |
@@ -325,6 +325,7 @@ mediainfo). DCP PKL, the one validatable holdout, is implemented (BYTE-EQUAL).
 Planned features and high-impact areas for the next development phase:
 
 ### Output & Reporting
+
 - **CSV / YAML export** — Machine-friendly formats for pipeline integration
   (straightforward addition to `revelo-export`).
 - **HTML report** — Self-contained visual report with collapsible sections and
@@ -333,6 +334,7 @@ Planned features and high-impact areas for the next development phase:
   distribution, resolution ranges, bitrate profiles, container breakdown.
 
 ### Batch & Comparison
+
 - **Glob / batch processing** — `revelo --json "**/*.mp4"` to process an entire
   directory tree and output as NDJSON or an array. Currently only single-file +
   BDMV playlists are supported.
@@ -341,6 +343,7 @@ Planned features and high-impact areas for the next development phase:
   `revelo-diff`).
 
 ### Fidelity gaps
+
 - **Elementary-stream extraction** — Wire PES payload parsing for MPEG-TS
   (AVC/AAC), VP9 frame headers in MKV/WebM, FLV per-tag AVC bitstream, and AV1
   OBU sequence headers in MP4 to close the remaining ~10 divergence gaps.
@@ -348,12 +351,14 @@ Planned features and high-impact areas for the next development phase:
   real-world test samples to validate against the oracle.
 
 ### Broader reach
+
 - **Python bindings** via PyO3 — natural fit for the media analysis audience,
   with the existing C ABI (`revelo-cdylib`) as a proven bridge.
 - **NPM package** — WASM builds already compile on `wasm32-unknown-unknown`; a
   documented JS API and NPM release would enable browser-side media inspection.
 
 ### Extraction
+
 - **Cover art / attachment extraction** — `--extract-attachments` flag for MKV
   Attachments, MP4 Cover boxes, and ID3 APIC frames.
 - **Subtitle extraction** — Dump subtitle streams to SRT/VTT from any container.
@@ -361,6 +366,7 @@ Planned features and high-impact areas for the next development phase:
   (no decoding — metadata-position only).
 
 ### Quality of life
+
 - **Stream filtering** — `--video-only`, `--audio-only`, `--stream 0:1` to
   select specific tracks by index.
 - **Container verification** — Structural integrity checks: MOOV atom
