@@ -1,6 +1,6 @@
-# 🦀 revelo
-
-**Read technical metadata from any media file — in pure Rust.**
+<p align="center">
+  <img src="docs/banner.png" alt="revelo — read technical metadata from any media file, in pure Rust">
+</p>
 
 A library and CLI for containers, audio & video codecs, image formats, subtitle
 streams, archives, and embedded tags. A port of MediaInfoLib, validated
