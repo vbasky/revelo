@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.2.2] - 2026-05-29
+
+### Added
+
+- CLI migration to clap derive API with `--help`, `--version`, `-h`, `-V`, subcommand skeleton (inspect/diff/batch/verify/extract)
+- `--video-only` and `--audio-only` flags for stream filtering
+- `--stream KIND:INDEX` flag for selecting specific streams (repeatable)
+- `--verify` flag with `IsComplete` field derived from parser truncation detection
+- `--text` flag (previously documented but missing from the parser)
+- `StreamCollection::filter_keep()` method in `revelo-core`
+- `IsComplete` field in text output display
+- Future improvement roadmap in README
+
+### Fixed
+
+- `revelo --help` and `revelo -h` now print help instead of falling through as a file path
+- Bare `revelo` with no arguments prints help and exits 0 instead of erroring
+- Unknown flags like `--foobar` are rejected with a proper error message
+- `--demux` and `--trace` values are validated at parse time
+
+### Changed
+
+- Stream filtering and verify flags added to CLI struct
+- `StreamCollection` gains `filter_keep()` for removing streams by kind and position
+- Bumped MSRV to 1.85 in workspace Cargo.toml (already the minimum Rust version)
+
 ## [0.2.0] - 2026-05-29
 
 ### Added
