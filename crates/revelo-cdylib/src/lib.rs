@@ -127,12 +127,59 @@ pub unsafe extern "C" fn MediaInfo_Get(
         Some(s) => s,
         None => return std::ptr::null_mut(),
     };
-    let value = stream.get(&param).map(|z| z.as_str().to_owned()).or_else(|| {
-        stream.extras_iter().find(|(k, _)| *k == param.as_ref()).map(|(_, v)| v.as_str().to_owned())
-    });
+    let value = lookup_param(stream, &param);
     match value {
         Some(v) => CString::new(v).unwrap_or_default().into_raw(),
         None => std::ptr::null_mut(),
+    }
+}
+
+fn lookup_param(stream: &revelo_core::Stream, param: &str) -> Option<String> {
+    if let Some(v) = stream.get(param) {
+        return Some(v.as_str().to_owned());
+    }
+    if let Some(v) = stream.extras_iter().find(|(k, _)| *k == param) {
+        return Some(v.1.as_str().to_owned());
+    }
+    let alias = resolve_alias(param);
+    if alias != param {
+        if let Some(v) = stream.get(alias) {
+            return Some(v.as_str().to_owned());
+        }
+        if let Some(v) = stream.extras_iter().find(|(k, _)| *k == alias) {
+            return Some(v.1.as_str().to_owned());
+        }
+    }
+    None
+}
+
+fn resolve_alias(param: &str) -> &str {
+    match param {
+        "WritingApplication" | "Writing_Application" => "Encoded_Application",
+        "WritingLibrary" | "Writing_Library" => "Encoded_Library",
+        "MimeType" => "InternetMediaType",
+        "ColorPrimaries" | "Color_primaries" => "colour_primaries",
+        "TransferCharacteristics" | "Transfer_Characteristics" => "transfer_characteristics",
+        "MatrixCoefficients" | "Matrix_Coefficients" => "matrix_coefficients",
+        "ColorRange" | "Range" => "colour_range",
+        "Coded_Width" | "Stored_Width" => "Sampled_Width",
+        "Coded_Height" | "Stored_Height" => "Sampled_Height",
+        "Codec_Profile" => "Format_Profile",
+        "Codec_Level" => "Format_Level",
+        "Resolution" => "BitDepth",
+        "Channel(s)" | "Channel_s_" => "Channels",
+        "Channel_Layout" => "ChannelLayout",
+        "PixelFormat" | "Colorimetry" => "Format_Settings_CABAC",
+        "FrameRate_Original" | "FrameRate_Nominal" => "FrameRate",
+        "BitRate_Nominal" => "BitRate",
+        "Video_Delay" | "Video0_Delay" => "Delay",
+        "Format_Settings/String" | "Format_Settings_Encoding" => "Format_Settings",
+        "Codec" => "CodecID",
+        "Track" => "Title",
+        "Source_FrameCount" => "FrameCount",
+        "Sampling_Rate" => "SamplingRate",
+        "SampleRate" => "SamplingRate",
+        _ => param,
     }
 }
 
