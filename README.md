@@ -10,7 +10,7 @@ byte-for-byte against the C++ `mediainfo` oracle through differential testing.
 
 [![crates.io](https://img.shields.io/crates/v/revelo-core?logo=rust&color=orange)](https://crates.io/crates/revelo-core)
 [![docs.rs](https://img.shields.io/docsrs/revelo-core?logo=docsdotrs)](https://docs.rs/revelo-core)
-[![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=master&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=main&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
 [![License](https://img.shields.io/crates/l/revelo-core)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://www.rust-lang.org)
 [![Parsers](https://img.shields.io/badge/parsers-194-blueviolet)](docs/formats.md)
