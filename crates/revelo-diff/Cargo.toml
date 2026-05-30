@@ -17,6 +17,6 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.2.3" }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.2.3" }
-revelo-export = { path = "../revelo-export", version = "0.2.3" }
+revelo-core = { path = "../revelo-core", version = "0.3.0" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.3.0" }
+revelo-export = { path = "../revelo-export", version = "0.3.0" }
