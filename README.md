@@ -121,33 +121,32 @@ else in the workspace stay BSD-2-Clause; only a build that *opts in* takes on th
 copyleft. A SaaS that runs the feature server-side stays unaffected (GPL conveys on
 distribution, not network use).
 
-With the feature on, maker-note decoding reaches **95–100% tag parity** with
-`exiftool` on real camera files — validated by the `revelo-exif-diff` harness,
-which diffs revelo's output against the `exiftool` binary the same way
-`revelo-diff` validates against `mediainfo`.
+With the feature on, 14 camera vendors decode maker-note metadata using the same
+tag names and PrintConv value formatting as ExifTool (derived from ExifTool's own
+tables). Parity percentages below are from `revelo-exif-diff` against real camera
+samples; `—` means tagged under `exiftool-tables` but not yet quantified with a
+dedicated sample corpus.
 
-| Vendor | Supported | Parity | Notes |
+| Vendor | MakerNote | Sub‑IFDs | Parity |
 | --- | --- | --- | --- |
-| Canon | MakerNote + sub‑IFDs | 99% | IXUS 400, PowerShot S40, newer HDR bodies; CameraSettings, ShotInfo, AFInfo1/2/3, MyColors, ContrastInfo, TimeInfo, AspectInfo, FaceDetect3 |
-| Nikon | MakerNote (Type 2/3) | 95% | COOLPIX bodies; AFInfo, FlashInfo, formatted ColorSpace / LensType |
-| Fujifilm | MakerNote | 98–100% | MakerNote offset corrected (byte 12→8) |
-| Olympus | MakerNote + sub‑IFDs | — | Equipment, CameraSettings, RawDevelopment, ImageProcessing, FocusInfo sub‑IFDs |
-| Sony | MakerNote | — | Formatted ColorSpace / ModelID |
-| Panasonic | MakerNote | — | Raw IFD parsing |
-| Pentax | MakerNote | — | Tag names via exiftool‑tables |
-| Konica‑Minolta | MakerNote | 97% | Header‑less big‑endian IFD detection |
-| Samsung | MakerNote | — | Tag names via exiftool‑tables |
-| Sigma | MakerNote | — | Tag names via exiftool‑tables |
-| Apple | MakerNote | — | Tag names via exiftool‑tables |
-| Casio | MakerNote | — | Tag names via exiftool‑tables |
-| DJI | MakerNote | — | Tag names via exiftool‑tables |
-| FLIR | MakerNote | — | Tag names via exiftool‑tables |
-| Kodak | Basic EXIF | — | Standard IFD tags only |
-| Ricoh | Basic EXIF | — | Standard IFD tags only |
+| Canon | Yes | CameraSettings, ShotInfo, AFInfo1/2/3, MyColors, ContrastInfo, TimeInfo, AspectInfo, FaceDetect3, FileInfo, FocalLength, Panorama | 99% |
+| Nikon | Yes (Type 2/3) | AFInfo, FlashInfo | 95% |
+| Fujifilm | Yes | — | 98–100% |
+| Olympus | Yes (Type 1/2) | Equipment, CameraSettings, RawDevelopment, ImageProcessing, FocusInfo | — |
+| Sony | Yes | — | — |
+| Panasonic | Yes | — | — |
+| Pentax | Yes | — | — |
+| Konica‑Minolta | Yes | — | 97% |
+| Samsung | Yes | — | — |
+| Sigma | Yes | — | — |
+| Apple | Yes | — | — |
+| Casio | Yes | — | — |
+| DJI | Yes | — | — |
+| FLIR | Yes | — | — |
 
-Parity percentages are from `revelo-exif-diff` against real camera samples where
-available. `—` means tagged under `exiftool-tables` but not yet quantified with
-a dedicated sample corpus.
+Vendors not listed (Leica, Kodak, Ricoh, Epson, Kyocera, etc.) have no maker-note
+parser and fall back to standard EXIF IFD tags only. ExifTool supports ~50 camera
+makes — revelo targets the 14 most common.
 
 ## Project scale
 
