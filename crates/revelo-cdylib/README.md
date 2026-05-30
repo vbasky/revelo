@@ -6,4 +6,4 @@ Part of [**revelo**](https://github.com/vbasky/revelo) — a fast, safe Rust por
 
 ## License
 
-BSD-2-Clause — see [LICENSE](https://github.com/vbasky/revelo/blob/master/LICENSE).
+BSD-2-Clause — see [LICENSE](https://github.com/vbasky/revelo/blob/main/LICENSE).
