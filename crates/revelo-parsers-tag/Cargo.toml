@@ -20,3 +20,4 @@ workspace = true
 [dependencies]
 revelo-core = { path = "../revelo-core", version = "0.2.3" }
 revelo-util = { path = "../revelo-util", version = "0.2.3" }
+flate2 = "1"
