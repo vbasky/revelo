@@ -10,6 +10,7 @@ use revelo_core::multi_file::find_duplicate_streams;
 use revelo_core::{FileAnalyze, FileLevelInfo, StreamKind, fill_file_level_fields};
 use revelo_dispatcher::detect;
 use revelo_export::{to_csv, to_json, to_summary, to_text, to_xml};
+use revelo_parsers_tag::parse_tags;
 
 mod cli;
 use cli::Cli;
@@ -89,6 +90,9 @@ fn main() -> process::ExitCode {
             fill_file_level_fields(&mut fa, &info);
             fill_computed_fields(fa.streams_mut());
             fa.duplicate_indices = find_duplicate_streams(fa.streams());
+
+            // Second pass: extract embedded metadata tags (EXIF, IPTC, XMP, ICC, etc.).
+            let _ = parse_tags(&mut fa);
 
             // --verify: report structural integrity
             if cli.verify {

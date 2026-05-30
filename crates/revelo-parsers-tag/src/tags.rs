@@ -1,4 +1,5 @@
 use revelo_core::{FileAnalyze, StreamKind};
+use std::io::Read;
 
 type TagEntry = (&'static str, String);
 
@@ -521,39 +522,158 @@ mod tests {
 
 /// Parse a TIFF/EXIF IFD from raw bytes at the given byte offset.
 /// Returns the list of tag entries and the offset to the next IFD.
+const EXIF_MAGIC: &[u8; 6] = b"Exif\0\0";
+
+fn find_exif_header(buf: &[u8]) -> Option<usize> {
+    buf.windows(EXIF_MAGIC.len())
+        .position(|w| w == EXIF_MAGIC.as_slice())
+        .map(|p| p + EXIF_MAGIC.len())
+}
+
 pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 8 {
-        return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 8 {
+    let buf = match fa.peek_raw_at(0, usize::MAX) {
+        Some(b) => b.to_vec(),
+        None => return false,
+    };
+    if buf.len() < 12 {
         return false;
     }
 
-    let byte_order = if &buf[0..2] == b"II" {
-        "LE"
-    } else if &buf[0..2] == b"MM" {
-        "BE"
+    // Find TIFF data: either raw at offset 0 or embedded in JPEG APP1.
+    let tiff_buf: &[u8] = if &buf[0..2] == b"II" || &buf[0..2] == b"MM" {
+        &buf[..]
+    } else if let Some(pos) = find_exif_header(&buf) {
+        &buf[pos..]
     } else {
         return false;
     };
+    let bo = if &tiff_buf[0..2] == b"II" { "LE" } else { "BE" };
 
-    let ifd_offset = read_tiff_u32(&buf, 4, byte_order) as usize;
+    let ifd0_off = read_tiff_u32(tiff_buf, 4, bo) as usize;
     let mut tags: Vec<TagEntry> = Vec::new();
-    read_exif_ifd(&buf, ifd_offset, byte_order, &mut tags);
+    let mut exif_ptr = None;
+    let mut gps_ptr = None;
+    let mut interop_ptr = None;
+
+    let next_ifd = parse_ifd(
+        tiff_buf,
+        ifd0_off,
+        bo,
+        &mut tags,
+        &mut exif_ptr,
+        &mut gps_ptr,
+        &mut interop_ptr,
+        &mut None,
+        IfdKind::Tiff,
+    );
+
+    if let Some(ptr) = exif_ptr {
+        let mut t = Vec::new();
+        let mut sub_interop = None;
+        let mut sub_makernote = None;
+        parse_ifd(
+            tiff_buf,
+            ptr as usize,
+            bo,
+            &mut t,
+            &mut None,
+            &mut None,
+            &mut sub_interop,
+            &mut sub_makernote,
+            IfdKind::Tiff,
+        );
+        tags.extend(t);
+
+        if let Some((mn_off, mn_size)) = sub_makernote {
+            let make =
+                tags.iter().find(|(k, _)| *k == "Make").map(|(_, v)| v.clone()).unwrap_or_default();
+            let mn_data = &tiff_buf[mn_off..mn_off + mn_size];
+            parse_makernote(&make, mn_data, &mut tags);
+        }
+
+        if let Some(ip) = sub_interop {
+            let mut it = Vec::new();
+            parse_ifd(
+                tiff_buf,
+                ip as usize,
+                bo,
+                &mut it,
+                &mut None,
+                &mut None,
+                &mut None,
+                &mut None,
+                IfdKind::Interop,
+            );
+            tags.extend(it);
+        }
+    }
+    if let Some(ptr) = gps_ptr {
+        let mut t = Vec::new();
+        parse_ifd(
+            tiff_buf,
+            ptr as usize,
+            bo,
+            &mut t,
+            &mut None,
+            &mut None,
+            &mut None,
+            &mut None,
+            IfdKind::Gps,
+        );
+        tags.extend(t);
+    }
+    if let Some(n) = next_ifd {
+        if n != 0 {
+            parse_ifd(
+                tiff_buf,
+                n as usize,
+                bo,
+                &mut tags,
+                &mut None,
+                &mut None,
+                &mut None,
+                &mut None,
+                IfdKind::Tiff,
+            );
+        }
+    }
+
+    compute_gps_decimal(&mut tags);
+    if let Some(entry) = tags.iter_mut().find(|(k, _)| *k == "LensSpecification") {
+        entry.1 = format_lens_spec(&entry.1);
+    }
+    if let Some(pos) = tags.iter().position(|(k, _)| *k == "CanonLensType") {
+        let val = tags[pos].1.clone();
+        tags[pos].1 = format_lens_type("CanonLensType", &val);
+    }
     fill_tags(fa, &tags);
     true
 }
 
-fn read_exif_ifd(data: &[u8], offset: usize, bo: &str, tags: &mut Vec<TagEntry>) {
+enum IfdKind {
+    Tiff,
+    Gps,
+    Interop,
+}
+
+fn parse_ifd(
+    data: &[u8],
+    offset: usize,
+    bo: &str,
+    tags: &mut Vec<TagEntry>,
+    exif_ptr: &mut Option<u32>,
+    gps_ptr: &mut Option<u32>,
+    interop_ptr: &mut Option<u32>,
+    makernote: &mut Option<(usize, usize)>,
+    kind: IfdKind,
+) -> Option<u32> {
     if offset + 2 > data.len() {
-        return;
+        return None;
     }
     let count = read_tiff_u16(data, offset, bo) as usize;
     let mut pos = offset + 2;
-    for _ in 0..count.min(100) {
+
+    for _ in 0..count.min(200) {
         if pos + 12 > data.len() {
             break;
         }
@@ -562,62 +682,513 @@ fn read_exif_ifd(data: &[u8], offset: usize, bo: &str, tags: &mut Vec<TagEntry>)
         let tag_count = read_tiff_u32(data, pos + 4, bo) as usize;
         let tag_size = exif_type_size(tag_type) * tag_count;
         pos += 8;
-        let value: String;
-        if tag_size <= 4 {
-            value = if tag_type == 2 {
-                // ASCII
+
+        if tag_id == 0x927C {
+            let mn_off = if tag_size <= 4 { pos } else { read_tiff_u32(data, pos, bo) as usize };
+            if mn_off + tag_size <= data.len() {
+                *makernote = Some((mn_off, tag_size));
+            }
+        }
+
+        match tag_id {
+            0x8769 => {
+                let v = read_tiff_u32(data, pos, bo);
+                *exif_ptr = Some(v);
+                pos += 4;
+                continue;
+            }
+            0x8825 => {
+                let v = read_tiff_u32(data, pos, bo);
+                *gps_ptr = Some(v);
+                pos += 4;
+                continue;
+            }
+            0xA005 => {
+                let v = read_tiff_u32(data, pos, bo);
+                *interop_ptr = Some(v);
+                pos += 4;
+                continue;
+            }
+            0x83BB => {
+                let iim_data = if tag_size <= 4 {
+                    let end = pos + tag_size.min(data.len() - pos);
+                    data[pos..end].to_vec()
+                } else {
+                    let off = read_tiff_u32(data, pos, bo) as usize;
+                    let end = off + tag_size.min(data.len() - off);
+                    data[off..end].to_vec()
+                };
+                parse_iim_buf(&iim_data, tags);
+                pos += 4;
+                continue;
+            }
+            _ => {}
+        }
+
+        let value = if tag_size <= 4 {
+            if tag_type == 2 {
                 let end = data[pos..pos + tag_count.min(4)]
                     .iter()
                     .position(|&b| b == 0)
                     .unwrap_or(tag_count.min(4));
                 String::from_utf8_lossy(&data[pos..pos + end]).to_string()
             } else {
-                read_exif_number(data, pos, tag_type, bo).to_string()
-            };
-            pos += 4;
+                read_exif_val(data, pos, tag_type, 1, bo)
+            }
         } else {
-            let val_offset = read_tiff_u32(data, pos, bo) as usize;
-            pos += 4;
-            if val_offset + tag_size > data.len() {
+            let val_off = read_tiff_u32(data, pos, bo) as usize;
+            if val_off + tag_size > data.len() {
+                pos += 4;
                 continue;
             }
-            value = if tag_type == 2 {
-                let end = data[val_offset..val_offset + tag_count]
+            if tag_type == 2 {
+                let end = data[val_off..val_off + tag_count]
                     .iter()
                     .position(|&b| b == 0)
                     .unwrap_or(tag_count);
-                String::from_utf8_lossy(&data[val_offset..val_offset + end]).to_string()
+                String::from_utf8_lossy(&data[val_off..val_off + end]).to_string()
             } else {
-                read_exif_number(data, val_offset, tag_type, bo).to_string()
-            };
-        }
+                read_exif_val(data, val_off, tag_type, tag_count, bo)
+            }
+        };
+        pos += 4;
 
-        match tag_id {
-            0x010E => tags.push(("Image_Description", value)),
-            0x010F => tags.push(("Make", value)),
-            0x0110 => tags.push(("Model", value)),
-            0x0112 => tags.push(("Orientation", value)),
-            0x011A => tags.push(("Density_X", value)),
-            0x011B => tags.push(("Density_Y", value)),
-            0x0128 => tags.push(("Density_Unit", value)),
-            0x0131 => tags.push(("Software", value)),
-            0x0132 => tags.push(("Encoded_Date", value)),
-            0x013B => tags.push(("Artist", value)),
-            0x013E => tags.push(("WhitePoint", value)),
-            0x8298 => tags.push(("Copyright", value)),
-            0x829A => tags.push(("ExposureTime", value)),
-            0x829D => tags.push(("FNumber", value)),
-            0x8822 => tags.push(("ExposureProgram", value)),
-            0x8827 => tags.push(("ISOSpeed", value)),
-            0x9003 => tags.push(("DateTimeOriginal", value)),
-            0x9004 => tags.push(("DateTimeDigitized", value)),
-            0x9204 => tags.push(("ExposureBias", value)),
-            0x9209 => tags.push(("Flash", value)),
-            0x920A => tags.push(("FocalLength", value)),
-            0xA402 => tags.push(("GPSAltitude", value)),
-            _ => {}
+        let n = match tag_id {
+            // === IFD0 / IFD1 (TIFF Rev 6.0 attributes) ===
+            0x0100 => "ImageWidth",
+            0x0101 => "ImageHeight",
+            0x0102 => "BitsPerSample",
+            0x0103 => "Compression",
+            0x0106 => "PhotometricInterpretation",
+            0x010E => "ImageDescription",
+            0x010F => "Make",
+            0x0110 => "Model",
+            0x0111 => "StripOffsets",
+            0x0112 => "Orientation",
+            0x0115 => "SamplesPerPixel",
+            0x0116 => "RowsPerStrip",
+            0x0117 => "StripByteCounts",
+            0x011A => "XResolution",
+            0x011B => "YResolution",
+            0x011C => "PlanarConfiguration",
+            0x0128 => "ResolutionUnit",
+            0x012D => "TransferFunction",
+            0x0131 => "Software",
+            0x0132 => "DateTime",
+            0x013B => "Artist",
+            0x013E => "WhitePoint",
+            0x013F => "PrimaryChromaticities",
+            0x0144 => "TileOffsets",
+            0x0145 => "TileByteCounts",
+            0x0201 => "ThumbnailOffset",
+            0x0202 => "ThumbnailLength",
+            0x0211 => "YCbCrCoefficients",
+            0x0212 => "YCbCrSubSampling",
+            0x0213 => "YCbCrPositioning",
+            0x0214 => "ReferenceBlackWhite",
+            0x8298 => "Copyright",
+
+            // === SubIFD (Exif IFD — camera & image metadata) ===
+            0x829A => "ExposureTime",
+            0x829D => "FNumber",
+            0x8822 => "ExposureProgram",
+            0x8824 => "SpectralSensitivity",
+            0x8827 => "PhotographicSensitivity",
+            0x8828 => "OECF",
+            0x8830 => "SensitivityType",
+            0x8831 => "StandardOutputSensitivity",
+            0x8832 => "RecommendedExposureIndex",
+            0x8833 => "ISOSpeed",
+            0x8834 => "ISOSpeedLatitudeyyy",
+            0x8835 => "ISOSpeedLatitudezzz",
+            0x9000 => "ExifVersion",
+            0x9003 => "DateTimeOriginal",
+            0x9004 => "DateTimeDigitized",
+            0x9010 => "OffsetTime",
+            0x9011 => "OffsetTimeOriginal",
+            0x9012 => "OffsetTimeDigitized",
+            0x9101 => "ComponentsConfiguration",
+            0x9102 => "CompressedBitsPerPixel",
+            0x9201 => "ShutterSpeedValue",
+            0x9202 => "ApertureValue",
+            0x9203 => "BrightnessValue",
+            0x9204 => "ExposureBiasValue",
+            0x9205 => "MaxApertureValue",
+            0x9206 => "SubjectDistance",
+            0x9207 => "MeteringMode",
+            0x9208 => "LightSource",
+            0x9209 => "Flash",
+            0x920A => "FocalLength",
+            0x9214 => "SubjectArea",
+            0x927C => "MakerNote",
+            0x9286 => "UserComment",
+            0x9290 => "SubSecTime",
+            0x9291 => "SubSecTimeOriginal",
+            0x9292 => "SubSecTimeDigitized",
+            0x9400 => "Temperature",
+            0x9401 => "Humidity",
+            0x9402 => "Pressure",
+            0x9403 => "WaterDepth",
+            0x9404 => "Acceleration",
+            0x9405 => "CameraElevationAngle",
+            0xA000 => "FlashpixVersion",
+            0xA001 => "ColorSpace",
+            0xA002 => "PixelXDimension",
+            0xA003 => "PixelYDimension",
+            0xA004 => "RelatedSoundFile",
+            0xA20B => "FlashEnergy",
+            0xA20C => "SpatialFrequencyResponse",
+            0xA20E => "FocalPlaneXResolution",
+            0xA20F => "FocalPlaneYResolution",
+            0xA210 => "FocalPlaneResolutionUnit",
+            0xA214 => "SubjectLocation",
+            0xA215 => "ExposureIndex",
+            0xA217 => "SensingMethod",
+            0xA300 => "FileSource",
+            0xA301 => "SceneType",
+            0xA302 => "CFAPattern",
+            0xA401 => "CustomRendered",
+            0xA402 => "ExposureMode",
+            0xA403 => "WhiteBalance",
+            0xA404 => "DigitalZoomRatio",
+            0xA405 => "FocalLengthIn35mmFilm",
+            0xA406 => "SceneCaptureType",
+            0xA407 => "GainControl",
+            0xA408 => "Contrast",
+            0xA409 => "Saturation",
+            0xA40A => "Sharpness",
+            0xA40B => "DeviceSettingDescription",
+            0xA40C => "SubjectDistanceRange",
+            0xA420 => "ImageUniqueID",
+            0xA430 => "CameraOwnerName",
+            0xA431 => "BodySerialNumber",
+            0xA432 => "LensSpecification",
+            0xA433 => "LensMake",
+            0xA434 => "LensModel",
+            0xA435 => "LensSerialNumber",
+            0xA460 => "CompositeImage",
+            0xA461 => "SourceImageNumberOfCompositeImage",
+            0xA462 => "SourceExposureTimesOfCompositeImage",
+            0xA500 => "Gamma",
+
+            // === GPS & Interoperability attributes ===
+            // (context-sensitive — tag IDs overlap in the 0x00xx range)
+            0x0000 => match kind {
+                IfdKind::Interop => "",
+                _ => "GPSVersionID",
+            },
+            0x0001 => match kind {
+                IfdKind::Interop => "InteroperabilityIndex",
+                _ => "GPSLatitudeRef",
+            },
+            0x0002 => match kind {
+                IfdKind::Interop => "InteroperabilityVersion",
+                _ => "GPSLatitude",
+            },
+            0x0003 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSLongitudeRef"
+                }
+            }
+            0x0004 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSLongitude"
+                }
+            }
+            0x0005 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSAltitudeRef"
+                }
+            }
+            0x0006 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSAltitude"
+                }
+            }
+            0x0007 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSTimestamp"
+                }
+            }
+            0x0008 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSSatellites"
+                }
+            }
+            0x0009 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSStatus"
+                }
+            }
+            0x000A => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSMeasureMode"
+                }
+            }
+            0x000B => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDOP"
+                }
+            }
+            0x000C => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSSpeedRef"
+                }
+            }
+            0x000D => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSSpeed"
+                }
+            }
+            0x000E => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSTrackRef"
+                }
+            }
+            0x000F => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSTrack"
+                }
+            }
+            0x0010 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSImgDirectionRef"
+                }
+            }
+            0x0011 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSImgDirection"
+                }
+            }
+            0x0012 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSMapDatum"
+                }
+            }
+            0x0013 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestLatitudeRef"
+                }
+            }
+            0x0014 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestLatitude"
+                }
+            }
+            0x0015 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestLongitudeRef"
+                }
+            }
+            0x0016 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestLongitude"
+                }
+            }
+            0x0017 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestBearingRef"
+                }
+            }
+            0x0018 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestBearing"
+                }
+            }
+            0x0019 => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestDistanceRef"
+                }
+            }
+            0x001A => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDestDistance"
+                }
+            }
+            0x001B => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSProcessingMethod"
+                }
+            }
+            0x001C => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSAreaInformation"
+                }
+            }
+            0x001D => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDateStamp"
+                }
+            }
+            0x001E => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSDifferential"
+                }
+            }
+            0x001F => {
+                if let IfdKind::Interop = kind {
+                    ""
+                } else {
+                    "GPSHPositioningError"
+                }
+            }
+
+            // Interoperability-only tags (no ID overlap)
+            0x1000 => {
+                if let IfdKind::Interop = kind {
+                    "RelatedImageFileFormat"
+                } else {
+                    ""
+                }
+            }
+            0x1001 => {
+                if let IfdKind::Interop = kind {
+                    "RelatedImageWidth"
+                } else {
+                    ""
+                }
+            }
+            0x1002 => {
+                if let IfdKind::Interop = kind {
+                    "RelatedImageHeight"
+                } else {
+                    ""
+                }
+            }
+
+            _ => "",
+        };
+        if !n.is_empty() {
+            tags.push((n, value));
         }
     }
+
+    if pos + 4 <= data.len() { Some(read_tiff_u32(data, pos, bo)) } else { None }
+}
+
+fn read_exif_val(data: &[u8], off: usize, t: u16, count: usize, bo: &str) -> String {
+    if count == 1 {
+        return match t {
+            1 | 6 => {
+                if off >= data.len() {
+                    return "0".into();
+                }
+                if t == 1 { data[off].to_string() } else { (data[off] as i8).to_string() }
+            }
+            3 => read_tiff_u16(data, off, bo).to_string(),
+            8 => (read_tiff_u16(data, off, bo) as i16).to_string(),
+            4 | 13 => read_tiff_u32(data, off, bo).to_string(),
+            9 => (read_tiff_u32(data, off, bo) as i32).to_string(),
+            5 | 10 => {
+                let num = read_tiff_u32(data, off, bo);
+                let den = read_tiff_u32(data, off + 4, bo);
+                if den == 0 {
+                    "inf".into()
+                } else if num % den == 0 {
+                    (num / den).to_string()
+                } else {
+                    format!("{num}/{den}")
+                }
+            }
+            11 => f32::from_le_bytes(data[off..off + 4].try_into().unwrap_or([0; 4])).to_string(),
+            12 => f64::from_le_bytes(data[off..off + 8].try_into().unwrap_or([0; 8])).to_string(),
+            7 => {
+                let end = data[off..].iter().take(4).position(|&b| b == 0).unwrap_or(4);
+                String::from_utf8_lossy(&data[off..off + end]).to_string()
+            }
+            _ => read_tiff_u32(data, off, bo).to_string(),
+        };
+    }
+
+    let elem = exif_type_size(t);
+    let mut vals = Vec::with_capacity(count);
+    let mut o = off;
+    for _ in 0..count {
+        let v = match t {
+            1 => data[o].to_string(),
+            3 => read_tiff_u16(data, o, bo).to_string(),
+            4 => read_tiff_u32(data, o, bo).to_string(),
+            5 | 10 => {
+                let num = read_tiff_u32(data, o, bo);
+                let den = read_tiff_u32(data, o + 4, bo);
+                o += 8;
+                if den == 0 {
+                    "inf".into()
+                } else if num % den == 0 {
+                    (num / den).to_string()
+                } else {
+                    format!("{num}/{den}")
+                }
+            }
+            9 => (read_tiff_u32(data, o, bo) as i32).to_string(),
+            7 => {
+                let end = data[o..].iter().take(count).position(|&b| b == 0).unwrap_or(count);
+                String::from_utf8_lossy(&data[o..o + end.min(count)]).to_string()
+            }
+            _ => read_tiff_u32(data, o, bo).to_string(),
+        };
+        if t != 5 && t != 10 {
+            o += elem;
+        }
+        vals.push(v);
+    }
+    vals.join(", ")
 }
 
 fn exif_type_size(t: u16) -> usize {
@@ -627,31 +1198,6 @@ fn exif_type_size(t: u16) -> usize {
         4 | 9 | 11 | 13 => 4,
         5 | 10 | 12 => 8,
         _ => 1,
-    }
-}
-
-fn read_exif_number(data: &[u8], off: usize, t: u16, bo: &str) -> i64 {
-    if off + 8 > data.len() {
-        return 0;
-    }
-    match (t, bo) {
-        (3, "BE") => u16::from_be_bytes([data[off], data[off + 1]]) as i64,
-        (3, "LE") => u16::from_le_bytes([data[off], data[off + 1]]) as i64,
-        (4, "BE") => {
-            u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as i64
-        }
-        (4, "LE") => {
-            u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as i64
-        }
-        (5, _) => {
-            let num = if bo == "BE" {
-                i32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
-            } else {
-                i32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
-            };
-            num as i64
-        }
-        _ => 0,
     }
 }
 
@@ -668,6 +1214,65 @@ fn read_tiff_u32(data: &[u8], off: usize, bo: &str) -> u32 {
         u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
     } else {
         u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+    }
+}
+
+// ---------- GPS Computed Geotagging ----------
+
+fn parse_gps_rational(val: &str) -> Option<f64> {
+    let val = val.trim();
+    if let Some(slash) = val.find('/') {
+        let num: f64 = val[..slash].trim().parse().ok()?;
+        let den: f64 = val[slash + 1..].trim().parse().ok()?;
+        if den == 0.0 {
+            return None;
+        }
+        Some(num / den)
+    } else {
+        val.parse::<f64>().ok()
+    }
+}
+
+fn compute_gps_decimal(tags: &mut Vec<TagEntry>) {
+    let lat_ref = tags
+        .iter()
+        .find(|(k, _)| *k == "GPSLatitudeRef")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let lat_str = tags.iter().find(|(k, _)| *k == "GPSLatitude").map(|(_, v)| v.clone());
+    let lon_ref = tags
+        .iter()
+        .find(|(k, _)| *k == "GPSLongitudeRef")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let lon_str = tags.iter().find(|(k, _)| *k == "GPSLongitude").map(|(_, v)| v.clone());
+
+    if let Some(lat) = lat_str {
+        let parts: Vec<&str> = lat.split(',').collect();
+        if parts.len() == 3 {
+            let d = parse_gps_rational(parts[0]).unwrap_or(0.0);
+            let m = parse_gps_rational(parts[1]).unwrap_or(0.0);
+            let s = parse_gps_rational(parts[2]).unwrap_or(0.0);
+            let mut decimal = d + m / 60.0 + s / 3600.0;
+            if lat_ref == "S" {
+                decimal = -decimal;
+            }
+            tags.push(("GPSLatitudeDecimal", format!("{:.6}", decimal)));
+        }
+    }
+
+    if let Some(lon) = lon_str {
+        let parts: Vec<&str> = lon.split(',').collect();
+        if parts.len() == 3 {
+            let d = parse_gps_rational(parts[0]).unwrap_or(0.0);
+            let m = parse_gps_rational(parts[1]).unwrap_or(0.0);
+            let s = parse_gps_rational(parts[2]).unwrap_or(0.0);
+            let mut decimal = d + m / 60.0 + s / 3600.0;
+            if lon_ref == "W" {
+                decimal = -decimal;
+            }
+            tags.push(("GPSLongitudeDecimal", format!("{:.6}", decimal)));
+        }
     }
 }
 
@@ -846,48 +1451,134 @@ pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
-    // IIM starts with 0x1C marker
-    if !buf.windows(3).any(|w| w == [0x1C, 0x00, 0x02]) {
+    let mut tags: Vec<TagEntry> = Vec::new();
+    parse_iim_buf(&buf, &mut tags);
+    if tags.is_empty() {
         return false;
     }
+    fill_tags(fa, &tags);
+    true
+}
 
-    let mut tags: Vec<TagEntry> = Vec::new();
+pub fn parse_iim_buf(data: &[u8], tags: &mut Vec<TagEntry>) {
+    if !data.contains(&0x1C) {
+        return;
+    }
     let mut pos = 0;
 
-    while pos + 4 < buf.len() {
-        if buf[pos] != 0x1C {
+    while pos + 2 < data.len() {
+        if data[pos] != 0x1C {
             pos += 1;
             continue;
         }
-        let record = buf[pos + 1];
-        let dataset = buf[pos + 2];
-        let size = u16::from_be_bytes([buf[pos + 3], buf[pos + 4]]) as usize;
-        pos += 5;
-        if pos + size > buf.len() {
+        if pos + 3 > data.len() {
             break;
         }
-        let value = String::from_utf8_lossy(&buf[pos..pos + size]).trim_end().to_string();
+        let record = data[pos + 1];
+        let dataset = data[pos + 2];
+        pos += 3;
+
+        if pos >= data.len() {
+            break;
+        }
+        let size = if data[pos] & 0x80 != 0 {
+            if pos + 2 > data.len() {
+                break;
+            }
+            let s = ((data[pos] as u16 & 0x7F) << 8) | data[pos + 1] as u16;
+            pos += 2;
+            s as usize
+        } else {
+            let s = data[pos] as usize;
+            pos += 1;
+            s
+        };
+        if pos + size > data.len() {
+            break;
+        }
+        let value = String::from_utf8_lossy(&data[pos..pos + size]).trim_end().to_string();
         pos += size;
 
-        if record == 2 {
-            match dataset {
-                5 => tags.push(("Title", value)),
-                25 => tags.push(("Keyword", value)),
-                55 => tags.push(("Encoded_Date", value)),
-                80 => tags.push(("Author", value)),
-                85 => tags.push(("Author_Title", value)),
-                90 => tags.push(("City", value)),
-                101 => tags.push(("Country", value)),
-                116 => tags.push(("Copyright", value)),
-                118 => tags.push(("Contact", value)),
-                120 => tags.push(("Description", value)),
-                _ => {}
+        let key = iim_tag_key(record, dataset);
+        let Some(key) = key else { continue };
+
+        if key == "Keyword" {
+            if let Some(existing) = tags.iter_mut().find(|(k, _)| *k == key) {
+                existing.1.push_str(" / ");
+                existing.1.push_str(&value);
+                continue;
             }
         }
+        tags.push((key, value));
     }
+}
 
-    fill_tags(fa, &tags);
-    true
+fn iim_tag_key(record: u8, dataset: u8) -> Option<&'static str> {
+    Some(match (record, dataset) {
+        // Record 1: Envelope
+        (1, 0) => "IIMModelVersion",
+        (1, 20) => "Destination",
+        (1, 30) => "IIMFileFormat",
+        (1, 40) => "IIMFileVersion",
+        (1, 50) => "ServiceIdentifier",
+        (1, 70) => "EnvelopeNumber",
+        (1, 80) => "ProductID",
+        (1, 90) => "EnvelopePriority",
+        (1, 100) => "DateSent",
+        (1, 120) => "TimeSent",
+        (1, 130) => "CodedCharacterSet",
+        (1, 150) => "UniqueObjectName",
+        (1, 160) => "ARMIdentifier",
+        (1, 170) => "ARMVersion",
+
+        // Record 2: Application
+        (2, 3) => "ObjectTypeReference",
+        (2, 4) => "ObjectAttributeReference",
+        (2, 5) => "ObjectName",
+        (2, 7) => "EditStatus",
+        (2, 8) => "EditorialUpdate",
+        (2, 10) => "Urgency",
+        (2, 12) => "SubjectReference",
+        (2, 15) => "Category",
+        (2, 20) => "SupplementalCategories",
+        (2, 22) => "FixtureIdentifier",
+        (2, 25) => "Keyword",
+        (2, 26) => "ContentLocationCode",
+        (2, 27) => "ContentLocationName",
+        (2, 30) => "ReleaseDate",
+        (2, 35) => "ReleaseTime",
+        (2, 37) => "ExpirationDate",
+        (2, 38) => "ExpirationTime",
+        (2, 40) => "SpecialInstructions",
+        (2, 42) => "ActionAdvised",
+        (2, 45) => "ReferenceService",
+        (2, 47) => "ReferenceDate",
+        (2, 50) => "ReferenceNumber",
+        (2, 55) => "DateCreated",
+        (2, 60) => "TimeCreated",
+        (2, 62) => "DigitalCreationDate",
+        (2, 63) => "DigitalCreationTime",
+        (2, 65) => "OriginatingProgram",
+        (2, 70) => "ProgramVersion",
+        (2, 75) => "ObjectCycle",
+        (2, 80) => "Byline",
+        (2, 85) => "BylineTitle",
+        (2, 90) => "City",
+        (2, 92) => "Sublocation",
+        (2, 95) => "ProvinceState",
+        (2, 100) => "CountryCode",
+        (2, 101) => "Country",
+        (2, 103) => "OriginalTransmissionReference",
+        (2, 105) => "Headline",
+        (2, 110) => "Credit",
+        (2, 115) => "Source",
+        (2, 116) => "Copyright",
+        (2, 118) => "Contact",
+        (2, 120) => "Description",
+        (2, 122) => "DescriptionWriter",
+
+        _ => return None,
+    })
 }
 
 // ---------- PropertyList (Apple plist) ----------
@@ -1002,6 +1693,178 @@ pub fn parse_spherical_video(fa: &mut FileAnalyze) -> bool {
     }
 }
 
+// ---------- PNG text chunks ----------
+
+fn png_key_to_field(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "Title" => "Title",
+        "Author" => "Performer",
+        "Description" => "Description",
+        "Copyright" => "Copyright",
+        "Creation Time" => "Recorded_Date",
+        "Comment" => "Comment",
+        "Software" => "Encoded_Application",
+        "Disclaimer" => "Disclaimer",
+        "Warning" => "Warning",
+        "Source" => "Source",
+        _ => return None,
+    })
+}
+
+pub fn parse_png_text(fa: &mut FileAnalyze) -> bool {
+    let buf = match fa.peek_raw_at(0, usize::MAX) {
+        Some(b) => b.to_vec(),
+        None => return false,
+    };
+    if buf.len() < 8 || &buf[0..4] != b"\x89PNG" {
+        return false;
+    }
+    let mut i = 8usize;
+    let mut tags: Vec<TagEntry> = Vec::new();
+    while i + 12 <= buf.len() {
+        let len = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]) as usize;
+        let ty = &buf[i + 4..i + 8];
+        let payload_off = i + 8;
+        i = payload_off + len + 4;
+        if i > buf.len() {
+            break;
+        }
+        if ty == b"IEND" {
+            break;
+        }
+        if ty != b"tEXt" && ty != b"iTXt" && ty != b"zTXt" {
+            continue;
+        }
+        if len == 0 {
+            continue;
+        }
+        let payload = &buf[payload_off..payload_off + len];
+        let nul = match payload.iter().position(|&b| b == 0) {
+            Some(n) => n,
+            None => continue,
+        };
+        let key = String::from_utf8_lossy(&payload[..nul]).into_owned();
+        if key.is_empty() {
+            continue;
+        }
+        let field = match png_key_to_field(&key) {
+            Some(f) => f,
+            None => continue,
+        };
+
+        if ty == b"tEXt" {
+            let val =
+                String::from_utf8_lossy(&payload[nul + 1..]).trim_matches('\0').trim().to_string();
+            if !val.is_empty() {
+                tags.push((field, val));
+            }
+        } else if ty == b"iTXt" {
+            let rest = &payload[nul + 1..];
+            let mut pos = 0;
+            for _ in 0..3 {
+                if let Some(n) = rest[pos..].iter().position(|&b| b == 0) {
+                    pos += n + 1;
+                } else {
+                    break;
+                }
+            }
+            if let Some(n) = rest[pos..].iter().position(|&b| b == 0) {
+                pos += n + 1;
+                let val =
+                    String::from_utf8_lossy(&rest[pos..]).trim_matches('\0').trim().to_string();
+                if !val.is_empty() {
+                    tags.push((field, val));
+                }
+            }
+        } else if ty == b"zTXt" {
+            let rest = &payload[nul + 1..];
+            if rest.len() < 2 {
+                continue;
+            }
+            let comp_method = rest[0];
+            if comp_method != 0 {
+                continue;
+            }
+            let compressed = &rest[1..];
+            if compressed.is_empty() {
+                continue;
+            }
+            let mut decoder = flate2::read::DeflateDecoder::new(compressed);
+            let mut val = String::new();
+            if decoder.read_to_string(&mut val).is_ok() {
+                let val = val.trim_matches('\0').trim().to_string();
+                if !val.is_empty() {
+                    tags.push((field, val));
+                }
+            }
+        }
+    }
+    if !tags.is_empty() {
+        fill_tags(fa, &tags);
+        true
+    } else {
+        false
+    }
+}
+
+// ---------- JPEG COM ----------
+
+pub fn parse_jpeg_com(fa: &mut FileAnalyze) -> bool {
+    let remain = fa.remain();
+    if remain < 4 {
+        return false;
+    }
+    let buf = match fa.peek_raw(remain).map(|b| b.to_vec()) {
+        Some(b) => b,
+        None => return false,
+    };
+    if buf.len() < 4 || buf[0] != 0xFF || buf[1] != 0xD8 {
+        return false;
+    }
+
+    let mut tags: Vec<TagEntry> = Vec::new();
+    let mut i = 2;
+    while i + 3 < buf.len() {
+        if buf[i] != 0xFF {
+            break;
+        }
+        let marker = buf[i + 1];
+        if marker == 0xDA {
+            break;
+        } // SOS — no more metadata
+        if marker == 0xD9 {
+            break;
+        } // EOI
+        let seg_len = u16::from_be_bytes([buf[i + 2], buf[i + 3]]) as usize;
+        if seg_len < 2 {
+            break;
+        }
+        let data_start = i + 4;
+        let data_end = data_start + seg_len - 2;
+        if data_end > buf.len() {
+            break;
+        }
+
+        if marker == 0xFE {
+            let comment = String::from_utf8_lossy(&buf[data_start..data_end])
+                .trim_matches('\0')
+                .trim()
+                .to_string();
+            if !comment.is_empty() {
+                tags.push(("Comment", comment));
+            }
+        }
+        i = data_end;
+    }
+
+    if !tags.is_empty() {
+        fill_tags(fa, &tags);
+        true
+    } else {
+        false
+    }
+}
+
 // ---------- Update parse_tags ----------
 
 pub fn parse_tags(fa: &mut FileAnalyze) -> bool {
@@ -1016,7 +1879,1653 @@ pub fn parse_tags(fa: &mut FileAnalyze) -> bool {
     let _ = parse_iim(fa);
     let _ = parse_property_list(fa);
     let _ = parse_spherical_video(fa);
+    let _ = parse_jpeg_com(fa);
+    let _ = parse_png_text(fa);
+    infer_raw_format(fa);
     true
+}
+
+// ---------- MakerNotes ----------
+
+type TagNameFn = fn(u16) -> Option<&'static str>;
+
+fn parse_tiff_header_or_raw<'a>(data: &'a [u8], default_bo: &'a str) -> (&'a str, usize) {
+    if data.len() >= 8 && (&data[0..2] == b"II" || &data[0..2] == b"MM") {
+        let bo = if &data[0..2] == b"II" { "LE" } else { "BE" };
+        (bo, read_tiff_u32(data, 4, bo) as usize)
+    } else {
+        (default_bo, 0)
+    }
+}
+
+fn parse_makernote_ifd(
+    data: &[u8],
+    offset: usize,
+    bo: &str,
+    tags: &mut Vec<TagEntry>,
+    tag_name: TagNameFn,
+) {
+    if offset + 2 > data.len() {
+        return;
+    }
+    let count = read_tiff_u16(data, offset, bo) as usize;
+    if count > 100 {
+        return;
+    }
+    let mut pos = offset + 2;
+
+    for _ in 0..count.min(100) {
+        if pos + 12 > data.len() {
+            break;
+        }
+        let tag_id = read_tiff_u16(data, pos, bo);
+        let tag_type = read_tiff_u16(data, pos + 2, bo);
+        let tag_count = read_tiff_u32(data, pos + 4, bo) as usize;
+        let tag_size = exif_type_size(tag_type) * tag_count;
+        pos += 8;
+
+        let value = if tag_size <= 4 {
+            if tag_type == 2 {
+                let end = data[pos..pos + tag_count.min(4)]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count.min(4));
+                String::from_utf8_lossy(&data[pos..pos + end]).to_string()
+            } else {
+                read_exif_val(data, pos, tag_type, tag_count, bo)
+            }
+        } else {
+            let val_off = read_tiff_u32(data, pos, bo) as usize;
+            if val_off + tag_size > data.len() {
+                pos += 4;
+                continue;
+            }
+            if tag_type == 2 {
+                let end = data[val_off..val_off + tag_count]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count);
+                String::from_utf8_lossy(&data[val_off..val_off + end]).to_string()
+            } else {
+                read_exif_val(data, val_off, tag_type, tag_count, bo)
+            }
+        };
+        pos += 4;
+
+        if let Some(name) = tag_name(tag_id) {
+            tags.push((name, value));
+        }
+    }
+}
+
+fn parse_makernote(make: &str, data: &[u8], tags: &mut Vec<TagEntry>) {
+    let make_upper = make.to_uppercase();
+    if make_upper.contains("CANON") {
+        parse_canon_makernote(data, tags);
+    } else if make_upper.contains("NIKON") {
+        parse_nikon_makernote(data, tags);
+    } else if make_upper.contains("SONY") {
+        parse_sony_makernote(data, tags);
+    } else if make_upper.contains("OLYMPUS")
+        || make_upper.contains("OM DIGITAL")
+        || make_upper.contains("OM SYSTEM")
+    {
+        parse_olympus_makernote(data, tags);
+    } else if make_upper.contains("PANASONIC") || make_upper.contains("LEICA") {
+        parse_panasonic_makernote(data, tags);
+    } else if make_upper.contains("PENTAX") || make_upper.contains("RICOH") {
+        parse_pentax_makernote(data, tags);
+    } else if make_upper.contains("FUJIFILM") || make_upper.contains("FUJI") {
+        parse_fujifilm_makernote(data, tags);
+    }
+}
+
+// ---------- Samsung MakerNote ----------
+
+fn samsung_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "SamsungVersion",
+        0x0020 => "SamsungColorSpace",
+        0x0021 => "SamsungSmartColor",
+        0x0022 => "SamsungPictureMode",
+        0x0023 => "SamsungExposureTime",
+        0x0024 => "SamsungFNumber",
+        0x0025 => "SamsungISO",
+        0x0032 => "SamsungDRange",
+        0x0035 => "SamsungLensType",
+        0x0036 => "SamsungLensFirmware",
+        0x0043 => "SamsungRawFormat",
+        0x0044 => "SamsungRawTone",
+        0x0050 => "SamsungColorMatrix",
+        0x00A0 => "SamsungCameraTemperature",
+        0x0100 => "SamsungFaceDetect",
+        0x0120 => "SamsungFaceInfo",
+        0xA001 => "SamsungPreviewImage",
+        _ => return None,
+    })
+}
+
+fn parse_samsung_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Samsung MakerNote starts with "Samsung   " (8 bytes) or "Samsung2 " (8 bytes)
+    let offset = if data.len() >= 8 && &data[0..7] == b"Samsung" { 8 } else { 0 };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, samsung_tag_name);
+}
+
+// ---------- Apple MakerNote ----------
+
+fn apple_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "AppleRunTime",
+        0x0002 => "AppleAccelerationVector",
+        0x0005 => "AppleFocusDistance",
+        0x0006 => "AppleLensModel",
+        0x0007 => "AppleImageStabilization",
+        _ => return None,
+    })
+}
+
+fn parse_apple_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Apple MakerNote is typically a plain TIFF IFD starting with II/MM
+    if data.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(data, "LE");
+    parse_makernote_ifd(data, ifd_off, bo, tags, apple_tag_name);
+}
+
+// ---------- GoPro MakerNote ----------
+
+fn gopro_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "GoProModelName",
+        0x0002 => "GoProFirmware",
+        0x0003 => "GoProSerial",
+        0x0004 => "GoProBatteryLevel",
+        0x0005 => "GoProMode",
+        0x0006 => "GoProTimeLapse",
+        0x0007 => "GoProBurstRate",
+        0x0008 => "GoProFieldOfView",
+        0x0009 => "GoProCameraOrientation",
+        0x000A => "GoProColorMode",
+        0x000B => "GoProExposureMode",
+        0x000C => "GoProFrameRate",
+        0x000D => "GoProResolution",
+        0x000E => "GoProPhotoISO",
+        0x000F => "GoProVideoISO",
+        0x0010 => "GoProWhiteBalance",
+        _ => return None,
+    })
+}
+
+fn parse_gopro_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // GoPro MakerNote: "GoPro " (5 bytes) + TIFF IFD
+    let offset = if data.len() >= 6 && &data[0..5] == b"GoPro" { 6 } else { 0 };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, gopro_tag_name);
+}
+
+// ---------- DJI MakerNote ----------
+
+fn dji_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "DJIMake",
+        0x0002 => "DJIModel",
+        0x0003 => "DJIFirmware",
+        0x0004 => "DJIOrientation",
+        0x0005 => "DJIFlightSpeed",
+        0x0006 => "DJIFlightAltitude",
+        0x0007 => "DJIGpsLatitude",
+        0x0008 => "DJIGpsLongitude",
+        0x0009 => "DJIGpsAltitude",
+        0x000A => "DJIBatteryLevel",
+        0x000B => "DJICameraTemperature",
+        0x000C => "DJILensFocusDistance",
+        0x000D => "DJIRollAngle",
+        0x000E => "DJIPitchAngle",
+        0x000F => "DJIYawAngle",
+        0x0010 => "DJIImageWidth",
+        0x0011 => "DJIImageHeight",
+        0x0012 => "DJIAppTimestamp",
+        _ => return None,
+    })
+}
+
+fn parse_dji_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // DJI MakerNote: "DJI " (4 bytes) + TIFF IFD
+    let offset = if data.len() >= 4 && &data[0..3] == b"DJI" { 4 } else { 0 };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, dji_tag_name);
+}
+
+// ---------- Google / Pixel MakerNote ----------
+
+fn google_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "GoogleMotionPhoto",
+        0x0002 => "GoogleDepthMap",
+        0x0003 => "GoogleFocusDistance",
+        0x0004 => "GoogleAperture",
+        0x0005 => "GoogleFocalLength35mm",
+        0x0006 => "GoogleHdrPlus",
+        0x0007 => "GoogleMergedFrames",
+        0x0008 => "GoogleFaceCount",
+        _ => return None,
+    })
+}
+
+fn parse_google_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Google/Pixel MakerNote is a plain TIFF IFD
+    if data.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(data, "LE");
+    parse_makernote_ifd(data, ifd_off, bo, tags, google_tag_name);
+}
+
+// ---------- Leica MakerNote ----------
+
+fn leica_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "LeicaQuality",
+        0x0002 => "LeicaUserProfile",
+        0x0003 => "LeicaSerial",
+        0x0004 => "LeicaLensType",
+        0x0005 => "LeicaExternalSensor",
+        0x0007 => "LeicaFirmware",
+        0x0008 => "LeicaISO",
+        0x000A => "LeicaColorMode",
+        0x000C => "LeicaWB",
+        0x000F => "LeicaLensSerial",
+        _ => return None,
+    })
+}
+
+fn parse_leica_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Leica MakerNote: "LEICA   " (7 bytes) + TIFF IFD, or bare TIFF
+    let offset = if data.len() >= 7 && &data[0..7] == b"LEICA   " {
+        7
+    } else if data.len() >= 6 && &data[0..5] == b"LEICA" {
+        6
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "BE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, leica_tag_name);
+}
+
+// ---------- Sigma / Foveon MakerNote ----------
+
+fn sigma_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0002 => "SigmaSerial",
+        0x0003 => "SigmaFirmware",
+        0x0004 => "SigmaImageProperties",
+        0x0005 => "SigmaSensorCalibration",
+        0x0006 => "SigmaIsoRating",
+        0x0007 => "SigmaExposureMode",
+        0x0008 => "SigmaMeterMode",
+        0x0009 => "SigmaDriveMode",
+        0x000A => "SigmaLensApertureRange",
+        0x000B => "SigmaFocusSetting",
+        0x000C => "SigmaAFMode",
+        0x000D => "SigmaColorSpace",
+        0x000E => "SigmaColorMode",
+        0x000F => "SigmaResolutionMode",
+        0x0010 => "SigmaWhiteBalance",
+        0x0011 => "SigmaSharpness",
+        0x0012 => "SigmaContrast",
+        0x0013 => "SigmaSaturation",
+        0x0014 => "SigmaColorAdjustment",
+        0x0015 => "SigmaSceneMode",
+        _ => return None,
+    })
+}
+
+fn parse_sigma_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Sigma/Foveon MakerNote: "SIGMA   " (7 bytes) + TIFF IFD
+    let offset = if data.len() >= 7 && &data[0..7] == b"SIGMA   " { 7 } else { 0 };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, sigma_tag_name);
+}
+
+// ---------- Minolta / Konica Minolta MakerNote ----------
+
+fn minolta_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "MinoltaCameraSettings",
+        0x0003 => "MinoltaCameraSettings2",
+        0x0004 => "MinoltaImageStabilization",
+        0x0005 => "MinoltaZoneMatching",
+        0x0006 => "MinoltaColorMode",
+        0x0007 => "MinoltaColorFilter",
+        0x0008 => "MinoltaBWFilter",
+        0x0009 => "MinoltaHueAdjustment",
+        0x000A => "MinoltaSaturation",
+        0x000B => "MinoltaSharpness",
+        0x000C => "MinoltaContrast",
+        0x000D => "MinoltaSceneMode",
+        0x000E => "MinoltaISO",
+        0x000F => "MinoltaExposureCompensation",
+        0x0010 => "MinoltaFlashMode",
+        0x0011 => "MinoltaFocusMode",
+        0x0012 => "MinoltaMeterMode",
+        0x0013 => "MinoltaWhiteBalance",
+        0x0014 => "MinoltaColorTemperature",
+        0x0015 => "MinoltaLensType",
+        _ => return None,
+    })
+}
+
+fn parse_minolta_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Minolta/Konica-Minolta MakerNote: "MINOLTA    " (10 bytes) or "MLT0" (4 bytes) + TIFF IFD
+    let offset = if data.len() >= 10 && &data[0..10] == b"MINOLTA    " {
+        10
+    } else if data.len() >= 4 && &data[0..4] == b"MLT0" {
+        4
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, minolta_tag_name);
+}
+
+// ---------- Casio MakerNote ----------
+
+fn casio_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "CasioRecordingMode",
+        0x0002 => "CasioQuality",
+        0x0003 => "CasioFocusMode",
+        0x0004 => "CasioFlashMode",
+        0x0005 => "CasioFlashIntensity",
+        0x0006 => "CasioObjectDistance",
+        0x0007 => "CasioWhiteBalance",
+        0x000A => "CasioSharpness",
+        0x000B => "CasioContrast",
+        0x000C => "CasioSaturation",
+        0x000D => "CasioISO",
+        0x000E => "CasioColorMode",
+        0x000F => "CasioEnhancement",
+        0x0010 => "CasioFilter",
+        0x0020 => "CasioDigitalZoom",
+        0x0021 => "CasioSceneMode",
+        0x0022 => "CasioBracketSequence",
+        0x0023 => "CasioBeep",
+        0x0024 => "CasioGrid",
+        0x0025 => "CasioTimeLapse",
+        0x0026 => "CasioIntervalLength",
+        _ => return None,
+    })
+}
+
+fn parse_casio_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Casio MakerNote: "QVC      " (9 bytes) for Type 2, or 0-offset TIFF for Type 1
+    let offset = if data.len() >= 9 && &data[0..3] == b"QVC" {
+        9
+    } else if data.len() >= 8 && &data[0..2] == b"  " {
+        2
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, casio_tag_name);
+}
+
+// ---------- FLIR MakerNote ----------
+
+fn flir_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "FlirRawThermalImage",
+        0x0002 => "FlirRawTemperature",
+        0x0003 => "FlirEmissivity",
+        0x0004 => "FlirAtmosphericTemperature",
+        0x0005 => "FlirReflectedTemperature",
+        0x0006 => "FlirDistance",
+        0x0007 => "FlirRelativeHumidity",
+        0x0008 => "FlirPlanckR1",
+        0x0009 => "FlirPlanckB",
+        0x000A => "FlirPlanckF",
+        0x000B => "FlirPlanckO",
+        0x000C => "FlirAtomosphericTransX",
+        0x000D => "FlirPlanckR2",
+        _ => return None,
+    })
+}
+
+fn parse_flir_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // FLIR MakerNote: typically a plain TIFF IFD or starts with "FLIR "
+    let offset = if data.len() >= 5 && &data[0..4] == b"FLIR" { 5 } else { 0 };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, flir_tag_name);
+}
+
+fn canon_format_value(tag_id: u16, raw: &str) -> String {
+    match tag_id {
+        0x000C => {
+            let id: u32 = raw.parse().unwrap_or(u32::MAX);
+            canon_model_name(id).unwrap_or(raw).to_string()
+        }
+        0x00A2 => {
+            let id: u16 = raw.parse().unwrap_or(u16::MAX);
+            canon_wb_name(id).unwrap_or(raw).to_string()
+        }
+        0x00A5 => match raw {
+            "1" => "sRGB".into(),
+            "2" => "Adobe RGB".into(),
+            _ => raw.to_string(),
+        },
+        0x00A9 => {
+            let id: u16 = raw.parse().unwrap_or(u16::MAX);
+            canon_picture_style_name(id).unwrap_or(raw).to_string()
+        }
+        0x0104 => {
+            let id: u16 = raw.parse().unwrap_or(u16::MAX);
+            canon_quality_name(id).unwrap_or(raw).to_string()
+        }
+        _ => raw.to_string(),
+    }
+}
+
+fn canon_model_name(id: u32) -> Option<&'static str> {
+    Some(match id {
+        0x1010000 => "PowerShot A460",
+        0x1040000 => "PowerShot A560",
+        0x1070000 => "PowerShot SD750",
+        0x1160000 => "PowerShot A590 IS",
+        0x1180000 => "PowerShot A1000 IS",
+        0x1220000 => "PowerShot G10",
+        0x1250000 => "PowerShot SX110 IS",
+        0x1260000 => "PowerShot SX10 IS",
+        0x1290000 => "PowerShot SX1 IS",
+        0x1300000 => "PowerShot SD990 IS",
+        0x1310000 => "PowerShot SD880 IS",
+        0x1340000 => "PowerShot A1100 IS",
+        0x1350000 => "PowerShot SD780 IS",
+        0x1360000 => "PowerShot A480",
+        0x1370000 => "PowerShot SX200 IS",
+        0x1380000 => "PowerShot SD960 IS",
+        0x1390000 => "PowerShot SD970 IS",
+        0x1400000 => "PowerShot S90",
+        0x1410000 => "PowerShot G11",
+        0x1440000 => "PowerShot SX20 IS",
+        0x1460000 => "PowerShot SD3500 IS",
+        0x1470000 => "PowerShot SD1400 IS",
+        0x1480000 => "PowerShot ELPH 300 HS",
+        0x1490000 => "PowerShot S95",
+        0x1500000 => "PowerShot G12",
+        0x1510000 => "PowerShot SX30 IS",
+        0x1520000 => "PowerShot SX220 HS",
+        0x1540000 => "PowerShot S100",
+        0x1570000 => "PowerShot G1 X",
+        0x1580000 => "PowerShot SX260 HS",
+        0x1590000 => "PowerShot SX240 HS",
+        0x1600000 => "PowerShot ELPH 530 HS",
+        0x1620000 => "PowerShot G15",
+        0x1640000 => "PowerShot SX280 HS",
+        0x1660000 => "PowerShot S120",
+        0x1670000 => "EOS 5D Mark III",
+        0x1680000 => "EOS-1D X",
+        0x1690000 => "EOS 6D",
+        0x1700000 => "EOS 7D",
+        0x1730000 => "EOS 70D",
+        0x1740000 => "EOS 1200D",
+        0x1750000 => "EOS 100D",
+        0x1760000 => "EOS M",
+        0x1770000 => "EOS M2",
+        0x1790000 => "EOS-1D C",
+        0x1810000 => "EOS 700D",
+        0x1830000 => "EOS 1300D",
+        0x2500000 => "EOS 5D Mark IV",
+        0x2530000 => "EOS 80D",
+        0x2560000 => "EOS M5",
+        0x2570000 => "EOS 200D",
+        0x2580000 => "EOS 77D",
+        0x2590000 => "EOS 800D",
+        0x2610000 => "EOS 6D Mark II",
+        0x2640000 => "EOS-1D X Mark II",
+        0x2660000 => "EOS 4000D",
+        0x2670000 => "EOS M50",
+        0x2700000 => "EOS R",
+        0x2720000 => "EOS RP",
+        0x2730000 => "EOS 250D",
+        0x2740000 => "EOS 90D",
+        0x2750000 => "EOS M6 Mark II",
+        0x2790000 => "EOS 850D",
+        0x2810000 => "EOS R5",
+        0x2820000 => "EOS R6",
+        0x2830000 => "EOS R3",
+        0x2840000 => "EOS R7",
+        0x2850000 => "EOS R10",
+        0x2860000 => "EOS R8",
+        0x2870000 => "EOS R50",
+        0x2880000 => "EOS R100",
+        0x2890000 => "EOS R6 Mark II",
+        0x2920000 => "EOS R5 Mark II",
+        0x2960000 => "EOS R1",
+        _ => return None,
+    })
+}
+
+fn canon_wb_name(id: u16) -> Option<&'static str> {
+    Some(match id {
+        0 => "Auto",
+        1 => "Daylight",
+        2 => "Cloudy",
+        3 => "Tungsten",
+        4 => "Fluorescent",
+        5 => "Flash",
+        6 => "Custom",
+        7 => "Black & White",
+        8 => "Shade",
+        9 => "Manual Temperature (Kelvin)",
+        10 => "PC Set 1",
+        11 => "PC Set 2",
+        12 => "PC Set 3",
+        14 => "Daylight Fluorescent",
+        15 => "Custom 1",
+        16 => "Custom 2",
+        17 => "Underwater",
+        18 => "Custom 3",
+        19 => "Custom 4",
+        _ => return None,
+    })
+}
+
+fn canon_picture_style_name(id: u16) -> Option<&'static str> {
+    Some(match id {
+        0x81 => "Standard",
+        0x82 => "Portrait",
+        0x83 => "Landscape",
+        0x84 => "Neutral",
+        0x85 => "Faithful",
+        0x86 => "Monochrome",
+        0x87 => "Auto",
+        0x88 => "Fine Detail",
+        0x90 => "User Def. 1",
+        0x91 => "User Def. 2",
+        0x92 => "User Def. 3",
+        _ => return None,
+    })
+}
+
+fn canon_quality_name(id: u16) -> Option<&'static str> {
+    Some(match id {
+        1 => "RAW",
+        2 => "Large Fine",
+        3 => "Large Normal",
+        4 => "Medium Fine",
+        5 => "Medium Normal",
+        6 => "Small Fine",
+        7 => "Small Normal",
+        8 => "RAW + Large Fine",
+        9 => "RAW + Large Normal",
+        10 => "RAW + Medium Fine",
+        11 => "RAW + Medium Normal",
+        12 => "RAW + Small Fine",
+        13 => "RAW + Small Normal",
+        _ => return None,
+    })
+}
+
+fn parse_canon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    if data.len() < 6 {
+        return;
+    }
+
+    let (bo, ifd_off) = if &data[0..2] == b"II" || &data[0..2] == b"MM" {
+        let bo = if &data[0..2] == b"II" { "LE" } else { "BE" };
+        let off = read_tiff_u32(data, 4, bo) as usize;
+        (bo, off)
+    } else {
+        let hint = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+        if hint >= 6 && hint < data.len() { ("LE", hint) } else { ("LE", 0) }
+    };
+
+    if ifd_off + 2 > data.len() {
+        return;
+    }
+    let count = read_tiff_u16(data, ifd_off, bo) as usize;
+    let mut pos = ifd_off + 2;
+
+    for _ in 0..count.min(100) {
+        if pos + 12 > data.len() {
+            break;
+        }
+        let tag_id = read_tiff_u16(data, pos, bo);
+        let tag_type = read_tiff_u16(data, pos + 2, bo);
+        let tag_count = read_tiff_u32(data, pos + 4, bo) as usize;
+        let tag_size = exif_type_size(tag_type) * tag_count;
+        pos += 8;
+
+        let value = if tag_size <= 4 {
+            if tag_type == 2 {
+                let end = data[pos..pos + tag_count.min(4)]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count.min(4));
+                String::from_utf8_lossy(&data[pos..pos + end]).to_string()
+            } else {
+                read_exif_val(data, pos, tag_type, tag_count, bo)
+            }
+        } else {
+            let val_off = read_tiff_u32(data, pos, bo) as usize;
+            if val_off + tag_size > data.len() {
+                pos += 4;
+                continue;
+            }
+            if tag_type == 2 {
+                let end = data[val_off..val_off + tag_count]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count);
+                String::from_utf8_lossy(&data[val_off..val_off + end]).to_string()
+            } else {
+                read_exif_val(data, val_off, tag_type, tag_count, bo)
+            }
+        };
+        let val_field = pos;
+        pos += 4;
+
+        if let Some(name) = canon_tag_name(tag_id) {
+            let formatted = canon_format_value(tag_id, &value);
+            tags.push((name, formatted));
+        }
+
+        if (tag_id == 0x0001 || tag_id == 0x0004) && tag_size > 0 {
+            let sub_raw = if tag_size <= 4 {
+                if val_field + tag_size.min(4) <= data.len() {
+                    data[val_field..val_field + tag_size.min(4)].to_vec()
+                } else {
+                    vec![]
+                }
+            } else {
+                let off = read_tiff_u32(data, val_field, bo) as usize;
+                if off + tag_size <= data.len() {
+                    data[off..off + tag_size].to_vec()
+                } else {
+                    vec![]
+                }
+            };
+            if !sub_raw.is_empty() && tag_size >= 2 {
+                parse_canon_sub_ifd(&sub_raw, bo, tag_id, tags);
+            }
+        }
+    }
+}
+
+fn canon_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "CanonCameraSettings",
+        0x0002 => "CanonFocalLength",
+        0x0003 => "CanonFlashInfo",
+        0x0004 => "CanonShotInfo",
+        0x0006 => "CanonImageType",
+        0x0007 => "CanonFirmwareVersion",
+        0x0008 => "CanonImageNumber",
+        0x0009 => "CanonOwnerName",
+        0x000C => "CanonModelID",
+        0x000D => "CanonCameraInfo",
+        0x0010 => "CanonThumbnailValidArea",
+        0x0015 => "CanonSerialNumber",
+        0x001A => "CanonProcessingInfo",
+        0x001C => "CanonAFInfo",
+        0x0020 => "CanonColorBalance",
+        0x0021 => "CanonColorCalibration",
+        0x0022 => "CanonColorMatrix",
+        0x0024 => "CanonColorInfo",
+        0x0026 => "CanonColorData",
+        0x0028 => "CanonCRWParam",
+        0x002A => "CanonTimeZone",
+        0x002D => "CanonDaylightSavings",
+        0x0032 => "CanonBlackLevel",
+        0x0033 => "CanonCustomPictureStyle",
+        0x0035 => "CanonLensModel",
+        0x0036 => "CanonInternalSerialNumber",
+        0x0037 => "CanonDustRemovalData",
+        0x0038 => "CanonCropInfo",
+        0x0039 => "CanonCropInfo",
+        0x003B => "CanonAspectRatioInfo",
+        0x003C => "CanonCustomFunctions",
+        0x003D => "CanonAEMicroadjustment",
+        0x003E => "CanonAFMicroadjustment",
+        0x0047 => "CanonAFConfig",
+        0x004D => "CanonVRD",
+        0x0050 => "CanonLensInfo",
+        0x0052 => "CanonFaceDetect",
+        0x0053 => "CanonFaceDetectData",
+        0x0060 => "CanonMultiExp",
+        0x0061 => "CanonHDRInfo",
+        0x0062 => "CanonAFInfo2",
+        0x0093 => "CanonFileDescription",
+        0x0094 => "CanonModelName",
+        0x0095 => "CanonOwnerName2",
+        0x0096 => "CanonSerialNumber2",
+        0x00A0 => "CanonTemperature",
+        0x00A2 => "CanonWhiteBalance",
+        0x00A3 => "CanonColorTemp",
+        0x00A4 => "CanonWhitePoint",
+        0x00A5 => "CanonColorSpace",
+        0x00A9 => "CanonPictureStyle",
+        0x00AA => "CanonDigitalGain",
+        0x00AE => "CanonSensorInfo",
+        0x00B4 => "CanonCustomFunctions2",
+        0x00B5 => "CanonColorTemperature",
+        0x00D1 => "CanonFlashExposureComp",
+        0x00D2 => "CanonLensDriveNoise",
+        0x00D5 => "CanonExternalFlash",
+        0x00DB => "CanonCameraType",
+        0x00E0 => "CanonFirmwareVersion2",
+        0x00E1 => "CanonCameraType2",
+        0x00E2 => "CanonFirmwareVersion3",
+        0x00E4 => "CanonCategory",
+        0x00E5 => "CanonModifiedInfo",
+        0x00E6 => "CanonPictureStyle2",
+        0x00E7 => "CanonImageStabilization",
+        0x00E8 => "CanonShutterMode",
+        0x00E9 => "CanonDriveMode",
+        0x00EA => "CanonContrast",
+        0x00EB => "CanonSaturation",
+        0x00EC => "CanonSharpness",
+        0x00ED => "CanonColorTone",
+        0x00EE => "CanonFilterEffect",
+        0x00EF => "CanonToningEffect",
+        0x00F0 => "CanonBrightness",
+        0x00F1 => "CanonISO",
+        0x00F2 => "CanonMeteringMode",
+        0x00F3 => "CanonExposureMode",
+        0x00F4 => "CanonLensType",
+        0x00F5 => "CanonLongExposureNoiseReduction",
+        0x00F6 => "CanonHighISONoiseReduction",
+        0x00F7 => "CanonAFAssistantLight",
+        0x00F8 => "CanonFlashMode",
+        0x00F9 => "CanonFlashActivity",
+        0x00FA => "CanonFocusMode",
+        0x00FB => "CanonAFPoint",
+        0x00FC => "CanonAFPointsInFocus",
+        0x00FD => "CanonBracketMode",
+        0x00FE => "CanonBracketValue",
+        0x00FF => "CanonBracketShotNumber",
+        0x0100 => "CanonMirrorLockup",
+        0x0101 => "CanonFlashSyncSpeedAV",
+        0x0102 => "CanonLensAFStopButton",
+        0x0103 => "CanonContinuousDrive",
+        0x0104 => "CanonQuality",
+        0x0105 => "CanonSharpnessFrequency",
+        0x0106 => "CanonWhiteBalanceAdjust",
+        0x0107 => "CanonWhiteBalanceBracket",
+        0x0108 => "CanonExposureCompensation",
+        0x0109 => "CanonISOSpeed",
+        0x010A => "CanonFlashFired",
+        0x010B => "CanonFlashExposureLock",
+        0x010C => "CanonLensID",
+        0x010D => "CanonCameraType3",
+        0x010E => "CanonFirmwareVersion4",
+        0x010F => "CanonCameraTemperature",
+        _ => return None,
+    })
+}
+
+fn nikon_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "NikonVersion",
+        0x0002 => "NikonISOSpeed",
+        0x0003 => "NikonColorMode",
+        0x0004 => "NikonQuality",
+        0x0005 => "NikonWhiteBalance",
+        0x0006 => "NikonSharpening",
+        0x0007 => "NikonFocusMode",
+        0x0008 => "NikonFlashSetting",
+        0x0009 => "NikonFlashType",
+        0x000B => "NikonWhiteBalanceFine",
+        0x000C => "NikonColorAdjustment",
+        0x000D => "NikonLensType",
+        0x0011 => "NikonLens",
+        0x0012 => "NikonFlashMode",
+        0x0013 => "NikonAutoFlash",
+        0x0014 => "NikonFlashExposureComp",
+        0x0017 => "NikonSceneMode",
+        0x0018 => "NikonNoiseReduction",
+        0x0023 => "NikonShootingMode",
+        0x0024 => "NikonImageOptimization",
+        0x0025 => "NikonSaturation",
+        0x0026 => "NikonVariProgram",
+        0x0027 => "NikonImageStabilization",
+        0x0028 => "NikonAFResponse",
+        0x0032 => "NikonActiveDLighting",
+        0x0080 => "NikonModelID",
+        0x0085 => "NikonSerialNumber",
+        0x0086 => "NikonColorSpace",
+        0x0088 => "NikonImageAuthentication",
+        0x0098 => "NikonLensSpec",
+        0x00A0 => "NikonShutterCount",
+        0x00A7 => "NikonVignetteControl",
+        0x00A8 => "NikonDistortionControl",
+        0x00E6 => "NikonISOInfo",
+        0x00E7 => "NikonVRActive",
+        _ => return None,
+    })
+}
+
+fn parse_nikon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    if data.len() < 6 {
+        return;
+    }
+    let offset = if data.len() >= 6 && &data[0..6] == b"Nikon\0" { 6 } else { 0 };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+
+    let (bo, ifd_off) = if sub.len() >= 8 && (&sub[0..2] == b"II" || &sub[0..2] == b"MM") {
+        let bo = if &sub[0..2] == b"II" { "LE" } else { "BE" };
+        (bo, read_tiff_u32(sub, 4, bo) as usize)
+    } else {
+        ("BE", 0usize)
+    };
+
+    if ifd_off + 2 > sub.len() {
+        return;
+    }
+    let count = read_tiff_u16(sub, ifd_off, bo) as usize;
+    if count > 100 {
+        return;
+    }
+    let mut pos = ifd_off + 2;
+
+    for _ in 0..count.min(100) {
+        if pos + 12 > sub.len() {
+            break;
+        }
+        let tag_id = read_tiff_u16(sub, pos, bo);
+        let tag_type = read_tiff_u16(sub, pos + 2, bo);
+        let tag_count = read_tiff_u32(sub, pos + 4, bo) as usize;
+        let tag_size = exif_type_size(tag_type) * tag_count;
+        pos += 8;
+
+        let value = if tag_size <= 4 {
+            if tag_type == 2 {
+                let end = sub[pos..pos + tag_count.min(4)]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count.min(4));
+                String::from_utf8_lossy(&sub[pos..pos + end]).to_string()
+            } else {
+                read_exif_val(sub, pos, tag_type, tag_count, bo)
+            }
+        } else {
+            let val_off = read_tiff_u32(sub, pos, bo) as usize;
+            if val_off + tag_size > sub.len() {
+                pos += 4;
+                continue;
+            }
+            if tag_type == 2 {
+                let end = sub[val_off..val_off + tag_count]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count);
+                String::from_utf8_lossy(&sub[val_off..val_off + end]).to_string()
+            } else {
+                read_exif_val(sub, val_off, tag_type, tag_count, bo)
+            }
+        };
+        pos += 4;
+
+        if let Some(name) = nikon_tag_name(tag_id) {
+            let formatted = nikon_format_value(tag_id, &value);
+            tags.push((name, formatted));
+        }
+    }
+}
+
+fn sony_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0102 => "SonyQuality",
+        0x0104 => "SonyFlashExposureComp",
+        0x0105 => "SonyWhiteBalanceFine",
+        0x0114 => "SonyColorTemperature",
+        0x0115 => "SonyWhiteBalance",
+        0x0116 => "SonyColorMode",
+        0x0117 => "SonyColorSpace",
+        0x0120 => "SonySharpness",
+        0x0121 => "SonyContrast",
+        0x0122 => "SonySaturation",
+        0x0124 => "SonyDynamicRangeOptimizer",
+        0x0127 => "SonyExposureMode",
+        0x0131 => "SonyFocusMode",
+        0x0132 => "SonyAFAreaMode",
+        0xB000 => "SonyModelID",
+        0xB001 => "SonyModelName",
+        _ => return None,
+    })
+}
+
+fn parse_sony_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    if data.len() < 2 {
+        return;
+    }
+
+    let offset = if data.len() >= 8 && (&data[0..4] == b"SONY" || &data[0..4] == b"Sony") {
+        if &data[4..8] == b" DSC" || &data[4..8] == b"\0\0\0\0" { 8 } else { 4 }
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+
+    let (bo, ifd_off) = if sub.len() >= 8 && (&sub[0..2] == b"II" || &sub[0..2] == b"MM") {
+        let bo = if &sub[0..2] == b"II" { "LE" } else { "BE" };
+        (bo, read_tiff_u32(sub, 4, bo) as usize)
+    } else {
+        ("LE", 0usize)
+    };
+
+    if ifd_off + 2 > sub.len() {
+        return;
+    }
+    let count = read_tiff_u16(sub, ifd_off, bo) as usize;
+    if count > 100 {
+        return;
+    }
+    let mut pos = ifd_off + 2;
+
+    for _ in 0..count.min(100) {
+        if pos + 12 > sub.len() {
+            break;
+        }
+        let tag_id = read_tiff_u16(sub, pos, bo);
+        let tag_type = read_tiff_u16(sub, pos + 2, bo);
+        let tag_count = read_tiff_u32(sub, pos + 4, bo) as usize;
+        let tag_size = exif_type_size(tag_type) * tag_count;
+        pos += 8;
+
+        let value = if tag_size <= 4 {
+            if tag_type == 2 {
+                let end = sub[pos..pos + tag_count.min(4)]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count.min(4));
+                String::from_utf8_lossy(&sub[pos..pos + end]).to_string()
+            } else {
+                read_exif_val(sub, pos, tag_type, tag_count, bo)
+            }
+        } else {
+            let val_off = read_tiff_u32(sub, pos, bo) as usize;
+            if val_off + tag_size > sub.len() {
+                pos += 4;
+                continue;
+            }
+            if tag_type == 2 {
+                let end = sub[val_off..val_off + tag_count]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(tag_count);
+                String::from_utf8_lossy(&sub[val_off..val_off + end]).to_string()
+            } else {
+                read_exif_val(sub, val_off, tag_type, tag_count, bo)
+            }
+        };
+        pos += 4;
+
+        if let Some(name) = sony_tag_name(tag_id) {
+            let formatted = sony_format_value(tag_id, &value);
+            tags.push((name, formatted));
+        }
+    }
+}
+
+// ---------- Olympus MakerNote ----------
+
+fn olympus_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0200 => "OlympusSpecialMode",
+        0x0201 => "OlympusQuality",
+        0x0202 => "OlympusMacro",
+        0x0203 => "OlympusBWMode",
+        0x0204 => "OlympusDigitalZoom",
+        0x0205 => "OlympusFocalPlaneDiagonal",
+        0x0206 => "OlympusLensDistortionParams",
+        0x0207 => "OlympusCameraType",
+        0x0208 => "OlympusTextInfo",
+        0x0209 => "OlympusCameraID",
+        0x020B => "OlympusEpsonImageWidth",
+        0x020C => "OlympusEpsonImageHeight",
+        0x020D => "OlympusEpsonSoftware",
+        0x0303 => "OlympusWhiteBalanceBracket",
+        0x0304 => "OlympusWhiteBalanceBias",
+        0x0600 => "OlympusPreCaptureFrames",
+        0x1010 => "OlympusSerialNumber",
+        0x1011 => "OlympusFirmware",
+        0x2010 => "OlympusEquipment",
+        0x2020 => "OlympusCameraSettings",
+        0x2030 => "OlympusRawDevelopment",
+        0x2040 => "OlympusRawDev2",
+        0x3000 => "OlympusRawInfo",
+        _ => return None,
+    })
+}
+
+fn parse_olympus_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    let offset = if data.len() >= 6 && &data[0..6] == b"OLYMP\0" {
+        if data.len() >= 8 && &data[0..8] == b"OLYMPUS\0" { 8 } else { 6 }
+    } else if data.len() >= 8 && &data[0..8] == b"OLYMPUS\0" {
+        8
+    } else if data.len() >= 2 && (&data[0..2] == b"II" || &data[0..2] == b"MM") {
+        0
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "BE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, olympus_tag_name);
+}
+
+// ---------- Panasonic MakerNote ----------
+
+fn panasonic_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "PanasonicQuality",
+        0x0002 => "PanasonicVersion",
+        0x0003 => "PanasonicWhiteBalance",
+        0x0007 => "PanasonicFocusMode",
+        0x000F => "PanasonicAFAreaMode",
+        0x001A => "PanasonicStabilization",
+        0x001C => "PanasonicMacro",
+        0x001F => "PanasonicAudio",
+        0x0020 => "PanasonicImageStabilization",
+        0x0021 => "PanasonicShootingMode",
+        0x0025 => "PanasonicWhiteBalanceBias",
+        0x0026 => "PanasonicFlashBias",
+        0x0027 => "PanasonicSerialNumber",
+        0x0028 => "PanasonicExifVersion",
+        0x002C => "PanasonicColorEffect",
+        0x002E => "PanasonicTimeSincePowerOn",
+        0x0031 => "PanasonicBurstMode",
+        0x0032 => "PanasonicSequenceNumber",
+        0x0033 => "PanasonicContrastMode",
+        0x0034 => "PanasonicNoiseReduction",
+        0x0035 => "PanasonicSelfTimer",
+        0x0036 => "PanasonicRotation",
+        0x0037 => "PanasonicAFAssistLamp",
+        0x0038 => "PanasonicColorMode",
+        0x0039 => "PanasonicBabyAge",
+        0x003A => "PanasonicOpticalZoomMode",
+        0x003B => "PanasonicConversionLens",
+        0x003C => "PanasonicTravelDay",
+        0x003E => "PanasonicProgramISO",
+        0x003F => "PanasonicAdvancedSceneMode",
+        0x0040 => "PanasonicTextStamp",
+        0x0041 => "PanasonicFacesDetected",
+        0x0044 => "PanasonicAFPointPosition",
+        0x0045 => "PanasonicFilmMode",
+        0x0047 => "PanasonicColorTemp",
+        0x0048 => "PanasonicSceneMode",
+        0x004B => "PanasonicWBAdjustAB",
+        0x004C => "PanasonicWBAdjustGM",
+        0x004D => "PanasonicAuxiliaryLens",
+        _ => return None,
+    })
+}
+
+fn parse_panasonic_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    let offset = if data.len() >= 12 && &data[..12] == b"Panasonic\0\0\0" {
+        12
+    } else if data.len() >= 11 && &data[..11] == b"Panasonic\0\0" {
+        11
+    } else if data.len() >= 10 && &data[..10] == b"Panasonic\0" {
+        10
+    } else if data.len() >= 2 && (&data[0..2] == b"II" || &data[0..2] == b"MM") {
+        0
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, panasonic_tag_name);
+}
+
+// ---------- Pentax MakerNote ----------
+
+fn pentax_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x0001 => "PentaxModelType",
+        0x0002 => "PentaxModelID",
+        0x0003 => "PentaxQuality",
+        0x0004 => "PentaxISO",
+        0x0005 => "PentaxPictureMode",
+        0x0006 => "PentaxFlashMode",
+        0x0007 => "PentaxFocusMode",
+        0x0008 => "PentaxAFPointSelected",
+        0x0009 => "PentaxAFPointsInFocus",
+        0x000B => "PentaxWhiteBalance",
+        0x000C => "PentaxWhiteBalanceMode",
+        0x000E => "PentaxSaturation",
+        0x000F => "PentaxContrast",
+        0x0010 => "PentaxSharpness",
+        0x0012 => "PentaxColorSpace",
+        0x0013 => "PentaxHue",
+        0x0014 => "PentaxExposureCompensation",
+        0x001B => "PentaxShutterSpeed",
+        0x001C => "PentaxAperture",
+        0x0020 => "PentaxDestinationCity",
+        0x0023 => "PentaxDestinationDST",
+        0x0041 => "PentaxCameraInfo",
+        0x0059 => "PentaxLensInfo",
+        0x005C => "PentaxLensType",
+        0x007F => "PentaxCameraModel",
+        0x0200 => "PentaxBlackPoint",
+        0x0201 => "PentaxWhitePoint",
+        0x0202 => "PentaxColorMatrix",
+        0x0203 => "PentaxWBInfo",
+        0x0213 => "PentaxLensData",
+        _ => return None,
+    })
+}
+
+fn parse_pentax_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Pentax MakerNote starts with "AOC\0" (Asahi Optical Co.) or "PENTAX \0" or "PENTAX\0"
+    let offset = if data.len() >= 4 && &data[0..4] == b"AOC\0" {
+        4
+    } else if data.len() >= 7 && &data[0..7] == b"PENTAX " {
+        7
+    } else if data.len() >= 8 && (&data[0..2] == b"II" || &data[0..2] == b"MM") {
+        0
+    } else {
+        0
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "BE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, pentax_tag_name);
+}
+
+// ---------- Fujifilm MakerNote ----------
+
+fn fujifilm_tag_name(tag_id: u16) -> Option<&'static str> {
+    Some(match tag_id {
+        0x1000 => "FujiQuality",
+        0x1001 => "FujiSharpness",
+        0x1002 => "FujiWhiteBalance",
+        0x1003 => "FujiColorSaturation",
+        0x1004 => "FujiTone",
+        0x1005 => "FujiColorTemperature",
+        0x1006 => "FujiContrast",
+        0x1007 => "FujiColorMode",
+        0x1010 => "FujiMacro",
+        0x1011 => "FujiFlashMode",
+        0x1020 => "FujiFocusMode",
+        0x1021 => "FujiAFMode",
+        0x1030 => "FujiSlowSync",
+        0x1031 => "FujiPictureMode",
+        0x1032 => "FujiExposureCount",
+        0x1100 => "FujiShadowTone",
+        0x1101 => "FujiHighlightTone",
+        0x1102 => "FujiNoiseReduction",
+        0x1200 => "FujiSequenceNumber",
+        0x1300 => "FujiFineSharpness",
+        0x1400 => "FujiBlurWarning",
+        0x1401 => "FujiFocusWarning",
+        0x1402 => "FujiExposureWarning",
+        0x1403 => "FujiDRange",
+        0x1404 => "FujiDynamicRange",
+        0x1405 => "FujiFilmMode",
+        0x1406 => "FujiDynamicRangeSetting",
+        0x1407 => "FujiDevelopmentDynamicRange",
+        0x1408 => "FujiMinFocalLength",
+        0x1409 => "FujiMaxFocalLength",
+        0x140A => "FujiMaxApertureAtMinFocal",
+        0x140B => "FujiMaxApertureAtMaxFocal",
+        0x1420 => "FujiAutoDynamicRange",
+        0x2F00 => "FujiFaceInfo",
+        _ => return None,
+    })
+}
+
+fn parse_fujifilm_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Fujifilm MakerNote: "FUJIFILM" (8 bytes) + version (4 bytes LE) + IFD offset (4 bytes LE)
+    let offset = if data.len() >= 16 && &data[0..8] == b"FUJIFILM" {
+        let _version = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+        let ifd_off = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
+        if ifd_off > 0 && ifd_off < data.len() {
+            // The IFD offset is relative to the start of the MakerNote, so offset = ifd_off
+            ifd_off
+        } else {
+            16
+        }
+    } else if data.len() >= 2 && (&data[0..2] == b"II" || &data[0..2] == b"MM") {
+        0
+    } else {
+        return;
+    };
+    let sub = &data[offset..];
+    if sub.len() < 2 {
+        return;
+    }
+    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    parse_makernote_ifd(sub, ifd_off, bo, tags, fujifilm_tag_name);
+}
+
+// ---------- Nikon human-readable tag formatting ----------
+
+fn nikon_format_value(tag_id: u16, raw_value: &str) -> String {
+    match tag_id {
+        0x0080 => {
+            let id: u32 = raw_value.parse().unwrap_or(u32::MAX);
+            nikon_model_name(id).unwrap_or(raw_value).to_string()
+        }
+        0x0086 => match raw_value {
+            "1" => "sRGB",
+            "2" => "Adobe RGB",
+            _ => raw_value,
+        }
+        .to_string(),
+        0x000D => {
+            // NikonLensType is a bitmask
+            let id: u16 = raw_value.parse().unwrap_or(0);
+            if id == 0 {
+                return raw_value.to_string();
+            }
+            let mut parts = Vec::new();
+            if id & 0x01 != 0 {
+                parts.push("MF");
+            }
+            if id & 0x02 != 0 {
+                parts.push("D");
+            }
+            if id & 0x04 != 0 {
+                parts.push("G");
+            }
+            if id & 0x08 != 0 {
+                parts.push("VR");
+            }
+            if parts.is_empty() { raw_value.to_string() } else { parts.join(" ") }
+        }
+        _ => raw_value.to_string(),
+    }
+}
+
+fn nikon_model_name(id: u32) -> Option<&'static str> {
+    Some(match id {
+        0x800001 => "D1H",
+        0x800002 => "D1X",
+        0x800004 => "D100",
+        0x800005 => "D2H",
+        0x800006 => "D2X",
+        0x800007 => "D2Hs",
+        0x800008 => "D2Xs",
+        0x800009 => "D200",
+        0x80000A => "D80",
+        0x80000B => "D40",
+        0x80000C => "D40x",
+        0x80000E => "D300",
+        0x80000F => "D3",
+        0x800011 => "D3X",
+        0x800012 => "D3S",
+        0x800013 => "D90",
+        0x800014 => "D700",
+        0x800015 => "D5000",
+        0x800016 => "D3000",
+        0x800017 => "D300S",
+        0x800018 => "D3100",
+        0x800019 => "D7000",
+        0x80001B => "D5100",
+        0x80001C => "D800",
+        0x80001E => "D3200",
+        0x80001F => "D600",
+        0x800020 => "D800E",
+        0x800022 => "D5200",
+        0x800023 => "D7100",
+        0x800025 => "D5300",
+        0x800026 => "Df",
+        0x800027 => "D3300",
+        0x800028 => "D4S",
+        0x800029 => "D750",
+        0x80002A => "D810",
+        0x80002B => "D5500",
+        0x80002C => "D7200",
+        0x80002E => "D5",
+        0x80002F => "D500",
+        0x800030 => "D3400",
+        0x800031 => "D5600",
+        0x800032 => "D850",
+        0x800033 => "D7500",
+        0x800035 => "D3500",
+        0x800036 => "D780",
+        0x800038 => "D6",
+        0x80003A => "Z 7",
+        0x80003B => "Z 6",
+        0x80003C => "Z 50",
+        0x80003D => "Z 5",
+        0x80003E => "Z 7II",
+        0x80003F => "Z 6II",
+        0x800040 => "Z 9",
+        0x800041 => "Z fc",
+        0x800042 => "Z 30",
+        0x800043 => "Z 8",
+        0x800045 => "Z f",
+        _ => return None,
+    })
+}
+
+// ---------- Sony human-readable tag formatting ----------
+
+fn sony_format_value(tag_id: u16, raw_value: &str) -> String {
+    match tag_id {
+        0x0117 => match raw_value {
+            "1" => "sRGB",
+            "2" => "Adobe RGB",
+            _ => raw_value,
+        }
+        .to_string(),
+        0xB000 => {
+            let id: u16 = raw_value.parse().unwrap_or(u16::MAX);
+            sony_model_name(id).unwrap_or(raw_value).to_string()
+        }
+        _ => raw_value.to_string(),
+    }
+}
+
+fn sony_model_name(id: u16) -> Option<&'static str> {
+    Some(match id {
+        0x0000 => "DSLR-A100",
+        0x0001 => "DSLR-A700",
+        0x0002 => "DSLR-A200",
+        0x0003 => "DSLR-A300",
+        0x0004 => "DSLR-A350",
+        0x0005 => "DSLR-A900",
+        0x0006 => "DSLR-A380",
+        0x0007 => "DSLR-A330",
+        0x0008 => "DSLR-A230",
+        0x0009 => "DSLR-A290",
+        0x000A => "DSLR-A390",
+        0x000B => "DSLR-A450",
+        0x000C => "DSLR-A500",
+        0x000D => "DSLR-A550",
+        0x000E => "DSLR-A560",
+        0x000F => "DSLR-A580",
+        0x0010 => "DSLR-A33",
+        0x0011 => "DSLR-A55",
+        0x0012 => "DSLR-A77",
+        0x0013 => "DSLR-A65",
+        0x0014 => "DSLR-A37",
+        0x0015 => "DSLR-A57",
+        0x0016 => "DSLR-NEX-3",
+        0x0017 => "DSLR-NEX-5",
+        0x0018 => "DSLR-NEX-5C",
+        0x0019 => "DSLR-NEX-C3",
+        0x001A => "DSLR-NEX-VG10",
+        0x001B => "DSLR-NEX-5N",
+        0x001C => "DSLR-NEX-7",
+        0x001D => "DSLR-NEX-3N",
+        0x001E => "DSLR-NEX-6",
+        0x001F => "DSLR-NEX-F3",
+        0x0020 => "SLT-A99",
+        0x0021 => "DSLR-NEX-5R",
+        0x0022 => "DSLR-NEX-5T",
+        0x0023 => "DSLR-NEX-3NL",
+        0x0025 => "ILCE-3000",
+        0x0026 => "ILCE-5000",
+        0x0027 => "ILCE-6000",
+        0x0028 => "ILCE-7S",
+        0x0029 => "ILCE-7",
+        0x002A => "ILCE-7R",
+        0x002B => "ILCE-7M2",
+        0x002C => "ILCE-7RM2",
+        0x002D => "ILCE-7SM2",
+        0x002E => "ILCE-6300",
+        0x0030 => "ILCE-9",
+        0x0031 => "ILCE-6500",
+        0x0032 => "ILCE-7RM3",
+        0x0034 => "ILCE-7M3",
+        0x0038 => "ILCE-7RM4",
+        0x0039 => "ILCE-7C",
+        0x003B => "ILCE-1",
+        0x003F => "ILCE-7SM3",
+        0x0042 => "ILCE-7M4",
+        0x0043 => "ILCE-7RM5",
+        0x0045 => "ZV-1",
+        0x0046 => "ZV-E10",
+        0x004B => "ZV-E1",
+        0x004E => "ZV-1F",
+        0x0050 => "ILCE-6700",
+        _ => return None,
+    })
+}
+
+// ---------- Canon sub-IFD parsing ----------
+
+fn canon_sub_tag_name(tag_id: u16, sub_tag: u16) -> Option<&'static str> {
+    let name = match tag_id {
+        0x0001 => match sub_tag {
+            1 => "MacroMode",
+            2 => "SelfTimer",
+            3 => "Quality",
+            4 => "FlashMode",
+            5 => "DriveMode",
+            6 => "FocusMode",
+            7 => "RecordMode",
+            8 => "ImageSize",
+            9 => "EasyShootingMode",
+            10 => "DigitalZoom",
+            11 => "Contrast",
+            12 => "Saturation",
+            13 => "Sharpness",
+            14 => "CameraISO",
+            15 => "MeteringMode",
+            16 => "FocusRange",
+            17 => "AFPoint",
+            18 => "CanonExposureMode",
+            19 => "LongExposureNoiseReduction",
+            20 => "HighISONoiseReduction",
+            _ => return None,
+        },
+        0x0004 => match sub_tag {
+            1 => "ShotInfoISO",
+            2 => "ShutterSpeed",
+            3 => "Aperture",
+            4 => "ExposureCompensation",
+            5 => "FlashCompensation",
+            6 => "FocalLength",
+            7 => "FocalLengthIn35mm",
+            8 => "ShootingDistance",
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(name)
+}
+
+fn parse_canon_sub_ifd(data: &[u8], bo: &str, parent_tag_id: u16, tags: &mut Vec<TagEntry>) {
+    if data.len() < 2 {
+        return;
+    }
+    let count = read_tiff_u16(data, 0, bo) as usize;
+    if count > 50 {
+        return;
+    }
+    let mut pos = 2;
+
+    for _ in 0..count {
+        if pos + 12 > data.len() {
+            break;
+        }
+        let sub_tag_id = read_tiff_u16(data, pos, bo);
+        let sub_tag_type = read_tiff_u16(data, pos + 2, bo);
+        let sub_count = read_tiff_u32(data, pos + 4, bo) as usize;
+        let sub_size = exif_type_size(sub_tag_type) * sub_count;
+        pos += 8;
+
+        let value = if sub_size <= 4 {
+            if sub_tag_type == 2 {
+                let end = data[pos..pos + sub_count.min(4)]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(sub_count.min(4));
+                String::from_utf8_lossy(&data[pos..pos + end]).to_string()
+            } else {
+                read_exif_val(data, pos, sub_tag_type, sub_count, bo)
+            }
+        } else {
+            let val_off = read_tiff_u32(data, pos, bo) as usize;
+            if val_off + sub_size > data.len() {
+                pos += 4;
+                continue;
+            }
+            if sub_tag_type == 2 {
+                let end = data[val_off..val_off + sub_count]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(sub_count);
+                String::from_utf8_lossy(&data[val_off..val_off + end]).to_string()
+            } else {
+                read_exif_val(data, val_off, sub_tag_type, sub_count, bo)
+            }
+        };
+        pos += 4;
+
+        if let Some(name) = canon_sub_tag_name(parent_tag_id, sub_tag_id) {
+            tags.push((name, value));
+        }
+    }
+}
+
+fn format_lens_spec(value: &str) -> String {
+    // LensSpecification (0xA432): 4 rationals: min_focal, max_focal, min_aperture, max_aperture
+    let parts: Vec<&str> = value.split(',').collect();
+    if parts.len() < 4 {
+        return value.to_string();
+    }
+    let min_f = parse_gps_rational(parts[0]).unwrap_or(0.0);
+    let max_f = parse_gps_rational(parts[1]).unwrap_or(0.0);
+    let min_a = parse_gps_rational(parts[2]).unwrap_or(0.0);
+    let max_a = parse_gps_rational(parts[3]).unwrap_or(0.0);
+    if max_f == 0.0 || min_a == 0.0 {
+        return value.to_string();
+    }
+    let focal =
+        if min_f == max_f { format!("{}mm", min_f) } else { format!("{}-{}mm", min_f, max_f) };
+    let aperture =
+        if min_a == max_a { format!("f/{}", min_a) } else { format!("f/{}-{}", min_a, max_a) };
+    format!("{} {}", focal, aperture)
+}
+
+fn format_lens_type(name: &str, type_id: &str) -> String {
+    // CanonLensType (0x00F4): map to lens name if available, otherwise return type_id
+    let id: u16 = type_id.parse().unwrap_or(u16::MAX);
+    let lens_name = match id {
+        1 => "Canon EF 50mm f/1.8",
+        2 => "Canon EF 28-80mm f/3.5-5.6",
+        3 => "Canon EF 28-105mm f/3.5-4.5",
+        6 => "Canon EF 35-80mm f/4-5.6",
+        23 => "Canon EF 28-200mm f/3.5-5.6",
+        26 => "Canon EF 100-400mm f/4.5-5.6L IS",
+        28 => "Canon EF 24-105mm f/4L IS",
+        29 => "Canon EF 24-70mm f/2.8L",
+        30 => "Canon EF 70-200mm f/4L",
+        35 => "Canon EF 70-300mm f/4-5.6 IS",
+        39 => "Canon EF 24-105mm f/4L II IS",
+        48 => "Canon EF 16-35mm f/2.8L III",
+        56 => "Canon RF 24-105mm f/4L IS",
+        57 => "Canon RF 50mm f/1.2L",
+        61 => "Canon RF 35mm f/1.8 Macro",
+        65 => "Canon RF 24-70mm f/2.8L IS",
+        69 => "Canon RF 15-35mm f/2.8L IS",
+        70 => "Canon RF 24-240mm f/4-6.3 IS",
+        71 => "Canon RF 70-200mm f/2.8L IS",
+        73 => "Canon RF 85mm f/1.2L",
+        75 => "Canon RF 100-500mm f/4.5-7.1L IS",
+        78 => "Canon RF 100mm f/2.8L Macro",
+        82 => "Canon RF 14-35mm f/4L IS",
+        84 => "Canon RF 100-400mm f/5.6-8 IS",
+        85 => "Canon RF 24mm f/1.8 Macro",
+        86 => "Canon RF 15-30mm f/4.5-6.3 IS",
+        87 => "Canon RF 28mm f/2.8",
+        90 => "Canon RF 135mm f/1.8L",
+        91 => "Canon RF 24-50mm f/4.5-6.3 IS",
+        93 => "Canon RF 28-70mm f/2.8L",
+        94 => "Canon RFS 55-210mm f/5-7.1 IS",
+        95 => "Canon RF 200-800mm f/6.3-9 IS",
+        97 => "Canon RF 24-105mm f/2.8L IS Z",
+        _ => return format!("{} ({})", name, type_id),
+    };
+    format!("{} ({})", lens_name, type_id)
+}
+
+/// Infer camera RAW format name from Make tag when the current format is TIFF.
+/// This catches formats like NEF, ARW, ORF, RW2, PEF that don't have unique magic bytes.
+fn infer_raw_format(fa: &mut FileAnalyze) {
+    let fmt =
+        fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.to_string()).unwrap_or_default();
+    if fmt != "TIFF" {
+        return;
+    }
+    let make =
+        fa.retrieve(StreamKind::General, 1, "Make").map(|z| z.to_string()).unwrap_or_default();
+    let make_upper = make.to_uppercase();
+    let raw_fmt = if make_upper.contains("NIKON") {
+        "NEF"
+    } else if make_upper.contains("SONY") {
+        "ARW"
+    } else if make_upper.contains("OLYMPUS") || make_upper.contains("OM DIGITAL") {
+        "ORF"
+    } else if make_upper.contains("PANASONIC") || make_upper.contains("LEICA") {
+        "RW2"
+    } else if make_upper.contains("PENTAX") || make_upper.contains("RICOH") {
+        "PEF"
+    } else if make_upper.contains("KODAK") {
+        "KDC"
+    } else if make_upper.contains("MINOLTA") || make_upper.contains("KONICA") {
+        "MRW"
+    } else if make_upper.contains("SAMSUNG") {
+        "SRW"
+    } else if make_upper.contains("DJI") {
+        "DNG"
+    } else {
+        return;
+    };
+    fa.set_field(StreamKind::General, 0, "Format", raw_fmt);
 }
 
 #[cfg(test)]
@@ -1077,5 +3586,871 @@ mod exif_tests {
         buf[128..132].copy_from_slice(&[0, 0, 0, 0]); // 0 tags
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_icc(&mut fa));
+    }
+
+    #[test]
+    fn canon_makernote_parses_raw_ifd() {
+        // Raw IFD (no TIFF header): entry count followed by entries.
+        // CanonModelName (0x0094) with inline 4-byte ASCII value "EOS\0"
+        // CanonSerialNumber (0x0015) with inline LONG value 0x0A0B0C0D
+        let mut mn = vec![0u8; 32];
+        // 2 entries
+        mn[0..2].copy_from_slice(&[2, 0]);
+        // Entry 0: CanonModelName 0x0094, type=2, count=4, inline="EOS\0"
+        mn[2..4].copy_from_slice(&[0x94, 0x00]); // tag
+        mn[4..6].copy_from_slice(&[2, 0]); // type ASCII
+        mn[6..10].copy_from_slice(&[4, 0, 0, 0]); // count
+        mn[10..14].copy_from_slice(b"EOS\0"); // inline value
+        // Entry 1: CanonSerialNumber 0x0015, type=4, count=1, inline=0x0A0B0C0D
+        mn[14..16].copy_from_slice(&[0x15, 0x00]); // tag
+        mn[16..18].copy_from_slice(&[4, 0]); // type LONG
+        mn[18..22].copy_from_slice(&[1, 0, 0, 0]); // count
+        mn[22..26].copy_from_slice(&[0x0D, 0x0C, 0x0B, 0x0A]); // inline LE value
+        // next IFD offset = 0
+        mn[26..30].copy_from_slice(&[0, 0, 0, 0]);
+
+        let mut tags = Vec::new();
+        parse_canon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 2);
+        assert!(tags.iter().any(|(k, v)| *k == "CanonModelName" && v == "EOS"));
+        assert!(tags.iter().any(|(k, v)| *k == "CanonSerialNumber" && v == "168496141")); // 0x0A0B0C0D LE = 168496141
+    }
+
+    #[test]
+    fn canon_makernote_parses_tiff_header_ifd() {
+        // Canon MakerNote with standard TIFF header: II + 0x2A + IFD offset
+        let mut mn = vec![0u8; 64];
+        mn[0..2].copy_from_slice(b"II");
+        mn[2..4].copy_from_slice(&[42, 0]); // magic 42 LE
+        mn[4..8].copy_from_slice(&[8, 0, 0, 0]); // IFD at offset 8
+        // IFD at 8: 1 entry
+        mn[8..10].copy_from_slice(&[1, 0]); // 1 entry
+        // Entry: CanonImageType 0x0006, type=2, count=10, value at offset
+        mn[10..12].copy_from_slice(&[6, 0]); // tag 0x0006
+        mn[12..14].copy_from_slice(&[2, 0]); // type ASCII
+        mn[14..18].copy_from_slice(&[10, 0, 0, 0]); // count = 10
+        mn[18..22].copy_from_slice(&[40, 0, 0, 0]); // value offset = 40
+        mn[22..26].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+        // String data at offset 40
+        mn[40..50].copy_from_slice(b"CR2 JPEG\0\0");
+
+        let mut tags = Vec::new();
+        parse_canon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "CanonImageType" && v == "CR2 JPEG"));
+    }
+
+    #[test]
+    fn compute_gps_decimal_from_rational() {
+        let mut tags = vec![
+            ("GPSLatitudeRef", "S".into()),
+            ("GPSLatitude", "40/1, 42/1, 455/10".into()),
+            ("GPSLongitudeRef", "W".into()),
+            ("GPSLongitude", "74/1, 0/1, 214/10".into()),
+        ];
+        compute_gps_decimal(&mut tags);
+        let lat_dec = tags.iter().find(|(k, _)| *k == "GPSLatitudeDecimal").unwrap();
+        let lon_dec = tags.iter().find(|(k, _)| *k == "GPSLongitudeDecimal").unwrap();
+        // 40 + 42/60 + 45.5/3600 = -40.712639
+        assert_eq!(lat_dec.1, "-40.712639");
+        // -(74 + 0/60 + 21.4/3600) = -74.005944
+        assert_eq!(lon_dec.1, "-74.005944");
+    }
+
+    #[test]
+    fn compute_gps_decimal_north_east() {
+        let mut tags = vec![
+            ("GPSLatitudeRef", "N".into()),
+            ("GPSLatitude", "48, 51, 30".into()),
+            ("GPSLongitudeRef", "E".into()),
+            ("GPSLongitude", "2, 17, 40".into()),
+        ];
+        compute_gps_decimal(&mut tags);
+        let lat_dec = tags.iter().find(|(k, _)| *k == "GPSLatitudeDecimal").unwrap();
+        let lon_dec = tags.iter().find(|(k, _)| *k == "GPSLongitudeDecimal").unwrap();
+        // 48 + 51/60 + 30/3600 = 48.858333
+        assert_eq!(lat_dec.1, "48.858333");
+        // 2 + 17/60 + 40/3600 = 2.294444
+        assert_eq!(lon_dec.1, "2.294444");
+    }
+
+    #[test]
+    fn compute_gps_decimal_no_tags() {
+        let mut tags: Vec<TagEntry> = Vec::new();
+        compute_gps_decimal(&mut tags);
+        assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn jpeg_com_parses_marker() {
+        let mut buf = vec![0u8; 256];
+        buf[0] = 0xFF;
+        buf[1] = 0xD8; // SOI
+        buf[2] = 0xFF;
+        buf[3] = 0xFE; // COM marker
+        let comment = b"Test JPEG Comment!";
+        let data_len = comment.len() + 2; // length includes 2-byte length field
+        buf[4] = ((data_len >> 8) & 0xFF) as u8;
+        buf[5] = (data_len & 0xFF) as u8;
+        buf[6..6 + comment.len()].copy_from_slice(comment);
+        let after_com = 6 + comment.len();
+        buf[after_com] = 0xFF;
+        buf[after_com + 1] = 0xDA; // SOS
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_jpeg_com(&mut fa));
+    }
+
+    #[test]
+    fn jpeg_com_rejects_non_jpeg() {
+        let buf = b"Not a JPEG";
+        let mut fa = FileAnalyze::new(buf);
+        assert!(!parse_jpeg_com(&mut fa));
+    }
+
+    #[test]
+    fn jpeg_com_skips_empty_comments() {
+        // Build: SOI + COM(len=4, data="") + SOS
+        // COM data after length bytes: just 2 null bytes → empty after trim
+        let raw = vec![0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x04, 0x00, 0x00, 0xFF, 0xDA];
+        let mut fa = FileAnalyze::new(&raw);
+        assert!(!parse_jpeg_com(&mut fa));
+    }
+
+    #[test]
+    fn png_text_parses_texh_chunk() {
+        let mut buf = vec![0u8; 64];
+        buf[0..8].copy_from_slice(b"\x89PNG\r\n\x1A\n");
+        let payload = b"Description\0A test image";
+        let chunk_len = payload.len() as u32;
+        buf[8..12].copy_from_slice(&chunk_len.to_be_bytes());
+        buf[12..16].copy_from_slice(b"tEXt");
+        buf[16..16 + payload.len()].copy_from_slice(payload);
+        let crc_off = 16 + payload.len();
+        buf[crc_off..crc_off + 4].copy_from_slice(&[0; 4]);
+        let iend = crc_off + 4;
+        buf[iend..iend + 4].copy_from_slice(&[0, 0, 0, 0]);
+        buf[iend + 4..iend + 8].copy_from_slice(b"IEND");
+        buf[iend + 8..iend + 12].copy_from_slice(&[0; 4]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_png_text(&mut fa));
+    }
+
+    #[test]
+    fn png_text_rejects_non_png() {
+        let buf = b"Not a PNG";
+        let mut fa = FileAnalyze::new(buf);
+        assert!(!parse_png_text(&mut fa));
+    }
+
+    #[test]
+    fn png_text_skips_unknown_chunks() {
+        // PNG with only IHDR and IEND — no text chunks
+        let mut buf = vec![0u8; 48];
+        buf[0..8].copy_from_slice(b"\x89PNG\r\n\x1A\n");
+        // IHDR
+        buf[8..12].copy_from_slice(&[0, 0, 0, 13]); // length 13
+        buf[12..16].copy_from_slice(b"IHDR");
+        // IHDR data: minimal
+        buf[16..20].copy_from_slice(&[0, 0, 0, 1]); // width 1
+        buf[20..24].copy_from_slice(&[0, 0, 0, 1]); // height 1
+        buf[24] = 8;
+        buf[25] = 2;
+        buf[26] = 0;
+        buf[27] = 0;
+        buf[28] = 0; // rest
+        let crc_off = 29;
+        buf[crc_off..crc_off + 4].copy_from_slice(&[0; 4]); // crc
+        // IEND
+        let iend_off = crc_off + 4;
+        buf[iend_off..iend_off + 4].copy_from_slice(&[0, 0, 0, 0]); // len 0
+        buf[iend_off + 4..iend_off + 8].copy_from_slice(b"IEND");
+        buf[iend_off + 8..iend_off + 12].copy_from_slice(&[0; 4]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_png_text(&mut fa));
+    }
+
+    #[test]
+    fn canon_makernote_handles_unknown_tags() {
+        // Raw IFD with a tag ID we don't know about (0xFFFF)
+        let mut mn = vec![0u8; 20];
+        mn[0..2].copy_from_slice(&[1, 0]); // 1 entry
+        mn[2..4].copy_from_slice(&[0xFF, 0xFF]); // unknown tag
+        mn[4..6].copy_from_slice(&[4, 0]); // type LONG
+        mn[6..10].copy_from_slice(&[1, 0, 0, 0]); // count
+        mn[10..14].copy_from_slice(&[42, 0, 0, 0]); // value
+
+        let mut tags = Vec::new();
+        parse_canon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 0); // unknown tag silently skipped
+    }
+
+    #[test]
+    fn nikon_makernote_parses_raw_ifd_be() {
+        // Nikon raw IFD (no TIFF header, big-endian default).
+        // First 6 bytes: "Nikon\0" header, then raw IFD.
+        let mut mn = vec![0u8; 40];
+        mn[0..6].copy_from_slice(b"Nikon\0");
+        // 2 entries
+        mn[6..8].copy_from_slice(&[0, 2]); // count = 2 (BE)
+        // Entry 0: NikonShutterCount 0x00A0, type=4 LONG, count=1
+        mn[8..10].copy_from_slice(&[0, 0xA0]); // tag 0x00A0 (BE)
+        mn[10..12].copy_from_slice(&[0, 4]); // type LONG
+        mn[12..16].copy_from_slice(&[0, 0, 0, 1]); // count = 1
+        mn[16..20].copy_from_slice(&[0, 0, 0x1A, 0x2B]); // value = 6699 (BE)
+        // Entry 1: NikonISOSpeed 0x0002, type=3 SHORT, count=1
+        mn[20..22].copy_from_slice(&[0, 2]); // tag
+        mn[22..24].copy_from_slice(&[0, 3]); // type SHORT
+        mn[24..28].copy_from_slice(&[0, 0, 0, 1]); // count
+        mn[28..30].copy_from_slice(&[0, 200]); // value = 200 (BE)
+        mn[30..34].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0 (4 bytes)
+
+        let mut tags = Vec::new();
+        parse_nikon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 2);
+        assert!(tags.iter().any(|(k, v)| *k == "NikonShutterCount" && v == "6699"));
+        assert!(tags.iter().any(|(k, v)| *k == "NikonISOSpeed" && v == "200"));
+    }
+
+    #[test]
+    fn nikon_makernote_parses_tiff_header() {
+        // Nikon with TIFF header: "Nikon\0" + MM + 0x002A + IFD offset
+        // IFD offset 14 is relative to sub[4..8] (after Nikon\0), so IFD starts at data[20]
+        let mut mn = vec![0u8; 64];
+        mn[0..6].copy_from_slice(b"Nikon\0");
+        mn[6..8].copy_from_slice(b"MM"); // big-endian in sub[0..2]
+        mn[8..10].copy_from_slice(&[0, 42]); // magic 42 BE in sub[2..4]
+        mn[10..14].copy_from_slice(&[0, 0, 0, 14]); // IFD offset at sub[4..8] = 14
+        // IFD at sub[14] = data[6+14] = data[20]
+        mn[20..22].copy_from_slice(&[0, 1]); // 1 entry
+        // Entry: NikonModelID 0x0080, type=7 UNDEFINED, count=4
+        mn[22..24].copy_from_slice(&[0, 0x80]); // tag
+        mn[24..26].copy_from_slice(&[0, 7]); // type UNDEFINED
+        mn[26..30].copy_from_slice(&[0, 0, 0, 4]); // count
+        mn[30..34].copy_from_slice(b"\x01\x02\x03\x04"); // inline value
+        mn[34..38].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+
+        let mut tags = Vec::new();
+        parse_nikon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, _)| *k == "NikonModelID"));
+    }
+
+    #[test]
+    fn nikon_makernote_no_header() {
+        // Nikon without "Nikon\0" prefix - raw IFD
+        let mut mn = vec![0u8; 16];
+        mn[0..2].copy_from_slice(&[0, 1]); // count = 1 (BE)
+        mn[2..4].copy_from_slice(&[0, 0x85]); // tag 0x0085 NikonSerialNumber
+        mn[4..6].copy_from_slice(&[0, 2]); // type ASCII
+        mn[6..10].copy_from_slice(&[0, 0, 0, 3]); // count = 3
+        mn[10..14].copy_from_slice(b"ABC\0"); // inline
+
+        let mut tags = Vec::new();
+        parse_nikon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "NikonSerialNumber" && v == "ABC"));
+    }
+
+    #[test]
+    fn sony_makernote_parses_tiff_header() {
+        // Sony with TIFF header (LE)
+        let mut mn = vec![0u8; 64];
+        mn[0..2].copy_from_slice(b"II");
+        mn[2..4].copy_from_slice(&[42, 0]);
+        mn[4..8].copy_from_slice(&[8, 0, 0, 0]); // IFD at offset 8
+        // IFD at 8: 1 entry
+        mn[8..10].copy_from_slice(&[1, 0]); // 1 entry (LE)
+        // Entry: SonyQuality 0x0102, type=3 SHORT, count=1
+        mn[10..12].copy_from_slice(&[0x02, 0x01]); // tag 0x0102 (LE)
+        mn[12..14].copy_from_slice(&[3, 0]); // type SHORT
+        mn[14..18].copy_from_slice(&[1, 0, 0, 0]); // count = 1
+        mn[18..20].copy_from_slice(&[2, 0]); // value = 2 (LE)
+        mn[20..24].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+
+        let mut tags = Vec::new();
+        parse_sony_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "SonyQuality" && v == "2"));
+    }
+
+    #[test]
+    fn sony_makernote_with_sony_dsc_header() {
+        // Sony with "SONY DSC" header (8 bytes)
+        // IFD offset 16 is relative to sub (data after header), so IFD at data[24]
+        let mut mn = vec![0u8; 64];
+        mn[0..8].copy_from_slice(b"SONY DSC");
+        mn[8..10].copy_from_slice(b"MM"); // BE in sub[0..2]
+        mn[10..12].copy_from_slice(&[0, 42]); // magic in sub[2..4]
+        mn[12..16].copy_from_slice(&[0, 0, 0, 16]); // IFD offset in sub[4..8] = 16
+        // IFD at sub[16] = data[8+16] = data[24]
+        mn[24..26].copy_from_slice(&[0, 1]); // 1 entry (BE)
+        // Entry: SonyColorSpace 0x0117, type=3 SHORT, count=1
+        mn[26..28].copy_from_slice(&[0x01, 0x17]); // tag (BE)
+        mn[28..30].copy_from_slice(&[0, 3]); // type SHORT
+        mn[30..34].copy_from_slice(&[0, 0, 0, 1]); // count
+        mn[34..36].copy_from_slice(&[0, 1]); // value = 1 (sRGB, BE)
+        mn[36..40].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+
+        let mut tags = Vec::new();
+        parse_sony_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "SonyColorSpace" && v == "sRGB"));
+    }
+
+    #[test]
+    fn nikon_format_color_space() {
+        assert_eq!(nikon_format_value(0x0086, "1"), "sRGB");
+        assert_eq!(nikon_format_value(0x0086, "2"), "Adobe RGB");
+        assert_eq!(nikon_format_value(0x0086, "999"), "999");
+    }
+
+    #[test]
+    fn nikon_format_model_id() {
+        let formatted = nikon_format_value(0x0080, "8388658");
+        assert_eq!(formatted, "D850");
+        let formatted = nikon_format_value(0x0080, "8388664");
+        assert_eq!(formatted, "D6");
+        let formatted = nikon_format_value(0x0080, "8388666");
+        assert_eq!(formatted, "Z 7");
+        let formatted = nikon_format_value(0x0080, "99999999");
+        assert_eq!(formatted, "99999999");
+    }
+
+    #[test]
+    fn nikon_format_lens_type() {
+        let formatted = nikon_format_value(0x000D, "15");
+        assert_eq!(formatted, "MF D G VR");
+        let formatted = nikon_format_value(0x000D, "8");
+        assert_eq!(formatted, "VR");
+        let formatted = nikon_format_value(0x000D, "0");
+        assert_eq!(formatted, "0");
+    }
+
+    #[test]
+    fn sony_format_color_space() {
+        assert_eq!(sony_format_value(0x0117, "1"), "sRGB");
+        assert_eq!(sony_format_value(0x0117, "2"), "Adobe RGB");
+        assert_eq!(sony_format_value(0x0117, "999"), "999");
+    }
+
+    #[test]
+    fn sony_format_model_id() {
+        let formatted = sony_format_value(0xB000, "31");
+        assert_eq!(formatted, "DSLR-NEX-F3");
+        let formatted = sony_format_value(0xB000, "41");
+        assert_eq!(formatted, "ILCE-7");
+        let formatted = sony_format_value(0xB000, "99999");
+        assert_eq!(formatted, "99999");
+    }
+
+    #[test]
+    fn format_lens_spec_zoom() {
+        let result = format_lens_spec("24/1,70/1,4/1,4/1");
+        assert_eq!(result, "24-70mm f/4");
+    }
+
+    #[test]
+    fn format_lens_spec_prime() {
+        let result = format_lens_spec("50/1,50/1,18/10,18/10");
+        assert_eq!(result, "50mm f/1.8");
+    }
+
+    #[test]
+    fn format_lens_spec_insufficient_parts() {
+        let result = format_lens_spec("50/1,50/1");
+        assert_eq!(result, "50/1,50/1");
+    }
+
+    #[test]
+    fn format_lens_spec_zoom_aperture() {
+        let result = format_lens_spec("100/1,400/1,45/10,56/10");
+        assert_eq!(result, "100-400mm f/4.5-5.6");
+    }
+
+    #[test]
+    fn canon_sub_ifd_parses_camera_settings() {
+        let sub_data: Vec<u8> = [
+            3, 0, 11, 0, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 12, 0, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 13, 0,
+            3, 0, 1, 0, 0, 0, 2, 0, 0, 0,
+        ]
+        .to_vec();
+        let sub_len = sub_data.len() as u32;
+        let mn_size = 18 + sub_data.len();
+        let mut mn = vec![0u8; mn_size];
+        mn[0..2].copy_from_slice(&[1, 0]);
+        mn[2..4].copy_from_slice(&[1, 0]);
+        mn[4..6].copy_from_slice(&[7, 0]);
+        mn[6..10].copy_from_slice(&sub_len.to_le_bytes());
+        let val_off: u32 = 14;
+        mn[10..14].copy_from_slice(&val_off.to_le_bytes());
+        let next_off = 14 + sub_data.len();
+        if next_off + 4 <= mn.len() {
+            mn[next_off..next_off + 4].copy_from_slice(&[0, 0, 0, 0]);
+        }
+        mn[14..14 + sub_data.len()].copy_from_slice(&sub_data);
+        let mut tags = Vec::new();
+        parse_canon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 4);
+        assert!(tags.iter().any(|(k, _)| *k == "CanonCameraSettings"));
+        assert!(tags.iter().any(|(k, v)| *k == "Contrast" && v == "0"));
+        assert!(tags.iter().any(|(k, v)| *k == "Saturation" && v == "1"));
+        assert!(tags.iter().any(|(k, v)| *k == "Sharpness" && v == "2"));
+    }
+
+    #[test]
+    fn olympus_makernote_parses_raw_ifd() {
+        let mut mn = vec![0u8; 48];
+        mn[0..6].copy_from_slice(b"OLYMP\0");
+        mn[6..8].copy_from_slice(&[0, 1]);
+        mn[8..10].copy_from_slice(&[0x02, 0x00]);
+        mn[10..12].copy_from_slice(&[0, 4]);
+        mn[12..16].copy_from_slice(&[0, 0, 0, 1]);
+        mn[16..20].copy_from_slice(&[0, 0, 0, 42]);
+        mn[20..24].copy_from_slice(&[0, 0, 0, 0]);
+        let mut tags = Vec::new();
+        parse_olympus_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "OlympusSpecialMode" && v == "42"));
+    }
+
+    #[test]
+    fn olympus_makernote_skips_without_header() {
+        let mut mn = vec![0u8; 24];
+        mn[0..2].copy_from_slice(&[0, 1]);
+        mn[2..4].copy_from_slice(&[0x02, 0x01]);
+        mn[4..6].copy_from_slice(&[0, 4]);
+        mn[6..10].copy_from_slice(&[0, 0, 0, 1]);
+        mn[10..14].copy_from_slice(&[0, 0, 0, 99]);
+        mn[14..18].copy_from_slice(&[0, 0, 0, 0]);
+        let mut tags = Vec::new();
+        parse_olympus_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "OlympusQuality" && v == "99"));
+    }
+
+    #[test]
+    fn panasonic_makernote_parses_raw_ifd() {
+        // Panasonic MakerNote: "Panasonic\0\0\0" (12 bytes) + raw IFD at offset 12 (LE default)
+        let mut mn = vec![0u8; 48];
+        mn[0..12].copy_from_slice(b"Panasonic\0\0\0");
+        // IFD at offset 12: raw IFD (LE)
+        mn[12..14].copy_from_slice(&[1, 0]); // count = 1 (LE)
+        // Entry: PanasonicQuality 0x0001, type=3 SHORT, count=1
+        mn[14..16].copy_from_slice(&[1, 0]); // tag 0x0001 (LE)
+        mn[16..18].copy_from_slice(&[3, 0]); // type SHORT
+        mn[18..22].copy_from_slice(&[1, 0, 0, 0]); // count = 1
+        mn[22..24].copy_from_slice(&[5, 0]); // value = 5 (LE)
+        mn[24..28].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+
+        let mut tags = Vec::new();
+        parse_panasonic_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "PanasonicQuality" && v == "5"));
+    }
+
+    #[test]
+    fn pentax_makernote_parses_aoc_header() {
+        // Pentax MakerNote: "AOC\0" + raw IFD (BE default)
+        let mut mn = vec![0u8; 36];
+        mn[0..4].copy_from_slice(b"AOC\0");
+        // IFD at offset 4: raw IFD (BE)
+        mn[4..6].copy_from_slice(&[0, 1]); // count = 1
+        // Entry: PentaxModelType 0x0001, type=3 SHORT, count=1
+        mn[6..8].copy_from_slice(&[0, 1]); // tag (BE)
+        mn[8..10].copy_from_slice(&[0, 3]); // type SHORT
+        mn[10..14].copy_from_slice(&[0, 0, 0, 1]); // count
+        mn[14..16].copy_from_slice(&[0, 3]); // value = 3 (BE)
+        mn[16..20].copy_from_slice(&[0, 0, 0, 0]); // next IFD
+
+        let mut tags = Vec::new();
+        parse_pentax_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "PentaxModelType" && v == "3"));
+    }
+
+    #[test]
+    fn pentax_makernote_parses_without_header() {
+        // Pentax without header — raw IFD (BE default)
+        let mut mn = vec![0u8; 24];
+        mn[0..2].copy_from_slice(&[0, 1]); // count = 1 (BE)
+        mn[2..4].copy_from_slice(&[0, 3]); // tag 0x0003 PentaxQuality
+        mn[4..6].copy_from_slice(&[0, 4]); // type LONG
+        mn[6..10].copy_from_slice(&[0, 0, 0, 1]); // count
+        mn[10..14].copy_from_slice(&[0, 0, 0, 7]); // value = 7
+
+        let mut tags = Vec::new();
+        parse_pentax_makernote(&mn, &mut tags);
+        assert!(tags.iter().any(|(k, v)| *k == "PentaxQuality" && v == "7"));
+    }
+
+    #[test]
+    fn fujifilm_makernote_parses_header() {
+        // Fujifilm MakerNote: "FUJIFILM" + version + ifd_off (all LE) + raw IFD
+        let mut mn = vec![0u8; 64];
+        mn[0..8].copy_from_slice(b"FUJIFILM");
+        // version at bytes 8-11
+        mn[8..12].copy_from_slice(&[2, 0, 0, 0]); // version 2 (LE)
+        // IFD offset at bytes 12-15: 0 → default to 16
+        mn[12..16].copy_from_slice(&[0, 0, 0, 0]);
+        // Raw IFD at offset 16 (LE default)
+        mn[16..18].copy_from_slice(&[1, 0]); // count = 1 (LE)
+        // Entry: FujiQuality 0x1000, type=3 SHORT, count=1
+        mn[18..20].copy_from_slice(&[0x00, 0x10]); // tag 0x1000 (LE)
+        mn[20..22].copy_from_slice(&[3, 0]); // type SHORT
+        mn[22..26].copy_from_slice(&[1, 0, 0, 0]); // count = 1
+        mn[26..28].copy_from_slice(&[2, 0]); // value = 2
+        mn[28..32].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+
+        let mut tags = Vec::new();
+        parse_fujifilm_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "FujiQuality" && v == "2"));
+    }
+
+    #[test]
+    fn fujifilm_makernote_uses_ifd_offset() {
+        // Fujifilm with explicit IFD offset in header
+        let mut mn = vec![0u8; 64];
+        mn[0..8].copy_from_slice(b"FUJIFILM");
+        mn[8..12].copy_from_slice(&[2, 0, 0, 0]); // version
+        // IFD offset = 20 (from start of data)
+        mn[12..16].copy_from_slice(&[20, 0, 0, 0]); // LE
+        // Raw IFD at offset 20
+        mn[20..22].copy_from_slice(&[1, 0]); // count = 1 (LE)
+        mn[22..24].copy_from_slice(&[0x01, 0x10]); // tag 0x1001 FujiSharpness (LE)
+        mn[24..26].copy_from_slice(&[3, 0]); // type SHORT
+        mn[26..30].copy_from_slice(&[1, 0, 0, 0]); // count
+        mn[30..32].copy_from_slice(&[3, 0]); // value = 3
+        mn[32..36].copy_from_slice(&[0, 0, 0, 0]); // next IFD
+
+        let mut tags = Vec::new();
+        parse_fujifilm_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "FujiSharpness" && v == "3"));
+    }
+
+    #[test]
+    fn nikon_makernote_uses_formatted_values() {
+        // Build a Nikon MakerNote that triggers value formatting.
+        // Tag 0x0086 NikonColorSpace with value 2 should become "Adobe RGB"
+        let mut mn = vec![0u8; 36];
+        mn[0..6].copy_from_slice(b"Nikon\0");
+        mn[6..8].copy_from_slice(&[0, 1]); // count = 1 (BE)
+        mn[8..10].copy_from_slice(&[0, 0x86]); // tag 0x0086 (BE)
+        mn[10..12].copy_from_slice(&[0, 3]); // type SHORT
+        mn[12..16].copy_from_slice(&[0, 0, 0, 1]); // count
+        mn[16..18].copy_from_slice(&[0, 2]); // value = 2 (Adobe RGB, BE)
+        mn[18..22].copy_from_slice(&[0, 0, 0, 0]); // next IFD
+
+        let mut tags = Vec::new();
+        parse_nikon_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "NikonColorSpace" && v == "Adobe RGB"));
+    }
+
+    #[test]
+    fn sony_makernote_uses_formatted_values() {
+        // Build a Sony MakerNote that triggers value formatting.
+        // Tag 0x0117 SonyColorSpace with value 2 should become "Adobe RGB"
+        let mut mn = vec![0u8; 36];
+        mn[0..2].copy_from_slice(b"II");
+        mn[2..4].copy_from_slice(&[42, 0]); // magic
+        mn[4..8].copy_from_slice(&[8, 0, 0, 0]); // IFD at offset 8
+        mn[8..10].copy_from_slice(&[1, 0]); // 1 entry (LE)
+        mn[10..12].copy_from_slice(&[0x17, 0x01]); // tag 0x0117 (LE)
+        mn[12..14].copy_from_slice(&[3, 0]); // type SHORT
+        mn[14..18].copy_from_slice(&[1, 0, 0, 0]); // count
+        mn[18..20].copy_from_slice(&[2, 0]); // value = 2 (Adobe RGB)
+        mn[20..24].copy_from_slice(&[0, 0, 0, 0]); // next IFD
+
+        let mut tags = Vec::new();
+        parse_sony_makernote(&mn, &mut tags);
+        assert_eq!(tags.len(), 1);
+        assert!(tags.iter().any(|(k, v)| *k == "SonyColorSpace" && v == "Adobe RGB"));
+    }
+
+    // ---------- IPTC IIM ----------
+
+    fn build_iim(pairs: &[(u8, u8, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        for &(record, dataset, data) in pairs {
+            buf.push(0x1C);
+            buf.push(record);
+            buf.push(dataset);
+            if data.len() < 128 {
+                buf.push(data.len() as u8);
+            } else {
+                let len = data.len();
+                buf.push(0x80 | (len >> 8) as u8);
+                buf.push(len as u8);
+            }
+            buf.extend_from_slice(data);
+        }
+        buf
+    }
+
+    #[test]
+    fn iim_parses_basic_fields() {
+        let buf = build_iim(&[
+            (2, 5, b"Sunset"),
+            (2, 80, b"John Doe"),
+            (2, 90, b"Paris"),
+            (2, 101, b"France"),
+            (2, 116, b"2024 Acme Corp"),
+            (2, 120, b"A beautiful sunset"),
+        ]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            Some("Sunset")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Byline").map(|z| z.as_str()),
+            Some("John Doe")
+        );
+        assert_eq!(fa.retrieve(StreamKind::General, 0, "City").map(|z| z.as_str()), Some("Paris"));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Country").map(|z| z.as_str()),
+            Some("France")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Copyright").map(|z| z.as_str()),
+            Some("2024 Acme Corp")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Description").map(|z| z.as_str()),
+            Some("A beautiful sunset")
+        );
+    }
+
+    #[test]
+    fn iim_aggregates_keywords() {
+        let buf = build_iim(&[(2, 25, b"travel"), (2, 25, b"sunset"), (2, 25, b"landscape")]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Keyword").map(|z| z.as_str()),
+            Some("travel / sunset / landscape")
+        );
+    }
+
+    #[test]
+    fn iim_parses_envelope_record() {
+        let buf = build_iim(&[
+            (1, 30, b"JFIF"), // IIMFileFormat
+            (1, 40, b"1.02"), // IIMFileVersion
+            (1, 50, b"AP"),   // ServiceIdentifier
+            (1, 90, b"3"),    // EnvelopePriority
+        ]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "IIMFileFormat").map(|z| z.as_str()),
+            Some("JFIF")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "IIMFileVersion").map(|z| z.as_str()),
+            Some("1.02")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ServiceIdentifier").map(|z| z.as_str()),
+            Some("AP")
+        );
+    }
+
+    #[test]
+    fn iim_parses_additional_fields() {
+        let buf = build_iim(&[
+            (2, 10, b"2"),                  // Urgency
+            (2, 15, b"SCI"),                // Category
+            (2, 55, b"2024-01-15"),         // DateCreated
+            (2, 60, b"14:30:00"),           // TimeCreated
+            (2, 65, b"Photoshop"),          // OriginatingProgram
+            (2, 85, b"Staff Photographer"), // BylineTitle
+            (2, 95, b"California"),         // ProvinceState
+            (2, 100, b"US"),                // CountryCode
+            (2, 105, b"Amazing View"),      // Headline
+            (2, 110, b"Jane Smith"),        // Credit
+            (2, 115, b"Acme Wire"),         // Source
+            (2, 118, b"editor@acme.com"),   // Contact
+        ]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(fa.retrieve(StreamKind::General, 0, "Urgency").map(|z| z.as_str()), Some("2"));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Category").map(|z| z.as_str()),
+            Some("SCI")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "DateCreated").map(|z| z.as_str()),
+            Some("2024-01-15")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "TimeCreated").map(|z| z.as_str()),
+            Some("14:30:00")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "OriginatingProgram").map(|z| z.as_str()),
+            Some("Photoshop")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "BylineTitle").map(|z| z.as_str()),
+            Some("Staff Photographer")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ProvinceState").map(|z| z.as_str()),
+            Some("California")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "CountryCode").map(|z| z.as_str()),
+            Some("US")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Headline").map(|z| z.as_str()),
+            Some("Amazing View")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Credit").map(|z| z.as_str()),
+            Some("Jane Smith")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Source").map(|z| z.as_str()),
+            Some("Acme Wire")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Contact").map(|z| z.as_str()),
+            Some("editor@acme.com")
+        );
+    }
+
+    #[test]
+    fn iim_handles_2byte_size() {
+        let long_val = vec![b'A'; 200];
+        let buf = build_iim(&[(2, 80, &long_val)]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        let expected = String::from_utf8_lossy(&long_val).trim_end().to_string();
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Byline").map(|z| z.as_str()),
+            Some(expected.as_str())
+        );
+    }
+
+    #[test]
+    fn iim_rejects_non_iim_data() {
+        let buf = b"Not IIM data at all";
+        let mut fa = FileAnalyze::new(buf);
+        assert!(!parse_iim(&mut fa));
+    }
+
+    #[test]
+    fn iim_skips_unknown_datasets() {
+        // dataset 255 is not in our table
+        let buf = build_iim(&[(2, 255, b"ignored"), (2, 5, b"Title")]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            Some("Title")
+        );
+        // only the known dataset maps; unknown is skipped
+        assert!(fa.retrieve(StreamKind::General, 0, "ObjectName").is_some());
+    }
+
+    #[test]
+    fn iim_parses_digital_creation_fields() {
+        let buf = build_iim(&[
+            (2, 62, b"2024-01-15"),     // DigitalCreationDate
+            (2, 63, b"14:30:00+01:00"), // DigitalCreationTime
+            (2, 70, b"25.0"),           // ProgramVersion
+            (2, 75, b"a"),              // ObjectCycle
+        ]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "DigitalCreationDate").map(|z| z.as_str()),
+            Some("2024-01-15")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "DigitalCreationTime").map(|z| z.as_str()),
+            Some("14:30:00+01:00")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ProgramVersion").map(|z| z.as_str()),
+            Some("25.0")
+        );
+    }
+
+    #[test]
+    fn iim_trims_trailing_whitespace() {
+        let buf = build_iim(&[(2, 5, b"Sunset  \t\n")]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            Some("Sunset")
+        );
+    }
+
+    #[test]
+    fn iim_with_extra_noise_before_marker() {
+        let mut buf = b"Photoshop 3.0\x00\x00\x00\x00".to_vec();
+        buf.extend_from_slice(&build_iim(&[(2, 5, b"NoiseTest")]));
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iim(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            Some("NoiseTest")
+        );
+    }
+
+    #[test]
+    fn exif_tag_0x83bb_routes_to_iim_parser() {
+        // Build a TIFF with IFD0 containing tag 0x83BB (IPTC/NAA).
+        // The tag value points to raw IIM data at a separate offset.
+        let iim_data =
+            build_iim(&[(2, 5, b"ExifIPTC"), (2, 80, b"Tester"), (2, 120, b"Via 0x83BB")]);
+        let iim_len = iim_data.len() as u32;
+
+        // TIFF header (LE) + IFD0
+        let mut buf = vec![0u8; 8 + 12 + 4 + iim_len as usize]; // header(8) + entry(12) + next(4) + iim_data
+        buf[0..2].copy_from_slice(b"II");
+        buf[2..4].copy_from_slice(&[42, 0]);
+        buf[4..8].copy_from_slice(&[8, 0, 0, 0]); // IFD0 offset = 8 (LE)
+
+        buf[8] = 0x01; // 1 IFD entry
+        buf[9] = 0x00; // (LE u16 count)
+
+        // Entry: tag=0x83BB, type=7 (undefined), count=iim_len, value offset
+        buf[10..12].copy_from_slice(&[0xBB, 0x83]); // tag 0x83BB (LE)
+        buf[12..14].copy_from_slice(&[7, 0]); // type 7 = undefined (LE)
+        buf[14..18].copy_from_slice(&iim_len.to_le_bytes()); // count (LE)
+        // value is > 4 bytes, so this is an offset pointer
+        let val_off: u32 = 8 + 12 + 4; // after IFD0 header: 8 (header) + count(2) + entry(12) + next_ifd(4)
+        buf[18..22].copy_from_slice(&val_off.to_le_bytes());
+
+        // next IFD = 0
+        let next_off = 8 + 2 + 12;
+        buf[next_off..next_off + 4].copy_from_slice(&[0, 0, 0, 0]);
+
+        // IIM data at val_off
+        let iim_off = val_off as usize;
+        buf[iim_off..iim_off + iim_data.len()].copy_from_slice(&iim_data);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_exif(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            Some("ExifIPTC")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Byline").map(|z| z.as_str()),
+            Some("Tester")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Description").map(|z| z.as_str()),
+            Some("Via 0x83BB")
+        );
     }
 }

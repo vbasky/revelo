@@ -37,9 +37,9 @@ use revelo_parsers_container::{
     parse_xdcam_clip,
 };
 use revelo_parsers_image::{
-    parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_dds, parse_dpx, parse_exr,
-    parse_gain_map, parse_gif, parse_ico, parse_jp2, parse_jpeg, parse_pcx, parse_png, parse_psd,
-    parse_rle, parse_tga, parse_tiff, parse_webp,
+    parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_cr2, parse_dds, parse_dpx,
+    parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jp2, parse_jpeg, parse_pcx, parse_png,
+    parse_psd, parse_raf, parse_rle, parse_tga, parse_tiff, parse_webp,
 };
 use revelo_parsers_text::{
     parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dtvcc_transport, parse_dvb_subtitle,
@@ -55,13 +55,13 @@ use revelo_parsers_video::{
     parse_vp9, parse_vvc, parse_y4m,
 };
 
-/// Returns the complete parser dispatch table (178 entries).
+/// Returns the complete parser dispatch table (180 entries).
 ///
 /// Ordering: containers first (header peek → sub-parser delegation),
 /// then video codecs, audio codecs, images, text, and archives.
 /// Container-vs-elementary ordering matters — a raw codec parser
 /// running before a container could false-match on random bytes.
-pub fn table() -> [fn(&mut FileAnalyze) -> bool; 178] {
+pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
     [
         // ── Containers ──────────────────────────────────────────
         parse_wav,           // WAV
@@ -130,6 +130,8 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 178] {
         parse_jpeg,       // JPEG
         parse_bmp,        // BMP
         parse_gif,        // GIF
+        parse_cr2,        // Canon CR2
+        parse_raf,        // Fujifilm RAF
         parse_tiff,       // TIFF
         parse_ico,        // ICO
         parse_psd,        // PSD
