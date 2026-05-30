@@ -222,8 +222,8 @@ jobs:
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/vbasky/homebrew-core.git" /tmp/homebrew-core
           cd /tmp/homebrew-core
           git remote add upstream https://github.com/Homebrew/homebrew-core.git
-          git fetch upstream master
-          git checkout -b "${BRANCH}" upstream/master
+          git fetch upstream main
+          git checkout -b "${BRANCH}" upstream/main
 
           mkdir -p Formula/r
           cp /tmp/revelo.rb Formula/r/revelo.rb
@@ -237,6 +237,6 @@ jobs:
           gh pr create \
             --repo Homebrew/homebrew-core \
             --head "vbasky:${BRANCH}" \
-            --base master \
+            --base main \
             --title "revelo ${VERSION}" \
             --body "Update revelo to ${VERSION}."
