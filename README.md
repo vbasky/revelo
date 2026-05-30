@@ -3,8 +3,10 @@
 ![revelo — read technical metadata from any media file, in pure Rust](docs/banner.png)
 
 A library and CLI for containers, audio & video codecs, image formats, subtitle
-streams, archives, and embedded tags. A port of MediaInfoLib, validated
-byte-for-byte against the C++ `mediainfo` oracle through differential testing.
+streams, archives, and embedded tags. A clean-room port of **MediaInfoLib**,
+validated byte-for-byte against the C++ `mediainfo` oracle — plus an optional
+**ExifTool-grade** maker-note layer, validated tag-for-tag against the `exiftool`
+binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 
 **Name:** *Revelo* is Latin *to reveal/unveil* (and a backronym: **R**eveals **E**very **V**ideo & **E**ncoding **L**ayer **O**utput) — it reveals the technical metadata hidden inside media files.
 
@@ -80,7 +82,9 @@ coded samples:
 ```
 
 Whatever the container, the output is the same: one **General** stream for the
-file plus one stream per track — **Video · Audio · Text · Image · Menu · Other**.
+file plus one stream per track — **Video · Audio · Text · Image · Menu · Other** —
+and, for photo files, dedicated **Exif · Iptc · Xmp · Icc · C2pa · MakerNotes**
+sections (mirroring ExifTool's family-0 grouping).
 
 ## MediaInfoLib comparison
 
@@ -99,6 +103,30 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | **Format support** | ~200 formats | 194 parsers, 185 fields |
 | **WASM** | No | Compiles on `wasm32-unknown-unknown` |
 
+## ExifTool maker-note metadata (optional)
+
+The core crate is a pure MediaInfoLib port and is **BSD-2-Clause**. For
+camera-maker-note depth on par with [ExifTool](https://exiftool.org/), enable the
+opt-in `exiftool-tables` feature:
+
+```sh
+cargo install revelo-cli --features exiftool-tables   # or: cargo build --features exiftool-tables
+```
+
+It pulls in `revelo-exiftool-tables`, a separate crate of tag tables **generated
+from** ExifTool's source. Because those tables are derived from ExifTool (the same
+terms as Perl), that crate — and any binary that links it — is **GPL/Artistic**,
+not BSD. The licensing is deliberately isolated: the default build and everything
+else in the workspace stay BSD-2-Clause; only a build that *opts in* takes on the
+copyleft. A SaaS that runs the feature server-side stays unaffected (GPL conveys on
+distribution, not network use).
+
+With the feature on, Canon, Nikon, Fujifilm, Olympus, Panasonic, Pentax, Sony,
+Samsung, Minolta, Kodak, Ricoh and more decode at **95–100% tag parity** with
+`exiftool` on real camera files — validated by the `revelo-exif-diff` harness,
+which diffs revelo's output against the `exiftool` binary the same way
+`revelo-diff` validates against `mediainfo`.
+
 ## Project scale
 
 | Metric | Value |
@@ -106,9 +134,9 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | Parsers | 193 across 8 domains |
 | Output fields | 185 (all gaps closed) |
 | Output formatters | 10 — XML / Text / JSON + 7 domain |
-| Workspace crates | 15 |
-| Tests | 579 passing |
-| License | BSD-2-Clause |
+| Workspace crates | 17 |
+| Tests | 580+ passing |
+| License | BSD-2-Clause (core) · GPL/Artistic (optional `exiftool-tables`) |
 | MSRV | Rust 1.85+ (edition 2024) |
 
 ## Format coverage

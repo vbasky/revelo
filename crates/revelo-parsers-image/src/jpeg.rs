@@ -117,6 +117,7 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
     let mut sampling: Vec<(u8, u8)> = Vec::new();
     let mut found_sof = false;
     let mut comment: Option<String> = None;
+    let mut jfif_version: Option<String> = None;
     let mut exif = ExifData::default();
     // Overhead = APP markers (0xE0..0xEF) + COM markers (0xFE).
     // Oracle treats SOI/EOI/DQT/DHT/SOF/SOS/entropy as image data.
@@ -190,6 +191,12 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
             // COM (Comment) segment — payload is UTF-8 text.
             let payload = fa.read_raw(payload_size).to_vec();
             comment = Some(String::from_utf8_lossy(&payload).trim_end_matches('\0').to_string());
+        } else if marker == 0xE0 && payload_size >= 7 {
+            // APP0 JFIF: "JFIF\0" + version major + minor (rendered N.NN).
+            let payload = fa.read_raw(payload_size).to_vec();
+            if &payload[..5] == b"JFIF\0" {
+                jfif_version = Some(format!("{}.{:02}", payload[5], payload[6]));
+            }
         } else if marker == 0xE1 && payload_size >= 14 {
             // APP1: may be Exif ("Exif\0\0") or XMP (longer URI). Detect
             // by leading 6 bytes; only walk TIFF for Exif.
@@ -221,6 +228,9 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
         JpegFrame { width, height, precision, components },
         &sampling,
     );
+    if let Some(v) = jfif_version {
+        fa.set_field(StreamKind::General, 0, "JFIFVersion", v);
+    }
     true
 }
 

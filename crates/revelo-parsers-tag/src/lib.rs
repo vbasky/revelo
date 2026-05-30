@@ -1,6 +1,7 @@
 //! Metadata tag parsers: ID3v1, ID3v2, APE tags, Vorbis Comment, Lyrics3,
 //! EXIF, XMP, ICC profiles, C2PA, IIM/IPTC, Apple PropertyList,
-//! SphericalVideo.
+//! SphericalVideo — plus an **ExifTool‑grade maker‑note layer** (opt‑in
+//! via the `exiftool-tables` feature) covering 14 camera vendors.
 //!
 //! These parse embedded metadata within media files. Each parser
 //! returns `Option<u32>` (tag size), `bool`, or nothing for VorbisComment.

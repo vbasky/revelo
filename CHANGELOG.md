@@ -18,6 +18,15 @@
   cross-references) and `XMP_xmpMM_*` namespace tags
 - **MakerNote stub** — `parse_makernote` infrastructure hook, returns `()` for now
 
+## [0.3.1] - 2026-05-31
+
+### Fixed
+
+- **JSON output** now escapes control characters (U+0000–U+001F) as `\u00xx`
+  instead of emitting raw bytes, producing valid JSON when binary metadata is
+  present.
+- **JFIFVersion** extracted from the JPEG APP0 segment (e.g. `1.01`).
+
 ## [0.2.3] - 2026-05-29
 
 ### Added
