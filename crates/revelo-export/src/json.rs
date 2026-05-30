@@ -1,9 +1,10 @@
 //! JSON output — matches `mediainfo --Output=JSON` byte structure.
 //!
-//! Layout (mirrors MediaInfoLib):
+//! Layout (mirrors MediaInfoLib, minus the `creatingLibrary` header —
+//! that block only identifies the producing tool and says nothing about
+//! the file, so we omit it):
 //! ```text
 //! {
-//! "creatingLibrary":{"name":"MediaInfoLib","version":"X","url":"…"},
 //! "media":{"@ref":"PATH","track":[{"@type":"General","F0":"v0",
 //! "F1":"v1",
 //! …
@@ -18,13 +19,9 @@ use revelo_core::{Stream, StreamCollection, StreamKind};
 
 use crate::xml::{canonical_field_order, extra_field_order, render_field_value};
 
-pub fn to_json(streams: &StreamCollection, file_path: &str, library_version: &str) -> String {
+pub fn to_json(streams: &StreamCollection, file_path: &str) -> String {
     let mut out = String::new();
     out.push_str("{\n");
-    out.push_str(&format!(
-        "\"creatingLibrary\":{{\"name\":\"MediaInfoLib\",\"version\":\"{}\",\"url\":\"https://mediaarea.net/MediaInfo\"}},\n",
-        json_escape(library_version)
-    ));
     out.push_str("\"media\":{\"@ref\":\"");
     out.push_str(&json_escape(file_path));
     out.push_str("\",\"track\":[");
@@ -37,6 +34,12 @@ pub fn to_json(streams: &StreamCollection, file_path: &str, library_version: &st
         StreamKind::Other,
         StreamKind::Image,
         StreamKind::Menu,
+        StreamKind::Exif,
+        StreamKind::Iptc,
+        StreamKind::Xmp,
+        StreamKind::Icc,
+        StreamKind::C2pa,
+        StreamKind::MakerNotes,
     ];
     let mut first_track = true;
     for kind in kinds {
@@ -150,15 +153,11 @@ mod tests {
     use revelo_util::Ztring;
 
     #[test]
-    fn json_has_creating_library_header() {
+    fn json_omits_creating_library_header() {
         let c = StreamCollection::new();
-        let j = to_json(&c, "/x", "26.05");
-        assert!(
-            j.starts_with(
-                "{\n\"creatingLibrary\":{\"name\":\"MediaInfoLib\",\"version\":\"26.05\""
-            ),
-            "{j}"
-        );
+        let j = to_json(&c, "/x");
+        assert!(!j.contains("creatingLibrary"), "{j}");
+        assert!(j.starts_with("{\n\"media\":{\"@ref\":\"/x\""), "{j}");
         assert!(j.contains("\"media\":{\"@ref\":\"/x\",\"track\":[]}\n}"), "{j}");
     }
 
@@ -167,7 +166,7 @@ mod tests {
         let mut c = StreamCollection::new();
         c.set_field(StreamKind::General, 0, "Format", Ztring::from("MPEG-4"));
         c.set_field(StreamKind::General, 0, "FileSize", Ztring::from("100"));
-        let j = to_json(&c, "/x", "1.0");
+        let j = to_json(&c, "/x");
         // first field right after @type (comma, no newline); later fields on own lines
         assert!(
             j.contains("{\"@type\":\"General\",\"Format\":\"MPEG-4\",\n\"FileSize\":\"100\"}"),
@@ -179,7 +178,7 @@ mod tests {
     fn json_renders_duration_as_seconds() {
         let mut c = StreamCollection::new();
         c.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("209831"));
-        let j = to_json(&c, "/x", "1.0");
+        let j = to_json(&c, "/x");
         assert!(j.contains("\"Duration\":\"209.831\""), "{j}");
     }
 
@@ -188,7 +187,7 @@ mod tests {
         let mut c = StreamCollection::new();
         c.set_field(StreamKind::General, 0, "Format", Ztring::from("MPEG Audio"));
         c.set_extra_field(StreamKind::General, 0, "comment", Ztring::from("hi"));
-        let j = to_json(&c, "/x", "1.0");
+        let j = to_json(&c, "/x");
         assert!(j.contains("\"extra\":{\"comment\":\"hi\"}"), "{j}");
     }
 
@@ -196,7 +195,7 @@ mod tests {
     fn json_escapes_quotes() {
         let mut c = StreamCollection::new();
         c.set_field(StreamKind::General, 0, "Format", Ztring::from("A \"B\""));
-        let j = to_json(&c, "/x", "1.0");
+        let j = to_json(&c, "/x");
         assert!(j.contains("A \\\"B\\\""), "{j}");
     }
 }

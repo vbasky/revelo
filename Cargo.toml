@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/revelo-diff",
+    "crates/revelo-exif-diff",
     "crates/revelo-cli",
     "crates/revelo-core",
     "crates/revelo-export",
@@ -12,6 +13,7 @@ members = [
     "crates/revelo-parsers-container",
     "crates/revelo-parsers-image",
     "crates/revelo-parsers-tag",
+    "crates/revelo-exiftool-tables",
     "crates/revelo-parsers-text",
     "crates/revelo-parsers-video",
     "crates/revelo-util",

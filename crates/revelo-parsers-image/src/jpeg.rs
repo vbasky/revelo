@@ -646,16 +646,18 @@ fn fill_streams(
     let thumb_bytes = exif.thumbnail_size.unwrap_or(0) as usize;
     let general_overhead = overhead.saturating_sub(thumb_bytes);
     fa.force_field(StreamKind::General, 0, "StreamSize", general_overhead.to_string());
+    // EXIF-origin metadata goes into its own stream.
+    let exif_pos = fa.stream_prepare(StreamKind::Exif);
     if let Some(d) = exif.description.as_deref()
         && !d.is_empty()
     {
-        fa.set_field(StreamKind::General, 0, "Description", d.to_string());
+        fa.set_field(StreamKind::Exif, exif_pos, "Description", d.to_string());
     }
     if let Some(dt) = exif.datetime_original.as_deref() {
-        fa.set_field(StreamKind::General, 0, "Recorded_Date", exif_datetime_to_oracle(dt));
+        fa.set_field(StreamKind::Exif, exif_pos, "Recorded_Date", exif_datetime_to_oracle(dt));
     }
     if let Some(dt) = exif.datetime.as_deref() {
-        fa.set_field(StreamKind::General, 0, "Mastered_Date", exif_datetime_to_oracle(dt));
+        fa.set_field(StreamKind::Exif, exif_pos, "Mastered_Date", exif_datetime_to_oracle(dt));
     }
     if let Some(m) = exif.make.as_deref()
         && !m.is_empty()
@@ -669,12 +671,12 @@ fn fill_streams(
             .trim_end_matches(" CORPORATION")
             .trim()
             .to_string();
-        fa.set_field(StreamKind::General, 0, "Encoded_Hardware_CompanyName", normalized);
+        fa.set_field(StreamKind::Exif, exif_pos, "Encoded_Hardware_CompanyName", normalized);
     }
     if let Some(m) = exif.model.as_deref()
         && !m.is_empty()
     {
-        fa.set_field(StreamKind::General, 0, "Encoded_Hardware_Model", m.to_string());
+        fa.set_field(StreamKind::Exif, exif_pos, "Encoded_Hardware_Model", m.to_string());
     }
     // Exif sub-IFD extras (oracle wraps these in <extra>...</extra>).
     // Emit in oracle's display order so the diff matches sequentially.
@@ -682,12 +684,12 @@ fn fill_streams(
         && d > 0
     {
         let secs = n as f64 / d as f64;
-        fa.set_extra_field(StreamKind::General, 0, "ShutterSpeed_Time", format!("{secs:.6}"));
+        fa.set_extra_field(StreamKind::Exif, exif_pos, "ShutterSpeed_Time", format!("{secs:.6}"));
         // String form: "1/N s" if numerator is 1 and denominator > 0.
         if n == 1 {
             fa.set_extra_field(
-                StreamKind::General,
-                0,
+                StreamKind::Exif,
+                exif_pos,
                 "ShutterSpeed_Time_String",
                 format!("1/{d} s"),
             );
@@ -697,7 +699,7 @@ fn fill_streams(
         && d > 0
     {
         let v = n as f64 / d as f64;
-        fa.set_extra_field(StreamKind::General, 0, "IrisFNumber", format!("{v:.1}"));
+        fa.set_extra_field(StreamKind::Exif, exif_pos, "IrisFNumber", format!("{v:.1}"));
     }
     if let Some(prog) = exif.exposure_program {
         let s = match prog {
@@ -713,11 +715,11 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "AutoExposureMode", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "AutoExposureMode", s);
         }
     }
     if let Some(iso) = exif.iso_speed {
-        fa.set_extra_field(StreamKind::General, 0, "ISOSensitivity", iso.to_string());
+        fa.set_extra_field(StreamKind::Exif, exif_pos, "ISOSensitivity", iso.to_string());
     }
     if let Some(v) = exif.exif_version {
         // "0220" → "2.20"
@@ -732,7 +734,7 @@ fn fill_streams(
                 s[2..3].chars().next().unwrap_or('0'),
                 s[3..4].chars().next().unwrap_or('0')
             );
-            fa.set_extra_field(StreamKind::General, 0, "ExifVersion", pretty);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "ExifVersion", pretty);
         }
     }
     if let Some(f) = exif.flash {
@@ -749,7 +751,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "Flash", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "Flash", s);
         }
     }
     if let Some((n, d)) = exif.focal_length
@@ -760,27 +762,27 @@ fn fill_streams(
         let int_mm = mm.round() as u32;
         if (mm - int_mm as f64).abs() < 0.01 {
             fa.set_extra_field(
-                StreamKind::General,
-                0,
+                StreamKind::Exif,
+                exif_pos,
                 "LensZoomActualFocalLength",
                 int_mm.to_string(),
             );
             fa.set_extra_field(
-                StreamKind::General,
-                0,
+                StreamKind::Exif,
+                exif_pos,
                 "LensZoomActualFocalLength_String",
                 format!("{int_mm} mm"),
             );
         } else {
             fa.set_extra_field(
-                StreamKind::General,
-                0,
+                StreamKind::Exif,
+                exif_pos,
                 "LensZoomActualFocalLength",
                 format!("{mm:.1}"),
             );
             fa.set_extra_field(
-                StreamKind::General,
-                0,
+                StreamKind::Exif,
+                exif_pos,
                 "LensZoomActualFocalLength_String",
                 format!("{mm:.1} mm"),
             );
@@ -795,7 +797,7 @@ fn fill_streams(
                 s[2..3].chars().next().unwrap_or('0'),
                 s[3..4].chars().next().unwrap_or('0')
             );
-            fa.set_extra_field(StreamKind::General, 0, "FlashpixVersion", pretty);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "FlashpixVersion", pretty);
         }
     }
     if let Some(wb) = exif.white_balance {
@@ -805,36 +807,36 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "AutoWhiteBalanceMode", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "AutoWhiteBalanceMode", s);
         }
     }
     if let Some(fl35) = exif.focal_length_35mm {
         fa.set_extra_field(
-            StreamKind::General,
-            0,
+            StreamKind::Exif,
+            exif_pos,
             "LensZoom35mmStillCameraEquivalent",
             fl35.to_string(),
         );
         fa.set_extra_field(
-            StreamKind::General,
-            0,
+            StreamKind::Exif,
+            exif_pos,
             "LensZoom35mmStillCameraEquivalent_String",
             format!("{fl35} mm"),
         );
     }
     // New EXIF fields
     if let Some(ref lens) = exif.lens_model {
-        fa.set_extra_field(StreamKind::General, 0, "LensModel", lens.clone());
+        fa.set_extra_field(StreamKind::Exif, exif_pos, "LensModel", lens.clone());
     }
     if let Some((n, d)) = exif.exposure_bias
         && d > 0
     {
         let ev = n as f64 / d as f64;
         let sign = if ev >= 0.0 { "+" } else { "" };
-        fa.set_extra_field(StreamKind::General, 0, "ExposureBias", format!("{sign}{ev:.2}"));
+        fa.set_extra_field(StreamKind::Exif, exif_pos, "ExposureBias", format!("{sign}{ev:.2}"));
         fa.set_extra_field(
-            StreamKind::General,
-            0,
+            StreamKind::Exif,
+            exif_pos,
             "ExposureBias_String",
             format!("{sign}{ev:.2} EV"),
         );
@@ -852,7 +854,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "MeteringMode", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "MeteringMode", s);
         }
     }
     if let Some(light) = exif.light_source {
@@ -881,7 +883,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "LightSource", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "LightSource", s);
         }
     }
     if let Some(scene) = exif.scene_type {
@@ -890,7 +892,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "SceneType", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "SceneType", s);
         }
     }
     if let Some(rendered) = exif.custom_rendered {
@@ -900,7 +902,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "CustomRendered", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "CustomRendered", s);
         }
     }
     if let Some(mode) = exif.exposure_mode {
@@ -911,14 +913,14 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "ExposureMode", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "ExposureMode", s);
         }
     }
     if let Some((n, d)) = exif.digital_zoom_ratio
         && d > 0
     {
         let ratio = n as f64 / d as f64;
-        fa.set_extra_field(StreamKind::General, 0, "DigitalZoomRatio", format!("{ratio:.2}"));
+        fa.set_extra_field(StreamKind::Exif, exif_pos, "DigitalZoomRatio", format!("{ratio:.2}"));
     }
     if let Some(scene) = exif.scene_capture_type {
         let s = match scene {
@@ -930,7 +932,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "SceneCaptureType", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "SceneCaptureType", s);
         }
     }
     if let Some(contrast) = exif.contrast {
@@ -941,7 +943,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "Contrast", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "Contrast", s);
         }
     }
     if let Some(sat) = exif.saturation {
@@ -952,7 +954,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "Saturation", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "Saturation", s);
         }
     }
     if let Some(sharp) = exif.sharpness {
@@ -963,7 +965,7 @@ fn fill_streams(
             _ => "",
         };
         if !s.is_empty() {
-            fa.set_extra_field(StreamKind::General, 0, "Sharpness", s);
+            fa.set_extra_field(StreamKind::Exif, exif_pos, "Sharpness", s);
         }
     }
 

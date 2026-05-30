@@ -25,6 +25,12 @@ pub fn to_text(streams: &StreamCollection, path: &str) -> String {
         StreamKind::Other,
         StreamKind::Image,
         StreamKind::Menu,
+        StreamKind::Exif,
+        StreamKind::Iptc,
+        StreamKind::Xmp,
+        StreamKind::Icc,
+        StreamKind::C2pa,
+        StreamKind::MakerNotes,
     ];
 
     // File size is needed to render Stream size percentages.
@@ -173,6 +179,70 @@ fn display_fields(kind: StreamKind) -> &'static [&'static str] {
             "Compression_Mode",
             "StreamSize",
         ],
+        StreamKind::Exif => &[
+            "Recorded_Date",
+            "Mastered_Date",
+            "Encoded_Hardware_CompanyName",
+            "Encoded_Hardware_Model",
+            "Make",
+            "Model",
+            "Software",
+            "DateTime",
+            "DateTimeOriginal",
+            "DateTimeDigitized",
+            "ImageDescription",
+            "Artist",
+            "Copyright",
+            "ExposureTime",
+            "FNumber",
+            "PhotographicSensitivity",
+            "ISOSpeed",
+            "ExposureProgram",
+            "MeteringMode",
+            "Flash",
+            "FocalLength",
+            "FocalLengthIn35mmFilm",
+            "LensModel",
+            "LensMake",
+            "ShutterSpeedValue",
+            "ApertureValue",
+            "ExposureBiasValue",
+            "WhiteBalance",
+            "ColorSpace",
+            "GPSLatitudeRef",
+            "GPSLatitude",
+            "GPSLongitudeRef",
+            "GPSLongitude",
+            "GPSAltitudeRef",
+            "GPSAltitude",
+            "GPSLatitudeDecimal",
+            "GPSLongitudeDecimal",
+            "Orientation",
+        ],
+        StreamKind::Iptc => &[
+            "ObjectName",
+            "Byline",
+            "BylineTitle",
+            "Headline",
+            "Caption",
+            "CaptionWriter",
+            "Category",
+            "City",
+            "ProvinceState",
+            "Country",
+            "CountryCode",
+            "Keywords",
+            "Description",
+            "Credit",
+            "Source",
+            "Copyright",
+            "Contact",
+            "OriginatingProgram",
+            "DateCreated",
+            "TimeCreated",
+            "Urgency",
+            "ServiceIdentifier",
+        ],
         _ => &[],
     }
 }
@@ -184,11 +254,27 @@ fn emit_section(
     path: &str,
     file_size: Option<u64>,
 ) {
-    for &field in display_fields(kind) {
-        let Some((label, value)) = render(kind, field, stream, path, file_size) else {
-            continue;
-        };
-        emit_line(out, label, &value);
+    let curated = display_fields(kind);
+    if curated.is_empty() {
+        // Embedded-metadata kinds (Xmp, Icc, C2pa, MakerNotes) have no
+        // curated MediaInfo label set — there's no oracle to mirror. Dump
+        // their raw field names and values so the section isn't an empty
+        // header.
+        for (name, value) in stream.iter() {
+            emit_line(out, name, value.as_str());
+        }
+        return;
+    }
+    for &field in curated {
+        if let Some((label, value)) = render(kind, field, stream, path, file_size) {
+            emit_line(out, label, &value);
+        } else if matches!(kind, StreamKind::Exif | StreamKind::Iptc) {
+            // Exif/Iptc fields have no curated friendly label — fall back
+            // to the raw field name when the field is present.
+            if let Some(v) = stream.get(field) {
+                emit_line(out, field, v.as_str());
+            }
+        }
     }
 }
 

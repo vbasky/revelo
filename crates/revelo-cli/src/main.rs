@@ -130,6 +130,12 @@ fn main() -> process::ExitCode {
                         StreamKind::Other,
                         StreamKind::Image,
                         StreamKind::Menu,
+                        StreamKind::Exif,
+                        StreamKind::Iptc,
+                        StreamKind::Xmp,
+                        StreamKind::Icc,
+                        StreamKind::C2pa,
+                        StreamKind::MakerNotes,
                     ]);
                 }
 
@@ -137,9 +143,9 @@ fn main() -> process::ExitCode {
             }
 
             let output = if cli.json {
-                to_json(fa.streams(), &path, env!("CARGO_PKG_VERSION"))
+                to_json(fa.streams(), &path)
             } else if cli.xml {
-                to_xml(fa.streams(), &path, env!("CARGO_PKG_VERSION"))
+                to_xml(fa.streams(), &path)
             } else if cli.csv {
                 to_csv(fa.streams(), &path)
             } else if cli.summary {

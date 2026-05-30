@@ -1,6 +1,101 @@
 # Changelog
 
-## [0.3.0-alpha] - 2026-05-30
+## [0.4.0] - 2026-05-31
+
+### Added
+
+- **EXIF/IPTC/XMP/ICC/C2PA/MakerNotes promoted to their own stream sections**
+  (revelo extensions beyond MediaInfo's `stream_t`), matching how exiftool groups
+  metadata by family-0 type rather than folding everything into General. EXIF
+  streams from the container parser and the IFD walker are now merged into one.
+- **IPTC IIM now anchored to the Photoshop 8BIM Image Resource Block** (resource
+  `0x0404`) instead of scanning raw bytes — fixes false-positive datasets (e.g. a
+  garbage `Headline`) matched in compressed image data.
+- **Optional `exiftool-tables` feature** (off by default) — opt in to richer
+  maker-note tag names and PrintConv value decoding sourced from ExifTool, for 14
+  vendors (Apple, Canon, Casio, DJI, FLIR, FujiFilm, Minolta, Nikon, Olympus,
+  Panasonic, Pentax, Samsung, Sigma, Sony). The tables live in a separate
+  **GPL/Artistic** crate `revelo-exiftool-tables` (generated from ExifTool via
+  `codegen/extract.pl`); the default revelo build stays BSD-2-Clause and uses the
+  hand-written clean-room tables. Enabling the feature subjects the resulting
+  binary to GPL/Artistic terms.
+
+- **Canon maker-note decoding (under `exiftool-tables`)** — ExifTool-derived
+  `ProcessBinaryData` sub-tables (CameraSettings, ShotInfo) are now decoded into
+  individual named, value-converted tags. Two correctness fixes make this work on
+  real files: the bare-IFD offset is no longer mis-detected when the first tag id
+  is `0x0000` (broke every Canon file whose maker note starts that way, e.g. the
+  IXUS), and a cross-validated **FixBase** recovers mis-based maker-note offsets in
+  edited/re-muxed files (matching exiftool's "Adjusted MakerNotes base by N").
+  Records are accepted only when their self-describing byte-count header validates,
+  so a wrong offset decodes nothing rather than garbage. The header-less
+  `FIRST_ENTRY 0` FocalLength sub-table is decoded only when FixBase confirmed the
+  base. The variable-length AFInfo (0x0012) record (NumAFPoints-driven
+  `AFAreaXPositions[N]` etc.) is hand-walked behind an exact total-size match, so a
+  mis-laid record decodes nothing. The newer AFInfo2 (0x0026) / AFInfo3 (0x003C,
+  SerialData) records — which lead with a self-validating `AFInfoSize` header and
+  carry an `AFAreaMode` enum plus four `[N]` arrays — are decoded the same way. For
+  Main tags revelo's older bespoke table lacks, the fuller ExifTool Main table is
+  consulted under the feature. Further `ProcessBinaryData` sub-tables are decoded
+  with per-table element size — MyColors and ContrastInfo (`int16`), TimeInfo and
+  AspectInfo (`int32`), and FaceDetect3. ImageUniqueID (16-byte hex) and DateStampMode
+  decode too. Validated against real camera samples: IXUS 400 31%→99%, PowerShot S40
+  →99%, edited HDR files (AFInfo3, newer body) →100%, all with exact value matches.
+- **EXIF / Interop / Canon Main tag names aligned to ExifTool** under
+  `exiftool-tables` for the handful of divergences (`DateTime`→`ModifyDate`,
+  `DateTimeDigitized`→`CreateDate`, `PhotographicSensitivity`→`ISO`,
+  `PixelX/YDimension`→`ExifImage{Width,Height}`,
+  `Interoperability{Index,Version}`→`Interop{Index,Version}`,
+  `CanonOwnerName`→`OwnerName`, `CanonImageNumber`→`FileNumber`,
+  `CanonThumbnailValidArea`→`ThumbnailImageValidArea`). Lens fields are
+  deliberately not remapped (the lens-formatting post-pass keys off the names).
+  With all of the above, clean Canon samples reach 99% tag parity with exiftool.
+
+### Fixed
+
+- **Maker-note parsing repaired for several vendors** (BSD core, all builds). The
+  Fujifilm maker note read its IFD offset from the wrong byte (12 instead of 8) and
+  mis-resolved value offsets — it now parses against the full block from the correct
+  offset. Nikon Type 2/3 (embedded TIFF header at offset 10) is detected so COOLPIX
+  bodies parse. Header-less big-endian Konica-Minolta IFDs are now byte-order
+  detected. Under `exiftool-tables`, Nikon names are aligned to ExifTool. Validated
+  against real samples: Fujifilm 68%→98-100%, Nikon COOLPIX 63%→95%, Konica-Minolta
+  76%→97%.
+- **Olympus "type-2" maker notes** (`OLYMPUS\0II…`) are now parsed: the main IFD plus
+  its nested Equipment / CameraSettings / RawDevelopment / ImageProcessing / FocusInfo
+  sub-IFDs (decoded via generated ExifTool tables under the feature).
+- **Nikon AFInfo (0x0088) / FlashInfo (0x00A8)** decoded on COOLPIX bodies.
+- **UNDEFINED (type 7) values** are read as a single trimmed blob instead of a string
+  repeated from every byte offset (fixes e.g. Panasonic `InternalSerialNumber`).
+- **Canon maker-note Main tag ids corrected** (BSD core, all builds): `0x000C` is
+  the serial number (was mislabelled `CanonModelID`), `0x0010` is the model id
+  (was `CanonThumbnailValidArea`), `0x0013` is the thumbnail valid area (was
+  missing), `0x0015` is the serial-number format, `0x001C` is `DateStampMode` (was
+  `CanonAFInfo`), and `0x0028` is `ImageUniqueID` rendered as 16-byte hex (was
+  `CanonCRWParam`). The model-name lookup now applies to `0x0010` instead of the
+  serial number at `0x000C`. Verified against exiftool's raw values.
+
+### Changed
+
+- **Dropped the `creatingLibrary` header from JSON and XML output.** The block
+  (`name`/`version`/`url`) only identified the producing tool and carried nothing
+  about the parsed file, so it is no longer emitted. JSON now opens directly at
+  `"media"`; XML goes straight from the `<MediaInfo>` header to `<media>`. This is
+  a deliberate divergence from `mediainfo`'s wire format — consumers that validate
+  against the published mediainfo schema or read `creatingLibrary.version` will see
+  a missing key. `revelo-diff` strips the oracle's `creatingLibrary` line before
+  comparing, so the diff harness stays focused on per-stream differences.
+
+## [0.3.1] - 2026-05-31
+
+### Fixed
+
+- **JSON output** now escapes control characters (U+0000–U+001F) as `\u00xx`
+  instead of emitting raw bytes, producing valid JSON when binary metadata is
+  present.
+- **JFIFVersion** extracted from the JPEG APP0 segment (e.g. `1.01`).
+
+## [0.3.0] - 2026-05-30
 
 ### Added
 
@@ -17,15 +112,6 @@
 - **XMP enhanced** — additional EXIF field name mappings (ExifIFD, GPS, IIM
   cross-references) and `XMP_xmpMM_*` namespace tags
 - **MakerNote stub** — `parse_makernote` infrastructure hook, returns `()` for now
-
-## [0.3.1] - 2026-05-31
-
-### Fixed
-
-- **JSON output** now escapes control characters (U+0000–U+001F) as `\u00xx`
-  instead of emitting raw bytes, producing valid JSON when binary metadata is
-  present.
-- **JFIFVersion** extracted from the JPEG APP0 segment (e.g. `1.01`).
 
 ## [0.2.3] - 2026-05-29
 

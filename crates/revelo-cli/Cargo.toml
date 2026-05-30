@@ -1,6 +1,6 @@
 [package]
 name = "revelo-cli"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -17,10 +17,16 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[features]
+# Passthrough: build the CLI with ExifTool-derived maker-note tables.
+# Pulls in the GPL/Artistic `revelo-exiftool-tables` crate, so a CLI built
+# with this feature is subject to GPL/Artistic terms. Default build is BSD.
+exiftool-tables = ["revelo-parsers-tag/exiftool-tables"]
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.3.0" }
-revelo-core = { path = "../revelo-core", version = "0.3.0" }
-revelo-export = { path = "../revelo-export", version = "0.3.0" }
-revelo-util = { path = "../revelo-util", version = "0.3.0" }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.3.0" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.0" }
+revelo-core = { path = "../revelo-core", version = "0.4.0" }
+revelo-export = { path = "../revelo-export", version = "0.4.0" }
+revelo-util = { path = "../revelo-util", version = "0.4.0" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.0" }

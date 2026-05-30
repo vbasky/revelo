@@ -1,6 +1,6 @@
 [package]
 name = "revelo-dispatcher"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -15,11 +15,11 @@ workspace = true
 
 [dependencies]
 rayon.workspace = true
-revelo-core = { path = "../revelo-core", version = "0.3.0" }
-revelo-parsers-archive = { path = "../revelo-parsers-archive", version = "0.3.0" }
-revelo-parsers-audio = { path = "../revelo-parsers-audio", version = "0.3.0" }
-revelo-parsers-container = { path = "../revelo-parsers-container", version = "0.3.0" }
-revelo-parsers-image = { path = "../revelo-parsers-image", version = "0.3.0" }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.3.0" }
-revelo-parsers-text = { path = "../revelo-parsers-text", version = "0.3.0" }
-revelo-parsers-video = { path = "../revelo-parsers-video", version = "0.3.0" }
+revelo-core = { path = "../revelo-core", version = "0.4.0" }
+revelo-parsers-archive = { path = "../revelo-parsers-archive", version = "0.4.0" }
+revelo-parsers-audio = { path = "../revelo-parsers-audio", version = "0.4.0" }
+revelo-parsers-container = { path = "../revelo-parsers-container", version = "0.4.0" }
+revelo-parsers-image = { path = "../revelo-parsers-image", version = "0.4.0" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.0" }
+revelo-parsers-text = { path = "../revelo-parsers-text", version = "0.4.0" }
+revelo-parsers-video = { path = "../revelo-parsers-video", version = "0.4.0" }

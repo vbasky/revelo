@@ -20,6 +20,12 @@ pub fn to_csv(streams: &StreamCollection, file_path: &str) -> String {
         StreamKind::Other,
         StreamKind::Image,
         StreamKind::Menu,
+        StreamKind::Exif,
+        StreamKind::Iptc,
+        StreamKind::Xmp,
+        StreamKind::Icc,
+        StreamKind::C2pa,
+        StreamKind::MakerNotes,
     ];
 
     for kind in kinds {

@@ -119,7 +119,26 @@ fn run_oracle(path: &str) -> Result<String, String> {
     // Oracle occasionally emits Latin-1 bytes (e.g. 0xB0 for "°" in
     // GPS-derived Recorded_Location). Use lossy conversion so a single
     // non-UTF-8 byte doesn't poison the entire diff.
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let xml = String::from_utf8_lossy(&output.stdout).into_owned();
+    // The rust engine omits the `<creatingLibrary>` header (it identifies
+    // the tool, not the file), so strip the oracle's copy to keep the
+    // diff focused on real per-stream differences.
+    Ok(strip_creating_library(&xml))
+}
+
+/// Drop the single `<creatingLibrary …>…</creatingLibrary>` line the
+/// oracle emits, so its absence in the rust output isn't reported as a
+/// difference.
+fn strip_creating_library(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len());
+    for line in xml.lines() {
+        if line.trim_start().starts_with("<creatingLibrary") {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn run_rust_engine(path: &str) -> Result<String, String> {
@@ -148,10 +167,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
     };
     fill_file_level_fields(&mut fa, &info);
 
-    // Library version pulled from the oracle's banner output so the
-    // diff isolates real semantic differences, not version-string noise.
-    let library_version = detect_library_version().unwrap_or_else(|| "0.0.0".into());
-    Ok(to_xml(fa.streams(), path, &library_version))
+    Ok(to_xml(fa.streams(), path))
 }
 
 /// Detect the local timezone offset in seconds via shelling out to
@@ -170,17 +186,6 @@ fn local_offset_seconds() -> i64 {
     let hh: i64 = s[1..3].parse().unwrap_or(0);
     let mm: i64 = s[3..5].parse().unwrap_or(0);
     sign * (hh * 3600 + mm * 60)
-}
-
-fn detect_library_version() -> Option<String> {
-    let out = Command::new("mediainfo").arg("--Version").output().ok()?;
-    let s = String::from_utf8_lossy(&out.stdout);
-    for line in s.lines() {
-        if let Some(rest) = line.strip_prefix("MediaInfoLib - v") {
-            return Some(rest.trim().to_owned());
-        }
-    }
-    None
 }
 
 enum LineDiff<'a> {

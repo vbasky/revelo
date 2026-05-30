@@ -1,0 +1,27 @@
+# License
+
+This crate is distributed under the same terms as ExifTool / Perl:
+
+    GNU General Public License, version 1 or any later version,
+    OR
+    the Artistic License (1.0).
+
+You may choose either license for the combined work.
+
+The full text of the GNU General Public License should accompany any
+distribution of this crate. If it is missing, obtain it from:
+
+    https://www.gnu.org/licenses/gpl-1.0.txt   (GPL v1)
+    https://www.gnu.org/licenses/gpl-3.0.txt   (GPL v3, "any later version")
+
+The full text of the Artistic License (1.0) is available from:
+
+    https://dev.perl.org/licenses/artistic.html
+
+See the NOTICE file in this directory for the ExifTool copyright and the
+explanation of why this crate is copyleft rather than BSD-2-Clause like
+the rest of revelo.
+
+ACTION REQUIRED before redistribution: vendor the full GPL (and, if you
+rely on it, Artistic) license text into this directory. This LICENSE file
+is a pointer, not a substitute for the full text.

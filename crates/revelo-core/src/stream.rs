@@ -11,8 +11,15 @@
 use revelo_util::Ztring;
 use std::collections::BTreeMap;
 
-/// `stream_t` from `MediaInfo_Const.h`. Same discriminants so external
-/// consumers binding through the C ABI later get matching values.
+/// Discriminants 0..=6 match MediaInfo's `stream_t` from
+/// `MediaInfo_Const.h`, so external consumers binding through the C ABI
+/// get matching values for those kinds. Values 7+ are revelo extensions
+/// that have no MediaInfo equivalent — they model the distinct embedded
+/// metadata standards exiftool exposes as family-0 groups (EXIF, IPTC,
+/// XMP, ICC_Profile, C2PA, MakerNotes) rather than folding them all into
+/// General. Note: upstream MediaInfo terminates the enum at
+/// `Stream_Max = 7`, so any C consumer iterating `0..Stream_Max` will not
+/// see these kinds (and value 7 collides with its `Stream_Max` sentinel).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum StreamKind {
@@ -23,6 +30,12 @@ pub enum StreamKind {
     Other = 4,
     Image = 5,
     Menu = 6,
+    Exif = 7,
+    Iptc = 8,
+    Xmp = 9,
+    Icc = 10,
+    C2pa = 11,
+    MakerNotes = 12,
 }
 
 impl StreamKind {
@@ -35,6 +48,12 @@ impl StreamKind {
             StreamKind::Other => "Other",
             StreamKind::Image => "Image",
             StreamKind::Menu => "Menu",
+            StreamKind::Exif => "Exif",
+            StreamKind::Iptc => "Iptc",
+            StreamKind::Xmp => "Xmp",
+            StreamKind::Icc => "Icc",
+            StreamKind::C2pa => "C2pa",
+            StreamKind::MakerNotes => "MakerNotes",
         }
     }
 }

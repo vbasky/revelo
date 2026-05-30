@@ -3,13 +3,18 @@ use std::io::Read;
 
 type TagEntry = (&'static str, String);
 
-fn fill_tags(fa: &mut FileAnalyze, tags: &[TagEntry]) {
+fn fill_tags(fa: &mut FileAnalyze, tags: &[TagEntry], kind: StreamKind) {
     if tags.is_empty() {
         return;
     }
-    let pos = fa.stream_prepare(StreamKind::General);
+    // Embedded-metadata streams are singletons per file: a JPEG has one
+    // EXIF block, one IPTC block, etc. The container parser may have
+    // already created stream 0 of this kind (e.g. jpeg.rs fills curated
+    // Exif fields); merge into it rather than appending a duplicate
+    // stream. set_field is first-write-wins, so pre-existing values win.
+    let pos = if fa.streams().stream_count(kind) > 0 { 0 } else { fa.stream_prepare(kind) };
     for (key, value) in tags {
-        fa.set_field(StreamKind::General, pos, key, value.as_str());
+        fa.set_field(kind, pos, key, value.as_str());
     }
 }
 
@@ -72,7 +77,7 @@ pub fn parse_id3v1(fa: &mut FileAnalyze) -> Option<u32> {
         tags.push(("Genre", id3v1_genre(genre).to_string()));
     }
 
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::General);
     Some(128)
 }
 
@@ -230,7 +235,7 @@ pub fn parse_id3v2(fa: &mut FileAnalyze) -> Option<u32> {
         offset += frame_size;
     }
 
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::General);
     Some(total_size as u32)
 }
 
@@ -355,7 +360,7 @@ pub fn parse_ape_tag(fa: &mut FileAnalyze) -> Option<u32> {
         }
     }
 
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::General);
     Some((tag_end - tag_start) as u32)
 }
 
@@ -418,7 +423,7 @@ pub fn parse_vorbis_comment_from_buf(buf: &[u8], offset: &mut usize) -> Vec<TagE
 
 pub fn parse_vorbis_comment(fa: &mut FileAnalyze, offset: &mut usize, buf: &[u8]) {
     let tags = parse_vorbis_comment_from_buf(buf, offset);
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::General);
 }
 
 // ---------- Lyrics3 ----------
@@ -464,7 +469,7 @@ pub fn parse_lyrics3(fa: &mut FileAnalyze) -> Option<u32> {
         offset += size;
     }
 
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::General);
     Some((end - start) as u32)
 }
 
@@ -551,6 +556,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
 
     let ifd0_off = read_tiff_u32(tiff_buf, 4, bo) as usize;
     let mut tags: Vec<TagEntry> = Vec::new();
+    let mut iptc_tags: Vec<TagEntry> = Vec::new();
     let mut exif_ptr = None;
     let mut gps_ptr = None;
     let mut interop_ptr = None;
@@ -560,6 +566,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
         ifd0_off,
         bo,
         &mut tags,
+        &mut iptc_tags,
         &mut exif_ptr,
         &mut gps_ptr,
         &mut interop_ptr,
@@ -576,6 +583,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
             ptr as usize,
             bo,
             &mut t,
+            &mut iptc_tags,
             &mut None,
             &mut None,
             &mut sub_interop,
@@ -588,7 +596,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
             let make =
                 tags.iter().find(|(k, _)| *k == "Make").map(|(_, v)| v.clone()).unwrap_or_default();
             let mn_data = &tiff_buf[mn_off..mn_off + mn_size];
-            parse_makernote(&make, mn_data, &mut tags);
+            parse_makernote(&make, mn_data, mn_off, &mut tags);
         }
 
         if let Some(ip) = sub_interop {
@@ -598,6 +606,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
                 ip as usize,
                 bo,
                 &mut it,
+                &mut Vec::new(),
                 &mut None,
                 &mut None,
                 &mut None,
@@ -614,6 +623,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
             ptr as usize,
             bo,
             &mut t,
+            &mut Vec::new(),
             &mut None,
             &mut None,
             &mut None,
@@ -629,6 +639,7 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
                 n as usize,
                 bo,
                 &mut tags,
+                &mut Vec::new(),
                 &mut None,
                 &mut None,
                 &mut None,
@@ -646,7 +657,8 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
         let val = tags[pos].1.clone();
         tags[pos].1 = format_lens_type("CanonLensType", &val);
     }
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::Exif);
+    fill_tags(fa, &iptc_tags, StreamKind::Iptc);
     true
 }
 
@@ -661,6 +673,7 @@ fn parse_ifd(
     offset: usize,
     bo: &str,
     tags: &mut Vec<TagEntry>,
+    iptc_tags: &mut Vec<TagEntry>,
     exif_ptr: &mut Option<u32>,
     gps_ptr: &mut Option<u32>,
     interop_ptr: &mut Option<u32>,
@@ -709,6 +722,62 @@ fn parse_ifd(
                 pos += 4;
                 continue;
             }
+            0x927C => {
+                pos += 4;
+                continue;
+            }
+            0x9286 => {
+                let val_off =
+                    if tag_size <= 4 { pos } else { read_tiff_u32(data, pos, bo) as usize };
+                if val_off + tag_size <= data.len() {
+                    let raw = &data[val_off..val_off + tag_count.min(tag_size)];
+                    let text = if raw.len() > 8 {
+                        String::from_utf8_lossy(&raw[8..]).trim_matches('\0').trim().to_string()
+                    } else {
+                        String::new()
+                    };
+                    tags.push(("UserComment", text));
+                }
+                pos += 4;
+                continue;
+            }
+            // PrintIM (Print Image Matching): "PrintIM\0" + 4-char version.
+            0xC4A5 => {
+                let val_off =
+                    if tag_size <= 4 { pos } else { read_tiff_u32(data, pos, bo) as usize };
+                if val_off + 12 <= data.len() && &data[val_off..val_off + 8] == b"PrintIM\0" {
+                    let version = String::from_utf8_lossy(&data[val_off + 8..val_off + 12])
+                        .trim_matches('\0')
+                        .to_string();
+                    tags.push(("PrintIMVersion", version));
+                }
+                pos += 4;
+                continue;
+            }
+            // Windows XP tags (UCS-2 / UTF-16LE byte arrays).
+            0x9C9B | 0x9C9C | 0x9C9D | 0x9C9E | 0x9C9F => {
+                let val_off =
+                    if tag_size <= 4 { pos } else { read_tiff_u32(data, pos, bo) as usize };
+                if val_off + tag_size <= data.len() {
+                    let u16s: Vec<u16> = data[val_off..val_off + tag_size]
+                        .chunks_exact(2)
+                        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                        .collect();
+                    let text = String::from_utf16_lossy(&u16s).trim_end_matches('\0').to_string();
+                    let name = match tag_id {
+                        0x9C9B => "XPTitle",
+                        0x9C9C => "XPComment",
+                        0x9C9D => "XPAuthor",
+                        0x9C9E => "XPKeywords",
+                        _ => "XPSubject",
+                    };
+                    if !text.is_empty() {
+                        tags.push((name, text));
+                    }
+                }
+                pos += 4;
+                continue;
+            }
             0x83BB => {
                 let iim_data = if tag_size <= 4 {
                     let end = pos + tag_size.min(data.len() - pos);
@@ -718,7 +787,7 @@ fn parse_ifd(
                     let end = off + tag_size.min(data.len() - off);
                     data[off..end].to_vec()
                 };
-                parse_iim_buf(&iim_data, tags);
+                parse_iim_buf(&iim_data, iptc_tags);
                 pos += 4;
                 continue;
             }
@@ -752,6 +821,8 @@ fn parse_ifd(
             }
         };
         pos += 4;
+
+        let value_trimmed = if tag_id == 0x010E { value.trim_end().to_string() } else { value };
 
         let n = match tag_id {
             // === IFD0 / IFD1 (TIFF Rev 6.0 attributes) ===
@@ -1115,7 +1186,17 @@ fn parse_ifd(
             _ => "",
         };
         if !n.is_empty() {
-            tags.push((n, value));
+            // Align EXIF/Interop tag names with exiftool where they diverge
+            // (e.g. DateTime -> ModifyDate, InteroperabilityIndex ->
+            // InteropIndex). Keyed by name, which is unambiguous per IFD, so
+            // GPS names (none of which are aliased) are unaffected.
+            #[cfg(feature = "exiftool-tables")]
+            let n = if matches!(kind, IfdKind::Tiff | IfdKind::Interop) {
+                revelo_exiftool_tables::exif_name_alias(n).unwrap_or(n)
+            } else {
+                n
+            };
+            tags.push((n, value_trimmed));
         }
     }
 
@@ -1154,6 +1235,19 @@ fn read_exif_val(data: &[u8], off: usize, t: u16, count: usize, bo: &str) -> Str
             }
             _ => read_tiff_u32(data, off, bo).to_string(),
         };
+    }
+
+    // UNDEFINED (type 7) is a single byte blob (serial numbers, version
+    // strings), not an array of per-byte strings. Render it as one trimmed
+    // string rather than repeating it from every offset.
+    if t == 7 {
+        if off + count > data.len() {
+            return String::new();
+        }
+        return String::from_utf8_lossy(&data[off..off + count])
+            .trim_matches('\0')
+            .trim()
+            .to_string();
     }
 
     let elem = exif_type_size(t);
@@ -1290,7 +1384,7 @@ pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
 
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_xmp_fields(text, &mut tags);
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::Xmp);
     true
 }
 
@@ -1391,7 +1485,7 @@ pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
         tags.push(("ICC_Description", desc));
     }
 
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::Icc);
     true
 }
 
@@ -1434,7 +1528,7 @@ pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
 
     if !tags.is_empty() {
         tags.push(("C2PA_Present", "Yes".to_string()));
-        fill_tags(fa, &tags);
+        fill_tags(fa, &tags, StreamKind::C2pa);
         true
     } else {
         false
@@ -1451,13 +1545,84 @@ pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
     let buf = fa.peek_raw(remain).map(|b| b.to_vec());
     let Some(buf) = buf else { return false };
 
+    // IPTC IIM is only well-defined inside its container — the Photoshop
+    // Image Resource Block (8BIM) resource 0x0404, introduced by the
+    // APP13 "Photoshop 3.0" identifier. We must NOT scan the whole file
+    // for the 0x1C tag marker: compressed image data contains stray 0x1C
+    // bytes that parse as bogus datasets (e.g. a garbage "Headline").
+    // Anchor to the IRB so only genuine IPTC is parsed.
+    let Some(iptc) = find_iptc_resource(&buf) else {
+        return false;
+    };
     let mut tags: Vec<TagEntry> = Vec::new();
-    parse_iim_buf(&buf, &mut tags);
+    parse_iim_buf(iptc, &mut tags);
     if tags.is_empty() {
         return false;
     }
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::Iptc);
     true
+}
+
+/// Locate the IPTC-NAA payload (8BIM resource id 0x0404) inside a
+/// Photoshop Image Resource Block. Returns the bytes of that resource
+/// only, or `None` when no Photoshop IRB / IPTC resource is present.
+fn find_iptc_resource(data: &[u8]) -> Option<&[u8]> {
+    // The IRB is introduced by the APP13 identifier "Photoshop 3.0\0".
+    // Requiring it keeps us from treating arbitrary "8BIM" byte runs in
+    // compressed data as resource blocks.
+    let anchor = b"Photoshop 3.0\0";
+    let start = find_subslice(data, anchor)? + anchor.len();
+
+    let mut pos = start;
+    while pos + 4 <= data.len() {
+        // Resync to the next "8BIM" signature (resource blocks are
+        // contiguous, but be tolerant of a leading pad byte).
+        if &data[pos..pos + 4] != b"8BIM" {
+            let rel = find_subslice(&data[pos..], b"8BIM")?;
+            pos += rel;
+            if pos + 4 > data.len() {
+                return None;
+            }
+        }
+        pos += 4;
+        if pos + 2 > data.len() {
+            return None;
+        }
+        let res_id = u16::from_be_bytes([data[pos], data[pos + 1]]);
+        pos += 2;
+
+        // Pascal name string: 1 length byte + name, padded so the whole
+        // (length + name) field is even.
+        if pos >= data.len() {
+            return None;
+        }
+        let name_len = data[pos] as usize;
+        let name_field = 1 + name_len;
+        pos += name_field + (name_field & 1);
+        if pos + 4 > data.len() {
+            return None;
+        }
+        let size =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        pos += 4;
+        if pos + size > data.len() {
+            return None;
+        }
+        if res_id == 0x0404 {
+            return Some(&data[pos..pos + size]);
+        }
+        // Resource data is itself padded to an even length.
+        pos += size + (size & 1);
+    }
+    None
+}
+
+/// First index of `needle` in `haystack`, or `None`.
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 pub fn parse_iim_buf(data: &[u8], tags: &mut Vec<TagEntry>) {
@@ -1594,7 +1759,7 @@ pub fn parse_property_list(fa: &mut FileAnalyze) -> bool {
 
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_plist_fields(text, &mut tags);
-    fill_tags(fa, &tags);
+    fill_tags(fa, &tags, StreamKind::General);
     true
 }
 
@@ -1686,7 +1851,7 @@ pub fn parse_spherical_video(fa: &mut FileAnalyze) -> bool {
 
     if !tags.is_empty() {
         tags.push(("SphericalVideo", "Yes".to_string()));
-        fill_tags(fa, &tags);
+        fill_tags(fa, &tags, StreamKind::General);
         true
     } else {
         false
@@ -1800,7 +1965,7 @@ pub fn parse_png_text(fa: &mut FileAnalyze) -> bool {
         }
     }
     if !tags.is_empty() {
-        fill_tags(fa, &tags);
+        fill_tags(fa, &tags, StreamKind::General);
         true
     } else {
         false
@@ -1858,7 +2023,7 @@ pub fn parse_jpeg_com(fa: &mut FileAnalyze) -> bool {
     }
 
     if !tags.is_empty() {
-        fill_tags(fa, &tags);
+        fill_tags(fa, &tags, StreamKind::General);
         true
     } else {
         false
@@ -1898,12 +2063,91 @@ fn parse_tiff_header_or_raw<'a>(data: &'a [u8], default_bo: &'a str) -> (&'a str
     }
 }
 
+/// Maker-note vendors that share the generic [`parse_makernote_ifd`]
+/// walker. Carries enough identity to consult the richer ExifTool-derived
+/// tables when the `exiftool-tables` feature is enabled; otherwise it is
+/// only used to keep the call sites uniform.
+#[derive(Copy, Clone)]
+#[allow(dead_code)] // some variants only matter under `exiftool-tables`
+enum MakerVendor {
+    Samsung,
+    Apple,
+    GoPro,
+    Dji,
+    Google,
+    Leica,
+    Sigma,
+    Minolta,
+    Casio,
+    Flir,
+    Olympus,
+    Panasonic,
+    Pentax,
+    Fujifilm,
+}
+
+#[cfg(feature = "exiftool-tables")]
+impl MakerVendor {
+    /// Map to the GPL ExifTool table vendor, or `None` when no bundled
+    /// table exists (GoPro's GPMF, Pixel/Google, Leica's multi-format
+    /// maker notes) — those keep the hand-written clean-room tables.
+    fn exiftool(self) -> Option<revelo_exiftool_tables::Vendor> {
+        use revelo_exiftool_tables::Vendor as V;
+        Some(match self {
+            MakerVendor::Samsung => V::Samsung,
+            MakerVendor::Apple => V::Apple,
+            MakerVendor::Dji => V::Dji,
+            MakerVendor::Sigma => V::Sigma,
+            MakerVendor::Minolta => V::Minolta,
+            MakerVendor::Casio => V::Casio,
+            MakerVendor::Flir => V::Flir,
+            MakerVendor::Olympus => V::Olympus,
+            MakerVendor::Panasonic => V::Panasonic,
+            MakerVendor::Pentax => V::Pentax,
+            MakerVendor::Fujifilm => V::Fujifilm,
+            MakerVendor::GoPro | MakerVendor::Google | MakerVendor::Leica => return None,
+        })
+    }
+}
+
+/// Tag-name lookup: prefer the ExifTool table (richer) when the feature
+/// is on and a bundled table exists, else fall back to the hand-written
+/// clean-room table.
+fn resolve_tag_name(vendor: MakerVendor, hand: TagNameFn, id: u16) -> Option<&'static str> {
+    #[cfg(feature = "exiftool-tables")]
+    if let Some(v) = vendor.exiftool() {
+        if let Some(name) = revelo_exiftool_tables::tag_name(v, id as u32) {
+            return Some(name);
+        }
+    }
+    let _ = vendor;
+    hand(id)
+}
+
+/// Value decoding: when the feature is on and the raw value is an integer
+/// with an ExifTool PrintConv mapping, return the decoded string; else the
+/// raw value is returned unchanged.
+fn apply_print_conv(vendor: MakerVendor, id: u16, raw: String) -> String {
+    #[cfg(feature = "exiftool-tables")]
+    if let Some(v) = vendor.exiftool() {
+        if let Ok(n) = raw.trim().parse::<i64>() {
+            if let Some(decoded) = revelo_exiftool_tables::print_conv(v, id as u32, n) {
+                return decoded.to_string();
+            }
+        }
+    }
+    let _ = (vendor, id);
+    raw
+}
+
 fn parse_makernote_ifd(
     data: &[u8],
     offset: usize,
     bo: &str,
     tags: &mut Vec<TagEntry>,
     tag_name: TagNameFn,
+    vendor: MakerVendor,
+    base: usize,
 ) {
     if offset + 2 > data.len() {
         return;
@@ -1935,7 +2179,10 @@ fn parse_makernote_ifd(
                 read_exif_val(data, pos, tag_type, tag_count, bo)
             }
         } else {
-            let val_off = read_tiff_u32(data, pos, bo) as usize;
+            let mut val_off = read_tiff_u32(data, pos, bo) as usize;
+            if val_off + tag_size > data.len() && val_off >= base {
+                val_off -= base;
+            }
             if val_off + tag_size > data.len() {
                 pos += 4;
                 continue;
@@ -1952,16 +2199,18 @@ fn parse_makernote_ifd(
         };
         pos += 4;
 
-        if let Some(name) = tag_name(tag_id) {
-            tags.push((name, value));
+        if let Some(name) = resolve_tag_name(vendor, tag_name, tag_id) {
+            tags.push((name, apply_print_conv(vendor, tag_id, value)));
         }
     }
 }
 
-fn parse_makernote(make: &str, data: &[u8], tags: &mut Vec<TagEntry>) {
+/// `base` is the offset of `data` within the enclosing TIFF block; only
+/// Canon (whose value offsets are TIFF-relative) needs it.
+fn parse_makernote(make: &str, data: &[u8], base: usize, tags: &mut Vec<TagEntry>) {
     let make_upper = make.to_uppercase();
     if make_upper.contains("CANON") {
-        parse_canon_makernote(data, tags);
+        parse_canon_makernote(data, base, tags);
     } else if make_upper.contains("NIKON") {
         parse_nikon_makernote(data, tags);
     } else if make_upper.contains("SONY") {
@@ -1971,12 +2220,32 @@ fn parse_makernote(make: &str, data: &[u8], tags: &mut Vec<TagEntry>) {
         || make_upper.contains("OM SYSTEM")
     {
         parse_olympus_makernote(data, tags);
-    } else if make_upper.contains("PANASONIC") || make_upper.contains("LEICA") {
-        parse_panasonic_makernote(data, tags);
+    } else if make_upper.contains("PANASONIC") {
+        parse_panasonic_makernote(data, base, tags);
     } else if make_upper.contains("PENTAX") || make_upper.contains("RICOH") {
         parse_pentax_makernote(data, tags);
     } else if make_upper.contains("FUJIFILM") || make_upper.contains("FUJI") {
         parse_fujifilm_makernote(data, tags);
+    } else if make_upper.contains("SAMSUNG") {
+        parse_samsung_makernote(data, tags);
+    } else if make_upper.contains("APPLE") {
+        parse_apple_makernote(data, tags);
+    } else if make_upper.contains("GOPRO") {
+        parse_gopro_makernote(data, tags);
+    } else if make_upper.contains("DJI") {
+        parse_dji_makernote(data, tags);
+    } else if make_upper.contains("GOOGLE") || make_upper.contains("PIXEL") {
+        parse_google_makernote(data, tags);
+    } else if make_upper.contains("LEICA") {
+        parse_leica_makernote(data, tags);
+    } else if make_upper.contains("SIGMA") || make_upper.contains("FOVEON") {
+        parse_sigma_makernote(data, tags);
+    } else if make_upper.contains("MINOLTA") || make_upper.contains("KONICA") {
+        parse_minolta_makernote(data, base, tags);
+    } else if make_upper.contains("CASIO") {
+        parse_casio_makernote(data, tags);
+    } else if make_upper.contains("FLIR") {
+        parse_flir_makernote(data, tags);
     }
 }
 
@@ -2013,7 +2282,7 @@ fn parse_samsung_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, samsung_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, samsung_tag_name, MakerVendor::Samsung, 0);
 }
 
 // ---------- Apple MakerNote ----------
@@ -2035,7 +2304,7 @@ fn parse_apple_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(data, "LE");
-    parse_makernote_ifd(data, ifd_off, bo, tags, apple_tag_name);
+    parse_makernote_ifd(data, ifd_off, bo, tags, apple_tag_name, MakerVendor::Apple, 0);
 }
 
 // ---------- GoPro MakerNote ----------
@@ -2070,7 +2339,7 @@ fn parse_gopro_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, gopro_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, gopro_tag_name, MakerVendor::GoPro, 0);
 }
 
 // ---------- DJI MakerNote ----------
@@ -2107,7 +2376,7 @@ fn parse_dji_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, dji_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, dji_tag_name, MakerVendor::Dji, 0);
 }
 
 // ---------- Google / Pixel MakerNote ----------
@@ -2132,7 +2401,7 @@ fn parse_google_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(data, "LE");
-    parse_makernote_ifd(data, ifd_off, bo, tags, google_tag_name);
+    parse_makernote_ifd(data, ifd_off, bo, tags, google_tag_name, MakerVendor::Google, 0);
 }
 
 // ---------- Leica MakerNote ----------
@@ -2167,7 +2436,7 @@ fn parse_leica_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "BE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, leica_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, leica_tag_name, MakerVendor::Leica, 0);
 }
 
 // ---------- Sigma / Foveon MakerNote ----------
@@ -2206,7 +2475,7 @@ fn parse_sigma_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, sigma_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, sigma_tag_name, MakerVendor::Sigma, 0);
 }
 
 // ---------- Minolta / Konica Minolta MakerNote ----------
@@ -2237,7 +2506,7 @@ fn minolta_tag_name(tag_id: u16) -> Option<&'static str> {
     })
 }
 
-fn parse_minolta_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+fn parse_minolta_makernote(data: &[u8], base: usize, tags: &mut Vec<TagEntry>) {
     // Minolta/Konica-Minolta MakerNote: "MINOLTA    " (10 bytes) or "MLT0" (4 bytes) + TIFF IFD
     let offset = if data.len() >= 10 && &data[0..10] == b"MINOLTA    " {
         10
@@ -2250,8 +2519,28 @@ fn parse_minolta_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
     if sub.len() < 2 {
         return;
     }
-    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, minolta_tag_name);
+    let (mut bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
+    // Some Konica-Minolta bodies store a header-less big-endian IFD. When
+    // there's no TIFF byte-order mark, pick the order that yields a sane
+    // entry count (the little-endian read would be a huge bogus number).
+    if ifd_off == 0 && &sub[0..2] != b"II" && &sub[0..2] != b"MM" {
+        let le = read_tiff_u16(sub, 0, "LE") as usize;
+        let be = read_tiff_u16(sub, 0, "BE") as usize;
+        if le > 100 && be <= 100 {
+            bo = "BE";
+        }
+    }
+    // Minolta value offsets are relative to the enclosing TIFF; the base
+    // for `sub` is the maker-note base plus the stripped header length.
+    parse_makernote_ifd(
+        sub,
+        ifd_off,
+        bo,
+        tags,
+        minolta_tag_name,
+        MakerVendor::Minolta,
+        base + offset,
+    );
 }
 
 // ---------- Casio MakerNote ----------
@@ -2297,7 +2586,7 @@ fn parse_casio_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, casio_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, casio_tag_name, MakerVendor::Casio, 0);
 }
 
 // ---------- FLIR MakerNote ----------
@@ -2329,14 +2618,24 @@ fn parse_flir_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, flir_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, flir_tag_name, MakerVendor::Flir, 0);
 }
 
 fn canon_format_value(tag_id: u16, raw: &str) -> String {
     match tag_id {
-        0x000C => {
+        // CanonModelID is tag 0x0010 (0x000C is the serial number).
+        0x0010 => {
             let id: u32 = raw.parse().unwrap_or(u32::MAX);
             canon_model_name(id).unwrap_or(raw).to_string()
+        }
+        // ImageUniqueID: 16 bytes rendered as lowercase hex (no separators).
+        0x0028 => {
+            let hex: String = raw
+                .split(", ")
+                .filter_map(|b| b.parse::<u8>().ok())
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            if hex.len() == 32 { hex } else { raw.to_string() }
         }
         0x00A2 => {
             let id: u16 = raw.parse().unwrap_or(u16::MAX);
@@ -2500,7 +2799,11 @@ fn canon_quality_name(id: u16) -> Option<&'static str> {
     })
 }
 
-fn parse_canon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+/// `base` is the offset of `data` within the TIFF block. Canon maker-note
+/// value offsets are TIFF-relative, so we subtract `base` to index into
+/// `data` (which starts at the maker note). Self-contained test buffers
+/// pass `base = 0`.
+fn parse_canon_makernote(data: &[u8], base: usize, tags: &mut Vec<TagEntry>) {
     if data.len() < 6 {
         return;
     }
@@ -2510,14 +2813,28 @@ fn parse_canon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         let off = read_tiff_u32(data, 4, bo) as usize;
         (bo, off)
     } else {
-        let hint = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
-        if hint >= 6 && hint < data.len() { ("LE", hint) } else { ("LE", 0) }
+        // Canon maker notes are a bare IFD that begins directly with the
+        // 2-byte entry count (no header, no offset prefix). The previous
+        // "hint" heuristic mis-read a low first tag id (e.g. 0x0000 on the
+        // IXUS) as an offset; the IFD is always at 0.
+        ("LE", 0)
     };
 
     if ifd_off + 2 > data.len() {
         return;
     }
     let count = read_tiff_u16(data, ifd_off, bo) as usize;
+
+    // FixBase: edited files mis-base maker-note offsets. Detect the delta
+    // once (cross-validated across CameraSettings + ShotInfo), fold it into
+    // `base`, and remember whether the base was confirmed (gates the
+    // header-less FIRST_ENTRY 0 sub-tables). Delta 0 for well-formed files.
+    #[cfg(feature = "exiftool-tables")]
+    let (base, base_validated) = {
+        let (delta, validated) = canon_base_delta(data, ifd_off, base, bo);
+        (base + delta, validated)
+    };
+
     let mut pos = ifd_off + 2;
 
     for _ in 0..count.min(100) {
@@ -2541,7 +2858,7 @@ fn parse_canon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
                 read_exif_val(data, pos, tag_type, tag_count, bo)
             }
         } else {
-            let val_off = read_tiff_u32(data, pos, bo) as usize;
+            let val_off = (read_tiff_u32(data, pos, bo) as usize).saturating_sub(base);
             if val_off + tag_size > data.len() {
                 pos += 4;
                 continue;
@@ -2561,25 +2878,74 @@ fn parse_canon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
 
         if let Some(name) = canon_tag_name(tag_id) {
             let formatted = canon_format_value(tag_id, &value);
+            // Decode a scalar enum via the ExifTool PrintConv when the
+            // bespoke formatter left it raw (e.g. DateStampMode 0 -> Off).
+            // A non-numeric/formatted value just passes through. The lens
+            // post-pass still runs afterwards and overrides by name.
+            #[cfg(feature = "exiftool-tables")]
+            let formatted = formatted
+                .parse::<i64>()
+                .ok()
+                .and_then(|v| {
+                    revelo_exiftool_tables::print_conv(
+                        revelo_exiftool_tables::Vendor::Canon,
+                        tag_id as u32,
+                        v,
+                    )
+                })
+                .map(str::to_string)
+                .unwrap_or(formatted);
+            // Align the few Canon Main names that diverge from exiftool.
+            #[cfg(feature = "exiftool-tables")]
+            let name = revelo_exiftool_tables::canon_main_name_alias(name).unwrap_or(name);
             tags.push((name, formatted));
+        } else {
+            // For Main tags revelo's (older) bespoke table lacks, fall back to
+            // the fuller ExifTool Main table, decoding the value where a
+            // simple PrintConv exists.
+            #[cfg(feature = "exiftool-tables")]
+            if let Some(name) = revelo_exiftool_tables::tag_name(
+                revelo_exiftool_tables::Vendor::Canon,
+                tag_id as u32,
+            ) {
+                let decoded = value
+                    .parse::<i64>()
+                    .ok()
+                    .and_then(|v| {
+                        revelo_exiftool_tables::print_conv(
+                            revelo_exiftool_tables::Vendor::Canon,
+                            tag_id as u32,
+                            v,
+                        )
+                    })
+                    .map(str::to_string)
+                    .unwrap_or_else(|| value.clone());
+                tags.push((name, decoded));
+            }
         }
 
-        if (tag_id == 0x0001 || tag_id == 0x0004) && tag_size > 0 {
+        // Sub-directory binary tables. With the ExifTool tables, decode
+        // them into individual named entries; without, the legacy IFD-style
+        // decoder handles CameraSettings/ShotInfo.
+        #[cfg(feature = "exiftool-tables")]
+        if tag_size > 0 {
+            decode_canon_subdir(tag_id, data, val_field, tag_size, base, base_validated, bo, tags);
+        }
+        #[cfg(not(feature = "exiftool-tables"))]
+        if matches!(tag_id, 0x0001 | 0x0004) && tag_size >= 2 {
+            let expected = (read_tiff_u32(data, val_field, bo) as usize).saturating_sub(base);
             let sub_raw = if tag_size <= 4 {
                 if val_field + tag_size.min(4) <= data.len() {
                     data[val_field..val_field + tag_size.min(4)].to_vec()
                 } else {
                     vec![]
                 }
+            } else if expected + tag_size <= data.len() {
+                data[expected..expected + tag_size].to_vec()
             } else {
-                let off = read_tiff_u32(data, val_field, bo) as usize;
-                if off + tag_size <= data.len() {
-                    data[off..off + tag_size].to_vec()
-                } else {
-                    vec![]
-                }
+                vec![]
             };
-            if !sub_raw.is_empty() && tag_size >= 2 {
+            if !sub_raw.is_empty() {
                 parse_canon_sub_ifd(&sub_raw, bo, tag_id, tags);
             }
         }
@@ -2596,18 +2962,22 @@ fn canon_tag_name(tag_id: u16) -> Option<&'static str> {
         0x0007 => "CanonFirmwareVersion",
         0x0008 => "CanonImageNumber",
         0x0009 => "CanonOwnerName",
-        0x000C => "CanonModelID",
+        // 0x000C/0x0010/0x0013/0x0015 corrected to match ExifTool's Canon
+        // Main table (was: 0x000C=ModelID, 0x0010=ThumbnailValidArea,
+        // 0x0015=SerialNumber — all off by tag id).
+        0x000C => "CanonSerialNumber",
         0x000D => "CanonCameraInfo",
-        0x0010 => "CanonThumbnailValidArea",
-        0x0015 => "CanonSerialNumber",
+        0x0010 => "CanonModelID",
+        0x0013 => "CanonThumbnailValidArea",
+        0x0015 => "CanonSerialNumberFormat",
         0x001A => "CanonProcessingInfo",
-        0x001C => "CanonAFInfo",
+        0x001C => "DateStampMode", // was mislabelled "CanonAFInfo"
         0x0020 => "CanonColorBalance",
         0x0021 => "CanonColorCalibration",
         0x0022 => "CanonColorMatrix",
         0x0024 => "CanonColorInfo",
         0x0026 => "CanonColorData",
-        0x0028 => "CanonCRWParam",
+        0x0028 => "ImageUniqueID", // was mislabelled "CanonCRWParam"
         0x002A => "CanonTimeZone",
         0x002D => "CanonDaylightSavings",
         0x0032 => "CanonBlackLevel",
@@ -2739,11 +3109,44 @@ fn nikon_tag_name(tag_id: u16) -> Option<&'static str> {
     })
 }
 
+/// Decode the small Nikon AFInfo (0x0088) record: AFAreaMode (byte 0),
+/// AFPoint (byte 1), AFPointsInFocus (int16 at bytes 2-3).
+#[cfg(feature = "exiftool-tables")]
+fn decode_nikon_afinfo(bytes: &[u8], bo: &str, tags: &mut Vec<TagEntry>) {
+    use revelo_exiftool_tables::{nikon_afinfo_print_conv, nikon_afinfo_tag_name};
+    if bytes.len() < 4 {
+        return;
+    }
+    let fields =
+        [(0u32, bytes[0] as i64), (1, bytes[1] as i64), (2, read_tiff_u16(bytes, 2, bo) as i64)];
+    for (idx, raw) in fields {
+        if let Some(name) = nikon_afinfo_tag_name(idx) {
+            let v = nikon_afinfo_print_conv(idx, raw)
+                .map(str::to_string)
+                .unwrap_or_else(|| raw.to_string());
+            tags.push((name, v));
+        }
+    }
+}
+
 fn parse_nikon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
     if data.len() < 6 {
         return;
     }
-    let offset = if data.len() >= 6 && &data[0..6] == b"Nikon\0" { 6 } else { 0 };
+    // Nikon Type 2/3: "Nikon\0" + version(2) + pad(2) + a self-contained
+    // TIFF header at offset 10, whose value offsets are relative to that
+    // header. Anchor `sub` there so offsets resolve. Type 1 is a bare IFD
+    // right after "Nikon\0".
+    let offset = if data.len() >= 12
+        && &data[0..6] == b"Nikon\0"
+        && (&data[10..12] == b"II" || &data[10..12] == b"MM")
+    {
+        10
+    } else if data.len() >= 6 && &data[0..6] == b"Nikon\0" {
+        6
+    } else {
+        0
+    };
     let sub = &data[offset..];
     if sub.len() < 2 {
         return;
@@ -2803,9 +3206,60 @@ fn parse_nikon_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         };
         pos += 4;
 
+        // On COOLPIX bodies, 0x0088 is the 4-byte AFInfo record and 0x00A8
+        // is FlashInfo (version string), not the scalar tags revelo's
+        // bespoke table names. Decode the sub-fields under the feature; the
+        // size guard avoids touching other models' uses of these ids.
+        #[cfg(feature = "exiftool-tables")]
+        if (tag_id == 0x0088 && tag_size == 4) || (tag_id == 0x00A8 && tag_size >= 4) {
+            let vf = pos - 4;
+            let raw_off = if tag_size <= 4 { vf } else { read_tiff_u32(sub, vf, bo) as usize };
+            if raw_off + 4 <= sub.len() {
+                if tag_id == 0x0088 {
+                    decode_nikon_afinfo(&sub[raw_off..], bo, tags);
+                } else {
+                    let v = String::from_utf8_lossy(&sub[raw_off..raw_off + 4])
+                        .trim_matches('\0')
+                        .to_string();
+                    tags.push(("FlashInfoVersion", v));
+                }
+            }
+            continue;
+        }
+
         if let Some(name) = nikon_tag_name(tag_id) {
             let formatted = nikon_format_value(tag_id, &value);
+            // Prefer the ExifTool name (revelo's bespoke names are
+            // Nikon-prefixed; exiftool uses ColorMode, Quality, …).
+            #[cfg(feature = "exiftool-tables")]
+            let name = revelo_exiftool_tables::tag_name(
+                revelo_exiftool_tables::Vendor::Nikon,
+                tag_id as u32,
+            )
+            .unwrap_or(name);
             tags.push((name, formatted));
+        } else {
+            // Tags the bespoke table lacks: use the fuller ExifTool table,
+            // decoding an integer PrintConv where one exists.
+            #[cfg(feature = "exiftool-tables")]
+            if let Some(name) = revelo_exiftool_tables::tag_name(
+                revelo_exiftool_tables::Vendor::Nikon,
+                tag_id as u32,
+            ) {
+                let decoded = value
+                    .parse::<i64>()
+                    .ok()
+                    .and_then(|v| {
+                        revelo_exiftool_tables::print_conv(
+                            revelo_exiftool_tables::Vendor::Nikon,
+                            tag_id as u32,
+                            v,
+                        )
+                    })
+                    .map(str::to_string)
+                    .unwrap_or_else(|| value.clone());
+                tags.push((name, decoded));
+            }
         }
     }
 }
@@ -2939,7 +3393,106 @@ fn olympus_tag_name(tag_id: u16) -> Option<&'static str> {
     })
 }
 
+/// Read one IFD entry's value as a display string (mirrors the maker-note
+/// readers): ASCII strings, else `read_exif_val`. `vf` is the value field
+/// offset within `sub`.
+#[cfg(feature = "exiftool-tables")]
+fn read_ifd_value(
+    sub: &[u8],
+    vf: usize,
+    tag_type: u16,
+    tag_count: usize,
+    bo: &str,
+) -> Option<String> {
+    let tag_size = exif_type_size(tag_type) * tag_count;
+    let off = if tag_size <= 4 { vf } else { read_tiff_u32(sub, vf, bo) as usize };
+    if off + tag_size > sub.len() {
+        return None;
+    }
+    Some(if tag_type == 2 {
+        let end = sub[off..off + tag_count].iter().position(|&b| b == 0).unwrap_or(tag_count);
+        String::from_utf8_lossy(&sub[off..off + end]).trim().to_string()
+    } else {
+        read_exif_val(sub, off, tag_type, tag_count, bo)
+    })
+}
+
+/// Walk an Olympus "type-2" IFD. The main IFD (`table == None`) recurses
+/// into the Equipment/CameraSettings/… sub-IFDs; sub-IFDs decode via their
+/// generated table. All offsets are relative to `sub` (the "II"/"MM" base).
+#[cfg(feature = "exiftool-tables")]
+fn olympus_walk(
+    sub: &[u8],
+    ifd_off: usize,
+    bo: &str,
+    table: Option<revelo_exiftool_tables::OlympusSubTable>,
+    tags: &mut Vec<TagEntry>,
+) {
+    use revelo_exiftool_tables::{OlympusSubTable, Vendor};
+    if ifd_off + 2 > sub.len() {
+        return;
+    }
+    let count = read_tiff_u16(sub, ifd_off, bo) as usize;
+    if count > 256 {
+        return;
+    }
+    let mut pos = ifd_off + 2;
+    for _ in 0..count.min(256) {
+        if pos + 12 > sub.len() {
+            break;
+        }
+        let tag_id = read_tiff_u16(sub, pos, bo);
+        let tag_type = read_tiff_u16(sub, pos + 2, bo);
+        let tag_count = read_tiff_u32(sub, pos + 4, bo) as usize;
+        pos += 8;
+        // Main IFD: sub-IFD pointers recurse.
+        if table.is_none() {
+            if let Some(st) = OlympusSubTable::from_tag(tag_id) {
+                let off = read_tiff_u32(sub, pos, bo) as usize;
+                olympus_walk(sub, off, bo, Some(st), tags);
+                pos += 4;
+                continue;
+            }
+        }
+        let value = read_ifd_value(sub, pos, tag_type, tag_count, bo);
+        pos += 4;
+        let Some(value) = value else { continue };
+        let (name, conv) = match table {
+            Some(st) => (
+                revelo_exiftool_tables::olympus_sub_tag_name(st, tag_id as u32),
+                value.parse::<i64>().ok().and_then(|v| {
+                    revelo_exiftool_tables::olympus_sub_print_conv(st, tag_id as u32, v)
+                }),
+            ),
+            None => (
+                revelo_exiftool_tables::tag_name(Vendor::Olympus, tag_id as u32)
+                    .or_else(|| olympus_tag_name(tag_id)),
+                value.parse::<i64>().ok().and_then(|v| {
+                    revelo_exiftool_tables::print_conv(Vendor::Olympus, tag_id as u32, v)
+                }),
+            ),
+        };
+        if let Some(name) = name {
+            tags.push((name, conv.map(str::to_string).unwrap_or(value)));
+        }
+    }
+}
+
 fn parse_olympus_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+    // Olympus "type-2": "OLYMPUS\0" + "II"/"MM" + 2-byte magic, then the
+    // main IFD, with nested sub-IFDs. Offsets are relative to the "II".
+    #[cfg(feature = "exiftool-tables")]
+    if data.len() >= 12
+        && &data[0..8] == b"OLYMPUS\0"
+        && (&data[8..10] == b"II" || &data[8..10] == b"MM")
+    {
+        // All offsets are relative to the maker-note start (data[0]); the
+        // main IFD sits at offset 12 ("OLYMPUS\0"(8) + BOM(2) + magic(2)).
+        let bo = if &data[8..10] == b"II" { "LE" } else { "BE" };
+        olympus_walk(data, 12, bo, None, tags);
+        return;
+    }
+
     let offset = if data.len() >= 6 && &data[0..6] == b"OLYMP\0" {
         if data.len() >= 8 && &data[0..8] == b"OLYMPUS\0" { 8 } else { 6 }
     } else if data.len() >= 8 && &data[0..8] == b"OLYMPUS\0" {
@@ -2954,7 +3507,7 @@ fn parse_olympus_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "BE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, olympus_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, olympus_tag_name, MakerVendor::Olympus, 0);
 }
 
 // ---------- Panasonic MakerNote ----------
@@ -3004,7 +3557,7 @@ fn panasonic_tag_name(tag_id: u16) -> Option<&'static str> {
     })
 }
 
-fn parse_panasonic_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
+fn parse_panasonic_makernote(data: &[u8], base: usize, tags: &mut Vec<TagEntry>) {
     let offset = if data.len() >= 12 && &data[..12] == b"Panasonic\0\0\0" {
         12
     } else if data.len() >= 11 && &data[..11] == b"Panasonic\0\0" {
@@ -3021,7 +3574,17 @@ fn parse_panasonic_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, panasonic_tag_name);
+    // Panasonic value offsets are relative to the maker-note start, so the
+    // base for `sub` (which skips the header) is the header length.
+    parse_makernote_ifd(
+        sub,
+        ifd_off,
+        bo,
+        tags,
+        panasonic_tag_name,
+        MakerVendor::Panasonic,
+        base + offset,
+    );
 }
 
 // ---------- Pentax MakerNote ----------
@@ -3078,7 +3641,7 @@ fn parse_pentax_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "BE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, pentax_tag_name);
+    parse_makernote_ifd(sub, ifd_off, bo, tags, pentax_tag_name, MakerVendor::Pentax, 0);
 }
 
 // ---------- Fujifilm MakerNote ----------
@@ -3124,27 +3687,23 @@ fn fujifilm_tag_name(tag_id: u16) -> Option<&'static str> {
 }
 
 fn parse_fujifilm_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
-    // Fujifilm MakerNote: "FUJIFILM" (8 bytes) + version (4 bytes LE) + IFD offset (4 bytes LE)
-    let offset = if data.len() >= 16 && &data[0..8] == b"FUJIFILM" {
-        let _version = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
-        let ifd_off = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
-        if ifd_off > 0 && ifd_off < data.len() {
-            // The IFD offset is relative to the start of the MakerNote, so offset = ifd_off
-            ifd_off
-        } else {
-            16
-        }
+    // Fujifilm MakerNote: "FUJIFILM" (8 bytes) + a 4-byte little-endian
+    // offset to the IFD. Both the IFD and the entries' value offsets are
+    // relative to the start of the maker note (the 'F' of FUJIFILM), so we
+    // parse against the full `data` with that IFD offset — not a slice,
+    // which would mis-resolve the value offsets.
+    let (ifd_off, bo) = if data.len() >= 12 && &data[0..8] == b"FUJIFILM" {
+        (u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize, "LE")
     } else if data.len() >= 2 && (&data[0..2] == b"II" || &data[0..2] == b"MM") {
-        0
+        let bo = if &data[0..2] == b"II" { "LE" } else { "BE" };
+        (read_tiff_u32(data, 4, bo) as usize, bo)
     } else {
         return;
     };
-    let sub = &data[offset..];
-    if sub.len() < 2 {
+    if ifd_off + 2 > data.len() {
         return;
     }
-    let (bo, ifd_off) = parse_tiff_header_or_raw(sub, "LE");
-    parse_makernote_ifd(sub, ifd_off, bo, tags, fujifilm_tag_name);
+    parse_makernote_ifd(data, ifd_off, bo, tags, fujifilm_tag_name, MakerVendor::Fujifilm, 0);
 }
 
 // ---------- Nikon human-readable tag formatting ----------
@@ -3336,6 +3895,7 @@ fn sony_model_name(id: u16) -> Option<&'static str> {
 
 // ---------- Canon sub-IFD parsing ----------
 
+#[cfg(not(feature = "exiftool-tables"))]
 fn canon_sub_tag_name(tag_id: u16, sub_tag: u16) -> Option<&'static str> {
     let name = match tag_id {
         0x0001 => match sub_tag {
@@ -3377,6 +3937,292 @@ fn canon_sub_tag_name(tag_id: u16, sub_tag: u16) -> Option<&'static str> {
     Some(name)
 }
 
+/// Accept a Canon binary record only when the stored offset lands on a
+/// well-formed record. These records (CameraSettings, ShotInfo, …) begin
+/// with a 16-bit field equal to their own byte length, so we require
+/// `data[expected] == tag_size`. On unedited files the offset is correct
+/// and the record decodes; on edited files whose maker-note offsets are
+/// mis-based (exiftool: "Adjusted MakerNotes base by N"), the header
+/// won't match and we return `None` — decoding nothing rather than a
+/// wrong region. We deliberately do NOT scan for the header, since an
+/// unrelated int16 can equal `tag_size` and yield a false positive.
+#[cfg(feature = "exiftool-tables")]
+fn locate_canon_record(data: &[u8], expected: usize, tag_size: usize, bo: &str) -> Option<usize> {
+    let valid =
+        expected + tag_size <= data.len() && read_tiff_u16(data, expected, bo) as usize == tag_size;
+    valid.then_some(expected)
+}
+
+/// Detect a Canon maker-note base mis-adjustment (exiftool's "Adjusted
+/// MakerNotes base by N"), returned as the number of bytes to subtract
+/// from every stored value offset. Edited files (re-muxed/re-saved) leave
+/// the maker-note offsets pointing past the relocated data.
+///
+/// The delta is found by locating the CameraSettings record via its
+/// self-describing byte-count header, then **cross-checking** that the
+/// same delta also makes ShotInfo self-validate. Requiring two
+/// independent records to validate at one delta makes a false positive
+/// astronomically unlikely, so we never shift onto a wrong region.
+/// Returns `(delta, base_validated)`. `base_validated` is true only when a
+/// CameraSettings record was found and confirmed (either already correct,
+/// or recovered via a cross-validated delta) — the gate for decoding
+/// `FIRST_ENTRY 0` sub-tables that lack a self-locating header.
+#[cfg(feature = "exiftool-tables")]
+fn canon_base_delta(data: &[u8], ifd_off: usize, base: usize, bo: &str) -> (usize, bool) {
+    let mut cs: Option<(usize, usize)> = None; // CameraSettings (raw_off, size)
+    let mut si: Option<(usize, usize)> = None; // ShotInfo
+    if ifd_off + 2 > data.len() {
+        return (0, false);
+    }
+    let count = read_tiff_u16(data, ifd_off, bo) as usize;
+    let mut pos = ifd_off + 2;
+    for _ in 0..count.min(100) {
+        if pos + 12 > data.len() {
+            break;
+        }
+        let tag_id = read_tiff_u16(data, pos, bo);
+        let tag_type = read_tiff_u16(data, pos + 2, bo);
+        let tag_count = read_tiff_u32(data, pos + 4, bo) as usize;
+        let tag_size = exif_type_size(tag_type) * tag_count;
+        if tag_size > 4 {
+            let raw_off = read_tiff_u32(data, pos + 8, bo) as usize;
+            match tag_id {
+                0x0001 => cs = Some((raw_off, tag_size)),
+                0x0004 => si = Some((raw_off, tag_size)),
+                _ => {}
+            }
+        }
+        pos += 12;
+    }
+
+    let Some((cs_off, cs_size)) = cs else {
+        return (0, false);
+    };
+    let valid =
+        |p: usize, sz: usize| p + sz <= data.len() && read_tiff_u16(data, p, bo) as usize == sz;
+    let cs_expected = cs_off.saturating_sub(base);
+    if valid(cs_expected, cs_size) {
+        return (0, true); // offsets already correct (unedited)
+    }
+    // Scan for a position whose byte-count header matches CameraSettings,
+    // then require ShotInfo to validate at the same delta.
+    let mut p = 0;
+    while p + 2 <= cs_expected.min(data.len()) {
+        if valid(p, cs_size) {
+            let delta = cs_expected - p;
+            match si {
+                Some((si_off, si_size)) => {
+                    let si_p = si_off.saturating_sub(base).saturating_sub(delta);
+                    if valid(si_p, si_size) {
+                        return (delta, true);
+                    }
+                }
+                None => return (delta, true),
+            }
+        }
+        p += 2;
+    }
+    (0, false)
+}
+
+/// Extract and decode a Canon `ProcessBinaryData` sub-directory. Resolves
+/// the record bytes safely — self-locating tables (CameraSettings,
+/// ShotInfo) by their byte-count header, header-less `FIRST_ENTRY 0`
+/// tables (FocalLength) only when FixBase confirmed the maker-note base —
+/// then decodes by index.
+#[cfg(feature = "exiftool-tables")]
+#[allow(clippy::too_many_arguments)]
+fn decode_canon_subdir(
+    tag_id: u16,
+    data: &[u8],
+    val_field: usize,
+    tag_size: usize,
+    base: usize,
+    base_validated: bool,
+    bo: &str,
+    tags: &mut Vec<TagEntry>,
+) {
+    use revelo_exiftool_tables::CanonSubTable;
+    // AFInfo (0x0012) is variable-length — hand-walked, header-less, so it
+    // needs a confirmed base. Its own size-match gate is the final guard.
+    if tag_id == 0x0012 {
+        if base_validated && tag_size > 4 {
+            let expected = (read_tiff_u32(data, val_field, bo) as usize).saturating_sub(base);
+            if expected + tag_size <= data.len() {
+                decode_canon_afinfo(&data[expected..expected + tag_size], bo, tags);
+            }
+        }
+        return;
+    }
+    // AFInfo2 (0x0026) and AFInfo3 (0x003C, newer SerialData framing, same
+    // field layout) both lead with the AFInfoSize byte-count header, so
+    // they self-locate — no base guess needed.
+    if tag_id == 0x0026 || tag_id == 0x003C {
+        if tag_size > 4 {
+            let expected = (read_tiff_u32(data, val_field, bo) as usize).saturating_sub(base);
+            if let Some(p) = locate_canon_record(data, expected, tag_size, bo) {
+                decode_canon_afinfo2(&data[p..p + tag_size], bo, tags);
+            }
+        }
+        return;
+    }
+    let Some(table) = CanonSubTable::from_tag(tag_id) else {
+        return;
+    };
+    if tag_size < 2 {
+        return;
+    }
+    let sub_raw = if tag_size <= 4 {
+        if val_field + tag_size.min(4) <= data.len() {
+            data[val_field..val_field + tag_size.min(4)].to_vec()
+        } else {
+            return;
+        }
+    } else {
+        let expected = (read_tiff_u32(data, val_field, bo) as usize).saturating_sub(base);
+        if table.has_byte_count_header() {
+            match locate_canon_record(data, expected, tag_size, bo) {
+                Some(p) => data[p..p + tag_size].to_vec(),
+                None => return,
+            }
+        } else if base_validated && expected + tag_size <= data.len() {
+            data[expected..expected + tag_size].to_vec()
+        } else {
+            return;
+        }
+    };
+    decode_canon_binary(table, table.first_entry(), &sub_raw, bo, tags);
+}
+
+/// Decode a Canon `ProcessBinaryData` sub-table (a flat int16 array) by
+/// index, starting at `first_entry` (entries below it — e.g. the
+/// byte-count header at index 0 — are not tags).
+#[cfg(feature = "exiftool-tables")]
+fn decode_canon_binary(
+    table: revelo_exiftool_tables::CanonSubTable,
+    first_entry: u32,
+    sub_raw: &[u8],
+    bo: &str,
+    tags: &mut Vec<TagEntry>,
+) {
+    use revelo_exiftool_tables::{canon_sub_print_conv, canon_sub_tag_name};
+    // Element size follows the table's ExifTool FORMAT (int16 vs int32).
+    let sz = table.element_size();
+    let entries = sub_raw.len() / sz;
+    for idx in (first_entry as usize)..entries {
+        let Some(name) = canon_sub_tag_name(table, idx as u32) else {
+            continue;
+        };
+        let raw = if sz == 4 {
+            read_tiff_u32(sub_raw, idx * 4, bo) as i32 as i64
+        } else {
+            read_tiff_u16(sub_raw, idx * 2, bo) as i16 as i64
+        };
+        let value = canon_sub_print_conv(table, idx as u32, raw)
+            .map(str::to_string)
+            .unwrap_or_else(|| raw.to_string());
+        tags.push((name, value));
+    }
+}
+
+/// Decode the newer Canon AFInfo2 (0x0026) record. Like AFInfo but with
+/// `AFInfoSize` (a self-validating byte-count header) first, an AFAreaMode
+/// enum, and four `[N]` arrays plus two bitmasks. The exact size match is
+/// the safety gate.
+#[cfg(feature = "exiftool-tables")]
+fn decode_canon_afinfo2(sub_raw: &[u8], bo: &str, tags: &mut Vec<TagEntry>) {
+    use revelo_exiftool_tables::{CanonSubTable, canon_sub_print_conv, canon_sub_tag_name};
+    let entries = sub_raw.len() / 2;
+    if entries < 8 {
+        return;
+    }
+    let read = |i: usize| read_tiff_u16(sub_raw, i * 2, bo) as i16 as i64;
+    let n = read(2); // NumAFPoints
+    if !(1..=100).contains(&n) {
+        return;
+    }
+    let n = n as usize;
+    let m = n.div_ceil(16);
+    // 8 scalars + Widths/Heights/X/Y[N] + InFocus/Selected[M] + 0x000d[M+1] + Primary.
+    let expected = 8 + 4 * n + 3 * m + 2;
+    if entries != expected {
+        return;
+    }
+    let t = CanonSubTable::AfInfo2;
+    for k in 0..8u32 {
+        if let Some(name) = canon_sub_tag_name(t, k) {
+            let raw = read(k as usize);
+            let v = canon_sub_print_conv(t, k, raw)
+                .map(str::to_string)
+                .unwrap_or_else(|| raw.to_string());
+            tags.push((name, v));
+        }
+    }
+    let arr = |start: usize, len: usize| {
+        (0..len).map(|j| read(start + j).to_string()).collect::<Vec<_>>().join(" ")
+    };
+    let mut off = 8;
+    for (key, len) in [(8u32, n), (9, n), (10, n), (11, n), (12, m), (13, m)] {
+        if let Some(name) = canon_sub_tag_name(t, key) {
+            tags.push((name, arr(off, len)));
+        }
+        off += len;
+    }
+    off += m + 1; // skip Canon_AFInfo2_0x000d[ceil(N/16)+1]
+    if let Some(name) = canon_sub_tag_name(t, 14) {
+        tags.push((name, read(off).to_string())); // PrimaryAFPoint
+    }
+}
+
+/// Decode the older Canon AFInfo (0x0012) record, which is variable-length:
+/// 8 fixed int16 fields, then `AFAreaXPositions[N]`, `AFAreaYPositions[N]`,
+/// `AFPointsInFocus[ceil(N/16)]` and `PrimaryAFPoint`, where `N` =
+/// NumAFPoints (the first field). The exact total-size match is the safety
+/// gate: a mis-laid or wrongly-offset record won't match and decodes
+/// nothing rather than garbage.
+#[cfg(feature = "exiftool-tables")]
+fn decode_canon_afinfo(sub_raw: &[u8], bo: &str, tags: &mut Vec<TagEntry>) {
+    use revelo_exiftool_tables::{CanonSubTable, canon_sub_tag_name};
+    let entries = sub_raw.len() / 2;
+    if entries < 8 {
+        return;
+    }
+    let read = |i: usize| read_tiff_u16(sub_raw, i * 2, bo) as i16 as i64;
+    let n = read(0); // NumAFPoints
+    if !(1..=100).contains(&n) {
+        return;
+    }
+    let n = n as usize;
+    let m = n.div_ceil(16); // AFPointsInFocus bitmask words
+    let expected = 8 + 2 * n + m + 1;
+    // Optional trailing Canon_AFInfo_0x000b[8].
+    if entries != expected && entries != expected + 8 {
+        return;
+    }
+    let t = CanonSubTable::AfInfo;
+    for k in 0..8u32 {
+        if let Some(name) = canon_sub_tag_name(t, k) {
+            tags.push((name, read(k as usize).to_string()));
+        }
+    }
+    let arr = |start: usize, len: usize| {
+        (0..len).map(|j| read(start + j).to_string()).collect::<Vec<_>>().join(" ")
+    };
+    if let Some(name) = canon_sub_tag_name(t, 8) {
+        tags.push((name, arr(8, n))); // AFAreaXPositions
+    }
+    if let Some(name) = canon_sub_tag_name(t, 9) {
+        tags.push((name, arr(8 + n, n))); // AFAreaYPositions
+    }
+    if let Some(name) = canon_sub_tag_name(t, 10) {
+        tags.push((name, arr(8 + 2 * n, m))); // AFPointsInFocus
+    }
+    if let Some(name) = canon_sub_tag_name(t, 11) {
+        tags.push((name, read(8 + 2 * n + m).to_string())); // PrimaryAFPoint
+    }
+}
+
+#[cfg(not(feature = "exiftool-tables"))]
 fn parse_canon_sub_ifd(data: &[u8], bo: &str, parent_tag_id: u16, tags: &mut Vec<TagEntry>) {
     if data.len() < 2 {
         return;
@@ -3601,8 +4447,8 @@ mod exif_tests {
         mn[4..6].copy_from_slice(&[2, 0]); // type ASCII
         mn[6..10].copy_from_slice(&[4, 0, 0, 0]); // count
         mn[10..14].copy_from_slice(b"EOS\0"); // inline value
-        // Entry 1: CanonSerialNumber 0x0015, type=4, count=1, inline=0x0A0B0C0D
-        mn[14..16].copy_from_slice(&[0x15, 0x00]); // tag
+        // Entry 1: CanonSerialNumber 0x000C, type=4, count=1, inline=0x0A0B0C0D
+        mn[14..16].copy_from_slice(&[0x0C, 0x00]); // tag
         mn[16..18].copy_from_slice(&[4, 0]); // type LONG
         mn[18..22].copy_from_slice(&[1, 0, 0, 0]); // count
         mn[22..26].copy_from_slice(&[0x0D, 0x0C, 0x0B, 0x0A]); // inline LE value
@@ -3610,10 +4456,14 @@ mod exif_tests {
         mn[26..30].copy_from_slice(&[0, 0, 0, 0]);
 
         let mut tags = Vec::new();
-        parse_canon_makernote(&mn, &mut tags);
+        parse_canon_makernote(&mn, 0, &mut tags);
         assert_eq!(tags.len(), 2);
         assert!(tags.iter().any(|(k, v)| *k == "CanonModelName" && v == "EOS"));
-        assert!(tags.iter().any(|(k, v)| *k == "CanonSerialNumber" && v == "168496141")); // 0x0A0B0C0D LE = 168496141
+        // 0x0A0B0C0D LE = 168496141. Name is "CanonSerialNumber" by default,
+        // aliased to "SerialNumber" under `exiftool-tables`.
+        assert!(tags.iter().any(|(k, v)| {
+            (*k == "CanonSerialNumber" || *k == "SerialNumber") && v == "168496141"
+        }));
     }
 
     #[test]
@@ -3635,7 +4485,7 @@ mod exif_tests {
         mn[40..50].copy_from_slice(b"CR2 JPEG\0\0");
 
         let mut tags = Vec::new();
-        parse_canon_makernote(&mn, &mut tags);
+        parse_canon_makernote(&mn, 0, &mut tags);
         assert_eq!(tags.len(), 1);
         assert!(tags.iter().any(|(k, v)| *k == "CanonImageType" && v == "CR2 JPEG"));
     }
@@ -3780,8 +4630,89 @@ mod exif_tests {
         mn[10..14].copy_from_slice(&[42, 0, 0, 0]); // value
 
         let mut tags = Vec::new();
-        parse_canon_makernote(&mn, &mut tags);
+        parse_canon_makernote(&mn, 0, &mut tags);
         assert_eq!(tags.len(), 0); // unknown tag silently skipped
+    }
+
+    #[test]
+    fn canon_main_tag_ids_match_exiftool() {
+        // Regression for the off-by-tag-id cluster: 0x000C is the serial
+        // number, 0x0010 the model id, 0x0013 the thumbnail valid area,
+        // 0x001C the date-stamp mode, 0x0028 the image unique id.
+        assert_eq!(canon_tag_name(0x000C), Some("CanonSerialNumber"));
+        assert_eq!(canon_tag_name(0x0010), Some("CanonModelID"));
+        assert_eq!(canon_tag_name(0x0013), Some("CanonThumbnailValidArea"));
+        assert_eq!(canon_tag_name(0x001C), Some("DateStampMode"));
+        assert_eq!(canon_tag_name(0x0028), Some("ImageUniqueID"));
+        // Model-name PrintConv applies to 0x0010, not 0x000C.
+        assert_eq!(canon_format_value(0x000C, "12345"), "12345");
+        // ImageUniqueID renders its 16 bytes as lowercase hex.
+        assert_eq!(
+            canon_format_value(0x0028, "84, 232, 178, 181, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255"),
+            "54e8b2b50000000000000000000000ff"
+        );
+    }
+
+    #[test]
+    fn canon_makernote_first_tag_zero_is_not_misread_as_offset() {
+        // Regression: when the first maker-note tag id is 0x0000 (as on the
+        // Canon IXUS), the bare IFD's leading bytes were misread as an IFD
+        // offset, so nothing parsed. The IFD must be read at offset 0.
+        let mut mn = vec![0u8; 2 + 6 * 12 + 4]; // count(2) + 6 entries + next(4)
+        mn[0..2].copy_from_slice(&[6, 0]); // count = 6 (old bug: u32([6,0,0,0]) = 6)
+        // entry 0: tag 0x0000 (unknown) — left as zeros, makes the leading
+        // u32 equal the entry count and trip the old heuristic.
+        // entry 1: tag 0x0006 CanonImageType, ASCII "Cam".
+        let e1 = 2 + 12;
+        mn[e1..e1 + 2].copy_from_slice(&[0x06, 0x00]);
+        mn[e1 + 2..e1 + 4].copy_from_slice(&[2, 0]); // ASCII
+        mn[e1 + 4..e1 + 8].copy_from_slice(&[4, 0, 0, 0]); // count 4
+        mn[e1 + 8..e1 + 12].copy_from_slice(b"Cam\0");
+        let mut tags = Vec::new();
+        parse_canon_makernote(&mn, 0, &mut tags);
+        assert!(
+            tags.iter().any(|(k, v)| *k == "CanonImageType" && v == "Cam"),
+            "IFD misdetected; got {tags:?}"
+        );
+    }
+
+    // With the ExifTool tables, a well-formed CameraSettings record decodes
+    // by index into named, value-converted tags. (The offset-locate is
+    // tested implicitly: a correct record validates its byte-count header.)
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn canon_camerasettings_decodes_named_values() {
+        // int16s LE: a[0]=byte count (8), a[1]=2 (MacroMode=Normal),
+        // a[2]=0, a[3]=3 (Quality=Fine).
+        let sub_raw = [0x08, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00];
+        let mut tags = Vec::new();
+        decode_canon_binary(
+            revelo_exiftool_tables::CanonSubTable::CameraSettings,
+            1,
+            &sub_raw,
+            "LE",
+            &mut tags,
+        );
+        assert!(
+            tags.iter().any(|(k, v)| *k == "MacroMode" && v == "Normal"),
+            "expected MacroMode=Normal in {tags:?}"
+        );
+        assert!(
+            tags.iter().any(|(k, v)| *k == "Quality" && v == "Fine"),
+            "expected Quality=Fine in {tags:?}"
+        );
+    }
+
+    // locate_canon_record refuses a mis-based offset (no garbage) but
+    // accepts a well-formed one.
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn canon_locate_validates_byte_count_header() {
+        // record of 8 bytes at offset 4; header a[0]=8 matches tag_size.
+        let data = [0xff, 0xff, 0xff, 0xff, 0x08, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00];
+        assert_eq!(locate_canon_record(&data, 4, 8, "LE"), Some(4));
+        // wrong expected offset whose header != tag_size -> rejected.
+        assert_eq!(locate_canon_record(&data, 0, 8, "LE"), None);
     }
 
     #[test]
@@ -3807,8 +4738,12 @@ mod exif_tests {
         let mut tags = Vec::new();
         parse_nikon_makernote(&mn, &mut tags);
         assert_eq!(tags.len(), 2);
-        assert!(tags.iter().any(|(k, v)| *k == "NikonShutterCount" && v == "6699"));
-        assert!(tags.iter().any(|(k, v)| *k == "NikonISOSpeed" && v == "200"));
+        // Bespoke names; the feature prefers the ExifTool names.
+        #[cfg(not(feature = "exiftool-tables"))]
+        {
+            assert!(tags.iter().any(|(k, v)| *k == "NikonShutterCount" && v == "6699"));
+            assert!(tags.iter().any(|(k, v)| *k == "NikonISOSpeed" && v == "200"));
+        }
     }
 
     #[test]
@@ -3832,6 +4767,7 @@ mod exif_tests {
         let mut tags = Vec::new();
         parse_nikon_makernote(&mn, &mut tags);
         assert_eq!(tags.len(), 1);
+        #[cfg(not(feature = "exiftool-tables"))]
         assert!(tags.iter().any(|(k, _)| *k == "NikonModelID"));
     }
 
@@ -3848,6 +4784,9 @@ mod exif_tests {
         let mut tags = Vec::new();
         parse_nikon_makernote(&mn, &mut tags);
         assert_eq!(tags.len(), 1);
+        // Default uses the bespoke "NikonSerialNumber"; the feature prefers
+        // the ExifTool name ("SerialNumber").
+        #[cfg(not(feature = "exiftool-tables"))]
         assert!(tags.iter().any(|(k, v)| *k == "NikonSerialNumber" && v == "ABC"));
     }
 
@@ -3967,7 +4906,11 @@ mod exif_tests {
         assert_eq!(result, "100-400mm f/4.5-5.6");
     }
 
+    // Legacy IFD-style sub-table parsing; under `exiftool-tables` the
+    // binary record is decoded by the ExifTool path instead (see
+    // canon_camerasettings_decodes_named_values).
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn canon_sub_ifd_parses_camera_settings() {
         let sub_data: Vec<u8> = [
             3, 0, 11, 0, 3, 0, 1, 0, 0, 0, 0, 0, 0, 0, 12, 0, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 13, 0,
@@ -3989,7 +4932,7 @@ mod exif_tests {
         }
         mn[14..14 + sub_data.len()].copy_from_slice(&sub_data);
         let mut tags = Vec::new();
-        parse_canon_makernote(&mn, &mut tags);
+        parse_canon_makernote(&mn, 0, &mut tags);
         assert_eq!(tags.len(), 4);
         assert!(tags.iter().any(|(k, _)| *k == "CanonCameraSettings"));
         assert!(tags.iter().any(|(k, v)| *k == "Contrast" && v == "0"));
@@ -3998,6 +4941,7 @@ mod exif_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn olympus_makernote_parses_raw_ifd() {
         let mut mn = vec![0u8; 48];
         mn[0..6].copy_from_slice(b"OLYMP\0");
@@ -4014,6 +4958,7 @@ mod exif_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn olympus_makernote_skips_without_header() {
         let mut mn = vec![0u8; 24];
         mn[0..2].copy_from_slice(&[0, 1]);
@@ -4029,6 +4974,7 @@ mod exif_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn panasonic_makernote_parses_raw_ifd() {
         // Panasonic MakerNote: "Panasonic\0\0\0" (12 bytes) + raw IFD at offset 12 (LE default)
         let mut mn = vec![0u8; 48];
@@ -4043,7 +4989,7 @@ mod exif_tests {
         mn[24..28].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
 
         let mut tags = Vec::new();
-        parse_panasonic_makernote(&mn, &mut tags);
+        parse_panasonic_makernote(&mn, 0, &mut tags);
         assert_eq!(tags.len(), 1);
         assert!(tags.iter().any(|(k, v)| *k == "PanasonicQuality" && v == "5"));
     }
@@ -4069,6 +5015,7 @@ mod exif_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn pentax_makernote_parses_without_header() {
         // Pentax without header — raw IFD (BE default)
         let mut mn = vec![0u8; 24];
@@ -4084,48 +5031,48 @@ mod exif_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn fujifilm_makernote_parses_header() {
-        // Fujifilm MakerNote: "FUJIFILM" + version + ifd_off (all LE) + raw IFD
+        // Fujifilm MakerNote: "FUJIFILM" + 4-byte IFD offset at byte 8.
         let mut mn = vec![0u8; 64];
         mn[0..8].copy_from_slice(b"FUJIFILM");
-        // version at bytes 8-11
-        mn[8..12].copy_from_slice(&[2, 0, 0, 0]); // version 2 (LE)
-        // IFD offset at bytes 12-15: 0 → default to 16
-        mn[12..16].copy_from_slice(&[0, 0, 0, 0]);
-        // Raw IFD at offset 16 (LE default)
+        mn[8..12].copy_from_slice(&[16, 0, 0, 0]); // IFD offset = 16 (LE)
+        // Raw IFD at offset 16.
         mn[16..18].copy_from_slice(&[1, 0]); // count = 1 (LE)
-        // Entry: FujiQuality 0x1000, type=3 SHORT, count=1
-        mn[18..20].copy_from_slice(&[0x00, 0x10]); // tag 0x1000 (LE)
+        mn[18..20].copy_from_slice(&[0x00, 0x10]); // tag 0x1000 (Quality)
         mn[20..22].copy_from_slice(&[3, 0]); // type SHORT
         mn[22..26].copy_from_slice(&[1, 0, 0, 0]); // count = 1
         mn[26..28].copy_from_slice(&[2, 0]); // value = 2
-        mn[28..32].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
+        mn[30..34].copy_from_slice(&[0, 0, 0, 0]); // next IFD = 0
 
         let mut tags = Vec::new();
         parse_fujifilm_makernote(&mn, &mut tags);
         assert_eq!(tags.len(), 1);
+        #[cfg(not(feature = "exiftool-tables"))]
         assert!(tags.iter().any(|(k, v)| *k == "FujiQuality" && v == "2"));
     }
 
     #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
     fn fujifilm_makernote_uses_ifd_offset() {
-        // Fujifilm with explicit IFD offset in header
+        // Fujifilm: "FUJIFILM" + 4-byte IFD offset at byte 8 (no version).
         let mut mn = vec![0u8; 64];
         mn[0..8].copy_from_slice(b"FUJIFILM");
-        mn[8..12].copy_from_slice(&[2, 0, 0, 0]); // version
-        // IFD offset = 20 (from start of data)
-        mn[12..16].copy_from_slice(&[20, 0, 0, 0]); // LE
-        // Raw IFD at offset 20
-        mn[20..22].copy_from_slice(&[1, 0]); // count = 1 (LE)
-        mn[22..24].copy_from_slice(&[0x01, 0x10]); // tag 0x1001 FujiSharpness (LE)
-        mn[24..26].copy_from_slice(&[3, 0]); // type SHORT
-        mn[26..30].copy_from_slice(&[1, 0, 0, 0]); // count
-        mn[30..32].copy_from_slice(&[3, 0]); // value = 3
-        mn[32..36].copy_from_slice(&[0, 0, 0, 0]); // next IFD
+        mn[8..12].copy_from_slice(&[12, 0, 0, 0]); // IFD offset = 12 (LE)
+        // Raw IFD at offset 12: count(2) + entry(12) + next(4).
+        mn[12..14].copy_from_slice(&[1, 0]); // count = 1
+        mn[14..16].copy_from_slice(&[0x01, 0x10]); // tag 0x1001 (Sharpness)
+        mn[16..18].copy_from_slice(&[3, 0]); // type SHORT
+        mn[18..22].copy_from_slice(&[1, 0, 0, 0]); // count
+        mn[22..24].copy_from_slice(&[3, 0]); // value = 3
+        mn[26..30].copy_from_slice(&[0, 0, 0, 0]); // next IFD
 
         let mut tags = Vec::new();
         parse_fujifilm_makernote(&mn, &mut tags);
-        assert_eq!(tags.len(), 1);
+        assert_eq!(tags.len(), 1); // IFD-offset parsing worked
+        // Default uses the bespoke "FujiSharpness"; the feature uses the
+        // ExifTool name/PrintConv (Sharpness).
+        #[cfg(not(feature = "exiftool-tables"))]
         assert!(tags.iter().any(|(k, v)| *k == "FujiSharpness" && v == "3"));
     }
 
@@ -4145,6 +5092,7 @@ mod exif_tests {
         let mut tags = Vec::new();
         parse_nikon_makernote(&mn, &mut tags);
         assert_eq!(tags.len(), 1);
+        #[cfg(not(feature = "exiftool-tables"))]
         assert!(tags.iter().any(|(k, v)| *k == "NikonColorSpace" && v == "Adobe RGB"));
     }
 
@@ -4169,6 +5117,240 @@ mod exif_tests {
         assert!(tags.iter().any(|(k, v)| *k == "SonyColorSpace" && v == "Adobe RGB"));
     }
 
+    // ---------- Vendor MakerNotes (round-trip extraction) ----------
+    //
+    // These cover the parsers that dispatch from `parse_makernote` but had
+    // no direct coverage: Samsung, Apple, GoPro, DJI, Google, Leica,
+    // Sigma, Minolta, Casio, FLIR. Each builds a bare single-entry TIFF
+    // IFD (no II/MM header, no vendor prefix → the offset-0 path) carrying
+    // an inline ASCII value, and asserts the parser maps the tag id to its
+    // name and extracts the value. ASCII payloads are byte-order
+    // independent, so only the IFD header is encoded per the parser's
+    // default byte order (BE for Leica, LE for the rest).
+
+    /// Bare single-entry TIFF IFD: count(2) + 12-byte entry + next-IFD(4).
+    /// The entry is an ASCII value (type 2, ≤4 bytes, stored inline).
+    fn mn_ifd(le: bool, tag: u16, ascii: &[u8]) -> Vec<u8> {
+        assert!(ascii.len() <= 4, "inline ASCII must be ≤4 bytes");
+        let u16b = |x: u16| if le { x.to_le_bytes() } else { x.to_be_bytes() };
+        let u32b = |x: u32| if le { x.to_le_bytes() } else { x.to_be_bytes() };
+        let mut v = Vec::new();
+        v.extend_from_slice(&u16b(1)); // entry count
+        v.extend_from_slice(&u16b(tag)); // tag id
+        v.extend_from_slice(&u16b(2)); // type 2 = ASCII
+        v.extend_from_slice(&u32b(ascii.len() as u32)); // value count
+        let mut val = [0u8; 4];
+        val[..ascii.len()].copy_from_slice(ascii);
+        v.extend_from_slice(&val); // inline value field
+        v.extend_from_slice(&u32b(0)); // next IFD = 0
+        v
+    }
+
+    fn assert_mn(tags: &[TagEntry], key: &str, value: &str) {
+        assert!(
+            tags.iter().any(|(k, v)| *k == key && v == value),
+            "expected ({key}={value}) in {tags:?}"
+        );
+    }
+
+    #[test]
+    fn samsung_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_samsung_makernote(&mn_ifd(true, 0x0036, b"1.00"), &mut tags);
+        assert_mn(&tags, "SamsungLensFirmware", "1.00");
+    }
+
+    #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
+    fn apple_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_apple_makernote(&mn_ifd(true, 0x0006, b"iPho"), &mut tags);
+        assert_mn(&tags, "AppleLensModel", "iPho");
+    }
+
+    #[test]
+    fn gopro_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_gopro_makernote(&mn_ifd(true, 0x0001, b"H11"), &mut tags);
+        assert_mn(&tags, "GoProModelName", "H11");
+    }
+
+    #[test]
+    fn dji_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_dji_makernote(&mn_ifd(true, 0x0002, b"FC30"), &mut tags);
+        assert_mn(&tags, "DJIModel", "FC30");
+    }
+
+    #[test]
+    fn google_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_google_makernote(&mn_ifd(true, 0x0001, b"1"), &mut tags);
+        assert_mn(&tags, "GoogleMotionPhoto", "1");
+    }
+
+    #[test]
+    fn leica_makernote_extracts_named_tag() {
+        // Leica defaults to big-endian.
+        let mut tags = Vec::new();
+        parse_leica_makernote(&mn_ifd(false, 0x0003, b"AB12"), &mut tags);
+        assert_mn(&tags, "LeicaSerial", "AB12");
+    }
+
+    #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
+    fn sigma_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_sigma_makernote(&mn_ifd(true, 0x0003, b"1.00"), &mut tags);
+        assert_mn(&tags, "SigmaFirmware", "1.00");
+    }
+
+    #[test]
+    fn minolta_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_minolta_makernote(&mn_ifd(true, 0x0015, b"25"), 0, &mut tags);
+        assert_mn(&tags, "MinoltaLensType", "25");
+    }
+
+    #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
+    fn casio_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_casio_makernote(&mn_ifd(true, 0x0002, b"Fine"), &mut tags);
+        assert_mn(&tags, "CasioQuality", "Fine");
+    }
+
+    #[test]
+    #[cfg(not(feature = "exiftool-tables"))]
+    fn flir_makernote_extracts_named_tag() {
+        let mut tags = Vec::new();
+        parse_flir_makernote(&mn_ifd(true, 0x0003, b"0.95"), &mut tags);
+        assert_mn(&tags, "FlirEmissivity", "0.95");
+    }
+
+    /// Build a bare single-entry LE IFD carrying one SHORT value.
+    #[cfg(feature = "exiftool-tables")]
+    fn mn_ifd_short(tag: u16, value: u16) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&1u16.to_le_bytes()); // entry count
+        v.extend_from_slice(&tag.to_le_bytes());
+        v.extend_from_slice(&3u16.to_le_bytes()); // type 3 = SHORT
+        v.extend_from_slice(&1u32.to_le_bytes()); // count
+        v.extend_from_slice(&value.to_le_bytes());
+        v.extend_from_slice(&[0, 0]); // pad value field to 4 bytes
+        v.extend_from_slice(&0u32.to_le_bytes()); // next IFD
+        v
+    }
+
+    // With the feature on, the ExifTool tables supply both a richer tag
+    // name and PrintConv value decoding that the hand-written tables lack.
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn exiftool_tables_add_name_and_decode_enum() {
+        // Apple 0x000a = HDRImageType, value 3 → "HDR Image". The
+        // hand-written apple_tag_name has no 0x000a entry at all, so this
+        // only resolves via the ExifTool table.
+        let mut tags = Vec::new();
+        parse_apple_makernote(&mn_ifd_short(0x000a, 3), &mut tags);
+        assert!(
+            tags.iter().any(|(k, v)| *k == "HDRImageType" && v == "HDR Image"),
+            "expected decoded Apple HDRImageType in {tags:?}"
+        );
+    }
+
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn canon_afinfo_variable_length_decodes() {
+        // AFInfo with N=2: 8 fixed int16 + X[2] + Y[2] + InFocus[1] + Primary.
+        // Total = 8 + 2 + 2 + 1 + 1 = 14 int16 = 28 bytes.
+        let v: [i16; 14] = [2, 2, 100, 80, 0, 0, 0, 0, -10, 10, 5, 5, 0, 1];
+        let mut sub = Vec::new();
+        for x in v {
+            sub.extend_from_slice(&x.to_le_bytes());
+        }
+        let mut tags = Vec::new();
+        decode_canon_afinfo(&sub, "LE", &mut tags);
+        let get = |k: &str| tags.iter().find(|(n, _)| *n == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("NumAFPoints"), Some("2"));
+        assert_eq!(get("AFAreaXPositions"), Some("-10 10"));
+        assert_eq!(get("AFAreaYPositions"), Some("5 5"));
+        assert_eq!(get("PrimaryAFPoint"), Some("1"));
+    }
+
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn canon_afinfo2_variable_length_decodes() {
+        // AFInfo2/3 N=2: 8 scalars + Widths/Heights/X/Y[2] + InFocus/Selected[1]
+        // + 0x000d[2] + Primary = 8 + 8 + 2 + 2 + 1 = 21 int16. AFInfoSize=42.
+        let v: [i16; 21] = [
+            42, 4, 2, 2, 100, 80, 50, 40, // AFInfoSize, AFAreaMode(Auto), N, Valid, …
+            11, 12, // AFAreaWidths[2]
+            13, 14, // AFAreaHeights[2]
+            -5, 5, // AFAreaXPositions[2]
+            -3, 3, // AFAreaYPositions[2]
+            0, // AFPointsInFocus[1]
+            0, // AFPointsSelected[1]
+            0, 0, // 0x000d[ceil(N/16)+1 = 2] (skipped)
+            7, // PrimaryAFPoint
+        ];
+        let mut sub = Vec::new();
+        for x in v {
+            sub.extend_from_slice(&x.to_le_bytes());
+        }
+        let mut tags = Vec::new();
+        decode_canon_afinfo2(&sub, "LE", &mut tags);
+        let get = |k: &str| tags.iter().find(|(n, _)| *n == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("NumAFPoints"), Some("2"));
+        assert_eq!(get("AFAreaMode"), Some("Auto")); // PrintConv 4 => Auto
+        assert_eq!(get("AFAreaWidths"), Some("11 12"));
+        assert_eq!(get("AFAreaXPositions"), Some("-5 5"));
+    }
+
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn canon_int32_subtable_decodes() {
+        // AspectInfo is int32u, FIRST_ENTRY 0: AspectRatio, CroppedImage{W,H,L,T}.
+        use revelo_exiftool_tables::CanonSubTable;
+        let v: [u32; 5] = [0, 4608, 3456, 0, 0]; // AspectRatio 0 => "3:2"
+        let mut sub = Vec::new();
+        for x in v {
+            sub.extend_from_slice(&x.to_le_bytes());
+        }
+        let mut tags = Vec::new();
+        decode_canon_binary(CanonSubTable::AspectInfo, 0, &sub, "LE", &mut tags);
+        let get = |k: &str| tags.iter().find(|(n, _)| *n == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("CroppedImageWidth"), Some("4608"));
+        assert_eq!(get("CroppedImageHeight"), Some("3456"));
+        assert_eq!(get("AspectRatio"), Some("3:2")); // PrintConv 0 => 3:2
+    }
+
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn canon_afinfo_rejects_size_mismatch() {
+        // Same N=2 but a truncated record must decode nothing (no garbage).
+        let v: [i16; 10] = [2, 2, 100, 80, 0, 0, 0, 0, -10, 10];
+        let mut sub = Vec::new();
+        for x in v {
+            sub.extend_from_slice(&x.to_le_bytes());
+        }
+        let mut tags = Vec::new();
+        decode_canon_afinfo(&sub, "LE", &mut tags);
+        assert!(tags.is_empty(), "size mismatch must decode nothing: {tags:?}");
+    }
+
+    #[cfg(feature = "exiftool-tables")]
+    #[test]
+    fn exiftool_tables_leave_raw_value_when_no_printconv() {
+        // Apple 0x0008 = AccelerationVector has a name but no integer
+        // PrintConv; the raw value must pass through unchanged.
+        let mut tags = Vec::new();
+        parse_apple_makernote(&mn_ifd_short(0x0008, 42), &mut tags);
+        assert!(
+            tags.iter().any(|(k, v)| *k == "AccelerationVector" && v == "42"),
+            "expected raw AccelerationVector value in {tags:?}"
+        );
+    }
+
     // ---------- IPTC IIM ----------
 
     fn build_iim(pairs: &[(u8, u8, &[u8])]) -> Vec<u8> {
@@ -4189,9 +5371,26 @@ mod exif_tests {
         buf
     }
 
+    /// Wrap raw IIM datasets in a minimal Photoshop Image Resource Block
+    /// (APP13 "Photoshop 3.0" identifier + 8BIM resource 0x0404), the
+    /// only container `parse_iim` accepts.
+    fn build_irb(pairs: &[(u8, u8, &[u8])]) -> Vec<u8> {
+        let iim = build_iim(pairs);
+        let mut buf = b"Photoshop 3.0\0".to_vec();
+        buf.extend_from_slice(b"8BIM");
+        buf.extend_from_slice(&[0x04, 0x04]); // resource id 0x0404 = IPTC-NAA
+        buf.extend_from_slice(&[0x00, 0x00]); // empty Pascal name, padded to even
+        buf.extend_from_slice(&(iim.len() as u32).to_be_bytes());
+        buf.extend_from_slice(&iim);
+        if iim.len() % 2 == 1 {
+            buf.push(0x00); // resource data padded to even length
+        }
+        buf
+    }
+
     #[test]
     fn iim_parses_basic_fields() {
-        let buf = build_iim(&[
+        let buf = build_irb(&[
             (2, 5, b"Sunset"),
             (2, 80, b"John Doe"),
             (2, 90, b"Paris"),
@@ -4202,42 +5401,39 @@ mod exif_tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ObjectName").map(|z| z.as_str()),
             Some("Sunset")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Byline").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Byline").map(|z| z.as_str()),
             Some("John Doe")
         );
-        assert_eq!(fa.retrieve(StreamKind::General, 0, "City").map(|z| z.as_str()), Some("Paris"));
+        assert_eq!(fa.retrieve(StreamKind::Iptc, 0, "City").map(|z| z.as_str()), Some("Paris"));
+        assert_eq!(fa.retrieve(StreamKind::Iptc, 0, "Country").map(|z| z.as_str()), Some("France"));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Country").map(|z| z.as_str()),
-            Some("France")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Copyright").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Copyright").map(|z| z.as_str()),
             Some("2024 Acme Corp")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Description").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Description").map(|z| z.as_str()),
             Some("A beautiful sunset")
         );
     }
 
     #[test]
     fn iim_aggregates_keywords() {
-        let buf = build_iim(&[(2, 25, b"travel"), (2, 25, b"sunset"), (2, 25, b"landscape")]);
+        let buf = build_irb(&[(2, 25, b"travel"), (2, 25, b"sunset"), (2, 25, b"landscape")]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Keyword").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Keyword").map(|z| z.as_str()),
             Some("travel / sunset / landscape")
         );
     }
 
     #[test]
     fn iim_parses_envelope_record() {
-        let buf = build_iim(&[
+        let buf = build_irb(&[
             (1, 30, b"JFIF"), // IIMFileFormat
             (1, 40, b"1.02"), // IIMFileVersion
             (1, 50, b"AP"),   // ServiceIdentifier
@@ -4246,22 +5442,22 @@ mod exif_tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "IIMFileFormat").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "IIMFileFormat").map(|z| z.as_str()),
             Some("JFIF")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "IIMFileVersion").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "IIMFileVersion").map(|z| z.as_str()),
             Some("1.02")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ServiceIdentifier").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ServiceIdentifier").map(|z| z.as_str()),
             Some("AP")
         );
     }
 
     #[test]
     fn iim_parses_additional_fields() {
-        let buf = build_iim(&[
+        let buf = build_irb(&[
             (2, 10, b"2"),                  // Urgency
             (2, 15, b"SCI"),                // Category
             (2, 55, b"2024-01-15"),         // DateCreated
@@ -4277,49 +5473,43 @@ mod exif_tests {
         ]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
-        assert_eq!(fa.retrieve(StreamKind::General, 0, "Urgency").map(|z| z.as_str()), Some("2"));
+        assert_eq!(fa.retrieve(StreamKind::Iptc, 0, "Urgency").map(|z| z.as_str()), Some("2"));
+        assert_eq!(fa.retrieve(StreamKind::Iptc, 0, "Category").map(|z| z.as_str()), Some("SCI"));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Category").map(|z| z.as_str()),
-            Some("SCI")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "DateCreated").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "DateCreated").map(|z| z.as_str()),
             Some("2024-01-15")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "TimeCreated").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "TimeCreated").map(|z| z.as_str()),
             Some("14:30:00")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "OriginatingProgram").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "OriginatingProgram").map(|z| z.as_str()),
             Some("Photoshop")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "BylineTitle").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "BylineTitle").map(|z| z.as_str()),
             Some("Staff Photographer")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ProvinceState").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ProvinceState").map(|z| z.as_str()),
             Some("California")
         );
+        assert_eq!(fa.retrieve(StreamKind::Iptc, 0, "CountryCode").map(|z| z.as_str()), Some("US"));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "CountryCode").map(|z| z.as_str()),
-            Some("US")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Headline").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Headline").map(|z| z.as_str()),
             Some("Amazing View")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Credit").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Credit").map(|z| z.as_str()),
             Some("Jane Smith")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Source").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Source").map(|z| z.as_str()),
             Some("Acme Wire")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Contact").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Contact").map(|z| z.as_str()),
             Some("editor@acme.com")
         );
     }
@@ -4327,12 +5517,12 @@ mod exif_tests {
     #[test]
     fn iim_handles_2byte_size() {
         let long_val = vec![b'A'; 200];
-        let buf = build_iim(&[(2, 80, &long_val)]);
+        let buf = build_irb(&[(2, 80, &long_val)]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         let expected = String::from_utf8_lossy(&long_val).trim_end().to_string();
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Byline").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Byline").map(|z| z.as_str()),
             Some(expected.as_str())
         );
     }
@@ -4347,20 +5537,20 @@ mod exif_tests {
     #[test]
     fn iim_skips_unknown_datasets() {
         // dataset 255 is not in our table
-        let buf = build_iim(&[(2, 255, b"ignored"), (2, 5, b"Title")]);
+        let buf = build_irb(&[(2, 255, b"ignored"), (2, 5, b"Title")]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ObjectName").map(|z| z.as_str()),
             Some("Title")
         );
         // only the known dataset maps; unknown is skipped
-        assert!(fa.retrieve(StreamKind::General, 0, "ObjectName").is_some());
+        assert!(fa.retrieve(StreamKind::Iptc, 0, "ObjectName").is_some());
     }
 
     #[test]
     fn iim_parses_digital_creation_fields() {
-        let buf = build_iim(&[
+        let buf = build_irb(&[
             (2, 62, b"2024-01-15"),     // DigitalCreationDate
             (2, 63, b"14:30:00+01:00"), // DigitalCreationTime
             (2, 70, b"25.0"),           // ProgramVersion
@@ -4369,40 +5559,54 @@ mod exif_tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "DigitalCreationDate").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "DigitalCreationDate").map(|z| z.as_str()),
             Some("2024-01-15")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "DigitalCreationTime").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "DigitalCreationTime").map(|z| z.as_str()),
             Some("14:30:00+01:00")
         );
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ProgramVersion").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ProgramVersion").map(|z| z.as_str()),
             Some("25.0")
         );
     }
 
     #[test]
     fn iim_trims_trailing_whitespace() {
-        let buf = build_iim(&[(2, 5, b"Sunset  \t\n")]);
+        let buf = build_irb(&[(2, 5, b"Sunset  \t\n")]);
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ObjectName").map(|z| z.as_str()),
             Some("Sunset")
         );
     }
 
     #[test]
     fn iim_with_extra_noise_before_marker() {
-        let mut buf = b"Photoshop 3.0\x00\x00\x00\x00".to_vec();
-        buf.extend_from_slice(&build_iim(&[(2, 5, b"NoiseTest")]));
+        // Junk (e.g. preceding JPEG segments) before the Photoshop IRB
+        // anchor must be skipped, not parsed.
+        let mut buf = b"\xff\xd8\xff\xe0 random preceding bytes \x1c\x02\x69\x04junk".to_vec();
+        buf.extend_from_slice(&build_irb(&[(2, 5, b"NoiseTest")]));
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_iim(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ObjectName").map(|z| z.as_str()),
             Some("NoiseTest")
         );
+    }
+
+    #[test]
+    fn iim_rejects_unframed_marker_bytes() {
+        // Regression: stray IIM marker bytes (as found in compressed image
+        // data) with NO Photoshop IRB container must not be parsed —
+        // otherwise random 0x1C runs surface as gibberish IPTC fields.
+        let mut buf = vec![0xff, 0xd8];
+        buf.extend_from_slice(&build_iim(&[(2, 105, b"\x80\x12\x9f\x00garbage")]));
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_iim(&mut fa));
+        assert!(fa.retrieve(StreamKind::Iptc, 0, "Headline").is_none());
     }
 
     #[test]
@@ -4441,15 +5645,12 @@ mod exif_tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_exif(&mut fa));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "ObjectName").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "ObjectName").map(|z| z.as_str()),
             Some("ExifIPTC")
         );
+        assert_eq!(fa.retrieve(StreamKind::Iptc, 0, "Byline").map(|z| z.as_str()), Some("Tester"));
         assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Byline").map(|z| z.as_str()),
-            Some("Tester")
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::General, 0, "Description").map(|z| z.as_str()),
+            fa.retrieve(StreamKind::Iptc, 0, "Description").map(|z| z.as_str()),
             Some("Via 0x83BB")
         );
     }

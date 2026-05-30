@@ -109,9 +109,15 @@ fn parse_stream_selector(s: &str) -> Result<(StreamKind, usize), String> {
         "4" | "Other" => StreamKind::Other,
         "5" | "Image" => StreamKind::Image,
         "6" | "Menu" => StreamKind::Menu,
+        "7" | "Exif" => StreamKind::Exif,
+        "8" | "Iptc" => StreamKind::Iptc,
+        "9" | "Xmp" => StreamKind::Xmp,
+        "10" | "Icc" => StreamKind::Icc,
+        "11" | "C2pa" => StreamKind::C2pa,
+        "12" | "MakerNotes" => StreamKind::MakerNotes,
         _ => {
             return Err(format!(
-                "unknown stream kind '{kind_str}': use 0-6 or General/Video/Audio/Text/Other/Image/Menu"
+                "unknown stream kind '{kind_str}': use 0-12 or General/Video/Audio/Text/Other/Image/Menu/Exif/Iptc/Xmp/Icc/C2pa/MakerNotes"
             ));
         }
     };

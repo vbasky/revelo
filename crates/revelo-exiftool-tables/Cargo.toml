@@ -1,0 +1,19 @@
+[package]
+name = "revelo-exiftool-tables"
+version = "0.4.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+# NOT BSD-2-Clause like the rest of the workspace. This crate contains
+# tables generated from Image::ExifTool (Copyright Phil Harvey), which is
+# distributed under the same terms as Perl: the Artistic License or the
+# GNU GPL. The derivative tables inherit those terms, so this crate is
+# copyleft and is deliberately kept separate from the BSD core. Anything
+# that links it (statically) and is distributed becomes subject to the
+# GPL. See LICENSE and NOTICE.
+license = "GPL-1.0-or-later OR Artistic-1.0-Perl"
+description = "ExifTool-derived maker-note tag tables for revelo (GPL/Artistic — see NOTICE)."
+
+# Note: this crate intentionally does NOT set `[lints] workspace = true`,
+# so it opts out of the workspace's stricter lints — the tables are
+# generated and would otherwise trip pedantic/style lints.

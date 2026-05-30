@@ -167,6 +167,12 @@ fn c_int_to_stream_kind(val: c_int) -> Option<StreamKind> {
         4 => Some(StreamKind::Other),
         5 => Some(StreamKind::Image),
         6 => Some(StreamKind::Menu),
+        7 => Some(StreamKind::Exif),
+        8 => Some(StreamKind::Iptc),
+        9 => Some(StreamKind::Xmp),
+        10 => Some(StreamKind::Icc),
+        11 => Some(StreamKind::C2pa),
+        12 => Some(StreamKind::MakerNotes),
         _ => None,
     }
 }

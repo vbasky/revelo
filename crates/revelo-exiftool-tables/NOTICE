@@ -1,0 +1,28 @@
+revelo-exiftool-tables
+======================
+
+The Rust tables under `src/generated/` are DERIVED WORKS of ExifTool's
+maker-note tag tables:
+
+    ExifTool / Image::ExifTool
+    Copyright (c) 2003-2025, Phil Harvey
+    https://exiftool.org/
+
+ExifTool is free software, distributed under the same terms as Perl
+itself — that is, you may redistribute and/or modify it under either:
+
+  * the GNU General Public License as published by the Free Software
+    Foundation; either version 1, or (at your option) any later version, or
+  * the "Artistic License".
+
+Because the tag-id -> name mappings and PrintConv value enumerations in
+`src/generated/*.rs` are extracted from ExifTool's source, they are
+covered by the above terms. This crate is therefore licensed
+GPL-1.0-or-later OR Artistic-1.0-Perl, NOT the BSD-2-Clause used by the
+rest of revelo.
+
+The extractor in `codegen/extract.pl` is original revelo work
+(BSD-2-Clause); only its OUTPUT is a derivative of ExifTool.
+
+If you distribute a binary that links this crate, you must comply with
+one of the above licenses for the combined work.

@@ -17,9 +17,10 @@
 use revelo_core::{StreamCollection, StreamKind};
 
 /// Render a full MediaInfo XML document. `file_path` becomes the `ref`
-/// attribute on `<media>`; `library_version` becomes the
-/// `<creatingLibrary>` version attribute.
-pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str) -> String {
+/// attribute on `<media>`. The `<creatingLibrary>` header that upstream
+/// mediainfo emits is omitted: it only identifies the producing tool and
+/// carries nothing about the file being parsed.
+pub fn to_xml(streams: &StreamCollection, file_path: &str) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str("<MediaInfo\n");
@@ -27,10 +28,6 @@ pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str
     out.push_str("    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n");
     out.push_str("    xsi:schemaLocation=\"https://mediaarea.net/mediainfo https://mediaarea.net/mediainfo/mediainfo_2_0.xsd\"\n");
     out.push_str("    version=\"2.0\">\n");
-    out.push_str(&format!(
-        "<creatingLibrary version=\"{}\" url=\"https://mediaarea.net/MediaInfo\">MediaInfoLib</creatingLibrary>\n",
-        xml_escape_attr(library_version)
-    ));
     out.push_str(&format!("<media ref=\"{}\">\n", xml_escape_attr(file_path)));
 
     for kind in [
@@ -41,6 +38,12 @@ pub fn to_xml(streams: &StreamCollection, file_path: &str, library_version: &str
         StreamKind::Other,
         StreamKind::Image,
         StreamKind::Menu,
+        StreamKind::Exif,
+        StreamKind::Iptc,
+        StreamKind::Xmp,
+        StreamKind::Icc,
+        StreamKind::C2pa,
+        StreamKind::MakerNotes,
     ] {
         let count = streams.stream_count(kind);
         for pos in 0..count {
@@ -497,35 +500,36 @@ mod tests {
     #[test]
     fn xml_header_matches_oracle_format() {
         let c = StreamCollection::new();
-        let xml = to_xml(&c, "/tmp/foo.wav", "26.05");
+        let xml = to_xml(&c, "/tmp/foo.wav");
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaInfo\n"));
         assert!(xml.contains("    xmlns=\"https://mediaarea.net/mediainfo\"\n"));
         assert!(xml.contains("    xsi:schemaLocation=\"https://mediaarea.net/mediainfo https://mediaarea.net/mediainfo/mediainfo_2_0.xsd\"\n"));
         assert!(xml.contains("    version=\"2.0\">\n"));
-        assert!(xml.contains("<creatingLibrary version=\"26.05\" url=\"https://mediaarea.net/MediaInfo\">MediaInfoLib</creatingLibrary>\n"));
-        assert!(xml.contains("<media ref=\"/tmp/foo.wav\">\n"));
+        assert!(!xml.contains("creatingLibrary"));
+        // <media> follows the header directly, with no intervening block.
+        assert!(xml.contains("    version=\"2.0\">\n<media ref=\"/tmp/foo.wav\">\n"));
     }
 
     #[test]
     fn duration_is_emitted_as_decimal_seconds() {
         let mut c = StreamCollection::new();
         c.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("1492"));
-        let xml = to_xml(&c, "/tmp/x.wav", "26.05");
+        let xml = to_xml(&c, "/tmp/x.wav");
         assert!(xml.contains("<Duration>1.492</Duration>"));
 
         let mut c2 = StreamCollection::new();
         c2.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("60000"));
-        assert!(to_xml(&c2, "x", "v").contains("<Duration>60.000</Duration>"));
+        assert!(to_xml(&c2, "x").contains("<Duration>60.000</Duration>"));
 
         let mut c3 = StreamCollection::new();
         c3.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("7"));
-        assert!(to_xml(&c3, "x", "v").contains("<Duration>0.007</Duration>"));
+        assert!(to_xml(&c3, "x").contains("<Duration>0.007</Duration>"));
     }
 
     #[test]
     fn audio_fields_emitted_in_canonical_order() {
         let c = build_wav_streams();
-        let xml = to_xml(&c, "/tmp/x.wav", "26.05");
+        let xml = to_xml(&c, "/tmp/x.wav");
         let audio_section = xml.split("<track type=\"Audio\">").nth(1).unwrap();
         let audio_section = audio_section.split("</track>").next().unwrap();
 
@@ -563,7 +567,7 @@ mod tests {
     #[test]
     fn empty_collection_produces_well_formed_skeleton() {
         let c = StreamCollection::new();
-        let xml = to_xml(&c, "/tmp/x.wav", "26.05");
+        let xml = to_xml(&c, "/tmp/x.wav");
         assert!(xml.ends_with("</media>\n</MediaInfo>\n\n"));
         assert!(!xml.contains("<track"));
     }
@@ -572,14 +576,14 @@ mod tests {
     fn xml_escapes_special_chars_in_values() {
         let mut c = StreamCollection::new();
         c.set_field(StreamKind::General, 0, "Format", Ztring::from("A & B <C>"));
-        let xml = to_xml(&c, "/x", "v");
+        let xml = to_xml(&c, "/x");
         assert!(xml.contains("<Format>A &amp; B &lt;C&gt;</Format>"));
     }
 
     #[test]
     fn xml_escapes_quotes_in_attributes() {
         let c = StreamCollection::new();
-        let xml = to_xml(&c, "/tmp/with \"quote\".wav", "v");
+        let xml = to_xml(&c, "/tmp/with \"quote\".wav");
         assert!(xml.contains("<media ref=\"/tmp/with &quot;quote&quot;.wav\">"));
     }
 
@@ -589,7 +593,7 @@ mod tests {
         c.set_field(StreamKind::General, 0, "Format", Ztring::from("Wave"));
         c.set_field(StreamKind::General, 0, "ZZZ_Custom", Ztring::from("first"));
         c.set_field(StreamKind::General, 0, "AAA_Custom", Ztring::from("second"));
-        let xml = to_xml(&c, "x", "v");
+        let xml = to_xml(&c, "x");
 
         let format_idx = xml.find("<Format>Wave</Format>").unwrap();
         let zzz_idx = xml.find("<ZZZ_Custom>").unwrap();

@@ -1,6 +1,6 @@
 [package]
 name = "revelo-parsers-tag"
-version = "0.3.0"
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -17,7 +17,16 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+# Opt-in: use ExifTool-derived maker-note tables for richer tag names and
+# value decoding. This pulls in the GPL/Artistic `revelo-exiftool-tables`
+# crate, so a binary built with this feature is subject to GPL/Artistic
+# terms. OFF by default — the default build stays BSD-2-Clause and uses
+# the hand-written clean-room tables.
+exiftool-tables = ["dep:revelo-exiftool-tables"]
+
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.3.0" }
-revelo-util = { path = "../revelo-util", version = "0.3.0" }
+revelo-core = { path = "../revelo-core", version = "0.4.0" }
+revelo-util = { path = "../revelo-util", version = "0.4.0" }
+revelo-exiftool-tables = { path = "../revelo-exiftool-tables", version = "0.4.0", optional = true }
 flate2 = "1"
