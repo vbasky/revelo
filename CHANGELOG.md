@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0-alpha] - 2026-05-30
+
+### Added
+
+- **EXIF rewrite** — full IFD chain traversal (IFD0, ExifIFD, GPS IFD, InteropIFD,
+  IFD1), 170+ tag names including EXIF, GPS, and maker-note tags parsed via IFD
+  iteration; GPS coordinates computed as decimal degrees (`GPSLatitudeRef` /
+  `GPSLongitudeRef`)
+- **Lens specification formatting** — `LensSpec` field computed from
+  `LensModel`, `MaxApertureAtMinFocal`, `MaxApertureAtMaxFocal`, `MinFocalLength`,
+  `MaxFocalLength`, and `LensType`; `LensType` hex formatting
+- **IPTC IIM enhanced** — full 0x1C-delimited IIM dataset parsing, cross-reference
+  with IPTC-NAA tag keys via `parse_iim_buf` for datasets > 0x80 bytes on 0x83BB
+  records
+- **XMP enhanced** — additional EXIF field name mappings (ExifIFD, GPS, IIM
+  cross-references) and `XMP_xmpMM_*` namespace tags
+- **MakerNote stub** — `parse_makernote` infrastructure hook, returns `()` for now
+
 ## [0.2.3] - 2026-05-29
 
 ### Added
