@@ -1185,7 +1185,7 @@ fn parse_ifd(
 
             _ => "",
         };
-        if !n.is_empty() {
+        if !n.is_empty() && !value_trimmed.is_empty() {
             // Align EXIF/Interop tag names with exiftool where they diverge
             // (e.g. DateTime -> ModifyDate, InteroperabilityIndex ->
             // InteropIndex). Keyed by name, which is unambiguous per IFD, so
