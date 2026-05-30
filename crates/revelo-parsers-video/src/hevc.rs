@@ -1045,7 +1045,7 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
                 vps_found = true;
             }
             NAL_TYPE_SPS => {
-                if let Some(info) = parse_sps(nal_unit) {
+                if let Some(info) = parse_hevc_sps(nal_unit) {
                     sps_info = Some(info);
                 }
             }
@@ -1063,8 +1063,14 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let (profile_idc, tier_flag, level_idc, width, height, chroma_format_idc, bit_depth) =
-        sps_info.unwrap();
+    let info = sps_info.unwrap();
+    let profile_idc = info.profile_idc;
+    let tier_flag = info.tier_high;
+    let level_idc = info.level_idc;
+    let width = info.width as u16;
+    let height = info.height as u16;
+    let chroma_format_idc = info.chroma_format_idc as u32;
+    let bit_depth = info.bit_depth as u32;
 
     // Extract HDR metadata from SEI NAL units
     let hdr_metadata = extract_hdr_from_sei_nalus(&sei_nalus);
@@ -1141,6 +1147,50 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
             fa.set_field(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2094-40");
             fa.set_field(StreamKind::Video, 0, "HDR_Format_Compatibility", "HDR10+");
             fa.set_field(StreamKind::Video, 0, "HDR_Format_Version", hdr10plus_str.as_str());
+        }
+    }
+
+    // CICP colour info from SPS VUI
+    if info.colour_description_present {
+        if let Some(primaries) = info.colour_primaries {
+            let primaries_str = match primaries {
+                1 => "BT.709",
+                4 => "BT.470 System M",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "Film",
+                9 => "BT.2020",
+                10 => "SMPTE 428",
+                11 => "DCI P3",
+                12 => "Display P3",
+                22 => "EBU Tech. 3213-E",
+                _ => "Unknown",
+            };
+            if primaries > 0 {
+                fa.set_field(StreamKind::Video, 0, "colour_primaries", primaries_str.to_string());
+            }
+        }
+        if let Some(transfer) = info.transfer_characteristics {
+            let transfer_str = match transfer {
+                1 => "BT.709",
+                4 => "BT.470 System M",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "Linear",
+                9 => "Logarithmic (100:1)",
+                10 => "Logarithmic (316.22777:1)",
+                14 => "BT.2020 (10-bit)",
+                15 => "BT.2020 (12-bit)",
+                16 => "SMPTE 2084 (PQ)",
+                17 => "SMPTE 428",
+                18 => "HLG",
+                _ => "Unknown",
+            };
+            if transfer > 0 {
+                fa.set_field(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string());
+            }
         }
     }
 

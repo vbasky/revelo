@@ -22,6 +22,7 @@
 //!   FLAC:   0x7F "FLAC"
 //!   Theora: 0x80 "theora"
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, StreamKind};
 
 const OGG_MAGIC: &[u8; 4] = b"OggS";
@@ -272,6 +273,9 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
     fa.stream_prepare(StreamKind::General);
     fa.element_begin("Ogg");
     fa.set_field(StreamKind::General, 0, "Format", "Ogg");
+    if let Some(m) = mime_for_container("OggS") {
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
 
     let mut audio_count: u32 = 0;
     let mut video_count: u32 = 0;

@@ -12,6 +12,7 @@
 //!       "data" <u32 LE size> <samples>
 //!       (other chunks ignored)
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, StreamKind};
 
 const FOURCC_RIFF: u32 = u32::from_be_bytes(*b"RIFF");
@@ -265,6 +266,9 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
 fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Option<BwfInfo>) {
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "Wave");
+    if let Some(m) = mime_for_container("WAVE") {
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
 
     if fmt.audio_format == WAVE_FORMAT_PCM {
         fa.set_field(StreamKind::General, 0, "Format_Settings", "PcmWaveformat");

@@ -117,6 +117,7 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "MPEG-PS");
+    fa.set_field(StreamKind::General, 0, "InternetMediaType", "video/mpeg");
     if !video_ids.is_empty() {
         fa.set_field(StreamKind::General, 0, "VideoCount", video_ids.len().to_string());
     }

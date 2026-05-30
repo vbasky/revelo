@@ -303,8 +303,31 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
     // enable_intra_edge_filter (1 bit)
     read_bits(data, &mut offset, 1)?;
 
-    // Additional mode support - simplified
-    // enable_interintra_compound, enable_masked_compound, etc.
+    // color_config()
+    let high_bitdepth = read_bits(data, &mut offset, 1)?;
+    let twelve_bit = if profile == 2 { read_bits(data, &mut offset, 1)? } else { 0 };
+    let monochrome = if profile == 1 { read_bits(data, &mut offset, 1)? } else { 0 };
+    let colour_description_present = read_bits(data, &mut offset, 1)?;
+    let (colour_primaries, transfer_characteristics, matrix_coefficients) =
+        if colour_description_present != 0 {
+            (
+                Some(read_bits(data, &mut offset, 8)? as u8),
+                Some(read_bits(data, &mut offset, 8)? as u8),
+                Some(read_bits(data, &mut offset, 8)? as u8),
+            )
+        } else {
+            (None, None, None)
+        };
+    let video_full_range = if monochrome != 0 {
+        Some(true)
+    } else {
+        let cr = read_bits(data, &mut offset, 1)?;
+        let _sub_x = read_bits(data, &mut offset, 1)?;
+        let _sub_y = read_bits(data, &mut offset, 1)?;
+        let _csp = read_bits(data, &mut offset, 2)?;
+        let _suvdq = read_bits(data, &mut offset, 1)?;
+        Some(cr != 0)
+    };
 
     // Derive bit depth from profile
     let bit_depth = match profile {
@@ -326,12 +349,12 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         tier: 0,
         bit_depth,
         chroma_subsampling: chroma,
-        monochrome: false,
-        colour_description_present: false,
-        colour_primaries: None,
-        transfer_characteristics: None,
-        matrix_coefficients: None,
-        video_full_range: None,
+        monochrome: monochrome != 0,
+        colour_description_present: colour_description_present != 0,
+        colour_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        video_full_range,
         width,
         height,
     })
@@ -488,6 +511,50 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
 
     fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
     fa.set_field(StreamKind::Video, 0, "ScanType", "Progressive");
+
+    // CICP colour info from sequence header
+    if info.colour_description_present {
+        if let Some(primaries) = info.colour_primaries {
+            let primaries_str = match primaries {
+                1 => "BT.709",
+                4 => "BT.470 System M",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "Film",
+                9 => "BT.2020",
+                10 => "SMPTE 428",
+                11 => "DCI P3",
+                12 => "Display P3",
+                22 => "EBU Tech. 3213-E",
+                _ => "Unknown",
+            };
+            if primaries > 0 {
+                fa.set_field(StreamKind::Video, 0, "colour_primaries", primaries_str.to_string());
+            }
+        }
+        if let Some(transfer) = info.transfer_characteristics {
+            let transfer_str = match transfer {
+                1 => "BT.709",
+                4 => "BT.470 System M",
+                5 => "BT.470 System B, G",
+                6 => "SMPTE 170M",
+                7 => "SMPTE 240M",
+                8 => "Linear",
+                9 => "Logarithmic (100:1)",
+                10 => "Logarithmic (316.22777:1)",
+                14 => "BT.2020 (10-bit)",
+                15 => "BT.2020 (12-bit)",
+                16 => "SMPTE 2084 (PQ)",
+                17 => "SMPTE 428",
+                18 => "HLG",
+                _ => "Unknown",
+            };
+            if transfer > 0 {
+                fa.set_field(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string());
+            }
+        }
+    }
 
     if hdr10plus_detected {
         fa.set_field(StreamKind::Video, 0, "HDR_Format", "SMPTE ST 2094-40");

@@ -13,6 +13,7 @@
 //! - For sizes, the leading 1-bit is stripped and the remaining bits
 //!   plus N-1 subsequent bytes form the integer.
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, Reader, StreamKind};
 
 // EBML root + segment.
@@ -553,6 +554,9 @@ fn fill_streams(
     // matroska files report "Matroska".
     let fmt = if doc_type == "webm" { "WebM" } else { "Matroska" };
     fa.set_field(StreamKind::General, 0, "Format", fmt);
+    if let Some(m) = mime_for_container("matroska") {
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
     if doc_type_version > 0 {
         fa.set_field(StreamKind::General, 0, "Format_Version", doc_type_version.to_string());
     }

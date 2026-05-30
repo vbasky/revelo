@@ -32,6 +32,7 @@ pub fn parse_wm(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.force_field(StreamKind::General, 0, "Format", "Windows Media");
+    fa.set_field(StreamKind::General, 0, "InternetMediaType", "video/x-ms-asf");
 
     true
 }

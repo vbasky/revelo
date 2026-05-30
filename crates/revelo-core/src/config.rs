@@ -70,36 +70,37 @@ impl MediaConfig {
     }
 
     pub fn set_option(&mut self, key: &str, value: &str) -> bool {
-        let recognised = match key.to_lowercase().as_str() {
+        let normalised = key.to_lowercase().replace('_', "");
+        let recognised = match normalised.as_str() {
             "demux" => {
                 self.set_demux(value);
                 true
             }
-            "trace_level" => {
+            "tracelevel" => {
                 self.set_trace_level(value);
                 true
             }
-            "trace_format" => {
+            "traceformat" => {
                 self.set_trace_format(value);
                 true
             }
-            "trace_time_section_only_first" => {
+            "tracetimesectiononlyfirst" => {
                 self.trace_time_section_only_first = value == "1";
                 true
             }
-            "parse_speed" => {
+            "parsespeed" => {
                 self.parse_speed = value.parse().unwrap_or(1.0);
                 true
             }
-            "show_complete" => {
+            "showcomplete" | "complete" => {
                 self.show_complete = value == "1";
                 true
             }
-            "multi_file" => {
+            "multifile" => {
                 self.multi_file.enabled = value == "1";
                 true
             }
-            "multi_file_max" => {
+            "multifilemax" => {
                 self.multi_file.max_files = value.parse().unwrap_or(0);
                 true
             }

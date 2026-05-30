@@ -13,6 +13,7 @@
 //!   0x04  B1  TypeFlags  (bit 0 = audio present, bit 2 = video present)
 //!   0x05  B4  DataOffset (header size, typically 9)
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, Reader, StreamKind};
 
 const FLV_HEADER_SIZE: usize = 9;
@@ -53,6 +54,9 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
 
     r.stream_prepare(StreamKind::General);
     r.set_field(StreamKind::General, 0, "Format", "Flash Video");
+    if let Some(m) = mime_for_container("FLV ") {
+        r.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
     r.set_field(StreamKind::General, 0, "VideoCount", if has_video { "1" } else { "0" });
     r.set_field(StreamKind::General, 0, "AudioCount", if has_audio { "1" } else { "0" });
     Some(())

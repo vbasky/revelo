@@ -11,6 +11,7 @@
 //!     LIST <size> "movi"  (sample data — not parsed)
 //!     "idx1" <size> <index entries>  (optional)
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, StreamKind};
 
 const FOURCC_RIFF: u32 = u32::from_be_bytes(*b"RIFF");
@@ -402,6 +403,9 @@ fn fill_streams(
     fa.stream_prepare(StreamKind::General);
     fa.element_end();
     fa.set_field(StreamKind::General, 0, "Format", "AVI");
+    if let Some(m) = mime_for_container("AVI ") {
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
 
     let video_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_VIDS).count();
     let audio_count = streams.iter().filter(|s| s.strh.fcc_type == STRH_AUDS).count();

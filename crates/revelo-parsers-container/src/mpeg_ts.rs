@@ -277,6 +277,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.force_field(StreamKind::General, 0, "Format", container_format);
+    fa.set_field(StreamKind::General, 0, "InternetMediaType", "video/mp2t");
 
     // General.ID = program_number of the first program (matches oracle
     // for single-program files; multi-program TS would list each).

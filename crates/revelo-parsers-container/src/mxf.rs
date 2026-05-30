@@ -2,6 +2,7 @@
 //!
 //! Detects MXF files and extracts timecode from System Items or Material Package.
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, StreamKind};
 
 const KLV_ROOT: [u8; 4] = [0x06, 0x0E, 0x2B, 0x34];
@@ -174,6 +175,9 @@ pub fn parse_mxf(fa: &mut FileAnalyze) -> bool {
 
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "MXF");
+    if let Some(m) = mime_for_container("MXF ") {
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
 
     // Emit timecode if found
     if let Some(tc) = timecode {

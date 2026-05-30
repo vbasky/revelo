@@ -20,6 +20,7 @@
 //! - iTunes-style metadata atoms (`udta` > `meta` > `ilst`) for
 //!   Encoded_Application and Format_Profile="Apple audio with iTunes info"
 
+use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, Reader, StreamKind};
 
 const BOX_FTYP: u32 = u32::from_be_bytes(*b"ftyp");
@@ -1975,6 +1976,11 @@ fn fill_streams(
 ) {
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "MPEG-4");
+    if let Some(major) = ftyp_brands.first()
+        && let Some(m) = mime_for_container(major.as_str())
+    {
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
+    }
 
     // mdat-positioning fields. The C++ side reports:
     //   HeaderSize = bytes before mdat box (ftyp + free + any pre-mdat moov)
