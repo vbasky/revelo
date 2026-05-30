@@ -121,11 +121,33 @@ else in the workspace stay BSD-2-Clause; only a build that *opts in* takes on th
 copyleft. A SaaS that runs the feature server-side stays unaffected (GPL conveys on
 distribution, not network use).
 
-With the feature on, Canon, Nikon, Fujifilm, Olympus, Panasonic, Pentax, Sony,
-Samsung, Minolta, Kodak, Ricoh and more decode at **95–100% tag parity** with
+With the feature on, maker-note decoding reaches **95–100% tag parity** with
 `exiftool` on real camera files — validated by the `revelo-exif-diff` harness,
 which diffs revelo's output against the `exiftool` binary the same way
 `revelo-diff` validates against `mediainfo`.
+
+| Vendor | Supported | Parity | Notes |
+| --- | --- | --- | --- |
+| Canon | MakerNote + sub‑IFDs | 99% | IXUS 400, PowerShot S40, newer HDR bodies; CameraSettings, ShotInfo, AFInfo1/2/3, MyColors, ContrastInfo, TimeInfo, AspectInfo, FaceDetect3 |
+| Nikon | MakerNote (Type 2/3) | 95% | COOLPIX bodies; AFInfo, FlashInfo, formatted ColorSpace / LensType |
+| Fujifilm | MakerNote | 98–100% | MakerNote offset corrected (byte 12→8) |
+| Olympus | MakerNote + sub‑IFDs | — | Equipment, CameraSettings, RawDevelopment, ImageProcessing, FocusInfo sub‑IFDs |
+| Sony | MakerNote | — | Formatted ColorSpace / ModelID |
+| Panasonic | MakerNote | — | Raw IFD parsing |
+| Pentax | MakerNote | — | Tag names via exiftool‑tables |
+| Konica‑Minolta | MakerNote | 97% | Header‑less big‑endian IFD detection |
+| Samsung | MakerNote | — | Tag names via exiftool‑tables |
+| Sigma | MakerNote | — | Tag names via exiftool‑tables |
+| Apple | MakerNote | — | Tag names via exiftool‑tables |
+| Casio | MakerNote | — | Tag names via exiftool‑tables |
+| DJI | MakerNote | — | Tag names via exiftool‑tables |
+| FLIR | MakerNote | — | Tag names via exiftool‑tables |
+| Kodak | Basic EXIF | — | Standard IFD tags only |
+| Ricoh | Basic EXIF | — | Standard IFD tags only |
+
+Parity percentages are from `revelo-exif-diff` against real camera samples where
+available. `—` means tagged under `exiftool-tables` but not yet quantified with
+a dedicated sample corpus.
 
 ## Project scale
 
