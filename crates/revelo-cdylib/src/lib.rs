@@ -179,6 +179,7 @@ fn resolve_alias(param: &str) -> &str {
         "Source_FrameCount" => "FrameCount",
         "Sampling_Rate" => "SamplingRate",
         "SampleRate" => "SamplingRate",
+        "ImageLength" => "ImageHeight",
         _ => param,
     }
 }

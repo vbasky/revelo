@@ -827,7 +827,7 @@ fn parse_ifd(
         let n = match tag_id {
             // === IFD0 / IFD1 (TIFF Rev 6.0 attributes) ===
             0x0100 => "ImageWidth",
-            0x0101 => "ImageLength",
+            0x0101 => "ImageHeight",
             0x0102 => "BitsPerSample",
             0x0103 => "Compression",
             0x0106 => "PhotometricInterpretation",
@@ -1185,7 +1185,7 @@ fn parse_ifd(
 
             _ => "",
         };
-        if !n.is_empty() && !value_trimmed.is_empty() {
+        if !n.is_empty() {
             // Align EXIF/Interop tag names with exiftool where they diverge
             // (e.g. DateTime -> ModifyDate, InteroperabilityIndex ->
             // InteropIndex). Keyed by name, which is unambiguous per IFD, so

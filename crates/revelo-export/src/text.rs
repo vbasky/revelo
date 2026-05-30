@@ -271,7 +271,9 @@ fn emit_section(
         } else if matches!(kind, StreamKind::Exif | StreamKind::Iptc) {
             // Exif/Iptc fields have no curated friendly label — fall back
             // to the raw field name when the field is present.
-            if let Some(v) = stream.get(field) {
+            if let Some(v) = stream.get(field)
+                && !v.is_empty()
+            {
                 emit_line(out, field, v.as_str());
             }
         }
