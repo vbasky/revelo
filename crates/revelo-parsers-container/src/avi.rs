@@ -292,10 +292,11 @@ fn walk_riff_chunks<F: FnMut(u32, Option<u32>, &[u8])>(buf: &[u8], len: usize, v
         let fourcc = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
         let size = u32::from_le_bytes([buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7]]) as usize;
         let data_start = i + 8;
-        let data_end = data_start + size;
-        if data_end > len {
+        // checked_add guards 32-bit (wasm32) overflow where `size` (from a u32)
+        // can wrap `data_start`; the filter folds in the past-end check.
+        let Some(data_end) = data_start.checked_add(size).filter(|&e| e <= len) else {
             break;
-        }
+        };
         if fourcc == FOURCC_LIST && size >= 4 {
             let list_type = u32::from_be_bytes([
                 buf[data_start],

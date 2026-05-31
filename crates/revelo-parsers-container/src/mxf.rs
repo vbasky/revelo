@@ -81,7 +81,9 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
             } else {
                 // Long form: next N bytes contain length
                 let num_bytes = (first_byte & 0x7F) as usize;
-                if ber_len_pos + 1 + num_bytes > data.len() {
+                // A real BER length fits in <= 8 bytes; reject absurd counts so
+                // the shift-accumulate below can't run away (esp. 32-bit usize).
+                if num_bytes > 8 || ber_len_pos + 1 + num_bytes > data.len() {
                     continue;
                 }
                 let mut len = 0usize;
@@ -95,7 +97,7 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
             // Timecode typically starts at offset 17 within the System Item
             let tc_offset = data_offset + 17;
             if tc_offset + 8 <= data.len()
-                && tc_offset + 8 <= i + 16 + length
+                && tc_offset + 8 <= i.saturating_add(16).saturating_add(length)
                 && let Some(tc) = parse_mxf_timecode(&data[tc_offset..tc_offset + 8])
             {
                 return Some(tc);
@@ -117,7 +119,9 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
                 (first_byte as usize, ber_len_pos + 1)
             } else {
                 let num_bytes = (first_byte & 0x7F) as usize;
-                if ber_len_pos + 1 + num_bytes > data.len() {
+                // A real BER length fits in <= 8 bytes; reject absurd counts so
+                // the shift-accumulate below can't run away (esp. 32-bit usize).
+                if num_bytes > 8 || ber_len_pos + 1 + num_bytes > data.len() {
                     continue;
                 }
                 let mut len = 0usize;
@@ -130,7 +134,7 @@ fn extract_mxf_timecode(data: &[u8]) -> Option<String> {
             // Timecode Component data starts with 16-byte UID, then timecode
             let tc_offset = data_offset + 16;
             if tc_offset + 8 <= data.len()
-                && tc_offset + 8 <= i + 16 + length
+                && tc_offset + 8 <= i.saturating_add(16).saturating_add(length)
                 && let Some(tc) = parse_mxf_timecode(&data[tc_offset..tc_offset + 8])
             {
                 return Some(tc);

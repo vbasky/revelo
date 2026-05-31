@@ -101,28 +101,38 @@ pub fn parse_scte35(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let protocol_version = owned[3] >> 4;
+    // The fixed header runs through splice_command_type at byte 13; guard
+    // before indexing it (section_length alone can be as small as 4).
+    if owned.len() < 14 {
+        return false;
+    }
+
+    // byte 3: protocol_version is a full 8-bit field.
+    let protocol_version = owned[3];
     if protocol_version != 0 {
         return false;
     }
 
-    let encrypted = (owned[3] >> 3) & 1;
+    // byte 4: encrypted_packet (bit 7), encryption_algorithm (bits 6..1),
+    // and the most-significant bit of the 33-bit pts_adjustment (bit 0).
+    let encrypted = (owned[4] >> 7) & 1;
     if encrypted != 0 {
         return false;
     }
 
-    let pts_adjustment = ((owned[3] as u64 & 0x07) << 30)
-        | (owned[4] as u64) << 22
-        | (owned[5] as u64) << 14
-        | (owned[6] as u64) << 6
-        | ((owned[7] as u64) >> 2);
+    // pts_adjustment: 33 bits spanning byte 4 bit 0 through byte 8.
+    let pts_adjustment = ((owned[4] as u64 & 0x01) << 32)
+        | (owned[5] as u64) << 24
+        | (owned[6] as u64) << 16
+        | (owned[7] as u64) << 8
+        | (owned[8] as u64);
 
-    let cw_index = owned[7] & 0x3F;
-    let tier = ((owned[8] as u16) << 4) | ((owned[9] as u16) >> 4);
-    let splice_command_length = ((owned[9] as u16 & 0x0F) << 8) | owned[10] as u16;
-    let splice_command_type = owned[11];
+    let cw_index = owned[9]; // byte 9: cw_index (8 bits)
+    let tier = ((owned[10] as u16) << 4) | ((owned[11] as u16) >> 4); // 12 bits
+    let splice_command_length = ((owned[11] as u16 & 0x0F) << 8) | owned[12] as u16; // 12 bits
+    let splice_command_type = owned[13];
 
-    let mut pos: usize = 12;
+    let mut pos: usize = 14;
 
     if splice_command_length as usize > 0 && pos < owned.len() {
         match splice_command_type {
@@ -197,7 +207,7 @@ fn parse_splice_insert(buf: &[u8], pos: &mut usize) {
     let _duration_flag = (buf[*pos] >> 5) & 1;
     let _immediate = (buf[*pos] >> 4) & 1;
     *pos += 1;
-    if *pos + 4 > buf.len() {
+    if *pos + 5 > buf.len() {
         return;
     }
     let _splice_time = (buf[*pos] as u64) << 25
@@ -291,30 +301,33 @@ mod tests {
 
     #[test]
     fn scte35_splice_insert() {
-        // Minimal SCTE-35 splice_insert() splice_info_section
-        // Byte layout matching parser:
-        //   [0] table_id, [1-2] section_length,
-        //   [3] protocol, [4-7] pts_adjustment(33) + cw_index(6),
-        //   [8-9] tier(12), [9-10] splice_command_length(12),
-        //   [11] splice_command_type
+        // Minimal SCTE-35 splice_insert() splice_info_section, using the
+        // correct SCTE-35 header layout:
+        //   [0] table_id, [1-2] section_length, [3] protocol_version,
+        //   [4] encrypted+enc_algorithm+pts_adjustment MSB, [5-8] rest of
+        //   pts_adjustment, [9] cw_index, [10..12] tier(12)+command_length(12),
+        //   [13] splice_command_type, [14..] command body.
         let mut buf = vec![
             0xFC, // [0]  table_id
             0x30, 0x00, // [1-2] section_length placeholder
             0x00, // [3]  protocol_version
-            0x00, 0x00, 0x00, 0x00, // [4-7] pts_adjustment + cw_index
-            0x00, 0x00, // [8-9] tier
-            0x10, // [10] splice_command_length lo = 16
-            0x05, // [11] splice_command_type = splice_insert
+            0x00, // [4]  encrypted=0, enc_algorithm=0, pts_adjustment[32]=0
+            0x00, 0x00, 0x00, 0x00, // [5-8] pts_adjustment (low 32 bits)
+            0x00, // [9]  cw_index
+            0x00, // [10] tier high 8 bits
+            0x00, // [11] tier low 4 + splice_command_length high 4
+            0x10, // [12] splice_command_length low 8 = 16
+            0x05, // [13] splice_command_type = splice_insert
             // splice_insert():
-            0x00, 0x00, 0x00, 0x01, // [12-15] splice_event_id=1
-            0x00, // [16] cancel=0
-            0xE0, // [17] out_of_network=1, program_splice=1, duration=1, immediate=0
-            0x00, 0x00, 0x00, 0x00, 0x00, // [18-22] splice_time=0 (33-bit)
-            0x00, 0x00, 0x00, 0x00, 0x00, // [23-27] duration=0 (33-bit)
+            0x00, 0x00, 0x00, 0x01, // [14-17] splice_event_id=1
+            0x00, // [18] cancel=0
+            0xE0, // [19] out_of_network=1, program_splice=1, duration=1, immediate=0
+            0x00, 0x00, 0x00, 0x00, 0x00, // [20-24] splice_time=0 (33-bit)
+            0x00, 0x00, 0x00, 0x00, 0x00, // [25-29] duration=0 (33-bit)
             // descriptor_loop_length
-            0x00, 0x00, // [28-29] no descriptors
+            0x00, 0x00, // [30-31] no descriptors
             // CRC
-            0x00, 0x00, 0x00, 0x00, // [30-33]
+            0x00, 0x00, 0x00, 0x00, // [32-35]
         ];
         let section_len = buf.len() - 3;
         buf[1] = 0x30 | ((section_len >> 8) as u8) & 0x0F;
@@ -334,28 +347,31 @@ mod tests {
 
     #[test]
     fn scte35_time_signal() {
-        // Byte layout: same header as splice_insert, then time_signal command
-        // with a segmentation_descriptor containing 4-byte 'CUEI' identifier.
+        // Correct SCTE-35 header (14 bytes), then a time_signal command and a
+        // segmentation_descriptor with a 4-byte 'CUEI' identifier.
         let mut buf = vec![
-            0xFC, 0x30, 0x00, 0x00, // [0-3]: table_id, section_len, protocol
-            0x00, 0x00, 0x00, 0x00, // [4-7]: pts_adjustment + cw_index
-            0x00, 0x00, // [8-9]: tier=0
-            0x05, // [10]: splice_command_length lo = 5
-            0x06, // [11]: splice_command_type = time_signal
-            0x00, 0x00, 0x00, 0x00, 0x00, // [12-16]: splice_time (33-bit)
+            0xFC, 0x30, 0x00, // [0-2]: table_id, section_length placeholder
+            0x00, // [3]: protocol_version
+            0x00, // [4]: encrypted=0 + pts_adjustment[32]=0
+            0x00, 0x00, 0x00, 0x00, // [5-8]: pts_adjustment (low 32 bits)
+            0x00, // [9]: cw_index
+            0x00, 0x00, // [10-11]: tier=0 + command_length high 4
+            0x05, // [12]: splice_command_length low 8 = 5
+            0x06, // [13]: splice_command_type = time_signal
+            0x00, 0x00, 0x00, 0x00, 0x00, // [14-18]: splice_time (33-bit)
             // descriptor_loop_length
-            0x00, 0x13, // [17-18]: loop_len = 19
+            0x00, 0x13, // [19-20]: loop_len = 19
             // segmentation_descriptor (tag=0x02, len=17)
-            0x02, 0x11, // [19-20]: tag=2, dlen=17
-            0x43, 0x55, 0x45, 0x49, // [21-24]: identifier='CUEI'
-            0x00, 0x00, 0x00, 0x01, // [25-28]: seg_event_id=1
-            0x00, // [29]: cancel=0
-            0x80, // [30]: dur_flag=1
-            0x00, 0x00, 0x00, 0x00, 0x00, // [31-35]: seg_duration=0
-            0x10, // [36]: seg_type=0x10 (Break)
-            0x00, // [37]: upid_len=0
+            0x02, 0x11, // [21-22]: tag=2, dlen=17
+            0x43, 0x55, 0x45, 0x49, // [23-26]: identifier='CUEI'
+            0x00, 0x00, 0x00, 0x01, // [27-30]: seg_event_id=1
+            0x00, // [31]: cancel=0
+            0x80, // [32]: dur_flag=1
+            0x00, 0x00, 0x00, 0x00, 0x00, // [33-37]: seg_duration=0
+            0x10, // [38]: seg_type=0x10 (Break)
+            0x00, // [39]: upid_len=0
             // CRC
-            0x00, 0x00, 0x00, 0x00, // [38-41]
+            0x00, 0x00, 0x00, 0x00, // [40-43]
         ];
         let section_len = buf.len() - 3;
         buf[1] = 0x30 | ((section_len >> 8) as u8) & 0x0F;
