@@ -106,6 +106,7 @@ jobs:
 
   publish:
     name: Publish to crates.io
+    timeout-minutes: 15
     needs: [release]
     runs-on: ubuntu-latest
     steps:
@@ -216,6 +217,7 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Push to tap
+        timeout-minutes: 2
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_CORE_TOKEN }}
         run: |
