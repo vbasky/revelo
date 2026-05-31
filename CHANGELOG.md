@@ -18,6 +18,15 @@
   cross-references) and `XMP_xmpMM_*` namespace tags
 - **MakerNote stub** — `parse_makernote` infrastructure hook, returns `()` for now
 
+## [0.3.2] - 2026-05-31
+
+### Fixed
+
+- **Panic-safety on malformed/truncated input**: guard MP4 `avcC`/`hvcC` parsing
+  against truncated boxes; correct the SCTE-35 splice-header byte offsets and a
+  `parse_splice_insert` off-by-one; checked/saturating size arithmetic in
+  AVI/MKV/MP4/MXF (safe on 32-bit `wasm32`).
+
 ## [0.3.1] - 2026-05-31
 
 ### Fixed
