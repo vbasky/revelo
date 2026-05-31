@@ -29,6 +29,38 @@
 
 - First crates.io publish of the **`revelo`** facade crate.
 
+## [0.4.1] - 2026-05-31
+
+### Added
+
+- **`revelo` facade crate** — a single `revelo` dependency replaces manually wiring
+  `revelo-core`, `revelo-dispatcher`, and `revelo-parsers-tag`. The crate exposes:
+  - `Metadata::from_file(path)` and `Metadata::from_bytes(bytes)` — detect format,
+    parse container/codec metadata, and run EXIF/IPTC/XMP/ICC/C2PA tag extraction
+    in one call
+  - Typed per-stream accessors: `.general()`, `.video()`, `.audio()`, `.text()`,
+    `.image()`, `.exif()`, `.iptc()`, `.xmp()` — each yielding `(&str, &str)` pairs
+  - `MediaFile` type alias for `FileAnalyze` (the old name continues to work)
+  - `Metadata::streams()` and `into_streams()` for access to the raw
+    `StreamCollection`
+  - Re-exports of `revelo_core`, `revelo_dispatcher`, and `revelo_parsers_tag`
+    so dependents get the full API from one crate
+  - Pass-through `exiftool-tables` feature that pulls the GPL/Artistic maker-note
+    tables crate
+
+### Changed
+
+- README parser and crate counts are now auto-updated as part of the release
+  workflow (script runs `cargo metadata` and counts `#[test]` annotations).
+- Release notes generation strips the `v` prefix from the tag name before passing
+  it to the GitHub CLI.
+
+### Fixed
+
+- Homebrew formula pushed to personal tap (`vbasky/homebrew-revelo`) instead of
+  attempting an upstream `homebrew-core` PR (which cannot be automated reliably).
+- Homebrew install command corrected in README to match the personal tap URL.
+
 ## [0.4.0] - 2026-05-31
 
 ### Added
