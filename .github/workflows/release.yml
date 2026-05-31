@@ -137,9 +137,11 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
+          # Dependency order: a crate must appear after every crate it depends on.
           CRATES=(
             revelo-util
             revelo-core
+            revelo-exiftool-tables     # must precede revelo-parsers-tag (its optional dep)
             revelo-parsers-video
             revelo-parsers-archive
             revelo-parsers-audio
@@ -150,6 +152,7 @@ jobs:
             revelo-reader
             revelo-export
             revelo-dispatcher
+            revelo                     # facade — depends on core, dispatcher, parsers-tag
             revelo-cli
             revelo-cdylib
           )

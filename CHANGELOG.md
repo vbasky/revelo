@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.4.2] - 2026-05-31
+
+### Fixed
+
+- **Panic-safety on malformed/truncated input**: guard MP4 `avcC`/`hvcC` parsing
+  against truncated boxes; correct the SCTE-35 splice-header byte offsets and a
+  `parse_splice_insert` off-by-one; checked/saturating size arithmetic in
+  AVI/MKV/MP4/MXF (safe on 32-bit `wasm32`).
+- **Parsing correctness on valid files**: honor TIFF byte order for EXIF
+  FLOAT/DOUBLE values; decode ELF `e_type`/`e_machine` per the file's endianness;
+  read AVC scaling-list `delta_scale` as signed Exp-Golomb; derive AV1 bit depth
+  from `color_config()`; parse real VVC profile/tier/level and fix VVC RBSP
+  emulation-prevention removal; fix `infer_raw_format` reading `Make` from the
+  wrong stream.
+- **Exporters**: XML-escape values and paths in ebuCore/MPEG-7/PBCore/RevTMD;
+  NISO/FIMS now emit the parsed stream fields instead of an empty shell; teletext
+  fills fields on partial packets; bound the VOB-PCM `LPCM` scan.
+
+### Changed
+
+- Rewrote per-crate READMEs and added crate-level docs across the workspace; added
+  `exif`/`exiftool` keywords and richer descriptions for crates.io discoverability.
+- Release pipeline now publishes the `revelo` facade and `revelo-exiftool-tables`
+  (previously omitted from the publish list).
+
+### Note
+
+- First crates.io publish of the **`revelo`** facade crate.
+
 ## [0.4.0] - 2026-05-31
 
 ### Added
