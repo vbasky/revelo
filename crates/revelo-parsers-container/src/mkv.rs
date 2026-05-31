@@ -694,7 +694,7 @@ fn fill_streams(
                             | ((private[2] as usize) << 16)
                             | ((private[3] as usize) << 24);
 
-                        if id_len >= 7 && private.len() >= 4 + id_len {
+                        if id_len >= 7 && private.len() >= id_len.saturating_add(4) {
                             let id_header = &private[4..4 + id_len];
 
                             // Check for Vorbis identification header: packet type 1 + "vorbis"

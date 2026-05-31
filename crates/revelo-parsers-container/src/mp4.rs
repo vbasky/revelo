@@ -417,7 +417,9 @@ fn walk_boxes(
 
         let total_size: usize = if size32 == 1 {
             let size64 = Reader::wrap(fa).be_u64("Size64").unwrap_or(0);
-            size64 as usize
+            // Saturate instead of truncating on 32-bit (wasm32); an over-large
+            // box is then caught by the region_end bounds check below.
+            usize::try_from(size64).unwrap_or(usize::MAX)
         } else if size32 == 0 {
             // Box extends to end of file
             region_end - start
@@ -1455,6 +1457,11 @@ fn parse_avcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         return;
     }
     let body = fa.read_raw(body_size).to_vec();
+    // read_raw yields exactly body_size bytes or, on a truncated file, an empty
+    // slice — guard on the actual length before indexing.
+    if body.len() < 4 {
+        return;
+    }
     track.avc_profile_idc = Some(body[1]);
     track.avc_profile_compat = Some(body[2]);
     track.avc_level_idc = Some(body[3]);
@@ -1532,6 +1539,12 @@ fn parse_hvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         return;
     }
     let body = fa.read_raw(body_size).to_vec();
+    // read_raw yields exactly body_size bytes or, on a truncated file, an empty
+    // slice; guard on the actual length so the fixed-offset reads below (and the
+    // body_size-based bounds checks, which then equal body.len()) stay in range.
+    if body.len() < 23 {
+        return;
+    }
     let profile_byte = body[1];
     track.hevc_tier_high = Some((profile_byte & 0x20) != 0);
     track.hevc_profile_idc = Some(profile_byte & 0x1F);
