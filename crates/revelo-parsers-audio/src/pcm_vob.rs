@@ -5,7 +5,10 @@ pub fn parse_pcm_vob(fa: &mut FileAnalyze) -> bool {
     if buf.len() < 4 {
         return false;
     }
-    if &buf[0..4] != b"DVD " && !buf.windows(4).any(|w| w == b"LPCM") {
+    // Bound the LPCM magic search to the header region: scanning the whole
+    // buffer is O(n) and false-positives any file that merely contains "LPCM".
+    let scan = &buf[..buf.len().min(64)];
+    if &buf[0..4] != b"DVD " && !scan.windows(4).any(|w| w == b"LPCM") {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);

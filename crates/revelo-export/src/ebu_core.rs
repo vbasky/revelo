@@ -4,7 +4,10 @@ pub fn to_ebu_core(streams: &StreamCollection, file_path: &str) -> String {
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str("<ebucore:ebuCoreMain xmlns:ebucore=\"urn:ebu:metadata-schema:ebuCore_2015\">\n");
     out.push_str("<ebucore:coreMetadata>\n");
-    out.push_str(&format!("<ebucore:identifier>{file_path}</ebucore:identifier>\n"));
+    out.push_str(&format!(
+        "<ebucore:identifier>{}</ebucore:identifier>\n",
+        crate::xml_escape(file_path)
+    ));
     for kind in [StreamKind::General, StreamKind::Video, StreamKind::Audio] {
         let c = streams.stream_count(kind);
         for p in 0..c {
@@ -14,7 +17,7 @@ pub fn to_ebu_core(streams: &StreamCollection, file_path: &str) -> String {
                     out.push_str(&format!(
                         "<ebucore:{}>{}</ebucore:{}>\n",
                         k.to_lowercase().replace('_', ""),
-                        v.as_str(),
+                        crate::xml_escape(v.as_str()),
                         k.to_lowercase().replace('_', "")
                     ));
                 }
@@ -36,5 +39,16 @@ mod tests {
         let xml = to_ebu_core(&c, "/x.mp4");
         assert!(xml.contains("ebucore:ebuCoreMain"));
         assert!(xml.contains("/x.mp4"));
+    }
+
+    #[test]
+    fn escapes_xml_special_chars_in_values() {
+        let mut c = StreamCollection::new();
+        c.set_field(StreamKind::General, 0, "Format", Ztring::from("H.264 & <AAC>"));
+        let xml = to_ebu_core(&c, "/a&b<c>.mp4");
+        // Raw '&', '<', '>' must not leak into the output.
+        assert!(xml.contains("H.264 &amp; &lt;AAC&gt;"));
+        assert!(xml.contains("/a&amp;b&lt;c&gt;.mp4"));
+        assert!(!xml.contains("& <AAC>"));
     }
 }

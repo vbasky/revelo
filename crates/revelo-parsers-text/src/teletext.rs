@@ -19,11 +19,10 @@ pub fn parse_teletext(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    // Full teletext packet is 45 bytes
-    if buf.len() < 45 {
-        return true; // partial packet, accept tentative
-    }
-
+    // The clock run-in + framing code confirm teletext; fill the format fields
+    // whether or not the full 45-byte packet is present. (Previously a partial
+    // packet returned `true` with no fields set, leaving the stream
+    // inconsistent for callers that act on the return value.)
     let pos = fa.stream_prepare(StreamKind::Text);
     fa.set_field(StreamKind::Text, pos, "Format", "Teletext");
     fa.set_field(StreamKind::Text, pos, "MuxingMode", "Teletext");

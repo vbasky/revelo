@@ -2,12 +2,16 @@ use revelo_core::{StreamCollection, StreamKind};
 pub fn to_revtmd(streams: &StreamCollection, file_path: &str) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<REVTMD>\n");
-    out.push_str(&format!("<Source>{file_path}</Source>\n"));
+    out.push_str(&format!("<Source>{}</Source>\n", crate::xml_escape(file_path)));
     for kind in [StreamKind::General, StreamKind::Video, StreamKind::Audio] {
         for p in 0..streams.stream_count(kind) {
             if let Some(s) = streams.stream(kind, p) {
                 for (k, v) in s.iter() {
-                    out.push_str(&format!("<{k}>{v}</{k}>\n", k = k, v = v.as_str()));
+                    out.push_str(&format!(
+                        "<{k}>{v}</{k}>\n",
+                        k = k,
+                        v = crate::xml_escape(v.as_str())
+                    ));
                 }
             }
         }

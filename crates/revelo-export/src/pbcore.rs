@@ -2,7 +2,10 @@ use revelo_core::{StreamCollection, StreamKind};
 pub fn to_pbcore(streams: &StreamCollection, file_path: &str) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<pbcoreDescriptionDocument xmlns=\"http://www.pbcore.org/PBCore/PBCoreNamespace.html\">\n");
-    out.push_str(&format!("<pbcoreIdentifier source=\"revelo\">{file_path}</pbcoreIdentifier>\n"));
+    out.push_str(&format!(
+        "<pbcoreIdentifier source=\"revelo\">{}</pbcoreIdentifier>\n",
+        crate::xml_escape(file_path)
+    ));
     for kind in [StreamKind::General, StreamKind::Video, StreamKind::Audio] {
         for p in 0..streams.stream_count(kind) {
             if let Some(s) = streams.stream(kind, p) {
@@ -11,7 +14,12 @@ pub fn to_pbcore(streams: &StreamCollection, file_path: &str) -> String {
                     kind.name()
                 ));
                 for (k, v) in s.iter() {
-                    out.push_str(&format!("<pbcore{}>{}</pbcore{}>\n", k, v.as_str(), k));
+                    out.push_str(&format!(
+                        "<pbcore{}>{}</pbcore{}>\n",
+                        k,
+                        crate::xml_escape(v.as_str()),
+                        k
+                    ));
                 }
                 out.push_str("</pbcoreInstantiation>\n");
             }
