@@ -480,6 +480,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exif_float_honors_byte_order() {
+        // 1.5_f32 == 0x3FC0_0000. Big-endian bytes vs little-endian bytes.
+        let be = 1.5_f32.to_be_bytes();
+        let le = 1.5_f32.to_le_bytes();
+        assert_eq!(read_exif_val(&be, 0, 11, 1, "BE"), "1.5");
+        assert_eq!(read_exif_val(&le, 0, 11, 1, "LE"), "1.5");
+        // Same for DOUBLE (type 12).
+        let bed = 2.25_f64.to_be_bytes();
+        assert_eq!(read_exif_val(&bed, 0, 12, 1, "BE"), "2.25");
+        // Out-of-range offset must not panic.
+        assert_eq!(read_exif_val(&[0u8; 2], 0, 11, 1, "BE"), "0");
+    }
+
+    #[test]
     fn id3v1_parses_basic_tag() {
         let mut buf = vec![0u8; 256];
         let start = 256 - 128;
@@ -1227,8 +1241,8 @@ fn read_exif_val(data: &[u8], off: usize, t: u16, count: usize, bo: &str) -> Str
                     format!("{num}/{den}")
                 }
             }
-            11 => f32::from_le_bytes(data[off..off + 4].try_into().unwrap_or([0; 4])).to_string(),
-            12 => f64::from_le_bytes(data[off..off + 8].try_into().unwrap_or([0; 8])).to_string(),
+            11 => read_tiff_f32(data, off, bo).to_string(),
+            12 => read_tiff_f64(data, off, bo).to_string(),
             7 => {
                 let end = data[off..].iter().take(4).position(|&b| b == 0).unwrap_or(4);
                 String::from_utf8_lossy(&data[off..off + end]).to_string()
@@ -1271,6 +1285,8 @@ fn read_exif_val(data: &[u8], off: usize, t: u16, count: usize, bo: &str) -> Str
                 }
             }
             9 => (read_tiff_u32(data, o, bo) as i32).to_string(),
+            11 => read_tiff_f32(data, o, bo).to_string(),
+            12 => read_tiff_f64(data, o, bo).to_string(),
             7 => {
                 let end = data[o..].iter().take(count).position(|&b| b == 0).unwrap_or(count);
                 String::from_utf8_lossy(&data[o..o + end.min(count)]).to_string()
@@ -1309,6 +1325,28 @@ fn read_tiff_u32(data: &[u8], off: usize, bo: &str) -> u32 {
     } else {
         u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
     }
+}
+
+/// Reads a 32-bit IEEE-754 float (EXIF type 11) honoring the TIFF byte order
+/// (`bo == "BE"` → big-endian). Returns `0.0` if the 4-byte value would run
+/// past the end of `data`.
+fn read_tiff_f32(data: &[u8], off: usize, bo: &str) -> f32 {
+    if off + 4 > data.len() {
+        return 0.0;
+    }
+    let b = [data[off], data[off + 1], data[off + 2], data[off + 3]];
+    if bo == "BE" { f32::from_be_bytes(b) } else { f32::from_le_bytes(b) }
+}
+
+/// Reads a 64-bit IEEE-754 double (EXIF type 12) honoring the TIFF byte order.
+/// Returns `0.0` if the 8-byte value would run past the end of `data`.
+fn read_tiff_f64(data: &[u8], off: usize, bo: &str) -> f64 {
+    if off + 8 > data.len() {
+        return 0.0;
+    }
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&data[off..off + 8]);
+    if bo == "BE" { f64::from_be_bytes(b) } else { f64::from_le_bytes(b) }
 }
 
 // ---------- GPS Computed Geotagging ----------
@@ -4348,7 +4386,7 @@ fn infer_raw_format(fa: &mut FileAnalyze) {
         return;
     }
     let make =
-        fa.retrieve(StreamKind::General, 1, "Make").map(|z| z.to_string()).unwrap_or_default();
+        fa.retrieve(StreamKind::General, 0, "Make").map(|z| z.to_string()).unwrap_or_default();
     let make_upper = make.to_uppercase();
     let raw_fmt = if make_upper.contains("NIKON") {
         "NEF"

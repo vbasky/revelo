@@ -329,12 +329,16 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
         Some(cr != 0)
     };
 
-    // Derive bit depth from profile
-    let bit_depth = match profile {
-        0 => 8,  // Main: 8-bit
-        1 => 10, // High: 10-bit
-        2 => 12, // Professional: 12-bit
-        _ => 8,
+    // Bit depth per AV1 spec color_config(): for the Professional profile the
+    // high_bitdepth + twelve_bit flags select 10 or 12; otherwise high_bitdepth
+    // selects 8 or 10. Deriving it from `profile` alone is wrong (e.g. an
+    // 8-bit Professional or a 10-bit Main stream).
+    let bit_depth = if profile == 2 && high_bitdepth != 0 {
+        if twelve_bit != 0 { 12 } else { 10 }
+    } else if profile <= 2 {
+        if high_bitdepth != 0 { 10 } else { 8 }
+    } else {
+        8
     };
 
     // Derive chroma subsampling from profile

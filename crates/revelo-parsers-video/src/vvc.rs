@@ -123,86 +123,61 @@ fn parse_sps(sps_nal: &[u8]) -> Option<VvcInfo> {
 
     let mut offset = 0usize;
 
-    // sps_seq_parameter_set_id (4 bits) + sps_video_parameter_set_id (4 bits)
+    // SPS header fields in order (H.266 §7.3.2.4).
     read_bits(&data, &mut offset, 4)?; // sps_seq_parameter_set_id
     read_bits(&data, &mut offset, 4)?; // sps_video_parameter_set_id
+    let _max_sublayers = read_bits(&data, &mut offset, 3)?; // sps_max_sublayers_minus1
+    let chroma_format_idc = read_bits(&data, &mut offset, 2)? as u8; // sps_chroma_format_idc
+    read_bits(&data, &mut offset, 2)?; // sps_log2_ctu_size_minus5
+    let ptl_present = read_bits(&data, &mut offset, 1)?; // sps_ptl_dpb_hrd_params_present_flag
 
-    // sps_max_sublayers_minus1 (3 bits)
-    let max_sublayers = read_bits(&data, &mut offset, 3)?;
-    read_bits(&data, &mut offset, 2)?; // sps_chroma_format_idc
-
-    let chroma_format_idc =
-        if max_sublayers > 0 { read_bits(&data, &mut offset, 2)? as u8 } else { 1u8 };
-
-    let bit_depth = match chroma_format_idc {
-        0 => 8u8,
-        1 => 10u8,
-        2 => 12u8,
-        3 => 16u8,
-        _ => 8u8,
-    };
-
-    // Skip PTL if present, simplified here
-    let sps_width = read_ue(&data, &mut offset)? as u32;
-    let sps_height = read_ue(&data, &mut offset)? as u32;
-
-    // conformance window (optional)
-    let conf_win_present = read_bits(&data, &mut offset, 1)?;
-    let (cwl, cwr, cwt, cwb) = if conf_win_present > 0 {
-        (
-            read_ue(&data, &mut offset)? as u32,
-            read_ue(&data, &mut offset)? as u32,
-            read_ue(&data, &mut offset)? as u32,
-            read_ue(&data, &mut offset)? as u32,
-        )
+    // profile_tier_level(1, max_sublayers) per §7.3.3.1: general_profile_idc,
+    // general_tier_flag and general_level_idc are at fixed offsets and decode
+    // reliably. The general_constraint_info() that follows is variable-length.
+    let (profile_idc, tier_flag, level_idc) = if ptl_present == 1 {
+        let profile = read_bits(&data, &mut offset, 7)? as u8; // general_profile_idc
+        let tier = read_bits(&data, &mut offset, 1)? != 0; // general_tier_flag
+        let level = read_bits(&data, &mut offset, 8)? as u8; // general_level_idc
+        (profile, tier, level)
     } else {
-        (0, 0, 0, 0)
+        (0u8, false, 0u8)
     };
 
-    let sub_width = match chroma_format_idc {
-        0 => 1,
-        1 => 2,
-        2 => 2,
-        3 => 1,
-        _ => 1,
-    };
-    let sub_height = match chroma_format_idc {
-        0 => 1,
-        1 => 2,
-        2 => 1,
-        3 => 1,
-        _ => 1,
-    };
-
-    let width = sps_width - sub_width * (cwl + cwr);
-    let height = sps_height - sub_height * (cwt + cwb);
-
+    // Width/height/bit-depth appear in the SPS only after the *full*
+    // profile_tier_level (including the variable-length general_constraint_info
+    // and sub-layer level structures). Recovering them correctly needs a
+    // complete PTL traversal validated against VVC conformance streams, so they
+    // are reported as 0 ("unknown") rather than read from a guessed offset.
+    // fill_vvc_streams omits zero-valued dimension fields.
     Some(VvcInfo {
-        profile_idc: 1,
-        level_idc: 51, // default Level 5.1
-        tier_flag: false,
-        width,
-        height,
-        bit_depth,
+        profile_idc,
+        level_idc,
+        tier_flag,
+        width: 0,
+        height: 0,
+        bit_depth: 0,
         chroma_format_idc,
         frame_only_constraint_flag: 0,
     })
 }
 
+/// Removes H.26x emulation-prevention bytes to recover the RBSP.
+///
+/// The encoder inserts a `0x03` into any `00 00 00/01/02/03` sequence, yielding
+/// `00 00 03 XX`; de-emulation strips that inserted `0x03` (`00 00 03 XX` →
+/// `00 00 XX`). All other bytes are copied verbatim. The previous version
+/// pushed the `0x03` through unchanged (and also rewrote `00 00 00`), so it
+/// removed nothing and left the RBSP bit-misaligned.
 fn remove_epb_3(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len());
     let mut i = 0;
     while i < data.len() {
-        out.push(data[i]);
         if i + 2 < data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 3 {
-            out.push(data[i + 1]);
-            out.push(data[i + 2]);
-            i += 3;
-        } else if i + 2 < data.len() && data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 0 {
-            out.push(data[i + 1]);
-            out.push(data[i + 2]);
-            i += 3;
+            out.push(0);
+            out.push(0);
+            i += 3; // skip the inserted 0x03 emulation-prevention byte
         } else {
+            out.push(data[i]);
             i += 1;
         }
     }
@@ -223,6 +198,8 @@ fn read_bits(data: &[u8], offset: &mut usize, n: usize) -> Option<u64> {
     Some(val)
 }
 
+// Retained for the pending full profile_tier_level / dimension parse.
+#[allow(dead_code)]
 fn read_ue(data: &[u8], offset: &mut usize) -> Option<u64> {
     let mut leading_zeros = 0;
     while read_bits(data, offset, 1)? == 0 {
@@ -243,9 +220,16 @@ fn fill_vvc_streams(fa: &mut FileAnalyze, info: &VvcInfo) {
     fa.set_field(StreamKind::Video, 0, "Format", "VVC");
     fa.set_field(StreamKind::Video, 0, "Format_Version", "Version 1");
     fa.set_field(StreamKind::Video, 0, "Format_Profile", vvc_profile_name(info.profile_idc));
-    fa.set_field(StreamKind::Video, 0, "Width", info.width.to_string());
-    fa.set_field(StreamKind::Video, 0, "Height", info.height.to_string());
-    fa.set_field(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string());
+    // Omit dimension/bit-depth fields when unknown (0) — see parse_sps.
+    if info.width > 0 {
+        fa.set_field(StreamKind::Video, 0, "Width", info.width.to_string());
+    }
+    if info.height > 0 {
+        fa.set_field(StreamKind::Video, 0, "Height", info.height.to_string());
+    }
+    if info.bit_depth > 0 {
+        fa.set_field(StreamKind::Video, 0, "BitDepth", info.bit_depth.to_string());
+    }
     if info.chroma_format_idc == 0 {
         fa.set_field(StreamKind::Video, 0, "ChromaSubsampling", "4:0:0");
     } else if info.chroma_format_idc == 1 {

@@ -71,6 +71,15 @@ fn read_ue(buffer: &[u8], offset: &mut usize) -> Option<u32> {
     Some(value + (1u32 << leading_zeros) - 1)
 }
 
+/// Read a signed Exp-Golomb `se(v)` value (H.264 §9.1.1): decode the unsigned
+/// `ue(v)` code word `k`, then map it to a signed value
+/// (`0→0, 1→+1, 2→-1, 3→+2, …`).
+fn read_se(buffer: &[u8], offset: &mut usize) -> Option<i32> {
+    let k = read_ue(buffer, offset)?;
+    let mag = ((k + 1) >> 1) as i32;
+    Some(if k & 1 == 1 { mag } else { -mag })
+}
+
 /// Read `n` bits from a bit reader.
 fn read_bits(buffer: &[u8], offset: &mut usize, n: usize) -> Option<u32> {
     if n > 32 || *offset + n > buffer.len() * 8 {
@@ -193,7 +202,7 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
                     let mut next_scale = 8i32;
                     for _j in 0..size {
                         if next_scale != 0 {
-                            let delta_scale = read_ue(&clean, &mut offset)? as i32;
+                            let delta_scale = read_se(&clean, &mut offset)?;
                             next_scale = (last_scale + delta_scale + 256) % 256;
                         }
                         last_scale = if next_scale == 0 { last_scale } else { next_scale };

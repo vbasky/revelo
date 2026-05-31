@@ -251,8 +251,19 @@ pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
 
     let bits = buf[4]; // 1=32-bit, 2=64-bit
     let endian = buf[5]; // 1=LE, 2=BE
-    let elf_type = u16::from_le_bytes([buf[16], buf[17]]);
-    let machine = u16::from_le_bytes([buf[18], buf[19]]);
+    // e_type and e_machine are stored in the file's own byte order (EI_DATA at
+    // offset 5); big-endian ELF (MIPS-BE, PPC-BE, SPARC) must decode as BE.
+    let be = endian == 2;
+    let elf_type = if be {
+        u16::from_be_bytes([buf[16], buf[17]])
+    } else {
+        u16::from_le_bytes([buf[16], buf[17]])
+    };
+    let machine = if be {
+        u16::from_be_bytes([buf[18], buf[19]])
+    } else {
+        u16::from_le_bytes([buf[18], buf[19]])
+    };
 
     let type_str = match elf_type {
         1 => "Relocatable",
