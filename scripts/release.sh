@@ -56,6 +56,14 @@ echo "==> releasing revelo  ${CUR}  ->  ${VERSION}"
 
 cargo test --workspace
 
+# ── auto-update docs with live numbers ──────────────────────────────────────
+PARSER_COUNT=$(awk '/^pub fn table/,/^\]/' crates/revelo-dispatcher/src/lib.rs | grep -c 'parse_')
+CRATE_COUNT=$(find crates -maxdepth 1 -name 'revelo-*' -type d | wc -l | tr -d ' ')
+
+perl -i -pe "s/parsers-\K\d+/${PARSER_COUNT}/" README.md || true
+perl -i -pe "s/Crates \| \K\d+/${CRATE_COUNT}/" README.md || true
+echo "==> docs: ${PARSER_COUNT} parsers, ${CRATE_COUNT} crates"
+
 # ── bump package versions + internal dep pins ──────────────────────────────
 # Both the package `version` and `{ path = "...", version = "X" }` dep pins use
 # the same `version = "X"` token, so one substitution covers both.
