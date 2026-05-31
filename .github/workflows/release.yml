@@ -89,7 +89,7 @@ jobs:
       - name: Generate release notes
         run: |
           VERSION="${{ github.ref_name }}"
-          awk -v ver="[${VERSION}]" '
+          awk -v ver="[${VERSION#v}]" '
             $0 ~ "^## " ver " - " { found=1; next }
             found && /^## / { exit }
             found { print }
