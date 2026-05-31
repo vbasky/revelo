@@ -1,6 +1,6 @@
 [package]
 name = "revelo-parsers-image"
-version = "0.4.2"
+version = "0.4.3"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,5 +18,5 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.4.2" }
-revelo-util = { path = "../revelo-util", version = "0.4.2" }
+revelo-core = { path = "../revelo-core", version = "0.4.3" }
+revelo-util = { path = "../revelo-util", version = "0.4.3" }

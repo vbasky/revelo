@@ -5,6 +5,12 @@
 //! Each non-fixed-length segment is `FF [marker:u8] [length:u16 BE]
 //! [length-2 bytes payload]`.
 //!
+//! This module owns only JPEG *container structure*: SOFn geometry, chroma
+//! subsampling, segment overhead, the JFIF version, the COM comment, and the
+//! embedded EXIF thumbnail (IFD1). All EXIF/XMP/ICC *tag* extraction — and the
+//! MediaInfo-vocabulary EXIF fields derived from it — is owned by the generic
+//! `revelo-parsers-tag` crate, which runs as a second pass over every file.
+//!
 //! SOFn markers (Start Of Frame) carry the image geometry:
 //!   FFC0 baseline DCT, FFC1 extended sequential, FFC2 progressive,
 //!   FFC3 lossless, FFC5..FFC7 differential, FFC9..FFCB arithmetic,
@@ -14,92 +20,26 @@
 
 use revelo_core::{FileAnalyze, StreamKind};
 
+/// Embedded-thumbnail geometry, read from the EXIF IFD1 chain. This is the
+/// only part of the EXIF block the container parser needs (it drives the
+/// `Image #2` stream, `ImageCount`, and the `StreamSize` deduction).
 #[derive(Default)]
-#[allow(dead_code)]
-struct ExifData {
-    make: Option<String>,
-    model: Option<String>,
-    /// IFD0 ImageDescription (tag 0x010E).
-    description: Option<String>,
-    /// IFD0 DateTime (tag 0x0132).
-    datetime: Option<String>,
-    /// Exif sub-IFD DateTimeOriginal (tag 0x9003).
-    datetime_original: Option<String>,
-    /// IFD1 thumbnail block (JPEG-compressed; offsets relative to TIFF base).
+struct ThumbnailData {
+    /// IFD1 ImageWidth (0x0100) — thumbnail geometry when present.
     thumbnail_width: Option<u32>,
+    /// IFD1 ImageLength (0x0101).
     thumbnail_height: Option<u32>,
+    /// JPEGInterchangeFormatLength (0x0202) — thumbnail byte size.
     thumbnail_size: Option<u32>,
-    /// JPEGInterchangeFormat (0x0201) — offset of the embedded thumbnail
-    /// JPEG within the TIFF buffer. Used to read the thumbnail SOF when
-    /// IFD1 doesn't carry explicit ImageWidth/Length tags.
+    /// JPEGInterchangeFormat (0x0201) — offset of the embedded thumbnail JPEG
+    /// within the TIFF buffer. Used to read the thumbnail SOF when IFD1 lacks
+    /// explicit ImageWidth/Length tags.
     thumbnail_offset: Option<u32>,
-    // Exif sub-IFD "extra" tags — bucketed into the `<extra>` block.
-    /// ExposureTime (0x829A) as (numerator, denominator). Oracle emits
-    /// `ShutterSpeed_Time` (decimal seconds) + `ShutterSpeed_Time_String` ("1/N s").
-    exposure_time: Option<(u32, u32)>,
-    /// FNumber (0x829D) as (numerator, denominator).
-    f_number: Option<(u32, u32)>,
-    /// ExposureProgram (0x8822) — small int with predefined meanings.
-    exposure_program: Option<u16>,
-    /// ISOSpeedRatings (0x8827).
-    iso_speed: Option<u16>,
-    /// ExifVersion (0x9000) — 4 ASCII bytes, e.g. "0220" → "2.20".
-    exif_version: Option<[u8; 4]>,
-    /// Flash (0x9209) — short with bit fields.
-    flash: Option<u16>,
-    /// FocalLength (0x920A) as (numerator, denominator).
-    focal_length: Option<(u32, u32)>,
-    /// FlashpixVersion (0xA000) — 4 ASCII bytes.
-    flashpix_version: Option<[u8; 4]>,
-    /// WhiteBalance (0xA403): 0=Auto, 1=Manual.
-    white_balance: Option<u16>,
-    /// FocalLengthIn35mmFilm (0xA405).
-    focal_length_35mm: Option<u16>,
-    /// LensModel (0xA434) - ASCII string.
-    lens_model: Option<String>,
-    /// ExposureBiasValue (0x9204) as (numerator, denominator).
-    exposure_bias: Option<(i32, i32)>,
-    /// MeteringMode (0x9207): 0=Unknown, 1=Average, 2=CenterWeighted, 3=Spot, 4=MultiSpot, 5=Pattern, 6=Partial.
-    metering_mode: Option<u16>,
-    /// LightSource (0x9208): 0=Unknown, 1=Daylight, 2=Fluorescent, 3=Tungsten, 4=Flash, etc.
-    light_source: Option<u16>,
-    /// SceneType (0xA301): 1=directly photographed.
-    scene_type: Option<u8>,
-    /// CustomRendered (0xA401): 0=Normal, 1=Custom.
-    custom_rendered: Option<u16>,
-    /// ExposureMode (0xA402): 0=Auto, 1=Manual, 2=Auto bracket.
-    exposure_mode: Option<u16>,
-    /// DigitalZoomRatio (0xA404) as (numerator, denominator).
-    digital_zoom_ratio: Option<(u32, u32)>,
-    /// SceneCaptureType (0xA406): 0=Standard, 1=Landscape, 2=Portrait, 3=Night scene.
-    scene_capture_type: Option<u16>,
-    /// Contrast (0xA408): 0=Normal, 1=Soft, 2=Hard.
-    contrast: Option<u16>,
-    /// Saturation (0xA409): 0=Normal, 1=Low, 2=High.
-    saturation: Option<u16>,
-    /// Sharpness (0xA40A): 0=Normal, 1=Soft, 2=Hard.
-    sharpness: Option<u16>,
-    // GPS IFD fields (tag 0x8825 points to GPS IFD)
-    /// GPSLatitudeRef (0x0001): "N" or "S"
-    gps_latitude_ref: Option<String>,
-    /// GPSLatitude (0x0002): 3 rationals (degrees, minutes, seconds)
-    gps_latitude: Option<[(u32, u32); 3]>,
-    /// GPSLongitudeRef (0x0003): "E" or "W"
-    gps_longitude_ref: Option<String>,
-    /// GPSLongitude (0x0004): 3 rationals (degrees, minutes, seconds)
-    gps_longitude: Option<[(u32, u32); 3]>,
-    /// GPSAltitudeRef (0x0005): 0=above sea level, 1=below
-    gps_altitude_ref: Option<u8>,
-    /// GPSAltitude (0x0006): rational
-    gps_altitude: Option<(u32, u32)>,
-    /// GPSTimeStamp (0x0007): 3 rationals (hour, minute, second)
-    gps_timestamp: Option<[(u32, u32); 3]>,
-    /// GPSDateStamp (0x001D): ASCII string "YYYY:MM:DD"
-    gps_datestamp: Option<String>,
 }
 
 /// Detection: SOI marker 0xFFD8.
-/// Fills: SOFn dimensions, EXIF/XMP metadata, color space, chroma subsampling.
+/// Fills: SOFn dimensions, color space, chroma subsampling, JFIF version,
+/// COM comment, and the EXIF thumbnail geometry.
 pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(2);
     let Some(h) = head else { return false };
@@ -118,7 +58,7 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
     let mut found_sof = false;
     let mut comment: Option<String> = None;
     let mut jfif_version: Option<String> = None;
-    let mut exif = ExifData::default();
+    let mut thumb = ThumbnailData::default();
     // Overhead = APP markers (0xE0..0xEF) + COM markers (0xFE).
     // Oracle treats SOI/EOI/DQT/DHT/SOF/SOS/entropy as image data.
     let mut overhead: usize = 0;
@@ -198,17 +138,11 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
                 jfif_version = Some(format!("{}.{:02}", payload[5], payload[6]));
             }
         } else if marker == 0xE1 && payload_size >= 14 {
-            // APP1: may be Exif ("Exif\0\0") or XMP (longer URI). Detect
-            // by leading 6 bytes; only walk TIFF for Exif.
+            // APP1 Exif: walk only the IFD1 thumbnail chain. All other EXIF
+            // tags are handled by the generic tag pass (revelo-parsers-tag).
             let payload = fa.read_raw(payload_size).to_vec();
             if payload.len() >= 14 && &payload[..6] == b"Exif\0\0" {
-                parse_exif_tiff(&payload[6..], &mut exif);
-            } else if payload.len() >= 29 && &payload[..29] == b"http://ns.adobe.com/xap/1.0/\0" {
-                // XMP packet follows the null-terminated URI
-                if payload.len() > 29 {
-                    let xmp_data = &payload[29..];
-                    parse_xmp(xmp_data, &mut exif);
-                }
+                parse_exif_thumbnail(&payload[6..], &mut thumb);
             }
         } else {
             fa.skip_hexa(payload_size, "segment");
@@ -224,7 +158,7 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
         file_size,
         overhead,
         comment,
-        &exif,
+        &thumb,
         JpegFrame { width, height, precision, components },
         &sampling,
     );
@@ -234,84 +168,11 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
     true
 }
 
-/// Parse XMP (Extensible Metadata Platform) packet embedded in APP1.
-/// Extracts common Dublin Core and XMP Basic properties.
-fn parse_xmp(xmp_data: &[u8], out: &mut ExifData) {
-    // XMP is XML/RDF - parse key fields with simple string search
-    let xmp_str = String::from_utf8_lossy(xmp_data);
-
-    // Extract dc:title
-    if let Some(start) = xmp_str.find("<dc:title>")
-        && let Some(end) = xmp_str[start..].find("</dc:title>")
-    {
-        let title_section = &xmp_str[start..start + end + 11];
-        if let Some(rdf_start) = title_section.find("<rdf:Alt>")
-            && let Some(li_start) = title_section[rdf_start..].find("<rdf:li")
-        {
-            let after_li = &title_section[rdf_start + li_start..];
-            if let Some(gt_pos) = after_li.find('>')
-                && let Some(li_end) = after_li[gt_pos..].find("</rdf:li>")
-            {
-                let title = &after_li[gt_pos + 1..gt_pos + li_end];
-                if out.description.is_none() {
-                    out.description = Some(title.to_string());
-                }
-            }
-        }
-    }
-
-    // Extract dc:creator (artist)
-    if let Some(start) = xmp_str.find("<dc:creator>")
-        && let Some(end) = xmp_str[start..].find("</dc:creator>")
-    {
-        let creator_section = &xmp_str[start..start + end + 13];
-        if let Some(seq_start) = creator_section.find("<rdf:Seq>")
-            && let Some(li_start) = creator_section[seq_start..].find("<rdf:li>")
-        {
-            let after_li = &creator_section[seq_start + li_start + 8..];
-            if let Some(li_end) = after_li.find("</rdf:li>") {
-                let creator = &after_li[..li_end];
-                // Store in make for now (can be moved to a dedicated field later)
-                if out.make.is_none() {
-                    out.make = Some(creator.to_string());
-                }
-            }
-        }
-    }
-
-    // Extract xmp:CreateDate (similar to datetime_original)
-    if let Some(start) = xmp_str.find("xmp:CreateDate=\"") {
-        let after_eq = &xmp_str[start + 16..];
-        if let Some(quote_end) = after_eq.find('\"') {
-            let date_str = &after_eq[..quote_end];
-            if out.datetime_original.is_none() {
-                out.datetime_original = Some(date_str.to_string());
-            }
-        }
-    }
-
-    // Extract xmp:ModifyDate
-    if let Some(start) = xmp_str.find("xmp:ModifyDate=\"") {
-        let after_eq = &xmp_str[start + 16..];
-        if let Some(quote_end) = after_eq.find('\"') {
-            let date_str = &after_eq[..quote_end];
-            if out.datetime.is_none() {
-                out.datetime = Some(date_str.to_string());
-            }
-        }
-    }
-}
-
-/// Parse an EXIF TIFF block.
+/// Parse only the IFD1 (thumbnail) chain of an EXIF TIFF block.
 ///
-/// TIFF header (8 bytes):
-///   2 bytes byte_order ("II" little, "MM" big)
-///   2 bytes magic = 42
-///   4 bytes offset to IFD0
-///
-/// Each IFD: 2-byte entry_count, N × 12-byte entries, 4-byte next-IFD offset.
-/// Entry: 2-byte tag + 2-byte type + 4-byte count + 4-byte value/offset.
-fn parse_exif_tiff(tiff: &[u8], out: &mut ExifData) {
+/// TIFF header (8 bytes): byte_order ("II"/"MM") + magic(42) + IFD0 offset.
+/// IFD1 begins at the next-IFD offset stored after IFD0.
+fn parse_exif_thumbnail(tiff: &[u8], out: &mut ThumbnailData) {
     if tiff.len() < 8 {
         return;
     }
@@ -334,22 +195,16 @@ fn parse_exif_tiff(tiff: &[u8], out: &mut ExifData) {
         return;
     }
     let ifd0_off = r32(&tiff[4..8]) as usize;
-    let exif_ifd_off = walk_ifd0(tiff, ifd0_off, little, &r16, &r32, out);
-    if let Some(off) = exif_ifd_off {
-        walk_exif_ifd(tiff, off, little, &r16, &r32, out);
-    }
-    // IFD1 (thumbnail) starts at the next-IFD offset stored after IFD0.
-    if let Some(ifd1_off) = next_ifd_offset(tiff, ifd0_off, little, &r16, &r32)
+    if let Some(ifd1_off) = next_ifd_offset(tiff, ifd0_off, &r16, &r32)
         && ifd1_off != 0
     {
-        walk_ifd1(tiff, ifd1_off as usize, little, &r16, &r32, out);
+        walk_ifd1(tiff, ifd1_off as usize, &r16, &r32, out);
     }
 }
 
 fn next_ifd_offset(
     tiff: &[u8],
     ifd_off: usize,
-    _little: bool,
     r16: &impl Fn(&[u8]) -> u16,
     r32: &impl Fn(&[u8]) -> u32,
 ) -> Option<u32> {
@@ -364,156 +219,12 @@ fn next_ifd_offset(
     Some(r32(&tiff[next_pos..next_pos + 4]))
 }
 
-/// Read an ASCII string entry from a TIFF tag. Tag values of count ≤ 4 are
-/// stored inline in the value field; larger values are offset-referenced.
-fn read_ascii_entry(
-    tiff: &[u8],
-    value_field: &[u8],
-    count: u32,
-    r32: &impl Fn(&[u8]) -> u32,
-) -> Option<String> {
-    let n = count as usize;
-    let bytes: &[u8] = if n <= 4 {
-        &value_field[..n.min(4)]
-    } else {
-        let off = r32(value_field) as usize;
-        if off + n > tiff.len() {
-            return None;
-        }
-        &tiff[off..off + n]
-    };
-    Some(String::from_utf8_lossy(bytes).trim_end_matches('\0').trim().to_string())
-}
-
-fn walk_ifd0(
-    tiff: &[u8],
-    ifd_off: usize,
-    little: bool,
-    r16: &impl Fn(&[u8]) -> u16,
-    r32: &impl Fn(&[u8]) -> u32,
-    out: &mut ExifData,
-) -> Option<usize> {
-    if ifd_off + 2 > tiff.len() {
-        return None;
-    }
-    let count = r16(&tiff[ifd_off..ifd_off + 2]) as usize;
-    let mut exif_ifd_pointer: Option<usize> = None;
-    for i in 0..count {
-        let entry = ifd_off + 2 + i * 12;
-        if entry + 12 > tiff.len() {
-            break;
-        }
-        let tag = r16(&tiff[entry..entry + 2]);
-        let typ = r16(&tiff[entry + 2..entry + 4]);
-        let cnt = r32(&tiff[entry + 4..entry + 8]);
-        let val = &tiff[entry + 8..entry + 12];
-        match tag {
-            0x010E => out.description = read_ascii_entry(tiff, val, cnt, r32),
-            0x010F => out.make = read_ascii_entry(tiff, val, cnt, r32),
-            0x0110 => out.model = read_ascii_entry(tiff, val, cnt, r32),
-            0x0132 => out.datetime = read_ascii_entry(tiff, val, cnt, r32),
-            0x8769 if typ == 4 => exif_ifd_pointer = Some(r32(val) as usize),
-            _ => {}
-        }
-    }
-    let _ = little;
-    exif_ifd_pointer
-}
-
-fn walk_exif_ifd(
-    tiff: &[u8],
-    ifd_off: usize,
-    _little: bool,
-    r16: &impl Fn(&[u8]) -> u16,
-    r32: &impl Fn(&[u8]) -> u32,
-    out: &mut ExifData,
-) {
-    if ifd_off + 2 > tiff.len() {
-        return;
-    }
-    let count = r16(&tiff[ifd_off..ifd_off + 2]) as usize;
-    for i in 0..count {
-        let entry = ifd_off + 2 + i * 12;
-        if entry + 12 > tiff.len() {
-            break;
-        }
-        let tag = r16(&tiff[entry..entry + 2]);
-        let typ = r16(&tiff[entry + 2..entry + 4]);
-        let cnt = r32(&tiff[entry + 4..entry + 8]);
-        let val = &tiff[entry + 8..entry + 12];
-        match tag {
-            0x9003 => out.datetime_original = read_ascii_entry(tiff, val, cnt, r32),
-            // RATIONAL (type 5) tags — 8-byte payload always pointed to
-            // by the value field's offset.
-            0x829A if typ == 5 && cnt == 1 => out.exposure_time = read_rational(tiff, val, r32),
-            0x829D if typ == 5 && cnt == 1 => out.f_number = read_rational(tiff, val, r32),
-            0x920A if typ == 5 && cnt == 1 => out.focal_length = read_rational(tiff, val, r32),
-            // SHORT (type 3) tags — value sits inline in low 2 bytes of val.
-            0x8822 if typ == 3 && cnt == 1 => out.exposure_program = Some(r16(&val[..2])),
-            0x8827 if typ == 3 && cnt == 1 => out.iso_speed = Some(r16(&val[..2])),
-            0x9209 if typ == 3 && cnt == 1 => out.flash = Some(r16(&val[..2])),
-            0xA403 if typ == 3 && cnt == 1 => out.white_balance = Some(r16(&val[..2])),
-            0xA405 if typ == 3 && cnt == 1 => out.focal_length_35mm = Some(r16(&val[..2])),
-            // UNDEFINED (type 7) — 4-byte ASCII version strings stored inline.
-            0x9000 if cnt == 4 => out.exif_version = Some([val[0], val[1], val[2], val[3]]),
-            0xA000 if cnt == 4 => out.flashpix_version = Some([val[0], val[1], val[2], val[3]]),
-            // Lens and exposure info
-            0xA434 => out.lens_model = read_ascii_entry(tiff, val, cnt, r32),
-            0x9204 if typ == 5 && cnt == 1 => {
-                out.exposure_bias = read_signed_rational(tiff, val, r32)
-            }
-            0x9207 if typ == 3 && cnt == 1 => out.metering_mode = Some(r16(&val[..2])),
-            0x9208 if typ == 3 && cnt == 1 => out.light_source = Some(r16(&val[..2])),
-            0xA301 if typ == 7 && cnt == 1 => out.scene_type = Some(val[0]),
-            0xA401 if typ == 3 && cnt == 1 => out.custom_rendered = Some(r16(&val[..2])),
-            0xA402 if typ == 3 && cnt == 1 => out.exposure_mode = Some(r16(&val[..2])),
-            0xA404 if typ == 5 && cnt == 1 => {
-                out.digital_zoom_ratio = read_rational(tiff, val, r32)
-            }
-            0xA406 if typ == 3 && cnt == 1 => out.scene_capture_type = Some(r16(&val[..2])),
-            0xA408 if typ == 3 && cnt == 1 => out.contrast = Some(r16(&val[..2])),
-            0xA409 if typ == 3 && cnt == 1 => out.saturation = Some(r16(&val[..2])),
-            0xA40A if typ == 3 && cnt == 1 => out.sharpness = Some(r16(&val[..2])),
-            _ => {}
-        }
-    }
-}
-
-/// Read a signed 8-byte RATIONAL (numerator + denominator, each i32) from the
-/// TIFF buffer. The 4-byte `val` field is the offset to the 8 bytes.
-fn read_signed_rational(
-    tiff: &[u8],
-    val: &[u8],
-    r32: &impl Fn(&[u8]) -> u32,
-) -> Option<(i32, i32)> {
-    let off = r32(val) as usize;
-    if off + 8 > tiff.len() {
-        return None;
-    }
-    let num = r32(&tiff[off..off + 4]) as i32;
-    let den = r32(&tiff[off + 4..off + 8]) as i32;
-    Some((num, den))
-}
-
-/// Read an 8-byte RATIONAL (numerator + denominator, each u32) from the
-/// TIFF buffer. The 4-byte `val` field is the offset to the 8 bytes.
-fn read_rational(tiff: &[u8], val: &[u8], r32: &impl Fn(&[u8]) -> u32) -> Option<(u32, u32)> {
-    let off = r32(val) as usize;
-    if off + 8 > tiff.len() {
-        return None;
-    }
-    let num = r32(&tiff[off..off + 4]);
-    let den = r32(&tiff[off + 4..off + 8]);
-    Some((num, den))
-}
-
 fn walk_ifd1(
     tiff: &[u8],
     ifd_off: usize,
-    _little: bool,
     r16: &impl Fn(&[u8]) -> u16,
     r32: &impl Fn(&[u8]) -> u32,
-    out: &mut ExifData,
+    out: &mut ThumbnailData,
 ) {
     if ifd_off + 2 > tiff.len() {
         return;
@@ -527,11 +238,8 @@ fn walk_ifd1(
         let tag = r16(&tiff[entry..entry + 2]);
         let cnt = r32(&tiff[entry + 4..entry + 8]);
         let val = &tiff[entry + 8..entry + 12];
-        // For SHORT (type 3) tags the value sits in the low 2 bytes of
-        // `val` (count == 1); for LONG (type 4) it's the full 4 bytes.
         match tag {
-            // ImageWidth / ImageLength when present in IFD1 describe the
-            // thumbnail geometry.
+            // ImageWidth / ImageLength in IFD1 describe the thumbnail geometry.
             0x0100 if cnt == 1 => out.thumbnail_width = Some(r32(val)),
             0x0101 if cnt == 1 => out.thumbnail_height = Some(r32(val)),
             // JPEGInterchangeFormat = thumbnail data offset.
@@ -607,16 +315,6 @@ fn scan_jpeg_sof(buf: &[u8]) -> Option<(u16, u16)> {
     None
 }
 
-/// "2018:12:10 15:44:06" (EXIF) → "2018-12-10 15:44:06" (oracle).
-fn exif_datetime_to_oracle(s: &str) -> String {
-    let mut out: Vec<u8> = s.bytes().collect();
-    if out.len() >= 10 && out[4] == b':' && out[7] == b':' {
-        out[4] = b'-';
-        out[7] = b'-';
-    }
-    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
-}
-
 struct JpegFrame {
     width: u16,
     height: u16,
@@ -629,345 +327,22 @@ fn fill_streams(
     file_size: usize,
     overhead: usize,
     comment: Option<String>,
-    exif: &ExifData,
+    thumb: &ThumbnailData,
     frame: JpegFrame,
     sampling: &[(u8, u8)],
 ) {
     let JpegFrame { width, height, precision, components } = frame;
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "JPEG");
-    let has_thumbnail = exif.thumbnail_width.is_some() && exif.thumbnail_height.is_some();
+    let has_thumbnail = thumb.thumbnail_width.is_some() && thumb.thumbnail_height.is_some();
     let image_count = if has_thumbnail { 2 } else { 1 };
     fa.set_field(StreamKind::General, 0, "ImageCount", image_count.to_string());
-    // General.StreamSize = file overhead. When a thumbnail is embedded
-    // its bytes are part of the EXIF APP1 segment but oracle deducts
-    // them from General (and attributes them to the thumbnail Image
-    // stream instead).
-    let thumb_bytes = exif.thumbnail_size.unwrap_or(0) as usize;
+    // General.StreamSize = file overhead. When a thumbnail is embedded its
+    // bytes are part of the EXIF APP1 segment but oracle deducts them from
+    // General (and attributes them to the thumbnail Image stream instead).
+    let thumb_bytes = thumb.thumbnail_size.unwrap_or(0) as usize;
     let general_overhead = overhead.saturating_sub(thumb_bytes);
     fa.force_field(StreamKind::General, 0, "StreamSize", general_overhead.to_string());
-    // EXIF-origin metadata goes into its own stream.
-    let exif_pos = fa.stream_prepare(StreamKind::Exif);
-    if let Some(d) = exif.description.as_deref()
-        && !d.is_empty()
-    {
-        fa.set_field(StreamKind::Exif, exif_pos, "Description", d.to_string());
-    }
-    if let Some(dt) = exif.datetime_original.as_deref() {
-        fa.set_field(StreamKind::Exif, exif_pos, "Recorded_Date", exif_datetime_to_oracle(dt));
-    }
-    if let Some(dt) = exif.datetime.as_deref() {
-        fa.set_field(StreamKind::Exif, exif_pos, "Mastered_Date", exif_datetime_to_oracle(dt));
-    }
-    if let Some(m) = exif.make.as_deref()
-        && !m.is_empty()
-    {
-        // Oracle normalizes common manufacturer-name suffixes (" Inc.",
-        // " Corporation", " CO.,LTD") — strip the most common one so
-        // "Acer Inc." matches the oracle's "Acer".
-        let normalized = m
-            .trim_end_matches(" Inc.")
-            .trim_end_matches(" Corporation")
-            .trim_end_matches(" CORPORATION")
-            .trim()
-            .to_string();
-        fa.set_field(StreamKind::Exif, exif_pos, "Encoded_Hardware_CompanyName", normalized);
-    }
-    if let Some(m) = exif.model.as_deref()
-        && !m.is_empty()
-    {
-        fa.set_field(StreamKind::Exif, exif_pos, "Encoded_Hardware_Model", m.to_string());
-    }
-    // Exif sub-IFD extras (oracle wraps these in <extra>...</extra>).
-    // Emit in oracle's display order so the diff matches sequentially.
-    if let Some((n, d)) = exif.exposure_time
-        && d > 0
-    {
-        let secs = n as f64 / d as f64;
-        fa.set_extra_field(StreamKind::Exif, exif_pos, "ShutterSpeed_Time", format!("{secs:.6}"));
-        // String form: "1/N s" if numerator is 1 and denominator > 0.
-        if n == 1 {
-            fa.set_extra_field(
-                StreamKind::Exif,
-                exif_pos,
-                "ShutterSpeed_Time_String",
-                format!("1/{d} s"),
-            );
-        }
-    }
-    if let Some((n, d)) = exif.f_number
-        && d > 0
-    {
-        let v = n as f64 / d as f64;
-        fa.set_extra_field(StreamKind::Exif, exif_pos, "IrisFNumber", format!("{v:.1}"));
-    }
-    if let Some(prog) = exif.exposure_program {
-        let s = match prog {
-            0 => "Not Defined",
-            1 => "Manual",
-            2 => "Normal",
-            3 => "Aperture priority",
-            4 => "Shutter priority",
-            5 => "Creative",
-            6 => "Action",
-            7 => "Portrait",
-            8 => "Landscape",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "AutoExposureMode", s);
-        }
-    }
-    if let Some(iso) = exif.iso_speed {
-        fa.set_extra_field(StreamKind::Exif, exif_pos, "ISOSensitivity", iso.to_string());
-    }
-    if let Some(v) = exif.exif_version {
-        // "0220" → "2.20"
-        let s = String::from_utf8_lossy(&v);
-        if s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) {
-            let formatted = format!("{}.{}{}", &s[..1], &s[2..3], &s[3..4]);
-            // Simpler: split as "2.20" — first digit then ".XX" tail.
-            let _ = formatted;
-            let pretty = format!(
-                "{}.{}{}",
-                s[1..2].chars().next().unwrap_or('0'),
-                s[2..3].chars().next().unwrap_or('0'),
-                s[3..4].chars().next().unwrap_or('0')
-            );
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "ExifVersion", pretty);
-        }
-    }
-    if let Some(f) = exif.flash {
-        // Bits: 0=fired, 1-2=return, 3-4=mode, 5=function, 6=red-eye.
-        // Oracle string: "Off, Did not fire" when flag=0x10 (mode=Off,
-        // not fired), "Fired" when bit 0 set, etc. Subset for the common
-        // cases.
-        let s = match f {
-            0x0000 => "Off, Did not fire",
-            0x0001 => "Fired",
-            0x0010 => "Off, Did not fire",
-            0x0018 => "Auto, Did not fire",
-            0x0019 => "Auto, Fired",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "Flash", s);
-        }
-    }
-    if let Some((n, d)) = exif.focal_length
-        && d > 0
-    {
-        let mm = n as f64 / d as f64;
-        // Oracle drops decimals when the value is an integer mm.
-        let int_mm = mm.round() as u32;
-        if (mm - int_mm as f64).abs() < 0.01 {
-            fa.set_extra_field(
-                StreamKind::Exif,
-                exif_pos,
-                "LensZoomActualFocalLength",
-                int_mm.to_string(),
-            );
-            fa.set_extra_field(
-                StreamKind::Exif,
-                exif_pos,
-                "LensZoomActualFocalLength_String",
-                format!("{int_mm} mm"),
-            );
-        } else {
-            fa.set_extra_field(
-                StreamKind::Exif,
-                exif_pos,
-                "LensZoomActualFocalLength",
-                format!("{mm:.1}"),
-            );
-            fa.set_extra_field(
-                StreamKind::Exif,
-                exif_pos,
-                "LensZoomActualFocalLength_String",
-                format!("{mm:.1} mm"),
-            );
-        }
-    }
-    if let Some(v) = exif.flashpix_version {
-        let s = String::from_utf8_lossy(&v);
-        if s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) {
-            let pretty = format!(
-                "{}.{}{}",
-                s[1..2].chars().next().unwrap_or('0'),
-                s[2..3].chars().next().unwrap_or('0'),
-                s[3..4].chars().next().unwrap_or('0')
-            );
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "FlashpixVersion", pretty);
-        }
-    }
-    if let Some(wb) = exif.white_balance {
-        let s = match wb {
-            0 => "Auto",
-            1 => "Manual",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "AutoWhiteBalanceMode", s);
-        }
-    }
-    if let Some(fl35) = exif.focal_length_35mm {
-        fa.set_extra_field(
-            StreamKind::Exif,
-            exif_pos,
-            "LensZoom35mmStillCameraEquivalent",
-            fl35.to_string(),
-        );
-        fa.set_extra_field(
-            StreamKind::Exif,
-            exif_pos,
-            "LensZoom35mmStillCameraEquivalent_String",
-            format!("{fl35} mm"),
-        );
-    }
-    // New EXIF fields
-    if let Some(ref lens) = exif.lens_model {
-        fa.set_extra_field(StreamKind::Exif, exif_pos, "LensModel", lens.clone());
-    }
-    if let Some((n, d)) = exif.exposure_bias
-        && d > 0
-    {
-        let ev = n as f64 / d as f64;
-        let sign = if ev >= 0.0 { "+" } else { "" };
-        fa.set_extra_field(StreamKind::Exif, exif_pos, "ExposureBias", format!("{sign}{ev:.2}"));
-        fa.set_extra_field(
-            StreamKind::Exif,
-            exif_pos,
-            "ExposureBias_String",
-            format!("{sign}{ev:.2} EV"),
-        );
-    }
-    if let Some(mode) = exif.metering_mode {
-        let s = match mode {
-            0 => "Unknown",
-            1 => "Average",
-            2 => "Center-weighted average",
-            3 => "Spot",
-            4 => "Multi-spot",
-            5 => "Pattern",
-            6 => "Partial",
-            255 => "Other",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "MeteringMode", s);
-        }
-    }
-    if let Some(light) = exif.light_source {
-        let s = match light {
-            0 => "Unknown",
-            1 => "Daylight",
-            2 => "Fluorescent",
-            3 => "Tungsten (incandescent)",
-            4 => "Flash",
-            9 => "Fine weather",
-            10 => "Cloudy weather",
-            11 => "Shade",
-            12 => "Daylight fluorescent",
-            13 => "Day white fluorescent",
-            14 => "Cool white fluorescent",
-            15 => "White fluorescent",
-            17 => "Standard light A",
-            18 => "Standard light B",
-            19 => "Standard light C",
-            20 => "D55",
-            21 => "D65",
-            22 => "D75",
-            23 => "D50",
-            24 => "ISO studio tungsten",
-            255 => "Other",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "LightSource", s);
-        }
-    }
-    if let Some(scene) = exif.scene_type {
-        let s = match scene {
-            1 => "Directly photographed",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "SceneType", s);
-        }
-    }
-    if let Some(rendered) = exif.custom_rendered {
-        let s = match rendered {
-            0 => "Normal",
-            1 => "Custom",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "CustomRendered", s);
-        }
-    }
-    if let Some(mode) = exif.exposure_mode {
-        let s = match mode {
-            0 => "Auto",
-            1 => "Manual",
-            2 => "Auto bracket",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "ExposureMode", s);
-        }
-    }
-    if let Some((n, d)) = exif.digital_zoom_ratio
-        && d > 0
-    {
-        let ratio = n as f64 / d as f64;
-        fa.set_extra_field(StreamKind::Exif, exif_pos, "DigitalZoomRatio", format!("{ratio:.2}"));
-    }
-    if let Some(scene) = exif.scene_capture_type {
-        let s = match scene {
-            0 => "Standard",
-            1 => "Landscape",
-            2 => "Portrait",
-            3 => "Night scene",
-            4 => "Close-up",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "SceneCaptureType", s);
-        }
-    }
-    if let Some(contrast) = exif.contrast {
-        let s = match contrast {
-            0 => "Normal",
-            1 => "Soft",
-            2 => "Hard",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "Contrast", s);
-        }
-    }
-    if let Some(sat) = exif.saturation {
-        let s = match sat {
-            0 => "Normal",
-            1 => "Low",
-            2 => "High",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "Saturation", s);
-        }
-    }
-    if let Some(sharp) = exif.sharpness {
-        let s = match sharp {
-            0 => "Normal",
-            1 => "Soft",
-            2 => "Hard",
-            _ => "",
-        };
-        if !s.is_empty() {
-            fa.set_extra_field(StreamKind::Exif, exif_pos, "Sharpness", s);
-        }
-    }
 
     fa.stream_prepare(StreamKind::Image);
     fa.set_field(StreamKind::Image, 0, "Format", "JPEG");
@@ -1004,8 +379,8 @@ fn fill_streams(
     fa.set_field(StreamKind::Image, 0, "BitDepth", precision.to_string());
     fa.set_field(StreamKind::Image, 0, "Compression_Mode", "Lossy");
     // Main Image.StreamSize = file - all-APP-overhead (the full overhead,
-    // including the embedded thumbnail bytes). When a thumbnail exists
-    // its bytes are NOT main-image data — keep using the full overhead.
+    // including the embedded thumbnail bytes). When a thumbnail exists its
+    // bytes are NOT main-image data — keep using the full overhead.
     let image_size = file_size.saturating_sub(overhead);
     fa.set_field(StreamKind::Image, 0, "StreamSize", image_size.to_string());
     if let Some(c) = comment {
@@ -1016,14 +391,14 @@ fn fill_streams(
 
     // EXIF thumbnail → second Image stream (oracle labels it Type=Thumbnail,
     // MuxingMode=Exif). StreamSize comes from JPEGInterchangeFormatLength.
-    if let (Some(tw), Some(th)) = (exif.thumbnail_width, exif.thumbnail_height) {
+    if let (Some(tw), Some(th)) = (thumb.thumbnail_width, thumb.thumbnail_height) {
         let tpos = fa.stream_prepare(StreamKind::Image);
         fa.set_field(StreamKind::Image, tpos, "Type", "Thumbnail");
         fa.set_field(StreamKind::Image, tpos, "MuxingMode", "Exif");
         fa.set_field(StreamKind::Image, tpos, "Format", "JPEG");
         fa.set_field(StreamKind::Image, tpos, "Width", tw.to_string());
         fa.set_field(StreamKind::Image, tpos, "Height", th.to_string());
-        if let Some(sz) = exif.thumbnail_size {
+        if let Some(sz) = thumb.thumbnail_size {
             fa.set_field(StreamKind::Image, tpos, "StreamSize", sz.to_string());
         }
     }

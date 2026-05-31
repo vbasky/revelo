@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.4.3] - 2026-05-31
+
+### Added
+
+- **Apple MakerNote support** — ~17 fields parsed clean-room from the on-disk
+  IFD (cross-referenced against ExifTool's printed output, not its tables):
+  `MakerNoteVersion`, `AEStable`/`AETarget`/`AEAverage`, `AFStable`,
+  `AccelerationVector`, `FocusDistanceRange`, `ContentIdentifier`,
+  `ImageCaptureType`, `LivePhotoVideoIndex`, `HDRHeadroom`,
+  `SignalToNoiseRatio`, `PhotoIdentifier`, `ColorTemperature`, `CameraType`,
+  `FocusPosition`. The default (BSD) build is unaffected by the GPL
+  `exiftool-tables` feature.
+- **ICC profile header fields** — `ProfileCMMType`, `ProfileVersion`,
+  `ProfileClass`, `ColorSpaceData`, `ProfileConnectionSpace`, `ProfileDateTime`,
+  `PrimaryPlatform`, `RenderingIntent`, `DeviceManufacturer`/`DeviceModel`,
+  `ProfileID`/`Description`/`Copyright`, `MediaWhitePoint`, and the RGB matrix
+  columns. The profile is located by its `acsp` signature, so embedded profiles
+  (JPEG `APP2`, HEIC, raw `.icc`) are read correctly rather than from offset 0.
+- **Composite/derived fields** — `ScaleFactor35efl`, `CircleOfConfusion`,
+  `FieldOfView`, `HyperfocalDistance`, `LightValue`.
+- **Extra GPS fields** surfaced in text output — `GPSSpeed`, `GPSImgDirection`,
+  `GPSDestBearing`, `GPSHPositioningError` (and their reference tags).
+
+### Fixed
+
+- `parse_icc` read the wrong offset and emitted an empty `ICC_Profile : ()`;
+  it now locates the profile correctly and no longer emits a spurious ICC
+  section for files without a profile.
+- Apple maker notes produced no output because the parser never skipped the
+  14-byte `Apple iOS` header and the hand-written tag table had incorrect IDs;
+  both are fixed.
+- `parse_xmp` failed to find the XMP packet embedded in JPEGs (it read from the
+  cursor over binary data); it now scans the whole file.
+- JPEG camera `Model` was read past its NUL terminator (e.g. `ION230 F` →
+  `ION230`).
+
+### Changed
+
+- **Single EXIF walker.** `revelo-parsers-tag` is now the sole EXIF / GPS /
+  maker-note / ICC parser. The JPEG container parser no longer carries a
+  duplicate EXIF/TIFF walk — it parses only JPEG structure (geometry, chroma
+  subsampling, thumbnail), and the MediaInfo-vocabulary fields
+  (`Recorded_Date`, `Encoded_Hardware_*`, the photographic `<extra>` block) are
+  derived from the shared tag parse. Verified net-zero against a 104-file
+  sample corpus.
+
 ## [0.4.2] - 2026-05-31
 
 ### Fixed

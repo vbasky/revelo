@@ -664,6 +664,8 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
     }
 
     compute_gps_decimal(&mut tags);
+    compute_composites(&mut tags);
+    format_apple_makernote(&mut tags);
     if let Some(entry) = tags.iter_mut().find(|(k, _)| *k == "LensSpecification") {
         entry.1 = format_lens_spec(&entry.1);
     }
@@ -671,7 +673,29 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
         let val = tags[pos].1.clone();
         tags[pos].1 = format_lens_type("CanonLensType", &val);
     }
-    fill_tags(fa, &tags, StreamKind::Exif);
+    // For JPEG, derive the MediaInfo-vocabulary EXIF fields (Recorded_Date,
+    // Encoded_Hardware_*, the <extra> photographic block) from the parsed
+    // ExifTool tags. This replaces the duplicate EXIF walk the JPEG container
+    // parser used to carry; other formats are unaffected.
+    let is_jpeg = fa
+        .streams()
+        .stream(StreamKind::General, 0)
+        .and_then(|s| s.get("Format"))
+        .map(|f| f.as_str() == "JPEG")
+        .unwrap_or(false);
+    if is_jpeg {
+        let (regular, extras) = derive_jpeg_mediainfo(&tags);
+        // Prepend the MediaInfo regular fields so JSON field order matches the
+        // historical layout (these were emitted before the ExifTool tags).
+        let mut merged = regular;
+        merged.extend(tags);
+        fill_tags(fa, &merged, StreamKind::Exif);
+        for (k, v) in extras {
+            fa.set_extra_field(StreamKind::Exif, 0, k, v);
+        }
+    } else {
+        fill_tags(fa, &tags, StreamKind::Exif);
+    }
     fill_tags(fa, &iptc_tags, StreamKind::Iptc);
     true
 }
@@ -1408,14 +1432,334 @@ fn compute_gps_decimal(tags: &mut Vec<TagEntry>) {
     }
 }
 
+/// Derive photographic composite values (ExifTool "Composite" group) from the
+/// already-parsed EXIF tags: scale factor to 35 mm, circle of confusion, field
+/// of view, hyperfocal distance, and light value. Each is emitted only when its
+/// inputs are present, so files lacking the source tags are unaffected.
+fn compute_composites(tags: &mut Vec<TagEntry>) {
+    let get = |name: &str| -> Option<f64> {
+        tags.iter().find(|(k, _)| *k == name).and_then(|(_, v)| parse_gps_rational(v))
+    };
+    let focal = get("FocalLength");
+    let focal35 = get("FocalLengthIn35mmFilm");
+    let fnumber = get("FNumber");
+    let exposure = get("ExposureTime");
+    let iso = get("PhotographicSensitivity").or_else(|| get("ISOSpeed"));
+
+    // Scale factor to 35 mm equivalent = 35 mm-equiv focal / actual focal.
+    let scale = match (focal35, focal) {
+        (Some(f35), Some(f)) if f > 0.0 => Some(f35 / f),
+        _ => None,
+    };
+    if let Some(s) = scale {
+        tags.push(("ScaleFactor35efl", format!("{s:.1}")));
+    }
+
+    // Circle of confusion = full-frame diagonal CoC / crop factor.
+    let coc =
+        scale.filter(|s| *s > 0.0).map(|s| (24.0_f64 * 24.0 + 36.0 * 36.0).sqrt() / 1440.0 / s);
+    if let Some(c) = coc {
+        tags.push(("CircleOfConfusion", format!("{c:.3} mm")));
+    }
+
+    // Field of view (diagonal-equivalent against full-frame 36 mm width).
+    let efl = focal35.or(match (focal, scale) {
+        (Some(f), Some(s)) => Some(f * s),
+        _ => None,
+    });
+    if let Some(e) = efl.filter(|e| *e > 0.0) {
+        let fov = 2.0 * (36.0 / (2.0 * e)).atan().to_degrees();
+        tags.push(("FieldOfView", format!("{fov:.1} deg")));
+    }
+
+    // Hyperfocal distance (m) = focal² / (N · CoC · 1000).
+    if let (Some(f), Some(n), Some(c)) = (focal, fnumber, coc)
+        && n > 0.0
+        && c > 0.0
+    {
+        let h = f * f / (n * c * 1000.0);
+        tags.push(("HyperfocalDistance", format!("{h:.2} m")));
+    }
+
+    // Light value (EV at ISO 100) = log2(N²/t) − log2(ISO/100).
+    if let (Some(n), Some(t), Some(i)) = (fnumber, exposure, iso)
+        && n > 0.0
+        && t > 0.0
+        && i > 0.0
+    {
+        let lv = (n * n / t).log2() - (i / 100.0).log2();
+        tags.push(("LightValue", format!("{lv:.1}")));
+    }
+}
+
+/// Parse an "n/d" rational string into (num, den) unsigned.
+fn parse_ratio_pair(s: &str) -> Option<(u32, u32)> {
+    let s = s.trim();
+    if let Some((n, d)) = s.split_once('/') {
+        Some((n.trim().parse().ok()?, d.trim().parse().ok()?))
+    } else {
+        Some((s.parse().ok()?, 1))
+    }
+}
+
+/// Parse an "n/d" rational, reinterpreting each field as signed (SRATIONAL).
+fn parse_sratio_pair(s: &str) -> Option<(i64, i64)> {
+    let s = s.trim();
+    let sign = |x: i64| if x > i32::MAX as i64 { x - (1i64 << 32) } else { x };
+    if let Some((n, d)) = s.split_once('/') {
+        Some((sign(n.trim().parse().ok()?), sign(d.trim().parse().ok()?)))
+    } else {
+        Some((sign(s.parse().ok()?), 1))
+    }
+}
+
+/// "0232" / "0100" EXIF version bytes → "2.32" / "1.00".
+fn exif_version_str(s: &str) -> Option<String> {
+    if s.len() == 4 && s.chars().all(|c| c.is_ascii_digit()) {
+        Some(format!("{}.{}{}", &s[1..2], &s[2..3], &s[3..4]))
+    } else {
+        None
+    }
+}
+
+/// "MM:DD" date separators (`exif_datetime_to_oracle` analogue): EXIF
+/// "2018:12:10 15:44:06" → MediaInfo "2018-12-10 15:44:06".
+fn exif_datetime_to_oracle(s: &str) -> String {
+    let mut out: Vec<u8> = s.bytes().collect();
+    if out.len() >= 10 && out[4] == b':' && out[7] == b':' {
+        out[4] = b'-';
+        out[7] = b'-';
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
+/// Derive the MediaInfo-vocabulary EXIF fields from parsed ExifTool `tags`,
+/// reproducing the JPEG container parser's historical output. Returns the
+/// regular fields (merged into the Exif stream ahead of the ExifTool tags) and
+/// the `<extra>` photographic block, in their original display order.
+fn derive_jpeg_mediainfo(tags: &[TagEntry]) -> (Vec<TagEntry>, Vec<TagEntry>) {
+    let get = |name: &str| tags.iter().find(|(k, _)| *k == name).map(|(_, v)| v.as_str());
+    let mut reg: Vec<TagEntry> = Vec::new();
+    let mut ex: Vec<TagEntry> = Vec::new();
+
+    if let Some(d) = get("ImageDescription").filter(|s| !s.is_empty()) {
+        reg.push(("Description", d.to_string()));
+    }
+    if let Some(dt) = get("DateTimeOriginal") {
+        reg.push(("Recorded_Date", exif_datetime_to_oracle(dt)));
+    }
+    if let Some(dt) = get("DateTime") {
+        reg.push(("Mastered_Date", exif_datetime_to_oracle(dt)));
+    }
+    if let Some(m) = get("Make").map(str::trim).filter(|s| !s.is_empty()) {
+        let n = m
+            .trim_end_matches(" Inc.")
+            .trim_end_matches(" Corporation")
+            .trim_end_matches(" CORPORATION")
+            .trim()
+            .to_string();
+        reg.push(("Encoded_Hardware_CompanyName", n));
+    }
+    if let Some(m) = get("Model").map(str::trim).filter(|s| !s.is_empty()) {
+        reg.push(("Encoded_Hardware_Model", m.to_string()));
+    }
+
+    if let Some((n, d)) = get("ExposureTime").and_then(parse_ratio_pair).filter(|(_, d)| *d > 0) {
+        ex.push(("ShutterSpeed_Time", format!("{:.6}", n as f64 / d as f64)));
+        if n == 1 {
+            ex.push(("ShutterSpeed_Time_String", format!("1/{d} s")));
+        }
+    }
+    if let Some((n, d)) = get("FNumber").and_then(parse_ratio_pair).filter(|(_, d)| *d > 0) {
+        ex.push(("IrisFNumber", format!("{:.1}", n as f64 / d as f64)));
+    }
+    if let Some(s) = get("ExposureProgram").and_then(|v| {
+        Some(match v {
+            "0" => "Not Defined",
+            "1" => "Manual",
+            "2" => "Normal",
+            "3" => "Aperture priority",
+            "4" => "Shutter priority",
+            "5" => "Creative",
+            "6" => "Action",
+            "7" => "Portrait",
+            "8" => "Landscape",
+            _ => return None,
+        })
+    }) {
+        ex.push(("AutoExposureMode", s.to_string()));
+    }
+    if let Some(iso) = get("PhotographicSensitivity").or_else(|| get("ISOSpeed")) {
+        ex.push(("ISOSensitivity", iso.to_string()));
+    }
+    if let Some(s) = get("ExifVersion").and_then(exif_version_str) {
+        ex.push(("ExifVersion", s));
+    }
+    if let Some(s) = get("Flash").and_then(|v| v.parse::<u16>().ok()).and_then(|f| {
+        Some(match f {
+            0x0000 | 0x0010 => "Off, Did not fire",
+            0x0001 => "Fired",
+            0x0018 => "Auto, Did not fire",
+            0x0019 => "Auto, Fired",
+            _ => return None,
+        })
+    }) {
+        ex.push(("Flash", s.to_string()));
+    }
+    if let Some((n, d)) = get("FocalLength").and_then(parse_ratio_pair).filter(|(_, d)| *d > 0) {
+        let mm = n as f64 / d as f64;
+        let i = mm.round() as u32;
+        if (mm - i as f64).abs() < 0.01 {
+            ex.push(("LensZoomActualFocalLength", i.to_string()));
+            ex.push(("LensZoomActualFocalLength_String", format!("{i} mm")));
+        } else {
+            ex.push(("LensZoomActualFocalLength", format!("{mm:.1}")));
+            ex.push(("LensZoomActualFocalLength_String", format!("{mm:.1} mm")));
+        }
+    }
+    if let Some(s) = get("FlashpixVersion").and_then(exif_version_str) {
+        ex.push(("FlashpixVersion", s));
+    }
+    if let Some(s) = get("WhiteBalance").and_then(|v| match v {
+        "0" => Some("Auto"),
+        "1" => Some("Manual"),
+        _ => None,
+    }) {
+        ex.push(("AutoWhiteBalanceMode", s.to_string()));
+    }
+    if let Some(fl35) = get("FocalLengthIn35mmFilm") {
+        ex.push(("LensZoom35mmStillCameraEquivalent", fl35.to_string()));
+        ex.push(("LensZoom35mmStillCameraEquivalent_String", format!("{fl35} mm")));
+    }
+    if let Some(l) = get("LensModel") {
+        ex.push(("LensModel", l.to_string()));
+    }
+    if let Some((n, d)) =
+        get("ExposureBiasValue").and_then(parse_sratio_pair).filter(|(_, d)| *d != 0)
+    {
+        let ev = n as f64 / d as f64;
+        let sign = if ev >= 0.0 { "+" } else { "" };
+        ex.push(("ExposureBias", format!("{sign}{ev:.2}")));
+        ex.push(("ExposureBias_String", format!("{sign}{ev:.2} EV")));
+    }
+    if let Some(s) = get("MeteringMode").and_then(|v| {
+        Some(match v {
+            "0" => "Unknown",
+            "1" => "Average",
+            "2" => "Center-weighted average",
+            "3" => "Spot",
+            "4" => "Multi-spot",
+            "5" => "Pattern",
+            "6" => "Partial",
+            "255" => "Other",
+            _ => return None,
+        })
+    }) {
+        ex.push(("MeteringMode", s.to_string()));
+    }
+    if let Some(s) = get("LightSource").and_then(|v| {
+        Some(match v {
+            "0" => "Unknown",
+            "1" => "Daylight",
+            "2" => "Fluorescent",
+            "3" => "Tungsten (incandescent)",
+            "4" => "Flash",
+            "9" => "Fine weather",
+            "10" => "Cloudy weather",
+            "11" => "Shade",
+            "12" => "Daylight fluorescent",
+            "13" => "Day white fluorescent",
+            "14" => "Cool white fluorescent",
+            "15" => "White fluorescent",
+            "17" => "Standard light A",
+            "18" => "Standard light B",
+            "19" => "Standard light C",
+            "20" => "D55",
+            "21" => "D65",
+            "22" => "D75",
+            "23" => "D50",
+            "24" => "ISO studio tungsten",
+            "255" => "Other",
+            _ => return None,
+        })
+    }) {
+        ex.push(("LightSource", s.to_string()));
+    }
+    // SceneType is a single UNDEFINED byte; only the first byte matters (some
+    // files carry trailing junk). 1 = directly photographed.
+    if let Some(v) = get("SceneType")
+        && (v.as_bytes().first() == Some(&1) || v == "1")
+    {
+        ex.push(("SceneType", "Directly photographed".to_string()));
+    }
+    if let Some(s) = get("CustomRendered").and_then(|v| match v {
+        "0" => Some("Normal"),
+        "1" => Some("Custom"),
+        _ => None,
+    }) {
+        ex.push(("CustomRendered", s.to_string()));
+    }
+    if let Some(s) = get("ExposureMode").and_then(|v| match v {
+        "0" => Some("Auto"),
+        "1" => Some("Manual"),
+        "2" => Some("Auto bracket"),
+        _ => None,
+    }) {
+        ex.push(("ExposureMode", s.to_string()));
+    }
+    if let Some((n, d)) = get("DigitalZoomRatio").and_then(parse_ratio_pair).filter(|(_, d)| *d > 0)
+    {
+        ex.push(("DigitalZoomRatio", format!("{:.2}", n as f64 / d as f64)));
+    }
+    if let Some(s) = get("SceneCaptureType").and_then(|v| {
+        Some(match v {
+            "0" => "Standard",
+            "1" => "Landscape",
+            "2" => "Portrait",
+            "3" => "Night scene",
+            "4" => "Close-up",
+            _ => return None,
+        })
+    }) {
+        ex.push(("SceneCaptureType", s.to_string()));
+    }
+    let norm_soft_hard = |v: &str| match v {
+        "0" => Some("Normal"),
+        "1" => Some("Soft"),
+        "2" => Some("Hard"),
+        _ => None,
+    };
+    if let Some(s) = get("Contrast").and_then(norm_soft_hard) {
+        ex.push(("Contrast", s.to_string()));
+    }
+    if let Some(s) = get("Saturation").and_then(|v| match v {
+        "0" => Some("Normal"),
+        "1" => Some("Low"),
+        "2" => Some("High"),
+        _ => None,
+    }) {
+        ex.push(("Saturation", s.to_string()));
+    }
+    if let Some(s) = get("Sharpness").and_then(norm_soft_hard) {
+        ex.push(("Sharpness", s.to_string()));
+    }
+
+    (reg, ex)
+}
+
 // ---------- XMP ----------
 
 pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-
-    let text = std::str::from_utf8(&buf).unwrap_or("");
+    // Read the whole file cursor-independently: in a JPEG the XMP packet sits
+    // in an early APP1 segment, behind the cursor by the time this pass runs.
+    // Lossy decoding keeps the (ASCII) XMP region intact while tolerating the
+    // surrounding binary image bytes.
+    let buf = match fa.peek_raw_at(0, usize::MAX) {
+        Some(b) => b.to_vec(),
+        None => return false,
+    };
+    let text_owned = String::from_utf8_lossy(&buf);
+    let text: &str = &text_owned;
     if !text.contains("xmpmeta") || !text.contains("rdf:RDF") {
         return false;
     }
@@ -1423,7 +1767,70 @@ pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_xmp_fields(text, &mut tags);
     fill_tags(fa, &tags, StreamKind::Xmp);
+
+    // For JPEG, surface XMP title/creator/dates as the MediaInfo EXIF fields
+    // the container parser used to derive. set_field is first-write-wins, so
+    // any value already provided by EXIF takes precedence.
+    let is_jpeg = fa
+        .streams()
+        .stream(StreamKind::General, 0)
+        .and_then(|s| s.get("Format"))
+        .map(|f| f.as_str() == "JPEG")
+        .unwrap_or(false);
+    if is_jpeg {
+        if let Some(t) = xmp_alt_li(text, "dc:title").filter(|s| !s.is_empty()) {
+            fa.set_field(StreamKind::Exif, 0, "Description", t);
+        }
+        if let Some(c) = xmp_seq_li(text, "dc:creator").filter(|s| !s.is_empty()) {
+            let n = c
+                .trim_end_matches(" Inc.")
+                .trim_end_matches(" Corporation")
+                .trim_end_matches(" CORPORATION")
+                .trim()
+                .to_string();
+            fa.set_field(StreamKind::Exif, 0, "Encoded_Hardware_CompanyName", n);
+        }
+        if let Some(d) = xmp_attr(text, "xmp:CreateDate") {
+            fa.set_field(StreamKind::Exif, 0, "Recorded_Date", exif_datetime_to_oracle(&d));
+        }
+        if let Some(d) = xmp_attr(text, "xmp:ModifyDate") {
+            fa.set_field(StreamKind::Exif, 0, "Mastered_Date", exif_datetime_to_oracle(&d));
+        }
+    }
     true
+}
+
+/// Value of `attr="..."` in the XMP packet (attribute form).
+fn xmp_attr(xml: &str, attr: &str) -> Option<String> {
+    let needle = format!("{attr}=\"");
+    let start = xml.find(&needle)? + needle.len();
+    let end = xml[start..].find('"')?;
+    Some(xml[start..start + end].to_string())
+}
+
+/// First `<rdf:li ...>value</rdf:li>` inside `<tag><rdf:Alt>…` (dc:title).
+fn xmp_alt_li(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let s = xml.find(&open)?;
+    let e = xml[s..].find(&close)? + s;
+    let section = &xml[s..e];
+    let li = section.find("<rdf:li")?;
+    let gt = section[li..].find('>')? + li;
+    let end = section[gt..].find("</rdf:li>")? + gt;
+    Some(section[gt + 1..end].to_string())
+}
+
+/// First `<rdf:li>value</rdf:li>` inside `<tag><rdf:Seq>…` (dc:creator).
+fn xmp_seq_li(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let s = xml.find(&open)?;
+    let e = xml[s..].find(&close)? + s;
+    let section = &xml[s..e];
+    let li = section.find("<rdf:li>")? + "<rdf:li>".len();
+    let end = section[li..].find("</rdf:li>")? + li;
+    Some(section[li..end].to_string())
 }
 
 fn extract_xmp_fields(xml: &str, tags: &mut Vec<TagEntry>) {
@@ -1472,59 +1879,281 @@ fn extract_xml_element(xml: &str, tag: &str) -> Option<String> {
 // ---------- ICC profile ----------
 
 pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 128 {
-        return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 128 {
+    // Read the whole file cursor-independently (like `parse_exif`): the ICC
+    // profile may be embedded (JPEG APP2 "ICC_PROFILE\0", HEIC `colr`, TIFF
+    // tag 0x8773) rather than sitting at offset 0 of a standalone `.icc`.
+    let buf = match fa.peek_raw_at(0, usize::MAX) {
+        Some(b) => b.to_vec(),
+        None => return false,
+    };
+    // Locate the profile by its `acsp` file signature, which always sits at
+    // byte 36 of an ICC header. Try offset 0 first (raw `.icc`), then scan.
+    let base = match icc_profile_offset(&buf) {
+        Some(b) => b,
+        None => return false,
+    };
+    let p = &buf[base..];
+    if p.len() < 132 {
         return false;
     }
 
-    let profile_size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    if profile_size == 0 || profile_size > buf.len() {
-        return false;
-    }
+    let profile_size = read_icc_u32(p, 0) as usize;
+    let cmm = icc_fourcc(&p[4..8]);
+    let version = read_icc_u32(p, 8);
+    let device_class = icc_fourcc(&p[12..16]);
+    let color_space = icc_fourcc(&p[16..20]);
+    let pcs = icc_fourcc(&p[20..24]);
+    let platform = icc_fourcc(&p[40..44]);
+    let manufacturer = icc_fourcc(&p[48..52]);
+    let model = icc_fourcc(&p[52..56]);
+    let rendering_intent = read_icc_u32(p, 64);
+    let creator = icc_fourcc(&p[80..84]);
 
-    let _preferred_cmm = read_icc_u32(&buf, 4);
-    let _version = read_icc_u32(&buf, 8);
-    let device_class = std::str::from_utf8(&buf[12..16]).unwrap_or("");
-    let color_space = std::str::from_utf8(&buf[16..20]).unwrap_or("");
-    let _pcs = std::str::from_utf8(&buf[20..24]).unwrap_or("");
-
-    let tag_count = u32::from_be_bytes([buf[128], buf[129], buf[130], buf[131]]) as usize;
     let mut tags: Vec<TagEntry> = Vec::new();
-    let mut desc = String::new();
+    // Summary line revelo has always emitted (kept for back-compat), now with
+    // real values rather than the empty "()" from reading the wrong offset.
+    tags.push(("ICC_Profile", format!("{} ({})", icc_trim(&color_space), icc_trim(&device_class))));
 
+    // Fixed-offset header fields (ExifTool "ICC-header" group names).
+    tags.push(("ProfileCMMType", icc_company(&cmm)));
+    tags.push(("ProfileVersion", icc_version(version)));
+    tags.push(("ProfileClass", icc_profile_class(&device_class)));
+    tags.push(("ColorSpaceData", icc_trim(&color_space)));
+    tags.push(("ProfileConnectionSpace", icc_trim(&pcs)));
+    if let Some(dt) = icc_datetime(p) {
+        tags.push(("ProfileDateTime", dt));
+    }
+    tags.push(("ProfileFileSignature", icc_trim(&icc_fourcc(&p[36..40]))));
+    tags.push(("PrimaryPlatform", icc_company(&platform)));
+    if !icc_trim(&manufacturer).is_empty() {
+        tags.push(("DeviceManufacturer", icc_company(&manufacturer)));
+    }
+    if !icc_trim(&model).is_empty() {
+        tags.push(("DeviceModel", icc_trim(&model)));
+    }
+    tags.push(("RenderingIntent", icc_rendering_intent(rendering_intent)));
+    if !icc_trim(&creator).is_empty() {
+        tags.push(("ProfileCreator", icc_company(&creator)));
+    }
+    let pid = &p[84..100];
+    if pid.iter().any(|&b| b != 0) {
+        let hex: String = pid.iter().map(|b| format!("{b:02x}")).collect();
+        tags.push(("ProfileID", hex));
+    }
+
+    // Tag table — pull human-readable text/XYZ tags.
+    let cap = profile_size.min(p.len());
+    let tag_count = read_icc_u32(p, 128) as usize;
     let mut pos = 132;
-    for _ in 0..tag_count.min(50) {
-        if pos + 12 > buf.len() {
+    for _ in 0..tag_count.min(100) {
+        if pos + 12 > cap {
             break;
         }
-        let _tag_sig = &buf[pos..pos + 4];
-        let tag_offset =
-            u32::from_be_bytes([buf[pos + 4], buf[pos + 5], buf[pos + 6], buf[pos + 7]]) as usize;
-        let tag_size =
-            u32::from_be_bytes([buf[pos + 8], buf[pos + 9], buf[pos + 10], buf[pos + 11]]) as usize;
+        let sig = [p[pos], p[pos + 1], p[pos + 2], p[pos + 3]];
+        let off = read_icc_u32(p, pos + 4) as usize;
+        let size = read_icc_u32(p, pos + 8) as usize;
         pos += 12;
-
-        if tag_offset + tag_size > buf.len() {
+        if off + size > cap || size < 8 {
             continue;
         }
-        if &buf[pos - 12..pos - 8] == b"desc" {
-            let tag_data = &buf[tag_offset..tag_offset + tag_size.saturating_sub(12)];
-            desc = String::from_utf8_lossy(tag_data).trim_end_matches('\0').to_string();
+        let data = &p[off..off + size];
+        match &sig {
+            b"desc" => {
+                if let Some(s) = icc_text(data) {
+                    tags.push(("ProfileDescription", s));
+                }
+            }
+            b"cprt" => {
+                if let Some(s) = icc_text(data) {
+                    tags.push(("ProfileCopyright", s));
+                }
+            }
+            b"wtpt" => {
+                if let Some(s) = icc_xyz(data) {
+                    tags.push(("MediaWhitePoint", s));
+                }
+            }
+            b"rXYZ" => {
+                if let Some(s) = icc_xyz(data) {
+                    tags.push(("RedMatrixColumn", s));
+                }
+            }
+            b"gXYZ" => {
+                if let Some(s) = icc_xyz(data) {
+                    tags.push(("GreenMatrixColumn", s));
+                }
+            }
+            b"bXYZ" => {
+                if let Some(s) = icc_xyz(data) {
+                    tags.push(("BlueMatrixColumn", s));
+                }
+            }
+            _ => {}
         }
-    }
-
-    tags.push(("ICC_Profile", format!("{} ({})", color_space, device_class)));
-    if !desc.is_empty() {
-        tags.push(("ICC_Description", desc));
     }
 
     fill_tags(fa, &tags, StreamKind::Icc);
     true
+}
+
+/// Locate the start of an ICC profile within `buf`. The 4-byte `acsp` file
+/// signature always sits at byte 36 of the 128-byte ICC header, so we scan
+/// for it and validate the surrounding header. Returns the byte offset of the
+/// profile header (0 for a standalone `.icc`).
+fn icc_profile_offset(buf: &[u8]) -> Option<usize> {
+    let valid = |base: usize| -> bool {
+        if base + 132 > buf.len() {
+            return false;
+        }
+        if &buf[base + 36..base + 40] != b"acsp" {
+            return false;
+        }
+        let size = read_icc_u32(&buf[base..], 0) as usize;
+        // Header (128) + tag count word (4) minimum; cap to remaining bytes.
+        size >= 132 && base + size <= buf.len() && (read_icc_u32(&buf[base..], 8) >> 24) <= 5
+    };
+    if valid(0) {
+        return Some(0);
+    }
+    let mut from = 0;
+    while let Some(rel) = buf[from..].windows(4).position(|w| w == b"acsp") {
+        let sig_pos = from + rel;
+        if sig_pos >= 36 && valid(sig_pos - 36) {
+            return Some(sig_pos - 36);
+        }
+        from = sig_pos + 4;
+    }
+    None
+}
+
+/// Bytes 4..8 etc. as a 4-character code string (lossy).
+fn icc_fourcc(b: &[u8]) -> String {
+    String::from_utf8_lossy(b).to_string()
+}
+
+/// Trim ICC 4cc padding (trailing spaces / nulls).
+fn icc_trim(s: &str) -> String {
+    s.trim_end_matches([' ', '\0']).to_string()
+}
+
+/// ICC version word (BBGGRRSS where BB=major, high nibble of GG=minor) → "4.0.0".
+fn icc_version(v: u32) -> String {
+    let major = (v >> 24) & 0xFF;
+    let minor = (v >> 20) & 0x0F;
+    let bugfix = (v >> 16) & 0x0F;
+    format!("{major}.{minor}.{bugfix}")
+}
+
+/// ICC profile/creation date: 6 × u16 BE at offset 24 (Y M D h m s).
+fn icc_datetime(p: &[u8]) -> Option<String> {
+    if p.len() < 36 {
+        return None;
+    }
+    let r = |o: usize| u16::from_be_bytes([p[o], p[o + 1]]);
+    let (y, mo, d, h, mi, s) = (r(24), r(26), r(28), r(30), r(32), r(34));
+    if y == 0 && mo == 0 && d == 0 {
+        return None;
+    }
+    Some(format!("{y:04}:{mo:02}:{d:02} {h:02}:{mi:02}:{s:02}"))
+}
+
+/// Map common ICC signature 4ccs to their company / platform names.
+fn icc_company(code: &str) -> String {
+    match icc_trim(code).as_str() {
+        "APPL" | "appl" => "Apple Computer Inc.".to_string(),
+        "MSFT" => "Microsoft Corporation".to_string(),
+        "SUNW" => "Sun Microsystems".to_string(),
+        "SGI" => "Silicon Graphics Inc.".to_string(),
+        "TGNT" => "Taligent Inc.".to_string(),
+        "ADBE" => "Adobe Systems Inc.".to_string(),
+        "HP" => "Hewlett-Packard".to_string(),
+        "Lino" | "LINO" => "Linotype-Hell AG".to_string(),
+        "IEC" => "IEC".to_string(),
+        "KCMS" => "Kodak".to_string(),
+        "UCCM" => "Unicolor".to_string(),
+        other if other.is_empty() => String::new(),
+        other => other.to_string(),
+    }
+}
+
+fn icc_profile_class(code: &str) -> String {
+    match icc_trim(code).as_str() {
+        "scnr" => "Input Device Profile".to_string(),
+        "mntr" => "Display Device Profile".to_string(),
+        "prtr" => "Output Device Profile".to_string(),
+        "link" => "DeviceLink Profile".to_string(),
+        "spac" => "ColorSpace Conversion Profile".to_string(),
+        "abst" => "Abstract Profile".to_string(),
+        "nmcl" => "NamedColor Profile".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn icc_rendering_intent(v: u32) -> String {
+    match v {
+        0 => "Perceptual".to_string(),
+        1 => "Media-Relative Colorimetric".to_string(),
+        2 => "Saturation".to_string(),
+        3 => "ICC-Absolute Colorimetric".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Extract text from an ICC `desc`/`text`/`mluc` tag.
+fn icc_text(data: &[u8]) -> Option<String> {
+    if data.len() < 8 {
+        return None;
+    }
+    let s = match &data[0..4] {
+        b"mluc" => {
+            // multiLocalizedUnicode: count(4) recsize(4) then records of
+            // lang(2) country(2) len(4) offset(4); strings are UTF-16BE.
+            if data.len() < 28 {
+                return None;
+            }
+            let len = read_icc_u32(data, 20) as usize;
+            let off = read_icc_u32(data, 24) as usize;
+            if off + len > data.len() || len < 2 {
+                return None;
+            }
+            let u16s: Vec<u16> = data[off..off + len]
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
+            String::from_utf16_lossy(&u16s)
+        }
+        b"desc" => {
+            // v2 textDescription: count(4) at offset 8, then ASCII.
+            let n = read_icc_u32(data, 8) as usize;
+            let start = 12;
+            if start + n > data.len() {
+                return None;
+            }
+            String::from_utf8_lossy(&data[start..start + n]).to_string()
+        }
+        b"text" => String::from_utf8_lossy(&data[8..]).to_string(),
+        _ => return None,
+    };
+    let s = s.trim_end_matches('\0').trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Format an ICC `XYZ ` tag (one or more s15Fixed16 triples) as space-joined
+/// decimals, e.g. "0.95045 1 1.08905".
+fn icc_xyz(data: &[u8]) -> Option<String> {
+    if data.len() < 8 + 12 || &data[0..4] != b"XYZ " {
+        return None;
+    }
+    let v = |o: usize| -> f64 { (read_icc_u32(data, o) as i32) as f64 / 65536.0 };
+    let parts: Vec<String> = (0..3).map(|i| icc_num(v(8 + i * 4))).collect();
+    Some(parts.join(" "))
+}
+
+/// Trim trailing zeros from an ICC fixed-point decimal for compact display.
+fn icc_num(x: f64) -> String {
+    let s = format!("{x:.5}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s.is_empty() { "0".to_string() } else { s.to_string() }
 }
 
 fn read_icc_u32(data: &[u8], off: usize) -> u32 {
@@ -2325,24 +2954,119 @@ fn parse_samsung_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
 
 // ---------- Apple MakerNote ----------
 
+/// Clean-room Apple maker-note tag names. IDs and meanings were derived from
+/// the on-disk IFD of real iPhone images cross-referenced against ExifTool's
+/// *printed output* (the human field labels), not its source tables. Binary
+/// plist tags (RunTime, AccelerationVector list payloads) are intentionally
+/// left unmapped so the walker never dumps raw plist bytes as a string.
 fn apple_tag_name(tag_id: u16) -> Option<&'static str> {
     Some(match tag_id {
-        0x0001 => "AppleRunTime",
-        0x0002 => "AppleAccelerationVector",
-        0x0005 => "AppleFocusDistance",
-        0x0006 => "AppleLensModel",
-        0x0007 => "AppleImageStabilization",
+        0x0001 => "MakerNoteVersion",
+        0x0004 => "AEStable",
+        0x0005 => "AETarget",
+        0x0006 => "AEAverage",
+        0x0007 => "AFStable",
+        0x0008 => "AccelerationVector",
+        0x000c => "FocusDistanceRange",
+        0x0011 => "ContentIdentifier",
+        0x0014 => "ImageCaptureType",
+        0x0017 => "LivePhotoVideoIndex",
+        0x001f => "PhotosAppFeatureFlags",
+        0x0021 => "HDRHeadroom",
+        0x0027 => "SignalToNoiseRatio",
+        0x002b => "PhotoIdentifier",
+        0x002d => "ColorTemperature",
+        0x002e => "CameraType",
+        0x002f => "FocusPosition",
         _ => return None,
     })
 }
 
 fn parse_apple_makernote(data: &[u8], tags: &mut Vec<TagEntry>) {
-    // Apple MakerNote is typically a plain TIFF IFD starting with II/MM
+    // Apple maker notes begin with "Apple iOS\0" + a 2-byte version + a 2-byte
+    // TIFF byte-order mark; the IFD starts at offset 14 and value offsets are
+    // relative to the start of this maker-note block (base 0).
+    if data.len() >= 14 && &data[0..10] == b"Apple iOS\0" {
+        let bo = if &data[12..14] == b"II" { "LE" } else { "BE" };
+        parse_makernote_ifd(data, 14, bo, tags, apple_tag_name, MakerVendor::Apple, 0);
+        return;
+    }
+    // Fallback: a plain TIFF-style maker note (II/MM at offset 0).
     if data.len() < 2 {
         return;
     }
     let (bo, ifd_off) = parse_tiff_header_or_raw(data, "LE");
     parse_makernote_ifd(data, ifd_off, bo, tags, apple_tag_name, MakerVendor::Apple, 0);
+}
+
+/// Apply Apple-specific PrintConv to maker-note values already parsed into
+/// `tags` (matched by field name). Enum/boolean codes become words and signed
+/// rationals become decimals — ExifTool renders SRATIONAL signed, but the
+/// generic decoder leaves them unsigned, so sign is recovered here.
+fn format_apple_makernote(tags: &mut [TagEntry]) {
+    for (k, v) in tags.iter_mut() {
+        let nv = match *k {
+            "AEStable" | "AFStable" => match v.as_str() {
+                "0" => Some("No".to_string()),
+                "1" => Some("Yes".to_string()),
+                _ => None,
+            },
+            "ImageCaptureType" => match v.as_str() {
+                "1" => Some("ProRAW".to_string()),
+                "2" => Some("Portrait".to_string()),
+                "10" => Some("Photo".to_string()),
+                "11" => Some("Manual Focus".to_string()),
+                "12" => Some("Scene".to_string()),
+                _ => None,
+            },
+            "CameraType" => match v.as_str() {
+                "0" => Some("Back Wide Angle".to_string()),
+                "1" => Some("Back Normal".to_string()),
+                "2" => Some("Back Telephoto".to_string()),
+                "3" => Some("Front".to_string()),
+                _ => None,
+            },
+            "AccelerationVector" => {
+                let parts: Vec<String> =
+                    v.split(',').filter_map(|p| apple_srational(p).map(apple_decimal)).collect();
+                (parts.len() == 3).then(|| parts.join(" "))
+            }
+            "FocusDistanceRange" => {
+                let mut ds: Vec<f64> = v.split(',').filter_map(apple_srational).collect();
+                if ds.len() == 2 {
+                    ds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    Some(format!("{:.2} - {:.2} m", ds[0], ds[1]))
+                } else {
+                    None
+                }
+            }
+            "HDRHeadroom" | "SignalToNoiseRatio" => apple_srational(v).map(apple_decimal),
+            _ => None,
+        };
+        if let Some(s) = nv {
+            *v = s;
+        }
+    }
+}
+
+/// Parse an "n/d" rational, reinterpreting each 32-bit field as signed (ExifTool
+/// SRATIONAL semantics) so negative values round-trip correctly.
+fn apple_srational(s: &str) -> Option<f64> {
+    let (n, d) = s.trim().split_once('/').unwrap_or((s.trim(), "1"));
+    let signed = |x: i64| if x > i32::MAX as i64 { x - (1i64 << 32) } else { x };
+    let num = signed(n.trim().parse::<i64>().ok()?);
+    let den = signed(d.trim().parse::<i64>().ok()?);
+    if den == 0 {
+        return None;
+    }
+    Some(num as f64 / den as f64)
+}
+
+/// Format a float with up to 9 decimals, trimming trailing zeros.
+fn apple_decimal(x: f64) -> String {
+    let s = format!("{x:.9}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s.is_empty() || s == "-0" { "0".to_string() } else { s.to_string() }
 }
 
 // ---------- GoPro MakerNote ----------
@@ -4465,11 +5189,16 @@ mod exif_tests {
     fn icc_parses_header() {
         let mut buf = vec![0u8; 256];
         buf[0..4].copy_from_slice(&(256u32.to_be_bytes())); // profile size
+        buf[8..12].copy_from_slice(&0x0400_0000u32.to_be_bytes()); // version 4.0.0
         buf[12..16].copy_from_slice(b"mntr"); // display
         buf[16..20].copy_from_slice(b"RGB "); // RGB
+        buf[36..40].copy_from_slice(b"acsp"); // mandatory file signature
         buf[128..132].copy_from_slice(&[0, 0, 0, 0]); // 0 tags
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_icc(&mut fa));
+        let icc = fa.streams().stream(StreamKind::Icc, 0).expect("icc stream");
+        assert_eq!(icc.get("ProfileClass").map(|z| z.as_str()), Some("Display Device Profile"));
+        assert_eq!(icc.get("ProfileVersion").map(|z| z.as_str()), Some("4.0.0"));
     }
 
     #[test]
@@ -5201,9 +5930,38 @@ mod exif_tests {
     #[test]
     #[cfg(not(feature = "exiftool-tables"))]
     fn apple_makernote_extracts_named_tag() {
+        // Raw-IFD fallback path: ContentIdentifier (0x0011) ASCII.
         let mut tags = Vec::new();
-        parse_apple_makernote(&mn_ifd(true, 0x0006, b"iPho"), &mut tags);
-        assert_mn(&tags, "AppleLensModel", "iPho");
+        parse_apple_makernote(&mn_ifd(true, 0x0011, b"ABCD"), &mut tags);
+        assert_mn(&tags, "ContentIdentifier", "ABCD");
+    }
+
+    #[test]
+    fn apple_ios_header_makernote_parses_and_formats() {
+        // The real Apple layout: "Apple iOS\0" + version + "MM" (big-endian) +
+        // an IFD whose value offsets are relative to the block start.
+        let mut v = Vec::new();
+        v.extend_from_slice(b"Apple iOS\0"); // 10 bytes
+        v.extend_from_slice(&[0x00, 0x01]); // version
+        v.extend_from_slice(b"MM"); // big-endian
+        // IFD: 2 entries — MakerNoteVersion (0x0001 SLONG=12) and
+        // CameraType (0x002e SLONG=1 → "Back Normal").
+        v.extend_from_slice(&2u16.to_be_bytes()); // entry count
+        v.extend_from_slice(&0x0001u16.to_be_bytes());
+        v.extend_from_slice(&9u16.to_be_bytes()); // type SLONG
+        v.extend_from_slice(&1u32.to_be_bytes());
+        v.extend_from_slice(&12u32.to_be_bytes());
+        v.extend_from_slice(&0x002eu16.to_be_bytes());
+        v.extend_from_slice(&9u16.to_be_bytes());
+        v.extend_from_slice(&1u32.to_be_bytes());
+        v.extend_from_slice(&1u32.to_be_bytes());
+        v.extend_from_slice(&0u32.to_be_bytes()); // next IFD
+
+        let mut tags = Vec::new();
+        parse_apple_makernote(&v, &mut tags);
+        format_apple_makernote(&mut tags);
+        assert_mn(&tags, "MakerNoteVersion", "12");
+        assert_mn(&tags, "CameraType", "Back Normal");
     }
 
     #[test]
