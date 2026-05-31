@@ -172,7 +172,7 @@ jobs:
           done
 
   formula:
-    name: Homebrew formula PR
+    name: Homebrew tap
     needs: [publish]
     if: github.repository == 'vbasky/revelo'
     runs-on: ubuntu-latest
@@ -212,31 +212,20 @@ jobs:
           RUBY
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Create PR to homebrew-core
+      - name: Push to tap
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_CORE_TOKEN }}
         run: |
           VERSION="${{ steps.formula.outputs.version }}"
-          BRANCH="revelo-${VERSION}"
 
-          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/vbasky/homebrew-core.git" /tmp/homebrew-core
-          cd /tmp/homebrew-core
-          git remote add upstream https://github.com/Homebrew/homebrew-core.git
-          git fetch upstream main
-          git checkout -b "${BRANCH}" upstream/main
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/vbasky/homebrew-revelo.git" /tmp/homebrew-revelo
+          cd /tmp/homebrew-revelo
 
-          mkdir -p Formula/r
-          cp /tmp/revelo.rb Formula/r/revelo.rb
-          git add Formula/r/revelo.rb
+          mkdir -p Formula
+          cp /tmp/revelo.rb Formula/revelo.rb
+          git add Formula/revelo.rb
           git -c user.name="revelo-bot" \
              -c user.email="bot@revelo.app" \
-             commit -m "revelo ${VERSION}"
+             commit -m "revelo ${VERSION}" --allow-empty
 
-          git push origin "${BRANCH}" 2>&1
-
-          gh pr create \
-            --repo Homebrew/homebrew-core \
-            --head "vbasky:${BRANCH}" \
-            --base main \
-            --title "revelo ${VERSION}" \
-            --body "Update revelo to ${VERSION}."
+          git push origin main
