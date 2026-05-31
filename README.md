@@ -96,11 +96,11 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | **Language** | C++ | Pure Rust |
 | **Memory safety** | Manual | Compile-time guaranteed |
 | **Build** | `./Configure` + `make` + 10 system deps | `cargo build` (no system libs) |
-| **Install** | `apt install mediainfo` / `brew install mediainfo` | `brew install revelo` or `cargo install revelo-cli` |
+| **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelo-cli` or `brew tap vbasky/revelo && brew install revelo` |
 | **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table, parallel race via rayon |
 | **Output fidelity** | Reference oracle | Byte-equal XML (differential harness) |
 | **License** | BSD-2-Clause | BSD-2-Clause |
-| **Format support** | ~200 formats | 194 parsers, 185 fields |
+| **Format support** | ~200 formats | 190+ parsers, 185 fields |
 | **WASM** | No | Compiles on `wasm32-unknown-unknown` |
 
 ## ExifTool maker-note metadata (optional)
@@ -152,11 +152,11 @@ makes — revelo targets the 14 most common.
 
 | Metric | Value |
 | --- | --- |
-| Parsers | 193 across 8 domains |
-| Output fields | 185 (all gaps closed) |
+| Parsers | 190+ across 8 domains |
+| Output fields | 185 (all known MediaInfoLib gaps closed) |
 | Output formatters | 10 — XML / Text / JSON + 7 domain |
 | Workspace crates | 17 |
-| Tests | 580+ passing |
+| Tests | 800+ |
 | License | BSD-2-Clause (core) · GPL/Artistic (optional `exiftool-tables`) |
 | MSRV | Rust 1.85+ (edition 2024) |
 
@@ -239,8 +239,8 @@ output/API surface, and the differential test harness.
 ## Installation
 
 ```sh
-brew install revelo                              # Homebrew (macOS / Linux)
-cargo install revelo-cli                         # CLI only (binary)
+cargo install revelo-cli                         # CLI (binary from crates.io)
+brew tap vbasky/revelo && brew install revelo    # Homebrew (macOS / Linux)
 cargo add revelo-core                            # library (core + dispatcher)
 cargo add revelo-export                          # library (output formatters)
 ```

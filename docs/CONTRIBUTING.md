@@ -10,19 +10,22 @@ the engine works.
 ```bash
 Cargo workspace root
 ├─ crates/revelo-util              C++-style integer types + bitstream helpers
-├─ crates/revelo-core        The parser engine (FileAnalyze, streams, config)
-├─ crates/revelo-export      Output formatters (XML, Text, JSON, EBUCore, …)
-├─ crates/revelo-cli         CLI tool (cargo run --bin revelo -- path/to/file)
-├─ crates/revelo-cdylib      C dynamic library (MediaInfo_New/Open/Inform/…)
-├─ crates/revelo-reader      Reader layer (File, Directory, HTTP, MMS)
-├─ crates/revelo-diff        Differential testing against `mediainfo` oracle
-├─ crates/revelo-parsers-audio       Audio codec parsers (56 parsers)
-├─ crates/revelo-parsers-container   Container parsers (42 parsers)
-├─ crates/revelo-parsers-image       Image format parsers (19 parsers)
-├─ crates/revelo-parsers-tag         Tag/metadata parsers (12 parsers)
-├─ crates/revelo-parsers-text        Text/subtitle parsers (21 parsers)
-├─ crates/revelo-parsers-video       Video codec parsers (29 parsers)
-└─ crates/revelo-parsers-archive     Archive format parsers (11 parsers)
+├─ crates/revelo-core              The parser engine (FileAnalyze, streams, config)
+├─ crates/revelo-export            Output formatters (XML, Text, JSON, EBUCore, …)
+├─ crates/revelo-cli               CLI tool (cargo run --bin revelo -- path/to/file)
+├─ crates/revelo-cdylib            C dynamic library (MediaInfo_New/Open/Inform/…)
+├─ crates/revelo-reader            Reader layer (File, Directory, HTTP, MMS)
+├─ crates/revelo-diff              Differential testing against `mediainfo` oracle
+├─ crates/revelo-exif-diff         Tag-name parity testing against `exiftool` oracle
+├─ crates/revelo-exiftool-tables   Generated ExifTool tag tables (GPL/Artistic)
+├─ crates/revelo-dispatcher        Parallel format-detection dispatch
+├─ crates/revelo-parsers-audio     Audio codec parsers (60 parsers)
+├─ crates/revelo-parsers-container Container parsers (44 parsers)
+├─ crates/revelo-parsers-image     Image format parsers (19 parsers)
+├─ crates/revelo-parsers-tag       Tag/metadata parsers (12 parsers)
+├─ crates/revelo-parsers-text      Text/subtitle parsers (21 parsers)
+├─ crates/revelo-parsers-video     Video codec parsers (29 parsers)
+└─ crates/revelo-parsers-archive   Archive format parsers (9 parsers)
 ```
 
 ### How a file gets parsed
@@ -112,25 +115,49 @@ pub mod my_format;
 pub use my_format::parse_my_format;
 ```
 
-### Step 3: Add to the parser table
+### Step 3: Add to the dispatcher table
 
-In `crates/revelo-cli/src/main.rs` and `crates/revelo-cdylib/src/lib.rs`:
+In `crates/revelo-dispatcher/src/lib.rs`:
 
-1. Add `parse_my_format` to the `use revelo_parsers_*` import.
-2. Add `parse_my_format` to the parser array.
-3. Update the array size count: `[fn(&mut FileAnalyze) -> bool; 151]`
+1. Add `mod <format>;` and `use <format>::parse_<format>;` at the top.
+2. Add `parse_<format>` to the `table()` function's returned array.
+3. Update the array count in the function signature.
 
 ### Step 4: Add to docs
 
 Add your format to `docs/formats.md` with detection method and spec reference.
 
-### Step 5: Run revelo-diff
+### Step 5: Validate against oracles
+
+Revelo validates against two independent oracles:
 
 ```bash
-cargo run --bin revelo-diff -- /path/to/sample.myformat
+# MediaInfo parity (byte-identical XML output)
+cargo run -p revelo-diff -- --strict /path/to/sample.file
+
+# ExifTool parity (tag-name coverage for photo metadata)
+cargo run -p revelo-exif-diff --verbose /path/to/photo.jpg
 ```
 
-If the output doesn't byte-match `mediainfo`, fix fields until it does.
+For container/codec parsers, `revelo-diff` must report zero differences in
+`--strict` mode (full LCS table diff — every character identical). For
+tag/metadata parsers, `revelo-exif-diff` reports the percentage of exiftool's
+EXIF/maker-note tags that revelo also extracts.
+
+### EXIF tag names
+
+EXIF tag names in revelo align with ExifTool, not the TIFF specification.
+For example, TIFF tag 0x0101 is `ImageHeight` (ExifTool) not `ImageLength`
+(TIFF). The `revelo-exiftool-tables` crate provides generated lookup tables
+for 14 camera vendors under the GPL/Artistic license — opt-in via the
+`exiftool-tables` feature flag.
+
+### Running with the ExifTool feature
+
+```bash
+cargo build --features exiftool-tables
+cargo run --bin revelo --features exiftool-tables -- photo.jpg
+```
 
 ---
 
