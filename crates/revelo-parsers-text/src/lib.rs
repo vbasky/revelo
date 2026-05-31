@@ -1,4 +1,57 @@
-//! Text/subtitle format parsers (SubRip, SSA/ASS, TTML, Kate, etc.).
+//! Text and subtitle format parsers for the
+//! [revelo](https://github.com/vbasky/revelo) media-analysis library.
+//!
+//! Each public function has the signature `fn(&mut FileAnalyze) -> bool`.
+//! It inspects the byte content of a stream, returns `false` if the format
+//! is not recognised, or fills the
+//! [`FileAnalyze`](revelo_core::FileAnalyze) stream graph with format,
+//! encoding, and timing fields and returns `true`.
+//!
+//! # Supported formats
+//!
+//! | Function | Format |
+//! |---|---|
+//! | [`parse_sub_rip`] | SubRip (SRT) — plain-text timed subtitles |
+//! | [`parse_webvtt`] | WebVTT — W3C Web Video Text Tracks |
+//! | [`parse_ttml`] | TTML / DFXP — Timed Text Markup Language |
+//! | [`parse_timed_text`] | 3GPP Timed Text (TX3G / QuickTime tx3g) |
+//! | [`parse_cmml`] | CMML — Continuous Media Markup Language |
+//! | [`parse_kate`] | Kate — Ogg Kate overlay stream |
+//! | [`parse_pgs`] | PGS — Presentation Graphic Stream (Blu-ray) |
+//! | [`parse_dvb_subtitle`] | DVB subtitle (ETSI EN 300 743) |
+//! | [`parse_teletext`] | Teletext subtitle (ETSI EN 300 472) |
+//! | [`parse_arib_std_b24_b37`] | ARIB STD-B24 / STD-B37 (Japanese digital broadcast) |
+//! | [`parse_eia608`] | EIA-608 / CEA-608 (Line 21 closed captions) |
+//! | [`parse_eia708`] | EIA-708 / CEA-708 (DTV closed captions) |
+//! | [`parse_dtvcc_transport`] | DTVCC transport layer (CEA-708 packetisation) |
+//! | [`parse_scc`] | SCC — Scenarist Closed Captions |
+//! | [`parse_scte20`] | SCTE-20 — closed captions in MPEG-2 user data |
+//! | [`parse_cdp`] | CDP — Caption Distribution Packet (SMPTE ST 334) |
+//! | [`parse_n19`] | N19 / STL — EBU Subtitling Data Exchange Format |
+//! | [`parse_pac`] | PAC — Cheetah caption file |
+//! | [`parse_pdf`] | PDF — format identification for PDF documents |
+//! | [`parse_sdp`] | SDP — Session Description Protocol |
+//! | [`parse_other_text`] | Generic text-stream fallback |
+//!
+//! # Normal use
+//!
+//! Prefer the [`revelo`](https://crates.io/crates/revelo) facade, which
+//! auto-detects formats and dispatches to the correct parser:
+//!
+//! ```no_run
+//! use revelo_parsers_text::parse_sub_rip;
+//! use revelo_core::FileAnalyze;
+//!
+//! let data = std::fs::read("subtitles.srt").unwrap();
+//! let mut fa = FileAnalyze::new(&data);
+//! if parse_sub_rip(&mut fa) {
+//!     // fa contains a Text stream with format and encoding fields
+//! }
+//! ```
+//!
+//! # Safety
+//!
+//! `#![deny(unsafe_code)]` — zero unsafe blocks in this crate.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]

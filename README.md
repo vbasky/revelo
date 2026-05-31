@@ -15,7 +15,7 @@ binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 [![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=main&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
 [![License](https://img.shields.io/crates/l/revelo-core)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://www.rust-lang.org)
-[![Parsers](https://img.shields.io/badge/parsers-194-blueviolet)](docs/formats.md)
+[![Parsers](https://img.shields.io/badge/parsers-180-blueviolet)](docs/formats.md)
 
 ## How it reads a file
 

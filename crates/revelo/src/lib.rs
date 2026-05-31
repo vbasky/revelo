@@ -1,19 +1,73 @@
 //! # revelo — read technical metadata from any media file
 //!
-//! A pure-Rust library that replaces both MediaInfoLib and ExifTool for metadata
-//! extraction. Detects 180+ formats, extracts container/codec metadata, and
-//! decodes EXIF/maker-note tags from 14 camera vendors.
+//! A pure-Rust, zero-`unsafe` library for extracting technical and tag metadata
+//! from media files. No system libraries, no Perl runtime, no `./Configure`.
+//!
+//! - Detects **180+ container and codec formats** (MP4, Matroska, MPEG-TS, AVI, WAV, …)
+//! - Extracts **container/codec fields** — duration, bitrate, resolution, frame rate, HDR
+//! - Decodes **EXIF, IPTC, XMP, ICC, C2PA** embedded in photos and video
+//! - Optionally decodes **deep maker-notes** from 14 camera vendors (Canon, Nikon, Fujifilm,
+//!   Olympus, Sony, Panasonic, …) via the `exiftool-tables` feature
+//!
+//! ## Quick start
+//!
+//! Parse a video file and print every container-level field:
 //!
 //! ```rust,no_run
-//! let meta = revelo::Metadata::from_file("photo.jpg").unwrap();
+//! let meta = revelo::Metadata::from_file("video.mp4").unwrap();
 //!
 //! for (key, value) in meta.general() {
 //!     println!("{key} = {value}");
 //! }
-//! for (key, value) in meta.exif() {
+//! for (key, value) in meta.video() {
+//!     println!("{key} = {value}");
+//! }
+//! for (key, value) in meta.audio() {
 //!     println!("{key} = {value}");
 //! }
 //! ```
+//!
+//! Parse a photo from an in-memory buffer and read its EXIF tags:
+//!
+//! ```rust,no_run
+//! let bytes = std::fs::read("photo.jpg").unwrap();
+//! let meta = revelo::Metadata::from_bytes(&bytes).unwrap();
+//!
+//! for (key, value) in meta.exif() {
+//!     println!("{key} = {value}");
+//! }
+//! for (key, value) in meta.iptc() {
+//!     println!("{key} = {value}");
+//! }
+//! for (key, value) in meta.xmp() {
+//!     println!("{key} = {value}");
+//! }
+//! ```
+//!
+//! ## Key types
+//!
+//! | Type / function | What it does |
+//! |---|---|
+//! | [`Metadata`] | Main entry point — parse a file or buffer, iterate streams |
+//! | [`Metadata::from_file`] | Parse from a file path |
+//! | [`Metadata::from_bytes`] | Parse from an in-memory `&[u8]` |
+//! | [`MediaFile`] | Low-level byte-parsing engine (`FileAnalyze` alias) |
+//! | [`revelo_core::stream::StreamCollection`] | Raw per-kind stream store |
+//! | [`revelo_core::stream::StreamKind`] | Discriminant for General/Video/Audio/Exif/… |
+//!
+//! ## `exiftool-tables` feature
+//!
+//! By default revelo uses hand-written clean-room maker-note tables (BSD-2-Clause).
+//! Enable the `exiftool-tables` feature for ExifTool-grade depth:
+//!
+//! ```toml
+//! [dependencies]
+//! revelo = { version = "0.4", features = ["exiftool-tables"] }
+//! ```
+//!
+//! **License caveat:** `exiftool-tables` pulls in `revelo-exiftool-tables`
+//! (GPL-1.0-or-later OR Artistic-1.0-Perl, © Phil Harvey). A binary or library
+//! built with this feature is subject to those terms.
 
 use revelo_core::stream::{StreamCollection, StreamKind};
 use revelo_dispatcher::detect;

@@ -1,4 +1,70 @@
-//! Image format parsers (PNG, JPEG, GIF, etc.).
+//! Image-format parsers for the revelo media-analysis library.
+//!
+//! This crate provides a parser for every still-image format that revelo
+//! understands, including camera RAW formats and HDR formats. It is also the
+//! home of EXIF/IFD parsing: the TIFF and JPEG parsers implement full IFD
+//! walking per TIFF 6.0 and EXIF 2.3, surfacing GPS, datetime, camera
+//! make/model, and related tags into the `Exif` stream.
+//!
+//! Each parser follows the same contract:
+//!
+//! ```text
+//! fn parse_<format>(fa: &mut FileAnalyze) -> bool
+//! ```
+//!
+//! The function inspects the byte buffer held by `fa`, returns `false` if the
+//! data does not match, or fills the `Image`/`General`/`Exif` stream fields
+//! and returns `true` on success. Parsers are registered in the revelo
+//! dispatcher inside `revelo-core`; application code does not call them
+//! directly.
+//!
+//! # Normal usage
+//!
+//! Use the [`revelo`](https://crates.io/crates/revelo) facade crate rather
+//! than depending on this crate directly:
+//!
+//! ```ignore
+//! // In your Cargo.toml: revelo = "0.4"
+//! use revelo::Metadata;
+//!
+//! let meta = Metadata::from_file("photo.jpg").unwrap();
+//! for (key, value) in meta.image() {
+//!     println!("{key} = {value}");
+//! }
+//! for (key, value) in meta.exif() {
+//!     println!("{key} = {value}");
+//! }
+//! ```
+//!
+//! # Parsers
+//!
+//! The full list of re-exported parser functions covers:
+//!
+//! - **Common web / display formats:** `parse_jpeg`, `parse_png`, `parse_gif`,
+//!   `parse_webp`, `parse_bmp`, `parse_tga`, `parse_ico`, `parse_pcx`,
+//!   `parse_rle`
+//! - **EXIF-bearing formats (full IFD walking):** `parse_tiff`, `parse_jpeg`,
+//!   `parse_cr2`, `parse_raf`
+//! - **Professional / VFX:** `parse_exr`, `parse_dpx`, `parse_dds`,
+//!   `parse_psd`, `parse_arriraw`
+//! - **Modern / HDR:** `parse_heif`, `parse_bpg`, `parse_jp2`,
+//!   `parse_gain_map`
+//! - **Legacy / platform-specific:** `parse_amiga_icon`
+//!
+//! # EXIF / IFD parsing
+//!
+//! `parse_tiff` and `parse_jpeg` walk IFD chains in both little-endian
+//! ("II") and big-endian ("MM") byte orders. Tags surfaced include camera
+//! make/model/software/artist/copyright, `DateTime` / `DateTimeOriginal`,
+//! image geometry, resolution, orientation, colour space, GPS coordinates,
+//! and Exif sub-IFD exposure metadata. `parse_cr2` and `parse_raf` reuse
+//! the same IFD machinery for Canon and Fujifilm RAW files.
+//!
+//! # Design
+//!
+//! All code in this crate is `#[deny(unsafe_code)]`. There are no system
+//! library dependencies and no C FFI. The `FileAnalyze` type lives in
+//! `revelo-core`.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]

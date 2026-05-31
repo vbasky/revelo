@@ -1,12 +1,66 @@
-//! Core engine for revelo: a combined MediaInfoLib + ExifTool metadata
-//! extractor. Transliterates MediaInfoLib's `File__Analyze` infrastructure
-//! — the byte-reader surface every parser uses (`Get_B*`, `Get_L*`,
-//! `Peek_*`, `Skip_*`) plus the element tree, stream model, config, and
-//! event dispatch — while also exposing ExifTool‑style stream kinds (Exif,
-//! Iptc, Xmp, Icc, C2pa, MakerNotes) for camera‑maker‑note depth.
+//! Core parsing engine for [revelo](https://github.com/vbasky/revelo).
 //!
-//! All methods return native Rust types (`u8`, `u16`, `u32`, `u64`, `f32`,
-//! `f64`) rather than out-parameters or type aliases.
+//! Transliterates MediaInfoLib's `File__Analyze` infrastructure — the
+//! cursor-based byte reader every parser uses (`Get_B*`, `Get_L*`,
+//! `Peek_*`, `Skip_*`, bitstream mode) plus the element trace tree, typed
+//! stream collection, runtime config, and event dispatch — while also
+//! exposing ExifTool-style stream kinds (`Exif`, `Iptc`, `Xmp`, `Icc`,
+//! `C2pa`, `MakerNotes`) for camera-maker-note depth.
+//!
+//! All read methods return native Rust types (`u8`–`u128`, `f32`, `f64`)
+//! rather than out-parameters or C-style aliases. Truncated reads return
+//! `0` / empty slices and set a `truncated()` flag rather than panicking.
+//!
+//! # Key public types
+//!
+//! | Type | Role |
+//! |------|------|
+//! | [`FileAnalyze`] | Cursor over a `&[u8]` buffer; received by every parser |
+//! | [`MediaFile`] | Public type alias for `FileAnalyze` |
+//! | [`StreamCollection`] | All parsed fields, keyed by `(StreamKind, position)` |
+//! | [`Stream`] | A single stream's fields in insertion order plus an `<extra>` bucket |
+//! | [`StreamKind`] | Discriminant: `General`…`Menu` (MediaInfo-compatible 0–6) + `Exif`…`MakerNotes` (7–12) |
+//! | [`ElementTree`] / [`ElementNode`] | Stack-based trace tree (mirrors MediaInfoLib `--trace` output) |
+//! | [`Reader`] | Fluent `Option`-returning wrapper over `FileAnalyze` |
+//! | `MediaConfig` | Demux level, trace verbosity, parse speed, multi-file options |
+//!
+//! # Writing a parser
+//!
+//! ```no_run
+//! use revelo_core::{FileAnalyze, StreamKind};
+//!
+//! fn my_parser(fa: &mut FileAnalyze) -> bool {
+//!     // Non-advancing magic check
+//!     if !fa.peek_magic(b"RIFF") {
+//!         return false;
+//!     }
+//!     let _chunk_size = fa.get_b4("ChunkSize");
+//!     let _form_tag   = fa.get_c4("FormTag");
+//!
+//!     let pos = fa.stream_prepare(StreamKind::General);
+//!     fa.set_field(StreamKind::General, pos, "Format", "MyFormat");
+//!     true
+//! }
+//! ```
+//!
+//! Or via the higher-level [`Reader`] API (`None` signals truncation instead
+//! of falling back to 0):
+//!
+//! ```no_run
+//! use revelo_core::{FileAnalyze, Reader, StreamKind};
+//!
+//! fn my_parser(fa: &mut FileAnalyze) -> bool {
+//!     let mut r = Reader::wrap(fa);
+//!     let Some(_size) = r.be_u32("Size") else { return false; };
+//!     let pos = r.stream_prepare(StreamKind::Audio);
+//!     r.set_field(StreamKind::Audio, pos, "BitDepth", "24");
+//!     true
+//! }
+//! ```
+//!
+//! # `#![deny(unsafe_code)]`
+//!
+//! The entire crate is enforced `unsafe`-free.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]

@@ -13,6 +13,7 @@ repository.workspace = true
 # GPL. See LICENSE and NOTICE.
 license = "GPL-1.0-or-later OR Artistic-1.0-Perl"
 description = "ExifTool-derived maker-note tag tables for revelo (GPL/Artistic — see NOTICE)."
+keywords = ["exiftool", "exif", "makernote", "metadata", "camera"]
 
 # Note: this crate intentionally does NOT set `[lints] workspace = true`,
 # so it opts out of the workspace's stricter lints — the tables are

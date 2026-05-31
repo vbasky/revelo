@@ -1,4 +1,80 @@
-//! Container parsers: RIFF/WAV, MKV/WebM, MP4/MOV, MPEG-TS, AVI, etc.
+//! Container-format parsers for the [revelo](https://github.com/vbasky/revelo)
+//! media-analysis library.
+//!
+//! Each public function in this crate has the signature
+//! `fn(&mut FileAnalyze) -> bool`. It inspects the byte content of a file,
+//! returns `false` if the format is not recognised, or fills the
+//! [`FileAnalyze`](revelo_core::FileAnalyze) stream graph with codec, timing,
+//! track, and metadata fields and returns `true`.
+//!
+//! # Supported formats
+//!
+//! | Function | Format |
+//! |---|---|
+//! | [`parse_mp4`] | MP4 / MOV / QuickTime (ISO Base Media) |
+//! | [`parse_mkv`] | Matroska / WebM (EBML) |
+//! | [`parse_mpeg_ts`] | MPEG Transport Stream (TS / M2TS) |
+//! | [`parse_mpeg_ps`] | MPEG Program Stream (VOB, SVCD) |
+//! | [`parse_avi`] | AVI / RIFF |
+//! | [`parse_wav`] | WAV / RIFF audio |
+//! | [`parse_aiff`] | AIFF / AIFF-C |
+//! | [`parse_ogg`] | Ogg (Vorbis, FLAC, Opus, Theora, …) |
+//! | [`parse_flv`] | Flash Video (FLV, F4V) |
+//! | [`parse_rm`] | RealMedia (RM / RMVB) |
+//! | [`parse_wm`] | Windows Media (WMV / WMA / ASF) |
+//! | [`parse_wtv`] | Windows Recorded TV (WTV) |
+//! | [`parse_mxf`] | Material Exchange Format (MXF, SMPTE 377) |
+//! | [`parse_gxf`] | General eXchange Format (GXF, SMPTE 360) |
+//! | [`parse_lxf`] | Leitch/Harris eXchange Format (LXF) |
+//! | [`parse_nsv`] | Nullsoft Streaming Video (NSV) |
+//! | [`parse_nut`] | NUT multimedia container |
+//! | [`parse_ivf`] | IVF (VP8/VP9/AV1 raw bitstream container) |
+//! | [`parse_swf`] | Adobe/Macromedia SWF |
+//! | [`parse_aaf`] | Advanced Authoring Format (AAF) |
+//! | [`parse_amv`] | AMV video |
+//! | [`parse_dpg`] | DPG video (Nintendo DS) |
+//! | [`parse_pmp`] | PMP video (PSP) |
+//! | [`parse_skm`] | SKM video (Samsung) |
+//! | [`parse_ptx`] | PTX video |
+//! | [`parse_dxw`] | DXW video |
+//! | [`parse_dv_dif`] | DV / DIF raw bitstream |
+//! | [`parse_cdxa`] | CD-XA / CDROM/XA sectors |
+//! | [`parse_vbi`] | VBI data |
+//! | [`parse_ibi`] | Index-Byte Information (IBI) |
+//! | [`parse_bdmv`] | Blu-ray BDMV / BDAV playlist |
+//! | [`parse_dvdv`] | DVD Video |
+//! | [`parse_hls`] | HLS / M3U8 playlist |
+//! | [`parse_dash_mpd`] | MPEG-DASH MPD manifest |
+//! | [`parse_hds_f4m`] | Adobe HDS F4M manifest |
+//! | [`parse_ism`] | Smooth Streaming ISM manifest |
+//! | [`parse_scte35`] | SCTE-35 splice-info section |
+//! | [`parse_sequence_info`] | Sequence-info sidecar |
+//! | [`parse_dcp_am`] | DCP Asset Map (digital cinema) |
+//! | [`parse_dcp_cpl`] | DCP Composition Playlist (digital cinema) |
+//! | [`parse_dcp_pkl`] | DCP Packing List (digital cinema) |
+//! | [`parse_p2_clip`] | Panasonic P2 clip XML |
+//! | [`parse_xdcam_clip`] | Sony XDCAM clip XML |
+//! | [`parse_mi_xml`] | MediaInfoLib XML re-import |
+//!
+//! # Normal use
+//!
+//! Prefer the [`revelo`](https://crates.io/crates/revelo) facade, which
+//! auto-detects formats and dispatches to the correct parser:
+//!
+//! ```no_run
+//! use revelo_parsers_container::parse_mp4;
+//! use revelo_core::FileAnalyze;
+//!
+//! let data = std::fs::read("video.mp4").unwrap();
+//! let mut fa = FileAnalyze::new(&data);
+//! if parse_mp4(&mut fa) {
+//!     // fa contains General, Video, Audio, … streams
+//! }
+//! ```
+//!
+//! # Safety
+//!
+//! `#![deny(unsafe_code)]` — zero unsafe blocks in this crate.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]

@@ -1,9 +1,51 @@
-//! C ABI shim — drop-in replacement for MediaInfoLib's `libmediainfo`.
+//! Drop-in replacement for `libmediainfo` — exposes the `MediaInfo_*` C ABI
+//! backed entirely by revelo's pure-Rust engine.
 //!
-//! Function names and signatures match the upstream
-//! C API exactly so existing consumers can swap the shared library
-//! without source changes. Under the hood it delegates to revelo's
-//! [`detect`] + [`FileAnalyze`] pipeline.
+//! Function names and signatures match the upstream MediaInfoLib C API exactly,
+//! so existing C/C++/Python/FFI consumers can swap the shared library without
+//! source changes. Under the hood every call delegates to
+//! `revelo-dispatcher`'s [`detect`] + `revelo-core`'s [`FileAnalyze`] pipeline.
+//!
+//! # Exported symbols
+//!
+//! | Symbol | Description |
+//! |--------|-------------|
+//! | `MediaInfo_New` | Allocate a handle |
+//! | `MediaInfo_Delete` | Free a handle |
+//! | `MediaInfo_Open` | Read and parse a file (returns 1 on success) |
+//! | `MediaInfo_Close` | Discard parsed state |
+//! | `MediaInfo_Inform` | Return the text report as a C string (caller frees) |
+//! | `MediaInfo_Get` | Retrieve a single field value |
+//! | `MediaInfo_Count_Get` | Count streams of a given kind |
+//! | `MediaInfo_Option` | Set a runtime option (`Demux`, `TraceLevel`, …) |
+//!
+//! # C example
+//!
+//! ```c
+//! void *h = MediaInfo_New();
+//! if (MediaInfo_Open(h, "video.mp4")) {
+//!     char *report = MediaInfo_Inform(h, 0);
+//!     printf("%s\n", report);
+//!     free(report);
+//!     MediaInfo_Close(h);
+//! }
+//! MediaInfo_Delete(h);
+//! ```
+//!
+//! # Stream kind values
+//!
+//! `MediaInfo_Get` / `MediaInfo_Count_Get` accept `stream_kind` as an integer:
+//! `0` = General, `1` = Video, `2` = Audio, `3` = Text, `4` = Other,
+//! `5` = Image, `6` = Menu (MediaInfo-compatible). revelo extends this with
+//! `7` = Exif, `8` = Iptc, `9` = Xmp, `10` = Icc, `11` = C2pa,
+//! `12` = MakerNotes.
+//!
+//! # Field aliases
+//!
+//! `MediaInfo_Get` resolves common cross-version aliases transparently
+//! (e.g. `SampleRate` → `SamplingRate`, `Codec` → `CodecID`,
+//! `Resolution` → `BitDepth`). See `resolve_alias` in the source for the
+//! full list.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};

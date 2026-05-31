@@ -1,11 +1,39 @@
-//! Parser dispatch table — single source of truth.
+//! Parallel format-detection dispatch table for revelo's media parsers.
 //!
-//! Both `revelo-cli` and `revelo-cdylib` depend on this crate.
+//! This is the single source of truth for format coverage. Both `revelo-cli`
+//! and `revelo-cdylib` call into this crate to identify and parse media files.
 //!
-//! [`table`] returns the ordered array of parser function pointers.
-//! [`detect`] races them in parallel via [`rayon`] and returns the first
-//! (in table order) that recognizes a buffer. The caller then runs the winner
-//! against a fresh [`FileAnalyze`] to extract full metadata.
+//! # Public API
+//!
+//! - [`table`] — returns the ordered `[fn(&mut FileAnalyze) -> bool; 180]`
+//!   array of parser function pointers. Containers come before elementary
+//!   streams to prevent false-positive matches on random bytes.
+//! - [`detect`] — races all 180 parsers in parallel via rayon's
+//!   `par_iter().find_first()` and returns the first match in table order,
+//!   or `None` if the buffer is unrecognized. Parsers only peek at magic
+//!   bytes, so the detection pass is cheap; the caller re-runs the winner
+//!   against a fresh [`FileAnalyze`] to extract full metadata.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use revelo_core::FileAnalyze;
+//! use revelo_dispatcher::detect;
+//!
+//! fn analyze(bytes: &[u8]) {
+//!     let Some(parser) = detect(bytes) else { return; };
+//!     let mut fa = FileAnalyze::new(bytes);
+//!     parser(&mut fa);
+//!     println!("{} video stream(s)",
+//!              fa.stream_count(revelo_core::StreamKind::Video));
+//! }
+//! ```
+//!
+//! # Table ordering
+//!
+//! Containers → subtitles → audio → images → video → archives.
+//! Late-matching parsers (Opus, Vorbis, Teletext, …) appear at the end of
+//! their category to minimise false positives.
 
 #![deny(unsafe_code)]
 

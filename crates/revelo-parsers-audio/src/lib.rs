@@ -1,4 +1,62 @@
-//! Audio codec parsers: FLAC, MP3, AAC, AC3, DTS, etc.
+//! Audio-codec parsers for the revelo media-analysis library.
+//!
+//! This crate provides a parser for every audio codec and format that revelo
+//! understands. Each parser follows the same contract:
+//!
+//! ```text
+//! fn parse_<codec>(fa: &mut FileAnalyze) -> bool
+//! ```
+//!
+//! The function inspects the byte buffer held by `fa`, returns `false` if the
+//! data does not match, or fills the `Audio`/`General` stream fields and
+//! returns `true` on success. Parsers are registered in the revelo dispatcher
+//! inside `revelo-core`; application code does not call them directly.
+//!
+//! # Normal usage
+//!
+//! Use the [`revelo`](https://crates.io/crates/revelo) facade crate rather
+//! than depending on this crate directly:
+//!
+//! ```ignore
+//! // In your Cargo.toml: revelo = "0.4"
+//! use revelo::Metadata;
+//!
+//! let meta = Metadata::from_file("audio.flac").unwrap();
+//! for (key, value) in meta.audio() {
+//!     println!("{key} = {value}");
+//! }
+//! ```
+//!
+//! # Parsers
+//!
+//! The full list of re-exported parser functions covers:
+//!
+//! - **Lossy speech/general:** `parse_amr`, `parse_mp3`, `parse_aac`,
+//!   `parse_aac_adts`, `parse_speex`, `parse_opus`, `parse_vorbis`,
+//!   `parse_celt`, `parse_usac`, `parse_mpegh3da`, `parse_twin_vq`
+//! - **Lossless:** `parse_flac`, `parse_ape`, `parse_wvpk`, `parse_tak`,
+//!   `parse_tta`, `parse_als`, `parse_la`, `parse_rkau`
+//! - **Surround / broadcast:** `parse_ac3`, `parse_ac4`, `parse_truehd`,
+//!   `parse_dts`, `parse_dts_uhd`, `parse_dolby_e`,
+//!   `parse_dolby_audio_metadata`, `parse_adm`
+//! - **Immersive:** `parse_iamf`, `parse_iab`
+//! - **PCM variants:** `parse_pcm`, `parse_pcm_m2ts`, `parse_pcm_vob`,
+//!   `parse_adpcm`, `parse_au`, `parse_dat`
+//! - **Containers / file formats:** `parse_caf`, `parse_dsdiff`, `parse_dsf`,
+//!   `parse_mga`, `parse_open_mg`, `parse_ps2_audio`, `parse_aptx100`
+//! - **SMPTE standards:** `parse_smpte_st0302`, `parse_smpte_st0331`,
+//!   `parse_smpte_st0337`
+//! - **Tracker music:** `parse_module`, `parse_extended_module`,
+//!   `parse_impulse_tracker`, `parse_scream_tracker3`, `parse_midi`
+//! - **Musepack:** `parse_mpc`, `parse_mpc_sv8`
+//! - **Utilities:** `extract_replay_gain`, `fill_id3_replay_gain`,
+//!   `parse_channel_grouping`, `parse_channel_splitting`
+//!
+//! # Design
+//!
+//! All code in this crate is `#[deny(unsafe_code)]`. There are no system
+//! library dependencies and no C FFI. The `FileAnalyze` type lives in
+//! `revelo-core`.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]

@@ -5,8 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "revelo CLI"
-keywords = ["mediainfo", "metadata", "media", "parser", "ffprobe"]
+description = "Pure-Rust media metadata extractor — MediaInfo- and ExifTool-compatible output, no system dependencies"
+keywords = ["mediainfo", "exif", "metadata", "parser", "ffprobe"]
 categories = ["command-line-utilities", "multimedia", "parser-implementations"]
 readme = "README.md"
 

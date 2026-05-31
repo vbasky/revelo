@@ -1,19 +1,62 @@
-//! ExifTool-derived maker-note tag tables.
+//! ExifTool-derived maker-note tag tables for revelo.
 //!
-//! **Licensing:** unlike the rest of revelo (BSD-2-Clause), this crate is
-//! GPL/Artistic, because its tables are derived from Image::ExifTool. See
-//! the crate `LICENSE` and `NOTICE`. It is kept as a separate, optional
-//! crate so the BSD core never pulls copyleft code unless a build
-//! explicitly opts in (the `exiftool-tables` feature in
-//! `revelo-parsers-tag`).
+//! # License — read first
 //!
-//! Two lookups per vendor, both derived from the vendor's `%Main` (or
-//! equivalent) ExifTool tag table:
+//! **This crate is NOT BSD-2-Clause.** Its tag tables are derived works of
+//! [ExifTool](https://exiftool.org/) (© 2003-2025 Phil Harvey) and are
+//! licensed **GPL-1.0-or-later OR Artistic-1.0-Perl** (copyleft). Any binary
+//! that statically links this crate and is distributed must comply with one of
+//! those licenses for the combined work. See the crate `LICENSE` and `NOTICE`
+//! files.
+//!
+//! The crate is deliberately kept separate from the BSD-2-Clause core so that
+//! copyleft code is never included unless a build explicitly opts in via the
+//! `exiftool-tables` feature on `revelo-parsers-tag` (or the facade crates
+//! `revelo-cli` / `revelo`).
+//!
+//! # What this crate provides
+//!
+//! Two lookups per vendor, derived from the vendor's `%Main` (or equivalent)
+//! ExifTool tag table:
+//!
 //! - [`tag_name`] — maker-note tag id → canonical ExifTool tag name.
-//! - [`print_conv`] — (tag id, integer value) → ExifTool PrintConv string.
+//! - [`print_conv`] — `(tag id, integer value)` → ExifTool PrintConv string.
 //!
-//! Regenerate the tables with `codegen/extract.pl` against an installed
-//! ExifTool.
+//! Vendor coverage (14 vendors): Apple, Canon, Casio, DJI, FLIR, Fujifilm,
+//! Konica-Minolta (`Vendor::Minolta`), Nikon, Olympus, Panasonic, Pentax,
+//! Samsung, Sigma, Sony.
+//!
+//! [`Vendor::from_make`] maps a raw EXIF `Make` string (case-insensitive
+//! substring match) to the corresponding [`Vendor`] variant, or `None` for
+//! vendors with no bundled table (e.g. GoPro, which uses the binary `GPMF`
+//! format rather than a tag-based maker note).
+//!
+//! # Vendor-specific extensions
+//!
+//! **Canon** — [`CanonSubTable`] covers 12 `ProcessBinaryData` sub-tables
+//! (flat `int16s`/`int32s` arrays where each array index maps to a tag).
+//! Use [`canon_sub_tag_name`] and [`canon_sub_print_conv`] for these.
+//! [`canon_main_name_alias`] resolves the handful of Canon main-IFD tag names
+//! that differ between revelo and ExifTool.
+//!
+//! **Olympus** — [`OlympusSubTable`] covers 5 type-2 sub-IFDs (Equipment,
+//! CameraSettings, RawDevelopment, ImageProcessing, FocusInfo). Use
+//! [`olympus_sub_tag_name`] and [`olympus_sub_print_conv`].
+//!
+//! **Nikon** — [`nikon_afinfo_tag_name`] and [`nikon_afinfo_print_conv`]
+//! cover the AFInfo (tag 0x0088) sub-table, which is index-keyed rather than
+//! id-keyed.
+//!
+//! **EXIF name aliasing** — [`exif_name_alias`] maps standard EXIF tag names
+//! to ExifTool's name where the two diverge (e.g. `"DateTime"` →
+//! `"ModifyDate"`), so the revelo EXIF stream can align with ExifTool output.
+//!
+//! # Regenerating tables
+//!
+//! The generated files under `src/generated/` are produced by
+//! `codegen/extract.pl` run against an installed ExifTool. The extractor
+//! itself is BSD-2-Clause original revelo work; only its output is a
+//! derivative of ExifTool.
 
 mod generated;
 

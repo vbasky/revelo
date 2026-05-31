@@ -1,4 +1,66 @@
-//! Video codec parsers: Theora, VP8, VP9, Y4M, AVC/H.264, HEVC/H.265, AV1, etc.
+//! Video-codec parsers for the revelo media-analysis library.
+//!
+//! This crate provides a parser for every video codec and related metadata
+//! stream that revelo understands. Each parser follows the same contract:
+//!
+//! ```text
+//! fn parse_<codec>(fa: &mut FileAnalyze) -> bool
+//! ```
+//!
+//! The function inspects the byte buffer held by `fa`, returns `false` if the
+//! data does not match, or fills the `Video`/`General` stream fields and
+//! returns `true` on success. Parsers are registered in the revelo dispatcher
+//! inside `revelo-core`; application code does not call them directly.
+//!
+//! # Normal usage
+//!
+//! Use the [`revelo`](https://crates.io/crates/revelo) facade crate rather
+//! than depending on this crate directly:
+//!
+//! ```ignore
+//! // In your Cargo.toml: revelo = "0.4"
+//! use revelo::Metadata;
+//!
+//! let meta = Metadata::from_file("video.mkv").unwrap();
+//! for (key, value) in meta.video() {
+//!     println!("{key} = {value}");
+//! }
+//! ```
+//!
+//! # Parsers
+//!
+//! The full list of re-exported parser functions covers:
+//!
+//! - **Modern standards:** `parse_avc` / `parse_avc_sps`, `parse_hevc` /
+//!   `parse_hevc_sps`, `parse_av1` / `parse_av1_from_codec_config`,
+//!   `parse_vvc`, `parse_apv`
+//! - **MPEG legacy:** `parse_mpeg2` / `parse_mpeg2_sequence_header`,
+//!   `parse_mpeg4v`, `parse_h263`
+//! - **Chinese standards:** `parse_avs`, `parse_avs3`
+//! - **VP family:** `parse_vp8`, `parse_vp9` / `parse_vp9_codec_config`,
+//!   `parse_theora`
+//! - **VC-1:** `parse_vc1` / `parse_vc1_sequence_header` /
+//!   `parse_vc1_codec_private`
+//! - **Professional / intermediate:** `parse_prores`, `parse_vc3`,
+//!   `parse_cineform`, `parse_canopus`, `parse_aic`, `parse_ffv1`,
+//!   `parse_huffyuv`, `parse_lagarith`, `parse_dirac`, `parse_fraps`
+//! - **Animation / legacy:** `parse_flic`, `parse_y4m`
+//! - **HDR metadata:** `parse_dolby_vision`, `parse_dv_rpu`,
+//!   `parse_hdr_vivid`, `parse_afd_bar_data`
+//!
+//! Several parsers also expose structured info types (`AvcInfo`, `HevcInfo`,
+//! `Av1Info`, `Mpeg2Info`, `ProResInfo`, `Vc1Info`, `VvcInfo`,
+//! `DolbyVisionRpuInfo`) and utility functions
+//! (`extract_encoder_from_avc_sei_nalus`, `extract_encoder_from_sei_nalus`,
+//! `gop_detect`, `fill_mpeg2_streams`, `fill_vc1_streams`,
+//! `fill_dv_rpu_fields`, `parse_x264_style_encoder`) used by container
+//! parsers elsewhere in the workspace.
+//!
+//! # Design
+//!
+//! All code in this crate is `#[deny(unsafe_code)]`. There are no system
+//! library dependencies and no C FFI. The `FileAnalyze` type lives in
+//! `revelo-core`.
 
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]
