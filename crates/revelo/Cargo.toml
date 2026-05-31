@@ -1,0 +1,22 @@
+[package]
+name = "revelo"
+version = "0.4.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Read technical metadata from any media file — pure Rust, no system dependencies"
+keywords = ["mediainfo", "exiftool", "media", "metadata", "parser"]
+categories = ["multimedia", "parsing"]
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+revelo-core = { path = "../revelo-core", version = "0.4.0" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.0" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.0" }

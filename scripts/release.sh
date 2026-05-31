@@ -26,6 +26,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 # Workspace crates in dependency order. revelo-diff is publish = false (dev-only).
 CRATES=(
+  revelo
   revelo-util
   revelo-core
   revelo-parsers-video

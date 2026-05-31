@@ -21,6 +21,8 @@ pub mod stream;
 
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;
+/// Ergonomic alias for [`FileAnalyze`]. Both names refer to the same type.
+pub type MediaFile<'a> = FileAnalyze<'a>;
 pub use file_level::{FileLevelInfo, fill_file_level_fields};
 pub use reader::Reader;
 pub use stream::{Stream, StreamCollection, StreamKind};

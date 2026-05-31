@@ -10,7 +10,7 @@ binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 
 **Name:** *Revelo* is Latin *to reveal/unveil* (and a backronym: **R**eveals **E**very **V**ideo & **E**ncoding **L**ayer **O**utput) — it reveals the technical metadata hidden inside media files.
 
-[![crates.io](https://img.shields.io/crates/v/revelo-core?logo=rust&color=orange)](https://crates.io/crates/revelo-core)
+[![crates.io](https://img.shields.io/crates/v/revelo?logo=rust&color=orange)](https://crates.io/crates/revelo)
 [![docs.rs](https://img.shields.io/docsrs/revelo-core?logo=docsdotrs)](https://docs.rs/revelo-core)
 [![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=main&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
 [![License](https://img.shields.io/crates/l/revelo-core)](LICENSE)
@@ -259,34 +259,34 @@ cargo add revelo-parsers-archive
 
 ## Library usage
 
-Probe a file from Rust — the full analysis engine is exposed through `revelo-core`:
+```rust
+// One-liner: detect, parse, extract tags — everything in one call
+let meta = revelo::Metadata::from_file("photo.jpg").unwrap();
+
+for (key, value) in meta.general() {
+    println!("{key} = {value}");
+}
+for (key, value) in meta.exif() {
+    println!("{key} = {value}");
+}
+```
+
+For advanced control over the parse pipeline:
 
 ```rust
-use revelo_core::{FileAnalyze, FileLevelInfo, fill_file_level_fields};
+use revelo_core::MediaFile;
 use revelo_dispatcher::detect;
+use revelo_parsers_tag::parse_tags;
 
 let bytes = std::fs::read("video.mp4")?;
-
-// 1. Detect the format (parallel parser race)
 let parser = detect(&bytes).expect("no parser matched");
-
-// 2. Run the winner on a fresh state
-let mut fa = FileAnalyze::new(&bytes);
+let mut fa = MediaFile::new(&bytes);
 parser(&mut fa);
+parse_tags(&mut fa);
 
-// 3. Fill derived General-stream fields
-fill_file_level_fields(&mut fa, &FileLevelInfo {
-    file_size: bytes.len() as u64,
-    extension: Some("mp4"),
-    modified_unix_secs: None,
-    local_offset_secs: 0,
-});
-
-// 4. Read back metadata
 for stream in fa.streams() {
-    println!("{:?}:", stream.kind());
     for (key, value) in stream.iter() {
-        println!("  {key} = {value}");
+        println!("{} = {}", key, value);
     }
 }
 ```
@@ -295,7 +295,7 @@ For XML output (byte-equal with mediainfo):
 
 ```rust
 use revelo_export::to_xml;
-let xml = to_xml(fa.streams(), "video.mp4", "26.05");
+let xml = to_xml(fa.streams(), "video.mp4");
 ```
 
 ## Design
