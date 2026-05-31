@@ -551,7 +551,12 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
                 _ => "Unknown",
             };
             if transfer > 0 {
-                fa.set_field(StreamKind::Video, 0, "transfer_characteristics", transfer_str.to_string());
+                fa.set_field(
+                    StreamKind::Video,
+                    0,
+                    "transfer_characteristics",
+                    transfer_str.to_string(),
+                );
             }
         }
     }

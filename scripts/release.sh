@@ -32,6 +32,7 @@ CRATES=(
   revelo-parsers-archive
   revelo-parsers-audio
   revelo-parsers-image
+  revelo-exiftool-tables
   revelo-parsers-tag
   revelo-parsers-text
   revelo-parsers-container
@@ -43,7 +44,7 @@ CRATES=(
 )
 
 # ── pre-flight ─────────────────────────────────────────────────────────────
-[ "$(git rev-parse --abbrev-ref HEAD)" = "master" ] || { echo "✗ not on master"; exit 1; }
+[ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "✗ not on main"; exit 1; }
 [ -z "$(git status --porcelain)" ]                  || { echo "✗ working tree not clean — commit or stash first"; exit 1; }
 git rev-parse "$TAG" >/dev/null 2>&1                 && { echo "✗ tag $TAG already exists"; exit 1; }
 command -v gh >/dev/null                             || { echo "✗ gh CLI not found"; exit 1; }
@@ -67,7 +68,7 @@ cargo build --workspace   # validate manifests + compile before tagging
 git add crates/*/Cargo.toml CHANGELOG.md
 git commit -m "release: ${TAG}"
 git tag -a "${TAG}" -m "revelo ${VERSION}"
-git push origin master
+git push origin main
 git push origin "${TAG}"
 echo "==> tag pushed — CI is building binaries and creating the GitHub Release"
 
