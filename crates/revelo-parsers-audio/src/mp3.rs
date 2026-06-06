@@ -721,7 +721,7 @@ fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
 
     // Audio Duration: frames-based.
     if h.sample_rate > 0 && sampling_count > 0 {
-        let duration_ms = (sampling_count * 1000) / (h.sample_rate as u64);
+        let duration_ms = revelo_core::duration_ms(sampling_count, h.sample_rate as u64);
         fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
     }
 

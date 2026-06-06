@@ -1,6 +1,6 @@
 [package]
 name = "revelo"
-version = "0.4.3"
+version = "0.4.4"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -17,6 +17,6 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.4.3" }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.3" }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.3" }
+revelo-core = { path = "../revelo-core", version = "0.4.4" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.4" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.4" }

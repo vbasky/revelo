@@ -131,3 +131,15 @@ pub mod computed_fields;
 pub mod config;
 pub mod data_helpers;
 pub mod multi_file;
+
+/// Round-to-nearest duration in milliseconds from sample count and sample rate.
+///
+/// Uses `(samples * 1000 + rate / 2) / rate` to match mediainfo's rounding
+/// rather than truncation via `(samples * 1000) / rate`.
+#[inline]
+pub fn duration_ms(samples: u64, sample_rate: u64) -> u64 {
+    if sample_rate == 0 {
+        return 0;
+    }
+    (samples * 1000 + sample_rate / 2) / sample_rate
+}

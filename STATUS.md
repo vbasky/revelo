@@ -26,6 +26,9 @@ can't validate a port.
 
 ## P0 — correctness fixes (small, do first)
 
+- [x] **Duration calculation precision.** Standardized to round-to-nearest
+      `duration_ms()` helper in `revelo-core` — applied to WAV and MP3 parsers.
+      Ogg retains intentional truncation to match the mediainfo oracle.
 - [ ] **Elementary-stream extraction.** Wire PES payload parsing for MPEG-TS
       (AVC/AAC), VP9 frame headers in MKV/WebM, FLV per-tag AVC bitstream, and
       AV1 OBU sequence headers in MP4. These close the remaining ~10 divergence

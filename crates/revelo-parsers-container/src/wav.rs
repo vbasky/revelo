@@ -303,7 +303,7 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Opti
         fa.set_field(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string());
         if fmt.sample_rate > 0 {
             // Duration in milliseconds, matching C++ output convention.
-            let duration_ms = (sample_count * 1000) / fmt.sample_rate as u64;
+            let duration_ms = revelo_core::duration_ms(sample_count, fmt.sample_rate as u64);
             fa.set_field(StreamKind::Audio, 0, "Duration", duration_ms.to_string());
         }
     }

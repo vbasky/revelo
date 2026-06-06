@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.4] - 2026-06-06
+
+### Added
+
+- **`duration_ms()` helper** in `revelo-core` — round-to-nearest duration
+  computation from sample counts. Applied to WAV and MP3 parsers for more
+  precise output. Ogg retains intentional truncation to match the mediainfo
+  oracle.
+- **STATUS.md** — project roadmap and status tracker, linked from the README.
+- **`## Status` and `## License` sections** added to README.
+
+### Fixed
+
+- **Banner image URL** — crates.io now shows the revelo banner (was a broken
+  relative path).
+
 ## [0.4.3] - 2026-05-31
 
 ### Added
