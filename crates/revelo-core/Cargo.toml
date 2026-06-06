@@ -1,6 +1,6 @@
 [package]
 name = "revelo-core"
-version = "0.4.5"
+version = "0.4.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,4 +18,4 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-revelo-util = { path = "../revelo-util", version = "0.4.5" }
+revelo-util = { path = "../revelo-util", version = "0.4.6" }

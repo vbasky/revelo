@@ -1,5 +1,7 @@
 # revelo-cli
 
+![revelo — read technical metadata from any media file, in pure Rust](https://raw.githubusercontent.com/vbasky/revelo/main/docs/banner.png)
+
 A fast, safe, pure-Rust command-line tool for extracting technical and tag
 metadata from media files — a from-scratch Rust port of
 [MediaInfoLib](https://mediaarea.net/en/MediaInfo) with optional

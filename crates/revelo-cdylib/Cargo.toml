@@ -1,6 +1,6 @@
 [package]
 name = "revelo-cdylib"
-version = "0.4.5"
+version = "0.4.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -18,8 +18,8 @@ crate-type = ["cdylib"]
 workspace = true
 
 [dependencies]
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.5" }
-revelo-core = { path = "../revelo-core", version = "0.4.5" }
-revelo-export = { path = "../revelo-export", version = "0.4.5" }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.5" }
-revelo-util = { path = "../revelo-util", version = "0.4.5" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.6" }
+revelo-core = { path = "../revelo-core", version = "0.4.6" }
+revelo-export = { path = "../revelo-export", version = "0.4.6" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.6" }
+revelo-util = { path = "../revelo-util", version = "0.4.6" }
