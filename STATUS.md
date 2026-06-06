@@ -24,14 +24,21 @@ can't validate a port.
 
 ---
 
-## P0 — fidelity gaps
+## P0 — correctness fixes (small, do first)
 
 - [ ] **Elementary-stream extraction.** Wire PES payload parsing for MPEG-TS
       (AVC/AAC), VP9 frame headers in MKV/WebM, FLV per-tag AVC bitstream, and
       AV1 OBU sequence headers in MP4. These close the remaining ~10 divergence
       gaps against mediainfo.
 - [ ] **Blocked field validation.** `FrameRate_Mode_Original` and
-      `Format_Settings_SBR` need real-world test samples.
+      `Format_Settings_SBR` need real-world test samples to validate against the
+      oracle.
+- [ ] **Malformed input hardening.** Audit all parsers for panic safety on
+      truncated or fuzzed input — every `read_*` path must return `Err`, not
+      panic.
+- [ ] **Duration calculation precision.** Review `Duration` / `PlayTime` field
+      computations across fragmented containers (MP4 fragmented, segmented MXF)
+      for edge-case rounding mismatches against mediainfo.
 
 ## P1 — output & reporting
 
