@@ -1,6 +1,6 @@
 # Revelo
 
-![revelo — read technical metadata from any media file, in pure Rust](docs/banner.png)
+![revelo — read technical metadata from any media file, in pure Rust](https://raw.githubusercontent.com/vbasky/revelo/main/docs/banner.png)
 
 A library and CLI for containers, audio & video codecs, image formats, subtitle
 streams, archives, and embedded tags. A clean-room port of **MediaInfoLib**,
@@ -425,3 +425,14 @@ Planned features and high-impact areas for the next development phase:
 - ✅ **Log file** — `--log-file <FILE>` to redirect output to a file.
 - **Format conversion** — `revelo --to-json --from-xml` to transform between
   export formats without re-parsing.
+
+## Status
+
+`0.4.x` — 180+ parsers validated against the mediainfo oracle for byte-equal XML
+output. All parsers are harness-validated; the remaining gaps are documented and
+scoped. See the [status & roadmap](STATUS.md) for what's covered today and what's
+planned on the way to `1.0`.
+
+## License
+
+BSD 2-Clause License — see [LICENSE](LICENSE) for details.
