@@ -1,5 +1,7 @@
 # revelo
 
+![revelo — read technical metadata from any media file, in pure Rust](https://raw.githubusercontent.com/vbasky/revelo/main/docs/banner.png)
+
 Read technical metadata from any media file — pure Rust, no system dependencies.
 
 A from-scratch Rust port of [MediaInfoLib](https://mediaarea.net/en/MediaInfo) with optional
