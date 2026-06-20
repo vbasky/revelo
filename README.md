@@ -14,7 +14,7 @@ binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 [![docs.rs](https://img.shields.io/docsrs/revelo-core?logo=docsdotrs)](https://docs.rs/revelo-core)
 [![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=main&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
 [![License](https://img.shields.io/crates/l/revelo-core)](LICENSE)
-[![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://www.rust-lang.org)
+[![MSRV](https://img.shields.io/badge/MSRV-1.88-blue)](https://www.rust-lang.org)
 [![Parsers](https://img.shields.io/badge/parsers-180-blueviolet)](docs/formats.md)
 [![Read the write-up](https://img.shields.io/badge/Medium-Read%20the%20write--up-black?logo=medium&logoColor=white)](https://medium.com/@vbasky/porting-200-000-lines-of-c-to-rust-building-a-byte-identical-mediainfo-replacement-8e9b587d469a)
 [![Stars](https://img.shields.io/github/stars/vbasky/revelo?style=social)](https://github.com/vbasky/revelo/stargazers)
@@ -161,7 +161,7 @@ makes — revelo targets the 14 most common.
 | Workspace crates | 17 |
 | Tests | 800+ |
 | License | BSD-2-Clause (core) · GPL/Artistic (optional `exiftool-tables`) |
-| MSRV | Rust 1.85+ (edition 2024) |
+| MSRV | Rust 1.88+ (edition 2024) |
 
 ## Format coverage
 
