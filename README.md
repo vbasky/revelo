@@ -11,6 +11,7 @@ binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 **Name:** *Revelo* is Latin *to reveal/unveil* (and a backronym: **R**eveals **E**very **V**ideo & **E**ncoding **L**ayer **O**utput) — it reveals the technical metadata hidden inside media files.
 
 [![crates.io](https://img.shields.io/crates/v/revelo?logo=rust&color=orange)](https://crates.io/crates/revelo)
+[![Downloads](https://img.shields.io/crates/d/revelo?color=orange&label=downloads)](https://crates.io/crates/revelo)
 [![docs.rs](https://img.shields.io/docsrs/revelo-core?logo=docsdotrs)](https://docs.rs/revelo-core)
 [![CI](https://img.shields.io/github/actions/workflow/status/vbasky/revelo/ci.yml?branch=main&logo=github&label=CI)](https://github.com/vbasky/revelo/actions)
 [![License](https://img.shields.io/crates/l/revelo-core)](LICENSE)
