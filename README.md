@@ -17,6 +17,8 @@ binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 [![MSRV](https://img.shields.io/badge/MSRV-1.85-blue)](https://www.rust-lang.org)
 [![Parsers](https://img.shields.io/badge/parsers-180-blueviolet)](docs/formats.md)
 [![Read the write-up](https://img.shields.io/badge/Medium-Read%20the%20write--up-black?logo=medium&logoColor=white)](https://medium.com/@vbasky/porting-200-000-lines-of-c-to-rust-building-a-byte-identical-mediainfo-replacement-8e9b587d469a)
+[![Stars](https://img.shields.io/github/stars/vbasky/revelo?style=social)](https://github.com/vbasky/revelo/stargazers)
+[![Follow @vbasky](https://img.shields.io/github/followers/vbasky?style=social&label=Follow%20%40vbasky)](https://github.com/vbasky)
 
 ## How it reads a file
 
