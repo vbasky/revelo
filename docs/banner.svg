@@ -1,0 +1,91 @@
+<svg width="1300" height="460" viewBox="0 0 1300 460" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="revelo — pure-Rust MediaInfoLib port that reveals media metadata">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1300" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#161b29"/>
+      <stop offset="1" stop-color="#0e1320"/>
+    </linearGradient>
+    <radialGradient id="spot" cx="20%" cy="46%" r="42%">
+      <stop offset="0" stop-color="#f97316" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdba74"/>
+      <stop offset="0.5" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#ea580c"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fb923c"/>
+      <stop offset="1" stop-color="#c2410c"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="38%" cy="32%" r="78%">
+      <stop offset="0" stop-color="#33425f"/>
+      <stop offset="0.6" stop-color="#1d2840"/>
+      <stop offset="1" stop-color="#141d2e"/>
+    </radialGradient>
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="1.4" fill="#2a3650"/>
+    </pattern>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <clipPath id="card"><rect x="1" y="1" width="1298" height="458" rx="18"/></clipPath>
+    <clipPath id="lens"><circle cx="240" cy="208" r="104"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="1300" height="460" fill="url(#bg)"/>
+    <rect width="1300" height="460" fill="url(#grid)" opacity="0.5"/>
+    <rect width="1300" height="460" fill="url(#spot)"/>
+    <g opacity="0.85">
+      <rect x="1080" y="34" width="32" height="9" rx="4.5" fill="#3b82f6"/>
+      <rect x="1120" y="34" width="32" height="9" rx="4.5" fill="#3b82f6"/>
+      <rect x="1160" y="34" width="32" height="9" rx="4.5" fill="#f97316"/>
+      <rect x="1200" y="34" width="32" height="9" rx="4.5" fill="#f97316"/>
+      <rect x="24" y="417" width="32" height="9" rx="4.5" fill="#3b82f6"/>
+      <rect x="64" y="417" width="32" height="9" rx="4.5" fill="#f97316"/>
+    </g>
+  </g>
+
+  <!-- mark: magnifier revealing media metadata -->
+  <g>
+    <!-- handle -->
+    <path d="M322 290 L406 374" stroke="#f97316" stroke-width="34" stroke-linecap="round" filter="url(#glow)" opacity="0.45"/>
+    <path d="M322 290 L406 374" stroke="url(#handle)" stroke-width="28" stroke-linecap="round"/>
+    <path d="M318 286 L356 324" stroke="#fed7aa" stroke-width="6" stroke-linecap="round" opacity="0.55"/>
+    <!-- glass -->
+    <circle cx="240" cy="208" r="104" fill="url(#glass)"/>
+    <!-- revealed metadata readout -->
+    <g clip-path="url(#lens)">
+      <rect x="150" y="150" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
+      <rect x="198" y="150" width="118" height="13" rx="6.5" fill="#e2e8f0"/>
+      <rect x="150" y="178" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
+      <rect x="198" y="178" width="86"  height="13" rx="6.5" fill="#2dd4bf"/>
+      <rect x="150" y="206" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
+      <rect x="198" y="206" width="148" height="13" rx="6.5" fill="#f97316" filter="url(#soft)" opacity="0.6"/>
+      <rect x="198" y="206" width="148" height="13" rx="6.5" fill="#fb923c"/>
+      <rect x="150" y="234" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
+      <rect x="198" y="234" width="104" height="13" rx="6.5" fill="#818cf8"/>
+      <rect x="150" y="262" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
+      <rect x="198" y="262" width="128" height="13" rx="6.5" fill="#cbd5e1"/>
+    </g>
+    <!-- specular highlight on glass -->
+    <path d="M176 150 A104 104 0 0 1 300 138" stroke="#ffffff" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.16" filter="url(#soft)"/>
+    <!-- rim -->
+    <circle cx="240" cy="208" r="104" fill="none" stroke="#f97316" stroke-width="22" filter="url(#glow)" opacity="0.4"/>
+    <circle cx="240" cy="208" r="104" fill="none" stroke="url(#orange)" stroke-width="16"/>
+    <circle cx="240" cy="208" r="95"  fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.14"/>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+    <text x="520" y="282" font-size="104" font-weight="700" fill="#f4f7fc" letter-spacing="-1.5">revelo</text>
+    <rect x="523" y="296" width="250" height="8" rx="4" fill="#f97316"/>
+    <text x="524" y="348" font-size="26" font-weight="600" fill="#c4cee0">Read media metadata from 177+ formats &#8212; in pure Rust</text>
+    <text x="524" y="396" font-size="19" font-weight="600" fill="#7c8aa8" letter-spacing="2.4">MEDIAINFO &#183; LIBMEDIAINFO &#183; C ABI &#183; CLI &#183; 177+ FORMATS</text>
+    <text x="524" y="432" font-size="17" font-weight="500" fill="#5f6d88" letter-spacing="0.3">github.com/vbasky/revelo &#183; oracle: MediaInfo &#183; MIT / Apache-2.0</text>
+  </g>
+
+  <rect x="1" y="1" width="1298" height="458" rx="18" fill="none" stroke="#2b3650" stroke-width="2"/>
+</svg>
