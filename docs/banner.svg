@@ -1,12 +1,16 @@
-<svg width="1300" height="460" viewBox="0 0 1300 460" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="revelo — pure-Rust MediaInfoLib port that reveals media metadata">
+<svg width="1300" height="460" viewBox="0 0 1300 460" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="revelo — pure-Rust media metadata inspector">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1300" y2="460" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#161b29"/>
-      <stop offset="1" stop-color="#0e1320"/>
+      <stop offset="0" stop-color="#fafbfd"/>
+      <stop offset="1" stop-color="#f1f4f9"/>
     </linearGradient>
-    <radialGradient id="spot" cx="20%" cy="46%" r="42%">
-      <stop offset="0" stop-color="#f97316" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+    <radialGradient id="warm" cx="22%" cy="50%" r="48%">
+      <stop offset="0" stop-color="#ffedd5" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffedd5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cool" cx="78%" cy="50%" r="52%">
+      <stop offset="0" stop-color="#dbeafe" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#dbeafe" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="orange" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fdba74"/>
@@ -18,74 +22,90 @@
       <stop offset="1" stop-color="#c2410c"/>
     </linearGradient>
     <radialGradient id="glass" cx="38%" cy="32%" r="78%">
-      <stop offset="0" stop-color="#33425f"/>
-      <stop offset="0.6" stop-color="#1d2840"/>
-      <stop offset="1" stop-color="#141d2e"/>
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.55" stop-color="#e8eef6"/>
+      <stop offset="1" stop-color="#d7e0ec"/>
     </radialGradient>
-    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
-      <circle cx="1.5" cy="1.5" r="1.4" fill="#2a3650"/>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#c8d2e4"/>
     </pattern>
-    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
-      <feGaussianBlur stdDeviation="9"/>
+    <filter id="logoShadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#334155" flood-opacity="0.18"/>
     </filter>
     <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="6"/>
+      <feGaussianBlur stdDeviation="5"/>
     </filter>
-    <clipPath id="card"><rect x="1" y="1" width="1298" height="458" rx="18"/></clipPath>
-    <clipPath id="lens"><circle cx="240" cy="208" r="104"/></clipPath>
+    <clipPath id="card"><rect x="0" y="0" width="1300" height="460" rx="18"/></clipPath>
+    <clipPath id="lens"><circle cx="258" cy="214" r="88"/></clipPath>
   </defs>
 
+  <rect x="0" y="0" width="1300" height="460" rx="18" fill="url(#bg)" stroke="#d5dce8" stroke-width="2"/>
+
   <g clip-path="url(#card)">
-    <rect width="1300" height="460" fill="url(#bg)"/>
-    <rect width="1300" height="460" fill="url(#grid)" opacity="0.5"/>
-    <rect width="1300" height="460" fill="url(#spot)"/>
-    <g opacity="0.85">
-      <rect x="1080" y="34" width="32" height="9" rx="4.5" fill="#3b82f6"/>
-      <rect x="1120" y="34" width="32" height="9" rx="4.5" fill="#3b82f6"/>
+    <rect width="1300" height="460" fill="url(#dots)"/>
+    <rect width="1300" height="460" fill="url(#warm)"/>
+    <rect width="1300" height="460" fill="url(#cool)"/>
+    <g opacity="0.75">
+      <rect x="1080" y="34" width="32" height="9" rx="4.5" fill="#2563eb"/>
+      <rect x="1120" y="34" width="32" height="9" rx="4.5" fill="#2563eb"/>
       <rect x="1160" y="34" width="32" height="9" rx="4.5" fill="#f97316"/>
       <rect x="1200" y="34" width="32" height="9" rx="4.5" fill="#f97316"/>
-      <rect x="24" y="417" width="32" height="9" rx="4.5" fill="#3b82f6"/>
-      <rect x="64" y="417" width="32" height="9" rx="4.5" fill="#f97316"/>
+      <rect x="24" y="410" width="32" height="9" rx="4.5" fill="#2563eb"/>
+      <rect x="64" y="410" width="32" height="9" rx="4.5" fill="#f97316"/>
     </g>
   </g>
 
-  <!-- mark: magnifier revealing media metadata -->
-  <g>
-    <!-- handle -->
-    <path d="M322 290 L406 374" stroke="#f97316" stroke-width="34" stroke-linecap="round" filter="url(#glow)" opacity="0.45"/>
-    <path d="M322 290 L406 374" stroke="url(#handle)" stroke-width="28" stroke-linecap="round"/>
-    <path d="M318 286 L356 324" stroke="#fed7aa" stroke-width="6" stroke-linecap="round" opacity="0.55"/>
-    <!-- glass -->
-    <circle cx="240" cy="208" r="104" fill="url(#glass)"/>
-    <!-- revealed metadata readout -->
-    <g clip-path="url(#lens)">
-      <rect x="150" y="150" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
-      <rect x="198" y="150" width="118" height="13" rx="6.5" fill="#e2e8f0"/>
-      <rect x="150" y="178" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
-      <rect x="198" y="178" width="86"  height="13" rx="6.5" fill="#2dd4bf"/>
-      <rect x="150" y="206" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
-      <rect x="198" y="206" width="148" height="13" rx="6.5" fill="#f97316" filter="url(#soft)" opacity="0.6"/>
-      <rect x="198" y="206" width="148" height="13" rx="6.5" fill="#fb923c"/>
-      <rect x="150" y="234" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
-      <rect x="198" y="234" width="104" height="13" rx="6.5" fill="#818cf8"/>
-      <rect x="150" y="262" width="40"  height="13" rx="6.5" fill="#6b7a99"/>
-      <rect x="198" y="262" width="128" height="13" rx="6.5" fill="#cbd5e1"/>
+  <g filter="url(#logoShadow)">
+    <circle cx="258" cy="214" r="168" fill="none" stroke="#2563eb" stroke-width="2.5" opacity="0.28"/>
+    <g stroke="#2563eb" stroke-width="2" opacity="0.45">
+      <line x1="258" y1="46" x2="258" y2="28"/>
+      <line x1="258" y1="382" x2="258" y2="400"/>
+      <line x1="90" y1="214" x2="72" y2="214"/>
+      <line x1="426" y1="214" x2="444" y2="214"/>
+      <line x1="139" y1="95" x2="126" y2="82"/>
+      <line x1="377" y1="333" x2="390" y2="346"/>
+      <line x1="377" y1="95" x2="390" y2="82"/>
+      <line x1="139" y1="333" x2="126" y2="346"/>
     </g>
-    <!-- specular highlight on glass -->
-    <path d="M176 150 A104 104 0 0 1 300 138" stroke="#ffffff" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.16" filter="url(#soft)"/>
-    <!-- rim -->
-    <circle cx="240" cy="208" r="104" fill="none" stroke="#f97316" stroke-width="22" filter="url(#glow)" opacity="0.4"/>
-    <circle cx="240" cy="208" r="104" fill="none" stroke="url(#orange)" stroke-width="16"/>
-    <circle cx="240" cy="208" r="95"  fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.14"/>
+    <circle cx="258" cy="46" r="5" fill="#2563eb" opacity="0.7"/>
+    <circle cx="258" cy="382" r="5" fill="#2563eb" opacity="0.7"/>
+    <circle cx="90" cy="214" r="5" fill="#2563eb" opacity="0.7"/>
+    <circle cx="426" cy="214" r="5" fill="#2563eb" opacity="0.7"/>
+    <circle cx="139" cy="95" r="4" fill="#2563eb" opacity="0.55"/>
+    <circle cx="377" cy="333" r="4" fill="#2563eb" opacity="0.55"/>
+    <circle cx="377" cy="95" r="4" fill="#2563eb" opacity="0.55"/>
+    <circle cx="139" cy="333" r="4" fill="#2563eb" opacity="0.55"/>
+
+    <path d="M326 276 L392 342" stroke="#f97316" stroke-width="26" stroke-linecap="round" opacity="0.35" filter="url(#soft)"/>
+    <path d="M326 276 L392 342" stroke="url(#handle)" stroke-width="22" stroke-linecap="round"/>
+    <path d="M322 272 L348 298" stroke="#fff7ed" stroke-width="5" stroke-linecap="round" opacity="0.65"/>
+
+    <circle cx="258" cy="214" r="88" fill="url(#glass)"/>
+    <g clip-path="url(#lens)">
+      <rect x="186" y="162" width="34" height="11" rx="5.5" fill="#94a3b8"/>
+      <rect x="228" y="162" width="96" height="11" rx="5.5" fill="#1e293b"/>
+      <rect x="186" y="186" width="34" height="11" rx="5.5" fill="#94a3b8"/>
+      <rect x="228" y="186" width="72" height="11" rx="5.5" fill="#14b8a6"/>
+      <rect x="186" y="210" width="34" height="11" rx="5.5" fill="#94a3b8"/>
+      <rect x="228" y="210" width="118" height="11" rx="5.5" fill="#f97316"/>
+      <rect x="186" y="234" width="34" height="11" rx="5.5" fill="#94a3b8"/>
+      <rect x="228" y="234" width="84" height="11" rx="5.5" fill="#6366f1"/>
+      <rect x="186" y="258" width="34" height="11" rx="5.5" fill="#94a3b8"/>
+      <rect x="228" y="258" width="104" height="11" rx="5.5" fill="#cbd5e1"/>
+    </g>
+    <path d="M198 158 A88 88 0 0 1 310 148" stroke="#ffffff" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.55"/>
+    <circle cx="258" cy="214" r="88" fill="none" stroke="#f97316" stroke-width="14"/>
+    <circle cx="258" cy="214" r="81" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.55"/>
   </g>
 
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
-    <text x="520" y="282" font-size="104" font-weight="700" fill="#f4f7fc" letter-spacing="-1.5">revelo</text>
-    <rect x="523" y="296" width="250" height="8" rx="4" fill="#f97316"/>
-    <text x="524" y="348" font-size="26" font-weight="600" fill="#c4cee0">Read media metadata from 177+ formats &#8212; in pure Rust</text>
-    <text x="524" y="396" font-size="19" font-weight="600" fill="#7c8aa8" letter-spacing="2.4">MEDIAINFO &#183; LIBMEDIAINFO &#183; C ABI &#183; CLI &#183; 177+ FORMATS</text>
-    <text x="524" y="432" font-size="17" font-weight="500" fill="#5f6d88" letter-spacing="0.3">github.com/vbasky/revelo &#183; oracle: MediaInfo &#183; MIT / Apache-2.0</text>
-  </g>
+    <text x="520" y="282" font-size="100" font-weight="700" fill="#1a2440" letter-spacing="-1">revelo</text>
+    <rect x="520" y="292" width="250" height="7" rx="3.5" fill="#f2711c"/>
 
-  <rect x="1" y="1" width="1298" height="458" rx="18" fill="none" stroke="#2b3650" stroke-width="2"/>
+    <text x="520" y="344" font-size="26" font-weight="500" fill="#344054">Read technical metadata from any media file &#8212; in pure Rust</text>
+
+    <text x="520" y="392" font-size="20" font-weight="600" fill="#475467" letter-spacing="2.5">MEDIAINFO &#183; EXIFTOOL &#183; C ABI &#183; CLI &#183; 180+ FORMATS</text>
+
+    <text x="520" y="430" font-size="17" font-weight="500" fill="#667085" letter-spacing="0.3">github.com/vbasky/revelo &#183; oracle: MediaInfo &#183; MIT / Apache-2.0</text>
+  </g>
 </svg>
