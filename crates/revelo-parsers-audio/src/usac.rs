@@ -5,14 +5,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: ADTS 0xFFF with extended AudioObjectType 42.
 /// Fills: Profile, sample rate, channels.
 pub fn parse_usac(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(5) {
         Some(b) => b,
         None => return false,
     };
-
-    if buf.len() < 5 {
-        return false;
-    }
 
     // ADTS header: sync word 0xFFF
     if buf[0] != 0xFF || (buf[1] & 0xF0) != 0xF0 {

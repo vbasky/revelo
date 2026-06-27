@@ -4,11 +4,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: PS2 ADPCM header.
 /// Fills: Channels, sample rate.
 pub fn parse_ps2_audio(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 8 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(8) else { return false };
     let magic = &buf[0..4];
     if magic != b"SSmp" && magic != b"VSab" && magic != b"VSaf" {
         return false;
