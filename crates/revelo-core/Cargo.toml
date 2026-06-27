@@ -1,6 +1,6 @@
 [package]
 name = "revelo-core"
-version = "0.4.6"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,5 +22,5 @@ default = ["mmap"]
 mmap = ["dep:memmap2"]
 
 [dependencies]
-revelo-util = { path = "../revelo-util", version = "0.4.6" }
+revelo-util = { path = "../revelo-util", version = "0.5.0" }
 memmap2 = { version = "0.9", optional = true }
