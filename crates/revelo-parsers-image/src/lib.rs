@@ -114,3 +114,45 @@ pub use rle::parse_rle;
 pub use tga::parse_tga;
 pub use tiff::parse_tiff;
 pub use webp::parse_webp;
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path};
+
+    fn assert_no_full_raw_scan_patterns(src_dir: &Path) {
+        for entry in fs::read_dir(src_dir).expect("read parser src dir") {
+            let path = entry.expect("read parser src entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
+
+            let source = fs::read_to_string(&path).expect("read parser source");
+            for forbidden in [
+                concat!("peek_raw(", "fa.remain())"),
+                concat!("read_raw(", "fa.remain())"),
+                concat!("peek_raw(", "remain)"),
+                concat!("read_raw(", "remain)"),
+                concat!("peek_raw(", "total)"),
+                concat!("read_raw(", "total)"),
+                concat!("peek_raw(", "file_size)"),
+                concat!("read_raw(", "file_size)"),
+                concat!("peek_raw(", "avail)"),
+                concat!("read_raw(", "avail)"),
+                concat!("peek_raw_at(0, ", "fa.element_size())"),
+            ] {
+                assert!(
+                    !source.contains(forbidden),
+                    "{} contains forbidden full-scan pattern: {forbidden}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn image_parsers_do_not_reintroduce_full_raw_scans() {
+        assert_no_full_raw_scan_patterns(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src").as_path(),
+        );
+    }
+}

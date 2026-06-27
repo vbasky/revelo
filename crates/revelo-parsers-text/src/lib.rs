@@ -117,6 +117,12 @@ mod tests {
                 concat!("read_raw(", "fa.remain())"),
                 concat!("peek_raw(", "remain)"),
                 concat!("read_raw(", "remain)"),
+                concat!("peek_raw(", "total)"),
+                concat!("read_raw(", "total)"),
+                concat!("peek_raw(", "file_size)"),
+                concat!("read_raw(", "file_size)"),
+                concat!("peek_raw(", "avail)"),
+                concat!("read_raw(", "avail)"),
                 concat!("peek_raw_at(0, ", "fa.element_size())"),
             ] {
                 assert!(
