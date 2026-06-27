@@ -39,6 +39,9 @@ const BLOCK_TYPE_VORBIS_COMMENT: u8 = 4;
 const BLOCK_TYPE_CUESHEET: u8 = 5;
 const BLOCK_TYPE_PICTURE: u8 = 6;
 
+const FLAC_VENDOR_STRING_LIMIT: usize = 4 * 1024;
+const FLAC_COMMENT_STRING_LIMIT: usize = 64 * 1024;
+
 #[derive(Debug, Default)]
 struct StreamInfo {
     min_frame_size: u32,
@@ -164,7 +167,8 @@ fn parse_vorbis_comment(r: &mut Reader<'_, '_>, block_len: usize) -> Option<Vorb
         return None;
     }
 
-    let vendor = String::from_utf8_lossy(r.read_raw(vendor_len_usize)?).into_owned();
+    let vendor =
+        read_utf8_limited(r, vendor_len_usize, FLAC_VENDOR_STRING_LIMIT).unwrap_or_default();
 
     let mut comments = VorbisComments { vendor, ..Default::default() };
 
@@ -181,8 +185,9 @@ fn parse_vorbis_comment(r: &mut Reader<'_, '_>, block_len: usize) -> Option<Vorb
                 break;
             }
 
-            // Read and parse the comment
-            let comment = String::from_utf8_lossy(r.read_raw(cl)?);
+            let Some(comment) = read_utf8_limited(r, cl, FLAC_COMMENT_STRING_LIMIT) else {
+                continue;
+            };
 
             // Vorbis comments are "FIELD=value" format
             if let Some(eq_pos) = comment.find('=') {
@@ -209,6 +214,14 @@ fn parse_vorbis_comment(r: &mut Reader<'_, '_>, block_len: usize) -> Option<Vorb
     }
 
     Some(comments)
+}
+
+fn read_utf8_limited(r: &mut Reader<'_, '_>, len: usize, limit: usize) -> Option<String> {
+    if len > limit {
+        r.skip(len)?;
+        return None;
+    }
+    Some(String::from_utf8_lossy(r.read_raw(len)?).into_owned())
 }
 
 fn parse_streaminfo(r: &mut Reader<'_, '_>) -> Option<StreamInfo> {
@@ -405,6 +418,18 @@ mod tests {
         buf
     }
 
+    fn append_streaminfo(buf: &mut Vec<u8>, is_last: bool) {
+        buf.push(if is_last { 0x80 } else { 0x00 });
+        buf.extend_from_slice(&[0, 0, 34]);
+        buf.extend_from_slice(&[0, 0]);
+        buf.extend_from_slice(&[0, 0]);
+        buf.extend_from_slice(&[0, 0, 0]);
+        buf.extend_from_slice(&[0, 0, 0]);
+        let packed = pack_streaminfo_packed_field(48000, 1, 15, 1000);
+        buf.extend_from_slice(&packed);
+        buf.extend_from_slice(&[0u8; 16]);
+    }
+
     #[test]
     fn parse_minimal_flac() {
         let buf = make_flac(48000, 2, 16, 71638, 37981);
@@ -491,5 +516,28 @@ mod tests {
                 .as_deref(),
             Some("44100")
         );
+    }
+
+    #[test]
+    fn oversized_vorbis_vendor_is_skipped() {
+        let vendor_len = FLAC_VENDOR_STRING_LIMIT + 1;
+        let block_len = 4 + vendor_len + 4;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"fLaC");
+        append_streaminfo(&mut buf, false);
+        buf.push(0x80 | BLOCK_TYPE_VORBIS_COMMENT);
+        buf.extend_from_slice(&[
+            ((block_len >> 16) & 0xff) as u8,
+            ((block_len >> 8) & 0xff) as u8,
+            (block_len & 0xff) as u8,
+        ]);
+        buf.extend_from_slice(&(vendor_len as u32).to_le_bytes());
+        buf.resize(buf.len() + vendor_len, b'v');
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.resize(buf.len() + 16, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_flac(&mut fa));
+        assert!(fa.access_stats().max_request_len < vendor_len);
     }
 }
