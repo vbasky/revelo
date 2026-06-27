@@ -22,42 +22,14 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
 
     // Look for icpf (ProRes standard) or apch/apcn/apcs/apco/ap4h (Apple ProRes variants)
     let magic = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
-    if magic != 0x69637066
-        && magic != 0x6170636E
-        && magic != 0x61706373
-        && magic != 0x6170636F
-        && magic != 0x61703468
-        && magic != 0x70727266
-    {
-        // Check for ProRes in MOV container: skip to frame data
-        let raw = fa.peek_raw(fa.remain());
-        let buf = match raw {
-            Some(b) => b,
-            None => return false,
-        };
-        if buf.len() < 20 {
-            return false;
-        }
-
-        let frame_magic = u32::from_be_bytes([buf[4], buf[5], buf[6], buf[7]]);
-        if frame_magic != 0x69637066
-            && frame_magic != 0x6170636E
-            && frame_magic != 0x61706373
-            && frame_magic != 0x6170636F
-            && frame_magic != 0x61703468
-            && frame_magic != 0x70727266
-        {
-            return false;
-        }
+    if !is_prores_magic(magic) {
+        return false;
     }
 
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(21) {
         Some(b) => b,
         None => return false,
     };
-    if buf.len() < 20 {
-        return false;
-    }
 
     let _hdr_size = u16::from_be_bytes([buf[8], buf[9]]);
     let version = u16::from_be_bytes([buf[10], buf[11]]);
@@ -65,15 +37,11 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
     let frame_width = u16::from_be_bytes([buf[16], buf[17]]);
     let frame_height = u16::from_be_bytes([buf[18], buf[19]]);
 
-    if buf.len() < 21 {
-        return false;
-    }
-
     let chrominance_factor = (buf[20] >> 6) & 3;
     let frame_type = (buf[20] >> 4) & 3;
-    let primaries = *buf.get(22).unwrap_or(&2);
-    let transfer = *buf.get(23).unwrap_or(&2);
-    let matrix = *buf.get(24).unwrap_or(&2);
+    let primaries = fa.peek_raw_at(22, 1).and_then(|b| b.first()).copied().unwrap_or(2);
+    let transfer = fa.peek_raw_at(23, 1).and_then(|b| b.first()).copied().unwrap_or(2);
+    let matrix = fa.peek_raw_at(24, 1).and_then(|b| b.first()).copied().unwrap_or(2);
 
     let info = ProResInfo {
         version,
@@ -89,6 +57,10 @@ pub fn parse_prores(fa: &mut FileAnalyze) -> bool {
 
     fill_prores_streams(fa, &info);
     true
+}
+
+fn is_prores_magic(magic: u32) -> bool {
+    matches!(magic, 0x69637066 | 0x6170636E | 0x61706373 | 0x6170636F | 0x61703468 | 0x70727266)
 }
 
 fn fill_prores_streams(fa: &mut FileAnalyze, info: &ProResInfo) {
@@ -220,5 +192,20 @@ mod tests {
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_prores(&mut fa));
+    }
+
+    #[test]
+    fn prores_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[4..8].copy_from_slice(b"icpf");
+        buf[16] = 0x07;
+        buf[17] = 0x80;
+        buf[18] = 0x04;
+        buf[19] = 0x38;
+        buf[20] = 0x82;
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_prores(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 21);
     }
 }

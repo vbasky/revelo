@@ -14,6 +14,7 @@ const NAL_IDR_N_LP: u8 = 20;
 const NAL_CRA: u8 = 21;
 
 const ANNEX_B_START_CODE: [u8; 4] = [0x00, 0x00, 0x00, 0x01];
+const VVC_NAL_SCAN_LIMIT: usize = 1024 * 1024;
 
 pub struct VvcInfo {
     pub profile_idc: u8,
@@ -36,7 +37,8 @@ pub fn parse_vvc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let data = match fa.peek_raw(fa.remain()) {
+    let scan_len = fa.remain().min(VVC_NAL_SCAN_LIMIT);
+    let data = match fa.peek_raw(scan_len) {
         Some(d) => d.to_vec(),
         None => return false,
     };
@@ -267,5 +269,15 @@ mod tests {
         let data: Vec<u8> = vec![0xFF, 0xD8, 0xFF, 0xE0];
         let mut fa = FileAnalyze::new(&data);
         assert!(!parse_vvc(&mut fa));
+    }
+
+    #[test]
+    fn vvc_does_not_request_full_payload() {
+        let mut data = vec![0u8; VVC_NAL_SCAN_LIMIT + 1024];
+        data[0..3].copy_from_slice(&[0, 0, 1]);
+        data[3] = 0x78;
+        let mut fa = FileAnalyze::new(&data);
+        let _ = parse_vvc(&mut fa);
+        assert_eq!(fa.access_stats().max_request_len, VVC_NAL_SCAN_LIMIT);
     }
 }
