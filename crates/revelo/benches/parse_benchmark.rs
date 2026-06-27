@@ -44,6 +44,20 @@ fn full_wav(data_size: usize) -> Vec<u8> {
     buf
 }
 
+/// Minimal MP4-like sparse file: ftyp followed by an mdat that extends to EOF.
+/// This reproduces the large-container metadata case without storing media data.
+fn mp4_ftyp_mdat_header() -> Vec<u8> {
+    let mut buf = Vec::with_capacity(28);
+    buf.extend_from_slice(&20u32.to_be_bytes());
+    buf.extend_from_slice(b"ftyp");
+    buf.extend_from_slice(b"M4A ");
+    buf.extend_from_slice(&0u32.to_be_bytes());
+    buf.extend_from_slice(b"isom");
+    buf.extend_from_slice(&0u32.to_be_bytes());
+    buf.extend_from_slice(b"mdat");
+    buf
+}
+
 fn bench_parse(c: &mut Criterion) {
     // ── small file (44 B header + 100 B samples) ────────────────
     let small_data = 100usize;
@@ -67,6 +81,17 @@ fn bench_parse(c: &mut Criterion) {
     }
     // Also build a full in-memory large buffer (pre-allocated for fairness)
     let large_bytes = full_wav(large_data);
+
+    // ── sparse MP4-like large file: ftyp + mdat-to-EOF ─────────
+    let large_mp4_file = NamedTempFile::new().expect("tempfile");
+    let large_mp4_header = mp4_ftyp_mdat_header();
+    let large_mp4_total = large_mp4_header.len() as u64 + large_data as u64;
+    {
+        let mut f = large_mp4_file.as_file();
+        f.write_all(&large_mp4_header).expect("write mp4 header");
+        f.set_len(large_mp4_total).expect("set_len mp4");
+        f.flush().expect("flush mp4");
+    }
 
     // ── group: from_bytes (in-memory buffer) ────────────────────
     let mut group = c.benchmark_group("from_bytes");
@@ -93,6 +118,11 @@ fn bench_parse(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(large_total));
     group.bench_function(BenchmarkId::new("large", "100 MiB"), |b| {
         b.iter(|| black_box(revelo::Metadata::from_file(black_box(&large_path))));
+    });
+    let large_mp4_path = large_mp4_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(large_mp4_total));
+    group.bench_function(BenchmarkId::new("large_mp4_sparse", "100 MiB"), |b| {
+        b.iter(|| black_box(revelo::Metadata::from_file(black_box(&large_mp4_path))));
     });
     group.finish();
 

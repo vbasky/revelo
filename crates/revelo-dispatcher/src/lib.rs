@@ -8,11 +8,10 @@
 //! - [`table`] — returns the ordered `[fn(&mut FileAnalyze) -> bool; 180]`
 //!   array of parser function pointers. Containers come before elementary
 //!   streams to prevent false-positive matches on random bytes.
-//! - [`detect`] — races all 180 parsers in parallel via rayon's
-//!   `par_iter().find_first()` and returns the first match in table order,
-//!   or `None` if the buffer is unrecognized. Parsers only peek at magic
-//!   bytes, so the detection pass is cheap; the caller re-runs the winner
-//!   against a fresh [`FileAnalyze`] to extract full metadata.
+//! - [`detect`] — returns the first match in table order. Small buffers use
+//!   rayon when the `parallel` feature is enabled. Large buffers use a
+//!   sequential, raw-read-capped probe so speculative parser candidates cannot
+//!   fault or copy the whole file before the real parser is selected.
 //!
 //! # Example
 //!
@@ -39,7 +38,7 @@
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use revelo_core::FileAnalyze;
+use revelo_core::{AccessStats, FileAnalyze};
 
 use revelo_parsers_archive::{
     parse_7z, parse_ace, parse_bzip2, parse_elf, parse_gzip, parse_iso9660, parse_mach_o,
@@ -83,6 +82,46 @@ use revelo_parsers_video::{
     parse_mpeg2, parse_mpeg4v, parse_prores, parse_theora, parse_vc1, parse_vc3, parse_vp8,
     parse_vp9, parse_vvc, parse_y4m,
 };
+
+const LARGE_INPUT_DETECTION_THRESHOLD: usize = 8 * 1024 * 1024;
+const LARGE_INPUT_RAW_READ_LIMIT: usize = 8 * 1024 * 1024;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct DetectionStats {
+    candidates_run: usize,
+    bytes_requested: u64,
+    bytes_returned: u64,
+    max_request_len: usize,
+}
+
+impl DetectionStats {
+    fn record_candidate(&mut self, stats: AccessStats) {
+        self.candidates_run += 1;
+        self.bytes_requested = self.bytes_requested.saturating_add(stats.bytes_requested);
+        self.bytes_returned = self.bytes_returned.saturating_add(stats.bytes_returned);
+        self.max_request_len = self.max_request_len.max(stats.max_request_len);
+    }
+}
+
+fn detect_sequential_with_stats(
+    bytes: &[u8],
+    raw_read_limit: Option<usize>,
+) -> (Option<fn(&mut FileAnalyze) -> bool>, DetectionStats) {
+    let mut stats = DetectionStats::default();
+    for parser in table() {
+        let mut fa = if let Some(limit) = raw_read_limit {
+            FileAnalyze::with_raw_read_limit(bytes, limit)
+        } else {
+            FileAnalyze::new(bytes)
+        };
+        let matched = parser(&mut fa);
+        stats.record_candidate(fa.access_stats());
+        if matched {
+            return (Some(parser), stats);
+        }
+    }
+    (None, stats)
+}
 
 /// Returns the complete parser dispatch table (180 entries).
 ///
@@ -288,19 +327,24 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
     ]
 }
 
-/// Race every parser across cores and return the first one (in table order)
-/// that recognizes `bytes`, or `None` if none match.
+/// Return the first parser (in table order) that recognizes `bytes`, or `None`
+/// if none match.
 ///
-/// When the `parallel` feature is enabled (the default), parsers are evaluated
-/// concurrently via rayon and the first match (in table order) wins. When
-/// `parallel` is disabled (e.g. WASM builds), parsers are evaluated sequentially
-/// in table order.
+/// When the `parallel` feature is enabled (the default), small buffers are
+/// evaluated concurrently via rayon and the first match (in table order) wins.
+/// Large buffers are evaluated sequentially with a raw-read cap. This avoids
+/// speculatively running every parser that asks for `peek_raw(fa.remain())` on
+/// a multi-hundred-MiB mmap before an early table match such as MP4 is selected.
+/// When `parallel` is disabled (e.g. WASM builds), parsers are always evaluated
+/// sequentially in table order.
 ///
 /// Each candidate runs against a fresh [`FileAnalyze`] over the same buffer —
-/// parsers only peek, so this is a cheap detection pass; the caller re-runs the
-/// winner to extract full metadata.
+/// the caller re-runs the winner to extract full metadata.
 #[cfg(feature = "parallel")]
 pub fn detect(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool> {
+    if bytes.len() > LARGE_INPUT_DETECTION_THRESHOLD {
+        return detect_sequential_with_stats(bytes, Some(LARGE_INPUT_RAW_READ_LIMIT)).0;
+    }
     table()
         .par_iter()
         .find_first(|&&parser| {
@@ -313,11 +357,35 @@ pub fn detect(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool> {
 /// Sequential fallback for platforms without rayon (e.g. WASM).
 #[cfg(not(feature = "parallel"))]
 pub fn detect(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool> {
-    table()
-        .iter()
-        .find(|&&parser| {
-            let mut fa = FileAnalyze::new(bytes);
-            parser(&mut fa)
-        })
-        .copied()
+    let raw_read_limit =
+        (bytes.len() > LARGE_INPUT_DETECTION_THRESHOLD).then_some(LARGE_INPUT_RAW_READ_LIMIT);
+    detect_sequential_with_stats(bytes, raw_read_limit).0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minimal_large_mp4() -> Vec<u8> {
+        let mut bytes = vec![0u8; LARGE_INPUT_DETECTION_THRESHOLD + 1024];
+        bytes[0..4].copy_from_slice(&20u32.to_be_bytes());
+        bytes[4..8].copy_from_slice(b"ftyp");
+        bytes[8..12].copy_from_slice(b"M4A ");
+        bytes[12..16].copy_from_slice(&0u32.to_be_bytes());
+        bytes[16..20].copy_from_slice(b"isom");
+        bytes
+    }
+
+    #[test]
+    fn large_mp4_detection_stops_before_late_full_scan_candidates() {
+        let bytes = minimal_large_mp4();
+
+        let (parser, stats) =
+            detect_sequential_with_stats(&bytes, Some(LARGE_INPUT_RAW_READ_LIMIT));
+
+        assert!(parser.is_some());
+        assert!(stats.candidates_run < 20, "{stats:?}");
+        assert!(stats.bytes_returned < 64 * 1024, "{stats:?}");
+        assert!(stats.max_request_len < LARGE_INPUT_RAW_READ_LIMIT, "{stats:?}");
+    }
 }
