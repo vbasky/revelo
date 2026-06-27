@@ -18,6 +18,7 @@ const FOURCC_VP8L: u32 = u32::from_be_bytes(*b"VP8L");
 const FOURCC_VP8X: u32 = u32::from_be_bytes(*b"VP8X");
 const FOURCC_ALPH: u32 = u32::from_be_bytes(*b"ALPH");
 const FOURCC_ANIM: u32 = u32::from_be_bytes(*b"ANIM");
+const WEBP_MAX_CHUNKS: usize = 4096;
 
 #[derive(Default)]
 struct WebpInfo {
@@ -39,18 +40,15 @@ pub fn parse_webp(fa: &mut FileAnalyze) -> bool {
     let head = fa.peek_raw(12);
     let Some(h) = head else { return false };
     let magic = u32::from_be_bytes([h[0], h[1], h[2], h[3]]);
+    let riff_size = u32::from_le_bytes([h[4], h[5], h[6], h[7]]) as usize;
     let form = u32::from_be_bytes([h[8], h[9], h[10], h[11]]);
     if magic != FOURCC_RIFF || form != FOURCC_WEBP {
         return false;
     }
-    let total = fa.remain();
-    let body = match fa.peek_raw(total) {
-        Some(b) => b,
-        None => return false,
-    };
+    let file_size = fa.remain();
 
     let mut info = WebpInfo::default();
-    walk_chunks(&body[12..], total - 12, &mut info);
+    walk_chunks(fa, file_size, riff_size, &mut info);
 
     if info.format.is_empty() {
         return false;
@@ -86,26 +84,46 @@ pub fn parse_webp(fa: &mut FileAnalyze) -> bool {
     true
 }
 
-fn walk_chunks(buf: &[u8], len: usize, info: &mut WebpInfo) {
-    let mut i = 0;
-    while i + 8 <= len {
-        let fcc = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
-        let size = u32::from_le_bytes([buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7]]) as usize;
-        let data_start = i + 8;
-        let data_end = data_start + size;
-        if data_end > len {
+fn walk_chunks(fa: &FileAnalyze, file_size: usize, riff_size: usize, info: &mut WebpInfo) {
+    let logical_end = 8usize.saturating_add(riff_size).min(file_size);
+    let mut offset = 12usize;
+    let mut chunks_seen = 0usize;
+    while offset + 8 <= logical_end && chunks_seen < WEBP_MAX_CHUNKS {
+        let Some(header) = fa.peek_raw_at(offset, 8) else {
+            break;
+        };
+        let fcc = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+        let size = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+        let data_start = offset + 8;
+        let Some(data_end) = data_start.checked_add(size) else {
+            break;
+        };
+        if data_end > logical_end {
             break;
         }
-        let payload = &buf[data_start..data_end];
+
         match fcc {
-            FOURCC_VP8 => parse_vp8(payload, info),
-            FOURCC_VP8L => parse_vp8l(payload, info),
-            FOURCC_VP8X => parse_vp8x(payload, info),
+            FOURCC_VP8 => {
+                if let Some(payload) = fa.peek_raw_at(data_start, size.min(10)) {
+                    parse_vp8(payload, info);
+                }
+            }
+            FOURCC_VP8L => {
+                if let Some(payload) = fa.peek_raw_at(data_start, size.min(5)) {
+                    parse_vp8l(payload, info);
+                }
+            }
+            FOURCC_VP8X => {
+                if let Some(payload) = fa.peek_raw_at(data_start, size.min(10)) {
+                    parse_vp8x(payload, info);
+                }
+            }
             FOURCC_ALPH => info.has_alpha = true,
             FOURCC_ANIM => info.is_animated = true,
             _ => {}
         }
-        i = data_end + (size & 1);
+        offset = data_end + (size & 1);
+        chunks_seen += 1;
     }
 }
 
@@ -259,5 +277,21 @@ mod tests {
         assert_eq!(i("Width").as_deref(), Some("100"));
         assert_eq!(i("Height").as_deref(), Some("200"));
         assert_eq!(i("ColorSpace").as_deref(), Some("YUV"));
+    }
+
+    #[test]
+    fn webp_probe_skips_large_metadata_chunks() {
+        let bits: u32 = (320 - 1) | ((240u32 - 1) << 14);
+        let mut payload = vec![0x2F];
+        payload.extend_from_slice(&bits.to_le_bytes());
+        let buf = build_riff(b"WEBP", &[(b"EXIF", vec![0; 1024 * 1024]), (b"VP8L", payload)]);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_webp(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::Image, 0, "Width").map(|z| z.as_str().to_owned()),
+            Some("320".to_owned())
+        );
+        assert_eq!(fa.access_stats().max_request_len, 12);
     }
 }
