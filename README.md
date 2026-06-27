@@ -1,6 +1,6 @@
 # Revelo
 
-![revelo — read technical metadata from any media file, in pure Rust](https://raw.githubusercontent.com/vbasky/revelo/main/docs/banner.png)
+![revelo — read technical metadata from any media file, in pure Rust](https://raw.githubusercontent.com/vbasky/revelo/ff2a71d/docs/banner.png)
 
 A library and CLI for containers, audio & video codecs, image formats, subtitle
 streams, archives, and embedded tags. A clean-room port of **MediaInfoLib**,
