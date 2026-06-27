@@ -24,6 +24,12 @@ const FOURCC_IXML: u32 = u32::from_be_bytes(*b"iXML");
 const FOURCC_AXML: u32 = u32::from_be_bytes(*b"axml");
 const FOURCC_UMID: u32 = u32::from_be_bytes(*b"umid");
 
+const BEXT_FIXED_PREFIX_LEN: usize = 602;
+const BEXT_CODING_HISTORY_LIMIT: usize = 16 * 1024;
+const BEXT_PARSE_LIMIT: usize = BEXT_FIXED_PREFIX_LEN + BEXT_CODING_HISTORY_LIMIT;
+const IXML_PARSE_LIMIT: usize = 64 * 1024;
+const UMID_PARSE_LIMIT: usize = 64;
+
 // Common WAVEFORMATEX format codes — only the ones we handle by name.
 const WAVE_FORMAT_PCM: u16 = 0x0001;
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 0x0003;
@@ -71,7 +77,7 @@ fn read_padded_string(buf: &[u8], offset: usize, max_len: usize) -> Option<Strin
 }
 
 fn parse_bext_chunk(fa: &mut FileAnalyze, chunk_size: usize) -> BwfInfo {
-    let raw = fa.peek_raw(chunk_size).unwrap_or_default();
+    let raw = fa.peek_raw(chunk_size.min(BEXT_PARSE_LIMIT)).unwrap_or_default();
     let mut info = BwfInfo::default();
 
     if raw.len() < 256 {
@@ -213,7 +219,8 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
             }
             FOURCC_IXML => {
                 fa.element_begin("iXML");
-                if let Some(raw) = fa.peek_raw(chunk_size_usize)
+                if chunk_size_usize <= IXML_PARSE_LIMIT
+                    && let Some(raw) = fa.peek_raw(chunk_size_usize)
                     && let Ok(xml) = std::str::from_utf8(raw)
                 {
                     let b = bwf.get_or_insert_with(BwfInfo::default);
@@ -232,7 +239,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
             }
             FOURCC_UMID => {
                 fa.element_begin("umid");
-                if let Some(raw) = fa.peek_raw(chunk_size_usize) {
+                if let Some(raw) = fa.peek_raw(chunk_size_usize.min(UMID_PARSE_LIMIT)) {
                     let hex: String = raw.iter().map(|b| format!("{:02X}", b)).collect();
                     if hex.chars().any(|c| c != '0') {
                         let b = bwf.get_or_insert_with(BwfInfo::default);
@@ -642,5 +649,36 @@ mod tests {
         assert!(parse_wav(&mut fa));
         let g = |key: &str| fa.retrieve(StreamKind::General, 0, key).map(|z| z.as_str().to_owned());
         assert_eq!(g("Format_Commercial").as_deref(), Some("Broadcast Wave"));
+    }
+
+    #[test]
+    fn large_bext_chunk_reads_only_metadata_prefix() {
+        let mut bext = Vec::new();
+        bext.extend_from_slice(b"Bounded BEXT\0");
+        bext.resize(BEXT_PARSE_LIMIT + 4096, b'H');
+
+        let bext_size = bext.len() as u32;
+        let riff_size = 4 + 8 + 16 + 8 + bext_size + 8;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&riff_size.to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&48000u32.to_le_bytes());
+        buf.extend_from_slice(&96000u32.to_le_bytes());
+        buf.extend_from_slice(&2u16.to_le_bytes());
+        buf.extend_from_slice(&16u16.to_le_bytes());
+        buf.extend_from_slice(b"bext");
+        buf.extend_from_slice(&bext_size.to_le_bytes());
+        buf.extend_from_slice(&bext);
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_wav(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, BEXT_PARSE_LIMIT);
     }
 }
