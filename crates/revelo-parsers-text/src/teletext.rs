@@ -5,14 +5,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: Clock run-in 0x55 0x55 + framing code 0x27.
 /// Fills: Format, page info.
 pub fn parse_teletext(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(3) {
         Some(b) => b,
         None => return false,
     };
-
-    if buf.len() < 3 {
-        return false;
-    }
 
     // Teletext sync: 0x55 0x55 0x27
     if buf[0] != 0x55 || buf[1] != 0x55 || buf[2] != 0x27 {
@@ -54,5 +50,16 @@ mod tests {
         let buf = vec![0u8; 45];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_teletext(&mut fa));
+    }
+
+    #[test]
+    fn teletext_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0] = 0x55;
+        buf[1] = 0x55;
+        buf[2] = 0x27;
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_teletext(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 3);
     }
 }
