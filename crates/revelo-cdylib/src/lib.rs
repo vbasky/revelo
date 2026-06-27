@@ -94,7 +94,7 @@ pub unsafe extern "C" fn MediaInfo_Open(handle: *mut c_void, filename: *const c_
     let Some(parser) = detect(&bytes) else {
         return 0;
     };
-    let mut fa = FileAnalyze::new(&bytes);
+    let mut fa = FileAnalyze::new(bytes.as_slice());
     fa.set_config(handle.config.clone());
     parser(&mut fa);
     parse_tags(&mut fa);

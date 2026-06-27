@@ -65,6 +65,7 @@
 #![allow(non_snake_case)]
 #![deny(unsafe_code)]
 
+pub mod byte_source;
 pub mod element;
 pub mod file_analyze;
 pub mod file_level;
@@ -73,6 +74,7 @@ pub mod reader;
 mod revelo_util_re_export;
 pub mod stream;
 
+pub use byte_source::{ByteSource, ReadBackend};
 pub use element::{ElementInfo, ElementNode, ElementTree};
 pub use file_analyze::FileAnalyze;
 /// Ergonomic alias for [`FileAnalyze`]. Both names refer to the same type.

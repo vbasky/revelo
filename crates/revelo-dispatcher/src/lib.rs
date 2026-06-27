@@ -37,6 +37,7 @@
 
 #![deny(unsafe_code)]
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use revelo_core::FileAnalyze;
 
@@ -290,15 +291,31 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
 /// Race every parser across cores and return the first one (in table order)
 /// that recognizes `bytes`, or `None` if none match.
 ///
+/// When the `parallel` feature is enabled (the default), parsers are evaluated
+/// concurrently via rayon and the first match (in table order) wins. When
+/// `parallel` is disabled (e.g. WASM builds), parsers are evaluated sequentially
+/// in table order.
+///
 /// Each candidate runs against a fresh [`FileAnalyze`] over the same buffer —
 /// parsers only peek, so this is a cheap detection pass; the caller re-runs the
-/// winner to extract full metadata. `find_first` preserves table-order priority
-/// (containers before elementary streams; see [`table`]) while still evaluating
-/// candidates in parallel.
+/// winner to extract full metadata.
+#[cfg(feature = "parallel")]
 pub fn detect(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool> {
     table()
         .par_iter()
         .find_first(|&&parser| {
+            let mut fa = FileAnalyze::new(bytes);
+            parser(&mut fa)
+        })
+        .copied()
+}
+
+/// Sequential fallback for platforms without rayon (e.g. WASM).
+#[cfg(not(feature = "parallel"))]
+pub fn detect(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool> {
+    table()
+        .iter()
+        .find(|&&parser| {
             let mut fa = FileAnalyze::new(bytes);
             parser(&mut fa)
         })

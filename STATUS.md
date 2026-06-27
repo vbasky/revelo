@@ -62,7 +62,57 @@ can't validate a port.
 - [ ] **Thumbnail / keyframe offset.** Report byte offset of the first keyframe
       (metadata-position only, no decoding).
 
-## P3 — bindings & ecosystem
+## P3 — IO abstraction fit & finish
+
+The `v0.5.0` release shipped `ReadBackend` (an enum with `Slice` and `Mapped`
+variants) and a `ByteSource` trait. Two streaming-related items are planned but
+require careful design.
+
+### Streamed variant (`Read + Seek`)
+
+- [ ] **`ReadBackend::Streamed`** — wrap a `Read + Seek` handle in a sliding
+      window (~256 KiB). On every read, check whether the requested range falls
+      within the current window; if not, `seek()` + `read_exact()` to shift it.
+
+  **Effort:** ~200 lines in `byte_source.rs`. Zero parser changes — all reads
+  still go through `ByteSource::slice_at()`.
+
+  **The real cost is window sizing.** Parsers do two kinds of reads:
+  1. **Sequential** (`get_b*`, `skip_*`) — advance the cursor forward, 1–8 bytes
+     at a time. A 64 KiB window handles this trivially.
+  2. **Random** (`peek_raw_at`, `peek_magic`) — jump to absolute file offsets
+     (e.g. MP4 `stco`/`co64` → `mdat`, JPEG EXIF IFD pointer chasing, Matroska
+     `SeekHead` → distributed elements). Every backwards jump triggers a window
+     shift. For seekable sources this is fine (one syscall); for non-seekable it
+     is a hard problem.
+
+  **Window strategy:** start with a 256 KiB window; grow on cache miss; cap at
+  some reasonable max (e.g. 8 MiB). For metadata parsing, most random accesses
+  target the header region, so the window rarely shifts after the initial fill.
+
+### Non-seekable streaming (chunked / forward-only)
+
+- [ ] **Chunked parsing** — accept a forward-only byte source (pipe, TCP stream)
+      without requiring random access. **This is a fundamentally different parser
+      model** and likely not worth the complexity for this codebase.
+
+  **Why it is hard:**
+
+  1. `peek_raw_at(offset, n)` needs bytes that may have already passed or not yet
+     arrived. Parsers that use absolute offsets break on non-seekable streams.
+  2. Affected parsers: MP4 (`stco`/`co64` → `mdat`), JPEG (EXIF IFD pointer
+     chasing), Matroska (`SeekHead` → elements), RIFF chunks (size-declared
+     skipping), MPEG-TS (random PID selection).
+  3. Solutions: (a) buffer everything before the furthest-backward jump,
+     defeating the purpose of streaming, or (b) maintain per-format streaming
+     variants that work forward-only, doubling the parser surface.
+
+  **The practical answer:** metadata extraction is inherently random-access.
+  Non-seekable sources should be buffered entirely first and then parsed via
+  `ReadBackend::Slice`. This is MediaInfoLib's model too — it requires the
+  caller to provide the full buffer.
+
+## P4 — bindings & ecosystem
 
 - [ ] **Python bindings** via PyO3 — natural fit for the media analysis audience.
 - [ ] **NPM package** — WASM builds already compile; a documented JS API and NPM

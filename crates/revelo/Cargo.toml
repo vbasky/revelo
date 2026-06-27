@@ -16,7 +16,21 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = ["mmap", "parallel"]
+mmap = ["dep:memmap2", "revelo-core/mmap"]
+parallel = ["revelo-dispatcher/parallel"]
+
 [dependencies]
 revelo-core = { path = "../revelo-core", version = "0.4.6" }
 revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.4.6" }
 revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.4.6" }
+memmap2 = { version = "0.9", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3"
+
+[[bench]]
+name = "parse_benchmark"
+harness = false

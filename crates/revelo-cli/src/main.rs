@@ -63,7 +63,7 @@ fn main() -> process::ExitCode {
     let winner = detect(&parse_buf);
 
     if let Some(winner) = winner {
-        let mut fa = FileAnalyze::new(&parse_buf);
+        let mut fa = FileAnalyze::new(parse_buf.as_slice());
         fa.set_option("demux", &cli.demux);
         fa.set_option("trace_level", &cli.trace);
         fa.set_option("multi_file", if cli.multi_file { "1" } else { "0" });

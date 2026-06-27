@@ -17,5 +17,10 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = ["mmap"]
+mmap = ["dep:memmap2"]
+
 [dependencies]
 revelo-util = { path = "../revelo-util", version = "0.4.6" }
+memmap2 = { version = "0.9", optional = true }

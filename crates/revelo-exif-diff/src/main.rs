@@ -112,7 +112,7 @@ fn run_revelo(path: &str) -> Result<Vec<String>, String> {
     let Some(parser) = detect(&bytes) else {
         return Err(format!("no rust parser matched ({} bytes)", bytes.len()));
     };
-    let mut fa = FileAnalyze::new(&bytes);
+    let mut fa = FileAnalyze::new(bytes.as_slice());
     parser(&mut fa);
     parse_tags(&mut fa);
 

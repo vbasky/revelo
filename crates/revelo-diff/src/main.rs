@@ -149,7 +149,7 @@ fn run_rust_engine(path: &str) -> Result<String, String> {
         return Err(format!("no rust parser matched ({} bytes)", bytes.len()));
     };
 
-    let mut fa = FileAnalyze::new(&bytes);
+    let mut fa = FileAnalyze::new(bytes.as_slice());
     parser(&mut fa);
 
     // Shared with the CLI via revelo-core — single source of truth for

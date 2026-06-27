@@ -13,8 +13,12 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon"]
+
 [dependencies]
-rayon.workspace = true
+rayon = { workspace = true, optional = true }
 revelo-core = { path = "../revelo-core", version = "0.4.6" }
 revelo-parsers-archive = { path = "../revelo-parsers-archive", version = "0.4.6" }
 revelo-parsers-audio = { path = "../revelo-parsers-audio", version = "0.4.6" }

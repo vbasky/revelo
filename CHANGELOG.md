@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.5.0] - 2026-06-28
+
+### Added
+
+- **Memory-mapped `from_file`** — `Metadata::from_file` now uses mmap instead
+  of `std::fs::read`. The OS faults in only the metadata pages the parser
+  touches; a 389 MiB MP4 probes in milliseconds. Falls back to `std::fs::read`
+  when mmap is unavailable (NFS, WASM).
+- **`from_file_owned`** — explicit full-file read path for callers who need
+  ownership of the buffer.
+- **IO abstraction layer** — `ByteSource` trait and `ReadBackend` enum in
+  `revelo-core`. `ReadBackend` supports `Slice(&[u8])` and `Mapped(&Mmap)`;
+  a `Streamed` variant for `Read + Seek` sources is planned. `FileAnalyze`
+  wraps `ReadBackend` internally; all 180+ parsers required zero changes.
+- **WASM support** — new `revelo-wasm` crate with `wasm-bindgen` bindings
+  (`parse(data)` → JSON, `version()`). `from_file` falls back to
+  `from_file_owned` on WASM; `detect()` falls back to sequential evaluation
+  without rayon. Feature flags: `mmap` (default on), `parallel` (default on).
+- **Benchmark harness** — `crates/revelo/benches/parse_benchmark.rs` with
+  criterion. Three groups (`from_bytes`, `from_file_mmap`, `from_file_owned`)
+  across two file-size tiers (144 B, 100 MiB). Run with `cargo bench -p revelo`.
+- **Memory semantics documentation** — API docs now include an explicit table
+  comparing the I/O model, memory use, and use cases for `from_file`,
+  `from_bytes`, and `from_file_owned`.
+
+### Changed
+
+- `Metadata::from_file` behaviour changed from full-file read to memory-mapped.
+  The old behaviour is available via `Metadata::from_file_owned`.
+
+### Fixed
+
+- STREAMING.md implementation plan documented in `STATUS.md` (P3 section):
+  `ReadBackend::Streamed` design notes, window-sizing strategy, non-seekable
+  parsing rationale.
+
 ## [0.4.4] - 2026-06-06
 
 ### Added

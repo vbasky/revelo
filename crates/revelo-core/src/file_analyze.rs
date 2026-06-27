@@ -8,19 +8,37 @@
 //! in the [`ElementTree`]. The [`StreamKind`] enum partitions fields by media type
 //! (General, Video, Audio, etc.).
 
+use crate::byte_source::ReadBackend;
 use crate::config::MediaConfig;
 use crate::element::ElementTree;
 use crate::stream::{StreamCollection, StreamKind};
 use revelo_util::Ztring;
 
+/// Cursor-based byte reader over a [`ReadBackend`].
+///
+/// All parsers receive `&mut FileAnalyze` and read fields via the
+/// `Get_B*`, `Get_L*`, `Peek_*`, and `Skip_*` methods. The cursor
+/// advances automatically; truncated reads set a flag and return
+/// zero / empty slices rather than panicking.
+///
+/// # Backend
+///
+/// Construct with [`FileAnalyze::new`] (accepts `impl Into<ReadBackend>`)
+/// or [`FileAnalyze::from_slice`] (convenience for `&[u8]`).
+///
+/// | Constructor | Backend | Use |
+/// |---|---|---|
+/// | `FileAnalyze::from_slice(bytes)` | `ReadBackend::Slice` | In-memory buffer |
+/// | `FileAnalyze::new(mmap)` | `ReadBackend::Mapped` | Memory-mapped file |
+/// | (future) | `ReadBackend::Streamed` | `Read + Seek` handle |
 pub struct FileAnalyze<'a> {
-    buffer: &'a [u8],
+    backend: ReadBackend<'a>,
     element_offset: usize,
     truncated: bool,
     tree: ElementTree,
     streams: StreamCollection,
     /// When non-zero, bitstream mode is active and `Get_S*` reads consume
-    /// from `buffer[element_offset..]` starting `bs_bits_consumed` bits in.
+    /// from `backend[element_offset..]` starting `bs_bits_consumed` bits in.
     /// `BS_End` byte-aligns by advancing `element_offset` and clearing
     /// `bs_bits_consumed`.
     bs_active: bool,
@@ -37,9 +55,19 @@ pub struct FileAnalyze<'a> {
 }
 
 impl<'a> FileAnalyze<'a> {
-    pub fn new(buffer: &'a [u8]) -> Self {
+    /// Create a `FileAnalyze` over an in-memory byte slice.
+    ///
+    /// Backward-compatible with all existing callers — accepts
+    /// `&[u8]`, `&[u8; N]`, and `&Vec<u8>` via auto-deref.
+    pub fn new(slice: &'a [u8]) -> Self {
+        Self::from_backend(ReadBackend::Slice(slice))
+    }
+
+    /// Create a `FileAnalyze` from any [`ReadBackend`] (mmap, future
+    /// streaming sources, etc.).
+    pub fn from_backend(backend: ReadBackend<'a>) -> Self {
         FileAnalyze {
-            buffer,
+            backend,
             element_offset: 0,
             truncated: false,
             tree: ElementTree::new(),
@@ -52,6 +80,24 @@ impl<'a> FileAnalyze<'a> {
             reference_count: 0,
             duplicate_indices: Vec::new(),
         }
+    }
+
+    /// Convenience: create a `FileAnalyze` from an in-memory byte slice.
+    /// Equivalent to `FileAnalyze::new(slice)`.
+    pub fn from_slice(slice: &'a [u8]) -> Self {
+        Self::new(slice)
+    }
+
+    /// Returns a reference to the underlying [`ReadBackend`].
+    pub fn backend(&self) -> &ReadBackend<'a> {
+        &self.backend
+    }
+
+    /// View the complete backend as a `&[u8]` slice (zero-copy for
+    /// both `Slice` and `Mapped` variants).
+    #[inline]
+    fn buf(&self) -> &[u8] {
+        self.backend.as_slice()
     }
 
     pub fn tree(&self) -> &ElementTree {
@@ -158,7 +204,7 @@ impl<'a> FileAnalyze<'a> {
     }
 
     pub fn element_size(&self) -> usize {
-        self.buffer.len()
+        self.buf().len()
     }
 
     /// Apply MediaConfig options to the parser instance.
@@ -174,7 +220,7 @@ impl<'a> FileAnalyze<'a> {
     }
 
     pub fn remain(&self) -> usize {
-        self.buffer.len().saturating_sub(self.element_offset)
+        self.buf().len().saturating_sub(self.element_offset)
     }
 
     pub fn truncated(&self) -> bool {
@@ -184,12 +230,12 @@ impl<'a> FileAnalyze<'a> {
     fn read_be_u64(&mut self, n: usize) -> Option<u64> {
         if self.remain() < n {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             return None;
         }
         let mut v: u64 = 0;
         for i in 0..n {
-            v = (v << 8) | self.buffer[self.element_offset + i] as u64;
+            v = (v << 8) | self.buf()[self.element_offset + i] as u64;
         }
         self.element_offset += n;
         Some(v)
@@ -201,7 +247,7 @@ impl<'a> FileAnalyze<'a> {
         }
         let mut v: u64 = 0;
         for i in 0..n {
-            v = (v << 8) | self.buffer[self.element_offset + i] as u64;
+            v = (v << 8) | self.buf()[self.element_offset + i] as u64;
         }
         Some(v)
     }
@@ -253,13 +299,13 @@ impl<'a> FileAnalyze<'a> {
     pub fn get_b16(&mut self, name: &str) -> u128 {
         if self.remain() < 16 {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             self.param(name, 0u128);
             return 0;
         }
         let mut v: u128 = 0;
         for i in 0..16 {
-            v = (v << 8) | self.buffer[self.element_offset + i] as u128;
+            v = (v << 8) | self.buf()[self.element_offset + i] as u128;
         }
         self.element_offset += 16;
         self.param(name, v);
@@ -300,7 +346,7 @@ impl<'a> FileAnalyze<'a> {
         }
         let mut v: u128 = 0;
         for i in 0..16 {
-            v = (v << 8) | self.buffer[self.element_offset + i] as u128;
+            v = (v << 8) | self.buf()[self.element_offset + i] as u128;
         }
         v
     }
@@ -348,12 +394,12 @@ impl<'a> FileAnalyze<'a> {
     pub fn read_raw(&mut self, n: usize) -> &[u8] {
         if self.remain() < n {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             return &[];
         }
         let start = self.element_offset;
         self.element_offset += n;
-        &self.buffer[start..start + n]
+        &self.buf()[start..start + n]
     }
 
     /// Non-advancing magic check — peek N bytes and compare against `expected`.
@@ -363,7 +409,7 @@ impl<'a> FileAnalyze<'a> {
         if self.remain() < N {
             return false;
         }
-        &self.buffer[self.element_offset..self.element_offset + N] == expected.as_slice()
+        &self.buf()[self.element_offset..self.element_offset + N] == expected.as_slice()
     }
 
     /// Non-advancing variant of `read_raw`. Returns `None` if fewer than
@@ -372,7 +418,7 @@ impl<'a> FileAnalyze<'a> {
         if self.remain() < n {
             return None;
         }
-        Some(&self.buffer[self.element_offset..self.element_offset + n])
+        Some(&self.buf()[self.element_offset..self.element_offset + n])
     }
 
     /// Read up to `n` bytes starting at absolute file offset `at`, ignoring
@@ -380,17 +426,17 @@ impl<'a> FileAnalyze<'a> {
     /// if it runs past EOF), or `None` if `at` is out of bounds. Used to
     /// reach into mdat sample data at offsets recorded from stco/co64.
     pub fn peek_raw_at(&self, at: usize, n: usize) -> Option<&[u8]> {
-        if at >= self.buffer.len() {
+        if at >= self.buf().len() {
             return None;
         }
-        let end = (at + n).min(self.buffer.len());
-        Some(&self.buffer[at..end])
+        let end = (at + n).min(self.buf().len());
+        Some(&self.buf()[at..end])
     }
 
     fn skip(&mut self, n: usize) {
         if self.remain() < n {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
         } else {
             self.element_offset += n;
         }
@@ -403,12 +449,12 @@ impl<'a> FileAnalyze<'a> {
     fn read_le_u64(&mut self, n: usize) -> Option<u64> {
         if self.remain() < n {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             return None;
         }
         let mut v: u64 = 0;
         for i in 0..n {
-            v |= (self.buffer[self.element_offset + i] as u64) << (8 * i);
+            v |= (self.buf()[self.element_offset + i] as u64) << (8 * i);
         }
         self.element_offset += n;
         Some(v)
@@ -420,7 +466,7 @@ impl<'a> FileAnalyze<'a> {
         }
         let mut v: u64 = 0;
         for i in 0..n {
-            v |= (self.buffer[self.element_offset + i] as u64) << (8 * i);
+            v |= (self.buf()[self.element_offset + i] as u64) << (8 * i);
         }
         Some(v)
     }
@@ -468,13 +514,13 @@ impl<'a> FileAnalyze<'a> {
     pub fn get_l16(&mut self, name: &str) -> u128 {
         if self.remain() < 16 {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             self.param(name, 0u128);
             return 0;
         }
         let mut v: u128 = 0;
         for i in 0..16 {
-            v |= (self.buffer[self.element_offset + i] as u128) << (8 * i);
+            v |= (self.buf()[self.element_offset + i] as u128) << (8 * i);
         }
         self.element_offset += 16;
         self.param(name, v);
@@ -511,7 +557,7 @@ impl<'a> FileAnalyze<'a> {
         }
         let mut v: u128 = 0;
         for i in 0..16 {
-            v |= (self.buffer[self.element_offset + i] as u128) << (8 * i);
+            v |= (self.buf()[self.element_offset + i] as u128) << (8 * i);
         }
         v
     }
@@ -564,13 +610,15 @@ impl<'a> FileAnalyze<'a> {
         // also narrows to f64 on storage.
         if self.remain() < 10 {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             self.param(name, 0.0);
             return 0.0;
         }
-        let bytes = &self.buffer[self.element_offset..self.element_offset + 10];
+        let offset = self.element_offset;
+        let mut raw = [0u8; 10];
+        raw.copy_from_slice(&self.buf()[offset..offset + 10]);
         self.element_offset += 10;
-        let v = decode_f80_be(bytes);
+        let v = decode_f80_be(&raw);
         self.param(name, v);
         v
     }
@@ -654,9 +702,9 @@ impl<'a> FileAnalyze<'a> {
             if n <= bits_in_current_byte { 0 } else { (n - bits_in_current_byte).div_ceil(8) };
         let bytes_needed = 1 + bytes_after_current;
 
-        if self.element_offset + bytes_needed > self.buffer.len() {
+        if self.element_offset + bytes_needed > self.buf().len() {
             self.truncated = true;
-            self.element_offset = self.buffer.len();
+            self.element_offset = self.buf().len();
             self.bs_bits_consumed = 0;
             return 0;
         }
@@ -670,7 +718,7 @@ impl<'a> FileAnalyze<'a> {
             let avail = 8 - bit_in_byte;
             let take = bits_left.min(avail);
             let shift_in_byte = avail - take;
-            let chunk = (self.buffer[cursor_byte] >> shift_in_byte) as u64 & ((1u64 << take) - 1);
+            let chunk = (self.buf()[cursor_byte] >> shift_in_byte) as u64 & ((1u64 << take) - 1);
             value = (value << take) | chunk;
             bits_left -= take;
             bit_in_byte += take;

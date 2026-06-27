@@ -19,6 +19,22 @@ test:
 test-release:
     cargo test --release
 
+# Run benchmarks (requires criterion; generates HTML report in target/criterion/)
+bench:
+    cargo bench -p revelo
+
+# Run benchmarks and open the HTML report
+bench-report: bench
+    open target/criterion/report/index.html
+
+# Build the WASM package (requires: wasm-pack, rustup target add wasm32-unknown-unknown)
+wasm:
+    wasm-pack build crates/revelo-wasm --release
+
+# Build WASM for web target (output in pkg/)
+wasm-web:
+    wasm-pack build crates/revelo-wasm --release --target web
+
 # Run clippy with workspace lints
 lint:
     cargo clippy --workspace --all-targets

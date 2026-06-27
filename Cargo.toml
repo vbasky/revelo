@@ -19,6 +19,7 @@ members = [
     "crates/revelo-parsers-video",
     "crates/revelo-util",
     "crates/revelo-cdylib",
+    "crates/revelo-wasm",
 ]
 
 [workspace.package]
