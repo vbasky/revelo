@@ -23,6 +23,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 
 const AC4_SYNC_0: [u8; 2] = [0xAC, 0x40];
 const AC4_SYNC_1: [u8; 2] = [0xAC, 0x41];
+const AC4_FRAME_SCAN_LIMIT: usize = 4096;
 
 // Sample rate table keyed by the 4-bit sr_code.
 const SAMPLE_RATES: [u32; 16] = [44100, 48000, 96000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -48,7 +49,8 @@ fn get_bits(data: &[u8], off: usize, n: usize) -> Option<u32> {
 }
 
 pub fn parse_ac4(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()).map(|b| b.to_vec()) {
+    let file_size = fa.remain();
+    let buf = match fa.peek_raw(file_size.min(AC4_FRAME_SCAN_LIMIT)) {
         Some(b) => b,
         None => return false,
     };
@@ -68,7 +70,6 @@ pub fn parse_ac4(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let file_size = fa.remain();
     let mut bit_off = 16; // skip sync word
 
     let bit_rate_mode = get_bits(&buf, bit_off, 1).unwrap_or(1);
@@ -481,5 +482,16 @@ mod tests {
         assert_eq!(get_bits(&data, 3, 3), Some(3)); // 011
         assert_eq!(get_bits(&data, 4, 4), Some(0x0C)); // 1100
         assert_eq!(get_bits(&data, 8, 1), None);
+    }
+
+    #[test]
+    fn ac4_does_not_request_full_payload() {
+        let frame_hdr = build_frame_header(0, 32, 1, &[(0, 0, 1, 1, 0, 0)], 0, 0);
+        let mut buf = vec![0xAC, 0x40];
+        buf.extend_from_slice(&frame_hdr);
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac4(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, AC4_FRAME_SCAN_LIMIT);
     }
 }
