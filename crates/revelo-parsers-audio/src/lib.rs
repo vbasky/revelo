@@ -173,3 +173,39 @@ pub use twin_vq::parse_twin_vq;
 pub use usac::parse_usac;
 pub use vorbis::parse_vorbis;
 pub use wvpk::parse_wvpk;
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path};
+
+    fn assert_no_full_raw_scan_patterns(src_dir: &Path) {
+        for entry in fs::read_dir(src_dir).expect("read parser src dir") {
+            let path = entry.expect("read parser src entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
+
+            let source = fs::read_to_string(&path).expect("read parser source");
+            for forbidden in [
+                concat!("peek_raw(", "fa.remain())"),
+                concat!("read_raw(", "fa.remain())"),
+                concat!("peek_raw(", "remain)"),
+                concat!("read_raw(", "remain)"),
+                concat!("peek_raw_at(0, ", "fa.element_size())"),
+            ] {
+                assert!(
+                    !source.contains(forbidden),
+                    "{} contains forbidden full-scan pattern: {forbidden}",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn audio_parsers_do_not_reintroduce_full_raw_scans() {
+        assert_no_full_raw_scan_patterns(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("src").as_path(),
+        );
+    }
+}
