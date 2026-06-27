@@ -1,14 +1,14 @@
 use revelo_core::{FileAnalyze, StreamKind};
 pub fn parse_pcm_vob(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
+    let Some(buf) = fa.peek_raw(fa.remain().min(64)) else {
+        return false;
+    };
     if buf.len() < 4 {
         return false;
     }
     // Bound the LPCM magic search to the header region: scanning the whole
     // buffer is O(n) and false-positives any file that merely contains "LPCM".
-    let scan = &buf[..buf.len().min(64)];
-    if &buf[0..4] != b"DVD " && !scan.windows(4).any(|w| w == b"LPCM") {
+    if &buf[0..4] != b"DVD " && !buf.windows(4).any(|w| w == b"LPCM") {
         return false;
     }
     let pos = fa.stream_prepare(StreamKind::Audio);

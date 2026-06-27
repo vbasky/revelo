@@ -2,6 +2,12 @@ use revelo_core::{FileAnalyze, StreamKind};
 use std::io::Read;
 
 type TagEntry = (&'static str, String);
+const TAIL_TAG_SCAN_LIMIT: usize = 1024 * 1024;
+const EMBEDDED_METADATA_SCAN_LIMIT: usize = 4 * 1024 * 1024;
+
+fn metadata_prefix<'fa, 'src>(fa: &'fa FileAnalyze<'src>) -> Option<&'fa [u8]> {
+    fa.peek_raw_at(0, fa.element_size().min(EMBEDDED_METADATA_SCAN_LIMIT))
+}
 
 fn fill_tags(fa: &mut FileAnalyze, tags: &[TagEntry], kind: StreamKind) {
     if tags.is_empty() {
@@ -25,13 +31,7 @@ pub fn parse_id3v1(fa: &mut FileAnalyze) -> Option<u32> {
     if remain < 128 {
         return None;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec())?;
-    let len = buf.len();
-    if len < 128 {
-        return None;
-    }
-    let start = len - 128;
-    let tag = &buf[start..];
+    let tag = fa.peek_raw_at(remain - 128, 128)?;
     if &tag[0..3] != b"TAG" {
         return None;
     }
@@ -179,26 +179,21 @@ pub fn parse_id3v2(fa: &mut FileAnalyze) -> Option<u32> {
     if remain < 10 {
         return None;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec())?;
-    if buf.len() < 10 {
-        return None;
-    }
-    if &buf[0..3] != b"ID3" {
+    let header = fa.peek_raw(10)?;
+    if &header[0..3] != b"ID3" {
         return None;
     }
 
-    let version_major = buf[3];
-    let flags = buf[5];
-    let size = synch_safe_int(&buf[6..10]);
-    if size == 0 || size as usize + 10 > buf.len() {
+    let version_major = header[3];
+    let flags = header[5];
+    let size = synch_safe_int(&header[6..10]);
+    if size == 0 {
         return None;
     }
 
     let has_footer = (flags & 0x10) != 0;
     let total_size = size as usize + 10 + if has_footer { 10 } else { 0 };
-    if buf.len() < total_size {
-        return None;
-    }
+    let buf = fa.peek_raw(total_size)?;
 
     let mut offset = 10;
     let end = size as usize + 10;
@@ -305,7 +300,8 @@ pub fn parse_ape_tag(fa: &mut FileAnalyze) -> Option<u32> {
     if remain < 32 {
         return None;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec())?;
+    let tail_start = remain.saturating_sub(TAIL_TAG_SCAN_LIMIT);
+    let buf = fa.peek_raw_at(tail_start, remain - tail_start)?;
 
     let footer_start = buf.windows(8).rposition(|w| w == b"APETAGEX")?;
     if footer_start + 32 > buf.len() {
@@ -433,7 +429,8 @@ pub fn parse_lyrics3(fa: &mut FileAnalyze) -> Option<u32> {
     if remain < 20 {
         return None;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec())?;
+    let tail_start = remain.saturating_sub(TAIL_TAG_SCAN_LIMIT);
+    let buf = fa.peek_raw_at(tail_start, remain - tail_start)?;
 
     let start = buf.windows(11).position(|w| w == b"LYRICSBEGIN")?;
     if start + 20 > buf.len() {
@@ -535,6 +532,18 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ape_tag(&mut fa).is_some());
     }
+
+    #[test]
+    fn parse_tags_uses_bounded_metadata_windows_on_large_files() {
+        let buf = vec![0u8; EMBEDDED_METADATA_SCAN_LIMIT + 1024];
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_tags(&mut fa));
+
+        let stats = fa.access_stats();
+        assert!(stats.max_request_len <= EMBEDDED_METADATA_SCAN_LIMIT, "{stats:?}");
+        assert!(stats.bytes_returned < 64 * 1024 * 1024, "{stats:?}");
+    }
 }
 
 // ---------- EXIF ----------
@@ -550,8 +559,18 @@ fn find_exif_header(buf: &[u8]) -> Option<usize> {
 }
 
 pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw_at(0, usize::MAX) {
-        Some(b) => b.to_vec(),
+    let head = match fa.peek_raw_at(0, 12) {
+        Some(b) => b,
+        None => return false,
+    };
+    let raw_tiff = &head[0..2] == b"II" || &head[0..2] == b"MM";
+    let scan_len = if raw_tiff {
+        fa.element_size()
+    } else {
+        fa.element_size().min(EMBEDDED_METADATA_SCAN_LIMIT)
+    };
+    let buf = match fa.peek_raw_at(0, scan_len) {
+        Some(b) => b,
         None => return false,
     };
     if buf.len() < 12 {
@@ -1750,19 +1769,19 @@ fn derive_jpeg_mediainfo(tags: &[TagEntry]) -> (Vec<TagEntry>, Vec<TagEntry>) {
 // ---------- XMP ----------
 
 pub fn parse_xmp(fa: &mut FileAnalyze) -> bool {
-    // Read the whole file cursor-independently: in a JPEG the XMP packet sits
-    // in an early APP1 segment, behind the cursor by the time this pass runs.
-    // Lossy decoding keeps the (ASCII) XMP region intact while tolerating the
-    // surrounding binary image bytes.
-    let buf = match fa.peek_raw_at(0, usize::MAX) {
-        Some(b) => b.to_vec(),
+    // Read a bounded prefix cursor-independently: in a JPEG the XMP packet
+    // normally sits in an early APP1 segment, behind the cursor by the time
+    // this pass runs. Lossy decoding keeps the ASCII XMP region intact while
+    // tolerating surrounding binary image bytes.
+    let buf = match metadata_prefix(fa) {
+        Some(b) => b,
         None => return false,
     };
-    let text_owned = String::from_utf8_lossy(&buf);
-    let text: &str = &text_owned;
-    if !text.contains("xmpmeta") || !text.contains("rdf:RDF") {
+    if find_subslice(buf, b"xmpmeta").is_none() || find_subslice(buf, b"rdf:RDF").is_none() {
         return false;
     }
+    let text_owned = String::from_utf8_lossy(buf).into_owned();
+    let text: &str = &text_owned;
 
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_xmp_fields(text, &mut tags);
@@ -1879,11 +1898,11 @@ fn extract_xml_element(xml: &str, tag: &str) -> Option<String> {
 // ---------- ICC profile ----------
 
 pub fn parse_icc(fa: &mut FileAnalyze) -> bool {
-    // Read the whole file cursor-independently (like `parse_exif`): the ICC
+    // Read a bounded prefix cursor-independently (like `parse_exif`): the ICC
     // profile may be embedded (JPEG APP2 "ICC_PROFILE\0", HEIC `colr`, TIFF
     // tag 0x8773) rather than sitting at offset 0 of a standalone `.icc`.
-    let buf = match fa.peek_raw_at(0, usize::MAX) {
-        Some(b) => b.to_vec(),
+    let buf = match metadata_prefix(fa) {
+        Some(b) => b,
         None => return false,
     };
     // Locate the profile by its `acsp` file signature, which always sits at
@@ -2163,12 +2182,12 @@ fn read_icc_u32(data: &[u8], off: usize) -> u32 {
 // ---------- C2PA ----------
 
 pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 16 {
+    let Some(buf) = metadata_prefix(fa) else {
+        return false;
+    };
+    if buf.len() < 16 {
         return false;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
 
     // Search for C2PA JUMBF box: "jumb" at any position
     let jumb_pos = buf.windows(4).position(|w| w == b"jumb");
@@ -2205,12 +2224,12 @@ pub fn parse_c2pa(fa: &mut FileAnalyze) -> bool {
 // ---------- IIM / IPTC ----------
 
 pub fn parse_iim(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 4 {
+    let Some(buf) = metadata_prefix(fa) else {
+        return false;
+    };
+    if buf.len() < 4 {
         return false;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
 
     // IPTC IIM is only well-defined inside its container — the Photoshop
     // Image Resource Block (8BIM) resource 0x0404, introduced by the
@@ -2416,13 +2435,13 @@ fn iim_tag_key(record: u8, dataset: u8) -> Option<&'static str> {
 // ---------- PropertyList (Apple plist) ----------
 
 pub fn parse_property_list(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    let text = std::str::from_utf8(&buf).unwrap_or("");
-    if !text.contains("<!DOCTYPE plist") && !text.contains("<plist") {
+    let Some(buf) = metadata_prefix(fa) else {
+        return false;
+    };
+    if find_subslice(buf, b"<!DOCTYPE plist").is_none() && find_subslice(buf, b"<plist").is_none() {
         return false;
     }
+    let text = std::str::from_utf8(&buf).unwrap_or("");
 
     let mut tags: Vec<TagEntry> = Vec::new();
     extract_plist_fields(text, &mut tags);
@@ -2487,13 +2506,15 @@ fn extract_plist_value(xml: &str, key: &str) -> Option<String> {
 // ---------- SphericalVideo ----------
 
 pub fn parse_spherical_video(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    let text = std::str::from_utf8(&buf).unwrap_or("");
-    if !text.contains("SphericalVideo") && !text.contains("ProjectionType") {
+    let Some(buf) = metadata_prefix(fa) else {
+        return false;
+    };
+    if find_subslice(buf, b"SphericalVideo").is_none()
+        && find_subslice(buf, b"ProjectionType").is_none()
+    {
         return false;
     }
+    let text = std::str::from_utf8(&buf).unwrap_or("");
 
     let mut tags: Vec<TagEntry> = Vec::new();
 
@@ -2544,8 +2565,8 @@ fn png_key_to_field(key: &str) -> Option<&'static str> {
 }
 
 pub fn parse_png_text(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw_at(0, usize::MAX) {
-        Some(b) => b.to_vec(),
+    let buf = match metadata_prefix(fa) {
+        Some(b) => b,
         None => return false,
     };
     if buf.len() < 8 || &buf[0..4] != b"\x89PNG" {
@@ -2642,13 +2663,10 @@ pub fn parse_png_text(fa: &mut FileAnalyze) -> bool {
 // ---------- JPEG COM ----------
 
 pub fn parse_jpeg_com(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 4 {
-        return false;
-    }
-    let buf = match fa.peek_raw(remain).map(|b| b.to_vec()) {
-        Some(b) => b,
+    let buf = match metadata_prefix(fa) {
+        Some(b) if b.len() >= 4 => b,
         None => return false,
+        Some(_) => return false,
     };
     if buf.len() < 4 || buf[0] != 0xFF || buf[1] != 0xD8 {
         return false;
@@ -6449,5 +6467,19 @@ mod exif_tests {
             fa.retrieve(StreamKind::Iptc, 0, "Description").map(|z| z.as_str()),
             Some("Via 0x83BB")
         );
+    }
+
+    #[test]
+    fn tag_parsers_do_not_reintroduce_full_raw_scans() {
+        let source = include_str!("tags.rs");
+        for forbidden in [
+            concat!("peek_raw(", "fa.remain())"),
+            concat!("read_raw(", "fa.remain())"),
+            concat!("peek_raw(", "remain)"),
+            concat!("read_raw(", "remain)"),
+            concat!("peek_raw_at(0, ", "fa.element_size())"),
+        ] {
+            assert!(!source.contains(forbidden), "forbidden full-scan pattern: {forbidden}");
+        }
     }
 }

@@ -1,12 +1,16 @@
 use revelo_core::{FileAnalyze, StreamKind};
+
+const SDP_SCAN_LIMIT: usize = 64 * 1024;
+
 /// Parse Session Description Protocol.
 ///
 /// Detection: `v=0` + `m=` lines.
 /// Fills: Format, session info.
 pub fn parse_sdp(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    let text = std::str::from_utf8(&buf).unwrap_or("");
+    let Some(buf) = fa.peek_raw(fa.remain().min(SDP_SCAN_LIMIT)) else {
+        return false;
+    };
+    let text = std::str::from_utf8(buf).unwrap_or("");
     if !text.starts_with("v=0") || !text.contains("m=") {
         return false;
     }

@@ -1,7 +1,11 @@
 use revelo_core::{FileAnalyze, StreamKind};
+
+const ADM_SCAN_LIMIT: usize = 64 * 1024;
+
 pub fn parse_adm(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
+    let Some(buf) = fa.peek_raw(fa.remain().min(ADM_SCAN_LIMIT)) else {
+        return false;
+    };
     if buf.len() < 4 {
         return false;
     }
@@ -21,5 +25,6 @@ mod tests {
         let buf = b"ADM \x00\x00\x00\x00".to_vec();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_adm(&mut fa));
+        assert!(fa.access_stats().max_request_len <= ADM_SCAN_LIMIT);
     }
 }

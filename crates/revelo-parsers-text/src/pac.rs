@@ -4,11 +4,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: `PAC` magic.
 /// Fills: Format.
 pub fn parse_pac(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(4) else { return false };
     if &buf[0..4] != b"PAC " && &buf[0..4] != b"PAC\x00" {
         return false;
     }

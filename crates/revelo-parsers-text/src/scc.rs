@@ -5,14 +5,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: `Scenarist_SCC V1.0`.
 /// Fills: Format.
 pub fn parse_scc(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(18) {
         Some(b) => b,
         None => return false,
     };
-
-    if buf.len() < 18 {
-        return false;
-    }
 
     let magic = std::str::from_utf8(&buf[0..18]).unwrap_or("");
     if magic != "Scenarist_SCC V1.0" {
