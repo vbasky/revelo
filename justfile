@@ -35,6 +35,10 @@ wasm:
 wasm-web:
     wasm-pack build crates/revelo-wasm --release --target web
 
+# Publish the WASM package to npm (requires: npm login first)
+wasm-publish:
+    wasm-pack publish crates/revelo-wasm
+
 # Run clippy with workspace lints
 lint:
     cargo clippy --workspace --all-targets
