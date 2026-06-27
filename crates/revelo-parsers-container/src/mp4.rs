@@ -126,6 +126,12 @@ const BOX_DVCC: u32 = u32::from_be_bytes(*b"dvcC");
 const BOX_DVVC: u32 = u32::from_be_bytes(*b"dvvC");
 const BOX_PASP: u32 = u32::from_be_bytes(*b"pasp");
 
+const MP4_METADATA_VALUE_LIMIT: usize = 64 * 1024;
+const MP4_KEY_VALUE_LIMIT: usize = 4 * 1024;
+const MP4_HANDLER_NAME_LIMIT: usize = 4 * 1024;
+const MP4A_EXTENSION_SCAN_LIMIT: usize = 256 * 1024;
+const MP4_DVCC_PARSE_LIMIT: usize = 5;
+
 #[derive(Debug, Default)]
 struct MovieInfo {
     timescale: u32,
@@ -774,12 +780,13 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
                 let type_indicator = Reader::wrap(fa).be_u32("type_indicator").unwrap_or(0);
                 fa.skip_hexa(4, "locale");
                 let payload_size = sub_body - 8;
-                let payload = fa.read_raw(payload_size).to_vec();
+                let payload =
+                    read_payload_limited(fa, payload_size, MP4_METADATA_VALUE_LIMIT, "data");
                 // type_indicator: 1 = UTF-8 string, 23 = 32-bit float BE,
                 // 75 = unsigned 8-bit. We keep strings universally as
                 // UTF-8 and the few small numerics encountered in
                 // QuickTime metadata (e.g. flags) as decimal strings.
-                let value = match type_indicator {
+                let value = payload.as_deref().and_then(|payload| match type_indicator {
                     1 => Some(String::from_utf8_lossy(&payload).into_owned()),
                     21 if payload_size == 1 => Some((payload[0] as i8).to_string()),
                     21 if payload_size == 4 => Some(
@@ -796,7 +803,7 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
                         f32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]])
                     )),
                     _ => None,
-                };
+                });
                 if let Some(v) = value {
                     // QuickTime mdta items use a small numeric item_type
                     // (1-based index into `keys`). Any 4cc with the high
@@ -852,9 +859,12 @@ fn parse_keys(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
         if total < 8 || fa.element_offset() + (total - 8) > end {
             break;
         }
-        let key_bytes = fa.read_raw(total - 8).to_vec();
-        let key = String::from_utf8_lossy(&key_bytes).into_owned();
-        movie.qt_keys.push(key);
+        if let Some(key_bytes) =
+            read_payload_limited(fa, total - 8, MP4_KEY_VALUE_LIMIT, "key_value")
+        {
+            let key = String::from_utf8_lossy(&key_bytes).into_owned();
+            movie.qt_keys.push(key);
+        }
     }
     if fa.element_offset() < end {
         fa.skip_hexa(end - fa.element_offset(), "keys_tail");
@@ -968,8 +978,7 @@ fn parse_hdlr(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     let consumed_so_far = fa.element_offset() - start;
     let name_bytes_len = body_size.saturating_sub(consumed_so_far);
     let raw_name = if name_bytes_len > 0 {
-        let bytes = fa.read_raw(name_bytes_len).to_vec();
-        Some(bytes)
+        peek_payload_prefix_and_skip(fa, name_bytes_len, MP4_HANDLER_NAME_LIMIT, "handler_name")
     } else {
         None
     };
@@ -1145,7 +1154,13 @@ fn parse_mp4a_entry(fa: &mut FileAnalyze, entry_total: usize, track: &mut TrackI
     // extension shape, snarf the whole tail and scan for an esds box
     // at any 4-byte alignment.
     if remaining > 0 {
-        let tail = fa.read_raw(remaining).to_vec();
+        let tail = peek_payload_prefix_and_skip(
+            fa,
+            remaining,
+            MP4A_EXTENSION_SCAN_LIMIT,
+            "mp4a_extension",
+        )
+        .unwrap_or_default();
         // Try the strict box-walk first (works for standard ISO BMFF).
         let mut walked_ok = false;
         let mut p = 0usize;
@@ -1383,8 +1398,8 @@ fn parse_colr(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         track.color_matrix_idc = Some(mat);
         let mut consumed = 4 + 6;
         if is_nclx && body_size >= 4 + 7 {
-            let flag_bytes = fa.read_raw(1).to_vec();
-            track.color_full_range = Some((flag_bytes[0] & 0x80) != 0);
+            let flag_byte = Reader::wrap(fa).be_u8("full_range_flag").unwrap_or(0);
+            track.color_full_range = Some((flag_byte & 0x80) != 0);
             consumed += 1;
         }
         let rest = body_size - consumed;
@@ -1418,7 +1433,11 @@ fn parse_dvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "dvcc_short");
         return;
     }
-    let body = fa.read_raw(body_size).to_vec();
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_DVCC_PARSE_LIMIT, "dvcc")
+        .unwrap_or_default();
+    if body.len() < 4 {
+        return;
+    }
     // dvcC layout:
     //   byte 0: dv_version_major
     //   byte 1: dv_version_minor
@@ -1840,6 +1859,31 @@ fn parse_decoder_specific_info(fa: &mut FileAnalyze, size: usize, track: &mut Tr
     if size > 2 {
         fa.skip_hexa(size - 2, "dsi_tail");
     }
+}
+
+fn read_payload_limited(
+    fa: &mut FileAnalyze,
+    size: usize,
+    limit: usize,
+    skip_label: &str,
+) -> Option<Vec<u8>> {
+    if size > limit {
+        fa.skip_hexa(size, skip_label);
+        None
+    } else {
+        Some(fa.read_raw(size).to_vec())
+    }
+}
+
+fn peek_payload_prefix_and_skip(
+    fa: &mut FileAnalyze,
+    size: usize,
+    limit: usize,
+    skip_label: &str,
+) -> Option<Vec<u8>> {
+    let bytes = fa.peek_raw(size.min(limit)).map(|payload| payload.to_vec());
+    fa.skip_hexa(size, skip_label);
+    bytes
 }
 
 fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
@@ -3390,6 +3434,14 @@ fn channel_layout_for_format(
 mod tests {
     use super::*;
 
+    fn mp4_box(ty: &[u8; 4], payload: Vec<u8>) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&((payload.len() + 8) as u32).to_be_bytes());
+        out.extend_from_slice(ty);
+        out.extend(payload);
+        out
+    }
+
     #[test]
     fn rejects_non_mp4_buffer() {
         let mut fa = FileAnalyze::new(b"NOT a valid MP4 file at all");
@@ -3425,5 +3477,28 @@ mod tests {
                 .as_deref(),
             Some("M4A /isom")
         );
+    }
+
+    #[test]
+    fn skips_oversized_ilst_metadata_payload() {
+        let mut data_body = Vec::new();
+        data_body.extend_from_slice(&1u32.to_be_bytes());
+        data_body.extend_from_slice(&0u32.to_be_bytes());
+        data_body.resize(8 + MP4_METADATA_VALUE_LIMIT + 1, b'x');
+
+        let item_type = ITUNES_KEY_TOOL.to_be_bytes();
+        let ilst = mp4_box(&item_type, mp4_box(b"data", data_body));
+        let moov = mp4_box(b"moov", mp4_box(b"udta", mp4_box(b"meta", mp4_box(b"ilst", ilst))));
+
+        let mut buf = Vec::new();
+        buf.extend(mp4_box(
+            b"ftyp",
+            [b"M4A ".as_slice(), &0u32.to_be_bytes(), b"isom".as_slice()].concat(),
+        ));
+        buf.extend(moov);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        assert!(fa.access_stats().max_request_len < MP4_METADATA_VALUE_LIMIT + 1);
     }
 }
