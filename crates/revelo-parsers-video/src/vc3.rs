@@ -5,15 +5,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: 0x00000280 header prefix.
 /// Fills: Compression ID (CID)→profile/bit_depth/chroma.
 pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(0x2C) {
         Some(b) => b,
         None => return false,
     };
-
-    // VC-3 bitstream starts with a 0x00000280 header prefix
-    if buf.len() < 0x2C {
-        return false;
-    }
 
     let header_prefix = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
     if header_prefix != 0x00000280 {
