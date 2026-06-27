@@ -22,12 +22,13 @@ use revelo_core::{FileAnalyze, StreamKind};
 use std::collections::BTreeSet;
 
 const PACK_SC: [u8; 4] = [0x00, 0x00, 0x01, 0xBA];
+const MPEG_PS_SCAN_LIMIT: usize = 1_048_576;
 
 /// Detection: Pack start code 0x000001BA or PES start codes.
 /// Fills: Video stream dimensions, aspect ratio, frame rate, MPEG-2 sequence headers.
 pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
-    let total = fa.remain();
-    let buf = match fa.peek_raw(total) {
+    let scan_len = fa.remain().min(MPEG_PS_SCAN_LIMIT);
+    let buf = match fa.peek_raw(scan_len) {
         Some(b) => b,
         None => return false,
     };
@@ -43,7 +44,7 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
     let mut private1_seen = false;
 
     // Walk start codes. Bound the scan to first 1 MB for speed.
-    let max_scan = total.min(1_048_576);
+    let max_scan = buf.len();
     let mut i = 0usize;
     while i + 4 <= max_scan {
         if buf[i] == 0x00 && buf[i + 1] == 0x00 && buf[i + 2] == 0x01 {
@@ -522,5 +523,15 @@ mod tests {
             fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("MPEG Audio".into())
         );
+    }
+
+    #[test]
+    fn ps_probe_is_bounded_on_large_inputs() {
+        let mut buf = build_minimal_ps_with_video_audio();
+        buf.resize(MPEG_PS_SCAN_LIMIT + 4096, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_mpeg_ps(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, MPEG_PS_SCAN_LIMIT);
     }
 }

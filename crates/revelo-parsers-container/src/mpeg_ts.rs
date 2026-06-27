@@ -18,6 +18,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 use std::collections::BTreeMap;
 
 const SYNC: u8 = 0x47;
+const MPEG_TS_PROBE_LIMIT: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 struct PacketLayout {
@@ -89,7 +90,8 @@ struct Program {
 /// Detection: sync byte 0x47 every 188 bytes. PAT→PMT→stream descriptors.
 /// Fills: Program names, language codes, format from stream_type + registration.
 pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let probe_len = fa.remain().min(MPEG_TS_PROBE_LIMIT);
+    let buf = match fa.peek_raw(probe_len) {
         Some(b) => b,
         None => return false,
     };
@@ -1166,5 +1168,15 @@ mod tests {
             fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("AAC".to_owned())
         );
+    }
+
+    #[test]
+    fn ts_probe_is_bounded_on_large_inputs() {
+        let mut buf = build_synthetic_ts();
+        buf.resize(MPEG_TS_PROBE_LIMIT + 188, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_mpeg_ts(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, MPEG_TS_PROBE_LIMIT);
     }
 }
