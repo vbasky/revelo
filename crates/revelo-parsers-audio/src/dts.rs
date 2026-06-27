@@ -141,26 +141,8 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
     let samples_per_frame = (num_pcm_sample_blocks as u32) * 32;
     let frame_rate = sample_rate as f64 / samples_per_frame as f64;
 
-    // Count frames by scanning successive syncs.
     let file_size = fa.remain();
-    let buf = match fa.peek_raw(file_size) {
-        Some(b) => b,
-        None => return false,
-    };
-    let mut frame_count: u64 = 0;
-    let mut pos = 0usize;
-    let step = primary_frame_byte_size as usize;
-    while pos + 4 <= buf.len() {
-        let s = u32::from_be_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]]);
-        if s != SYNC_CORE_BE16 {
-            break;
-        }
-        frame_count += 1;
-        if step == 0 {
-            break;
-        }
-        pos += step;
-    }
+    let _ = primary_frame_byte_size;
 
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "DTS");
@@ -210,8 +192,6 @@ pub fn parse_dts(fa: &mut FileAnalyze) -> bool {
     } else {
         fa.set_field(StreamKind::Audio, 0, "StreamSize", file_size.to_string());
     }
-    let _ = frame_count;
-
     true
 }
 
@@ -253,8 +233,7 @@ mod tests {
 
     /// Synthesize a single DTS Core frame with known field values, then
     /// verify the parser extracts them.
-    #[test]
-    fn parses_synthetic_core_frame() {
+    fn synthetic_core_frame() -> Vec<u8> {
         // sync(32) + bitstream fields packed MSB-first.
         // Choose: num_pcm_sample_blocks=16 (samples=512), frame_size=1024,
         // amode=2 (L R, 2ch), sample_freq=13 (48000), bit_rate=12 (512000),
@@ -288,7 +267,12 @@ mod tests {
         buf.extend_from_slice(&bits.bytes());
         // Pad to declared frame size so the next-sync scan stops cleanly.
         buf.resize(1024, 0);
+        buf
+    }
 
+    #[test]
+    fn parses_synthetic_core_frame() {
+        let buf = synthetic_core_frame();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_dts(&mut fa));
         let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
@@ -300,6 +284,16 @@ mod tests {
         assert_eq!(a("SamplesPerFrame").as_deref(), Some("512"));
         assert_eq!(a("Compression_Mode").as_deref(), Some("Lossy"));
         assert_eq!(a("ChannelLayout").as_deref(), Some("L R"));
+    }
+
+    #[test]
+    fn dts_probe_is_header_bounded() {
+        let mut buf = synthetic_core_frame();
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_dts(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 16);
     }
 
     struct BitWriter {

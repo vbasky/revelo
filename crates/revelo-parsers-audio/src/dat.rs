@@ -34,12 +34,11 @@ pub fn parse_dat(fa: &mut FileAnalyze) -> bool {
     if total < DAT_FRAME_SIZE {
         return false;
     }
-    let buf = match fa.peek_raw(total) {
+    let frame = match fa.peek_raw(DAT_FRAME_SIZE) {
         Some(b) => b,
         None => return false,
     };
 
-    let frame = &buf[..DAT_FRAME_SIZE];
     let (fmtid, emphasis, sampfreq, numchans, quantization, trackpitch) =
         match parse_dtmainid(frame) {
             Some(v) => v,
@@ -196,5 +195,16 @@ mod tests {
         let bad2 = make_frame(0, 0, 3, 0, 0, 0);
         let mut fa3 = FileAnalyze::new(&bad2);
         assert!(!parse_dat(&mut fa3));
+    }
+
+    #[test]
+    fn dat_probe_reads_only_first_frame() {
+        let frame = make_frame(0, 0, 0, 0, 0, 0);
+        let mut buf = frame.clone();
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_dat(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, DAT_FRAME_SIZE);
     }
 }
