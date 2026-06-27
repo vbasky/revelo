@@ -26,6 +26,8 @@ use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, StreamKind};
 
 const OGG_MAGIC: &[u8; 4] = b"OggS";
+const OGG_BOS_PACKET_LIMIT: usize = 64;
+const OGG_COMMENT_PAGE_LIMIT: usize = 64 * 1024;
 
 /// Detection: `OggS` magic at offset 0.
 /// Fills: Vorbis/Opus/Theora/FLAC codec info, VorbisComment tags, duration from granule.
@@ -81,7 +83,11 @@ pub fn parse_ogg(fa: &mut FileAnalyze) -> bool {
 
         if is_bos {
             // First packet of this stream identifies the codec.
-            let packet_bytes = fa.read_raw(payload_size).to_vec();
+            let packet_bytes = fa
+                .peek_raw(payload_size.min(OGG_BOS_PACKET_LIMIT))
+                .map(|packet| packet.to_vec())
+                .unwrap_or_default();
+            fa.skip_hexa(payload_size, "page_payload");
             identify_codec_and_parse_header(&packet_bytes, &mut streams[stream_idx]);
         } else if streams[stream_idx].codec == Some(OggCodec::Vorbis)
             && streams[stream_idx].vendor.is_none()
@@ -90,10 +96,14 @@ pub fn parse_ogg(fa: &mut FileAnalyze) -> bool {
             // comment header (packet 2) and the setup header (packet 3),
             // concatenated. Split using the page's segment_table:
             // segments belong to the same packet until one is < 255.
-            let page_payload = fa.read_raw(payload_size).to_vec();
-            split_into_packets(&table, &page_payload, |packet| {
-                parse_vorbis_secondary_packet(packet, &mut streams[stream_idx]);
-            });
+            if payload_size <= OGG_COMMENT_PAGE_LIMIT {
+                let page_payload = fa.read_raw(payload_size).to_vec();
+                split_into_packets(&table, &page_payload, |packet| {
+                    parse_vorbis_secondary_packet(packet, &mut streams[stream_idx]);
+                });
+            } else {
+                fa.skip_hexa(payload_size, "page_payload");
+            }
         } else {
             fa.skip_hexa(payload_size, "page_payload");
         }
@@ -385,5 +395,25 @@ mod tests {
     fn rejects_non_ogg_buffer() {
         let mut fa = FileAnalyze::new(b"NOT an Ogg file at all");
         assert!(!parse_ogg(&mut fa));
+    }
+
+    #[test]
+    fn bos_probe_reads_only_codec_header_window() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(OGG_MAGIC);
+        buf.push(0);
+        buf.push(0x02);
+        buf.extend_from_slice(&u64::MAX.to_le_bytes());
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.push(1);
+        buf.push(255);
+        buf.extend_from_slice(b"\x01vorbis");
+        buf.resize(buf.len() + 248, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ogg(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, OGG_BOS_PACKET_LIMIT);
     }
 }
