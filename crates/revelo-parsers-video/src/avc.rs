@@ -2,6 +2,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 
 const ANNEX_B_START_CODE: [u8; 3] = [0x00, 0x00, 0x01];
 const ANNEX_B_START_CODE_LONG: [u8; 4] = [0x00, 0x00, 0x00, 0x01];
+const AVC_NAL_SCAN_LIMIT: usize = 1024 * 1024;
 
 const NAL_TYPE_SPS: u8 = 7;
 const NAL_TYPE_PPS: u8 = 8;
@@ -571,7 +572,8 @@ pub fn parse_avc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let data = if let Some(d) = fa.peek_raw(fa.remain()) {
+    let scan_len = fa.remain().min(AVC_NAL_SCAN_LIMIT);
+    let data = if let Some(d) = fa.peek_raw(scan_len) {
         d.to_vec()
     } else {
         fa.element_end();
@@ -992,6 +994,15 @@ mod tests {
         buf[2] = 0x01; // 0x000001
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_avc(&mut fa)); // no SPS found
+    }
+
+    #[test]
+    fn avc_does_not_request_full_payload() {
+        let mut buf = vec![0u8; AVC_NAL_SCAN_LIMIT + 1024];
+        buf[0..4].copy_from_slice(&ANNEX_B_START_CODE_LONG);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_avc(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, AVC_NAL_SCAN_LIMIT);
     }
 
     #[test]
