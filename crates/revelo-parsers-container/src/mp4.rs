@@ -3630,8 +3630,11 @@ mod tests {
     #[test]
     fn structured_mp4_metadata_only_access_stays_bounded() {
         for (label, major, moov_first) in [
-            ("moov_front", *b"isom", true),
-            ("moov_tail", *b"qt  ", false),
+            ("mp4_moov_front", *b"isom", true),
+            ("mp4_moov_tail", *b"isom", false),
+            ("mov_moov_front", *b"qt  ", true),
+            ("mov_moov_tail", *b"qt  ", false),
+            ("snv2_front", *b"SNV2", true),
             ("snv2_tail", *b"SNV2", false),
         ] {
             let buf = structured_mp4(&major, moov_first);

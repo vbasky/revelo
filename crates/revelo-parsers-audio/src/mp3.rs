@@ -63,6 +63,7 @@ const SAMPLES_PER_FRAME: [[u16; 4]; 4] = [
     [0, 576, 1152, 384],  // MPEG 2
     [0, 1152, 1152, 384], // MPEG 1
 ];
+const ID3V2_PARSE_LIMIT: usize = 64 * 1024;
 
 /// Coefficient × bitrate_kbps × 1000 / sample_rate = frame size in bytes
 /// (before padding). MPEG-1 Layer I needs special handling.
@@ -408,11 +409,12 @@ fn parse_id3v2(fa: &mut FileAnalyze) -> (usize, Option<Id3Metadata>) {
         | ((h[8] as usize) << 7)
         | (h[9] as usize);
     let total_size = 10 + payload_size;
+    let parse_size = 10 + payload_size.min(ID3V2_PARSE_LIMIT);
 
-    // Read the whole tag for frame walking. We won't consume the bytes
-    // from `fa` here — the caller still does Skip_Hexa(total_size) after.
-    let full = match fa.peek_raw(total_size) {
-        Some(b) if b.len() == total_size => b.to_vec(),
+    // Read a capped tag prefix for frame walking. We won't consume the bytes
+    // from `fa` here; the caller still skips the declared total size after.
+    let full = match fa.peek_raw(parse_size) {
+        Some(b) if b.len() == parse_size => b.to_vec(),
         _ => return (total_size, None),
     };
 
@@ -747,6 +749,36 @@ fn fill_streams(fa: &mut FileAnalyze, h: &FrameHeader, info: Mp3StreamInfo) {
 mod tests {
     use super::*;
 
+    const MP3_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+
+    fn syncsafe(size: usize) -> [u8; 4] {
+        [
+            ((size >> 21) & 0x7F) as u8,
+            ((size >> 14) & 0x7F) as u8,
+            ((size >> 7) & 0x7F) as u8,
+            (size & 0x7F) as u8,
+        ]
+    }
+
+    fn mp3_frame() -> Vec<u8> {
+        let mut frame = vec![0u8; 384];
+        frame[0..4].copy_from_slice(&[0xFF, 0xFB, 0x94, 0x44]);
+        frame
+    }
+
+    fn id3v24_text_frame(id: &[u8; 4], text: &str) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.push(3);
+        body.extend_from_slice(text.as_bytes());
+
+        let mut frame = Vec::new();
+        frame.extend_from_slice(id);
+        frame.extend_from_slice(&syncsafe(body.len()));
+        frame.extend_from_slice(&[0, 0]);
+        frame.extend(body);
+        frame
+    }
+
     #[test]
     fn parse_canonical_mpeg1_layer3_header() {
         // 0xFF 0xFB 0x94 0x44 — MPEG-1 Layer III, 128kbps, 48kHz, Joint
@@ -786,5 +818,44 @@ mod tests {
         assert_eq!(channel_mode_to_count(1), 2);
         assert_eq!(channel_mode_to_count(2), 2);
         assert_eq!(channel_mode_to_count(3), 1);
+    }
+
+    #[test]
+    fn large_id3v2_tag_is_skipped_without_full_payload_read() {
+        let id3_payload_size = MP3_METADATA_ONLY_BUDGET as usize + 1024;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"ID3");
+        buf.extend_from_slice(&[4, 0, 0]);
+        buf.extend_from_slice(&syncsafe(id3_payload_size));
+        buf.resize(buf.len() + id3_payload_size, 0);
+        buf.extend(mp3_frame());
+
+        assert!(buf.len() as u64 > MP3_METADATA_ONLY_BUDGET);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp3(&mut fa));
+
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < MP3_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < MP3_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.max_request_len <= ID3V2_PARSE_LIMIT + 10, "{stats:?}");
+    }
+
+    #[test]
+    fn oversized_id3v2_tag_parses_leading_text_frames() {
+        let title = id3v24_text_frame(b"TIT2", "bounded title");
+        let id3_payload_size = MP3_METADATA_ONLY_BUDGET as usize + 1024;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"ID3");
+        buf.extend_from_slice(&[4, 0, 0]);
+        buf.extend_from_slice(&syncsafe(id3_payload_size));
+        buf.extend(title);
+        buf.resize(10 + id3_payload_size, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        let (total_size, metadata) = parse_id3v2(&mut fa);
+
+        assert_eq!(total_size, 10 + id3_payload_size);
+        assert_eq!(metadata.and_then(|md| md.title).as_deref(), Some("bounded title"));
+        assert!(fa.access_stats().max_request_len <= ID3V2_PARSE_LIMIT + 10);
     }
 }

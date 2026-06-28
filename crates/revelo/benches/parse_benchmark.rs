@@ -653,9 +653,21 @@ fn bench_parse(c: &mut Criterion) {
     let (small_mp4_moov_front_file, small_mp4_moov_front_total) =
         write_temp_bytes(&small_mp4_moov_front);
 
+    let small_mp4_moov_tail = small_structured_mp4(b"isom", false);
+    let (small_mp4_moov_tail_file, small_mp4_moov_tail_total) =
+        write_temp_bytes(&small_mp4_moov_tail);
+
+    let small_mov_moov_front = small_structured_mp4(b"qt  ", true);
+    let (small_mov_moov_front_file, small_mov_moov_front_total) =
+        write_temp_bytes(&small_mov_moov_front);
+
     let small_mov_moov_tail = small_structured_mp4(b"qt  ", false);
     let (small_mov_moov_tail_file, small_mov_moov_tail_total) =
         write_temp_bytes(&small_mov_moov_tail);
+
+    let small_snv2_moov_front = small_structured_mp4(b"SNV2", true);
+    let (small_snv2_moov_front_file, small_snv2_moov_front_total) =
+        write_temp_bytes(&small_snv2_moov_front);
 
     let small_snv2_moov_tail = small_structured_mp4(b"SNV2", false);
     let (small_snv2_moov_tail_file, small_snv2_moov_tail_total) =
@@ -667,7 +679,19 @@ fn bench_parse(c: &mut Criterion) {
 
     let mp4_moov_tail_file = NamedTempFile::new().expect("tempfile");
     let mp4_moov_tail_total =
-        write_structured_mp4(&mp4_moov_tail_file, b"qt  ", false).expect("write mp4 moov tail");
+        write_structured_mp4(&mp4_moov_tail_file, b"isom", false).expect("write mp4 moov tail");
+
+    let mov_moov_front_file = NamedTempFile::new().expect("tempfile");
+    let mov_moov_front_total =
+        write_structured_mp4(&mov_moov_front_file, b"qt  ", true).expect("write mov moov front");
+
+    let mov_moov_tail_file = NamedTempFile::new().expect("tempfile");
+    let mov_moov_tail_total =
+        write_structured_mp4(&mov_moov_tail_file, b"qt  ", false).expect("write mov moov tail");
+
+    let mp4_snv2_front_file = NamedTempFile::new().expect("tempfile");
+    let mp4_snv2_front_total =
+        write_structured_mp4(&mp4_snv2_front_file, b"SNV2", true).expect("write snv2 mp4 front");
 
     let mp4_snv2_tail_file = NamedTempFile::new().expect("tempfile");
     let mp4_snv2_tail_total =
@@ -765,6 +789,26 @@ fn bench_parse(c: &mut Criterion) {
             });
         },
     );
+    let small_mp4_moov_tail_path =
+        small_mp4_moov_tail_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(small_mp4_moov_tail_total));
+    group.bench_function(
+        BenchmarkId::new("small_mp4_moov_tail", bytes_label(small_mp4_moov_tail_total)),
+        |b| {
+            b.iter(|| black_box(revelo::Metadata::from_file(black_box(&small_mp4_moov_tail_path))));
+        },
+    );
+    let small_mov_moov_front_path =
+        small_mov_moov_front_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(small_mov_moov_front_total));
+    group.bench_function(
+        BenchmarkId::new("small_mov_moov_front", bytes_label(small_mov_moov_front_total)),
+        |b| {
+            b.iter(|| {
+                black_box(revelo::Metadata::from_file(black_box(&small_mov_moov_front_path)))
+            });
+        },
+    );
     let small_mov_moov_tail_path =
         small_mov_moov_tail_file.path().to_str().expect("path").to_string();
     group.throughput(Throughput::Bytes(small_mov_moov_tail_total));
@@ -772,6 +816,17 @@ fn bench_parse(c: &mut Criterion) {
         BenchmarkId::new("small_mov_moov_tail", bytes_label(small_mov_moov_tail_total)),
         |b| {
             b.iter(|| black_box(revelo::Metadata::from_file(black_box(&small_mov_moov_tail_path))));
+        },
+    );
+    let small_snv2_moov_front_path =
+        small_snv2_moov_front_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(small_snv2_moov_front_total));
+    group.bench_function(
+        BenchmarkId::new("small_snv2_moov_front", bytes_label(small_snv2_moov_front_total)),
+        |b| {
+            b.iter(|| {
+                black_box(revelo::Metadata::from_file(black_box(&small_snv2_moov_front_path)))
+            });
         },
     );
     let small_snv2_moov_tail_path =
@@ -798,8 +853,23 @@ fn bench_parse(c: &mut Criterion) {
     });
     let mp4_moov_tail_path = mp4_moov_tail_file.path().to_str().expect("path").to_string();
     group.throughput(Throughput::Bytes(mp4_moov_tail_total));
-    group.bench_function(BenchmarkId::new("large_mov_moov_tail", "100 MiB"), |b| {
+    group.bench_function(BenchmarkId::new("large_mp4_moov_tail", "100 MiB"), |b| {
         b.iter(|| black_box(revelo::Metadata::from_file(black_box(&mp4_moov_tail_path))));
+    });
+    let mov_moov_front_path = mov_moov_front_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(mov_moov_front_total));
+    group.bench_function(BenchmarkId::new("large_mov_moov_front", "100 MiB"), |b| {
+        b.iter(|| black_box(revelo::Metadata::from_file(black_box(&mov_moov_front_path))));
+    });
+    let mov_moov_tail_path = mov_moov_tail_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(mov_moov_tail_total));
+    group.bench_function(BenchmarkId::new("large_mov_moov_tail", "100 MiB"), |b| {
+        b.iter(|| black_box(revelo::Metadata::from_file(black_box(&mov_moov_tail_path))));
+    });
+    let mp4_snv2_front_path = mp4_snv2_front_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(mp4_snv2_front_total));
+    group.bench_function(BenchmarkId::new("large_snv2_moov_front", "100 MiB"), |b| {
+        b.iter(|| black_box(revelo::Metadata::from_file(black_box(&mp4_snv2_front_path))));
     });
     let mp4_snv2_tail_path = mp4_snv2_tail_file.path().to_str().expect("path").to_string();
     group.throughput(Throughput::Bytes(mp4_snv2_tail_total));

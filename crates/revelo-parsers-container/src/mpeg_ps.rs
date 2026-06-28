@@ -484,6 +484,8 @@ fn starts_with_pes(buf: &[u8]) -> bool {
 mod tests {
     use super::*;
 
+    const MPEG_PS_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+
     #[test]
     fn rejects_non_ps() {
         let mut fa = FileAnalyze::new(b"NOT AN MPEG-PS FILE...........");
@@ -532,6 +534,9 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
 
         assert!(parse_mpeg_ps(&mut fa));
-        assert_eq!(fa.access_stats().max_request_len, MPEG_PS_SCAN_LIMIT);
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < MPEG_PS_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < MPEG_PS_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert_eq!(stats.max_request_len, MPEG_PS_SCAN_LIMIT);
     }
 }

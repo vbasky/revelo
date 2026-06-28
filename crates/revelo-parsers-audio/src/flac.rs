@@ -378,6 +378,8 @@ fn channel_layout(channels: u16) -> (Option<&'static str>, Option<&'static str>)
 mod tests {
     use super::*;
 
+    const FLAC_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+
     fn pack_streaminfo_packed_field(
         sample_rate: u32,
         channels_m1: u8,
@@ -539,5 +541,29 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_flac(&mut fa));
         assert!(fa.access_stats().max_request_len < vendor_len);
+    }
+
+    #[test]
+    fn large_padding_block_access_stays_bounded() {
+        let padding_len = FLAC_METADATA_ONLY_BUDGET as usize + 1024;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"fLaC");
+        append_streaminfo(&mut buf, false);
+        buf.push(0x80 | BLOCK_TYPE_PADDING);
+        buf.extend_from_slice(&[
+            ((padding_len >> 16) & 0xff) as u8,
+            ((padding_len >> 8) & 0xff) as u8,
+            (padding_len & 0xff) as u8,
+        ]);
+        buf.resize(buf.len() + padding_len, 0);
+
+        assert!(buf.len() as u64 > FLAC_METADATA_ONLY_BUDGET);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_flac(&mut fa));
+
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < FLAC_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < FLAC_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.max_request_len <= 34, "{stats:?}");
     }
 }

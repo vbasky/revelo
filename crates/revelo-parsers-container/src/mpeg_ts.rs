@@ -1066,6 +1066,8 @@ mod tests {
     use super::*;
     use revelo_core::FileAnalyze;
 
+    const MPEG_TS_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+
     #[test]
     fn rejects_non_ts() {
         let mut fa = FileAnalyze::new(b"NOT A TS FILE AT ALL");
@@ -1177,6 +1179,9 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
 
         assert!(parse_mpeg_ts(&mut fa));
-        assert_eq!(fa.access_stats().max_request_len, MPEG_TS_PROBE_LIMIT);
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < MPEG_TS_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < MPEG_TS_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert_eq!(stats.max_request_len, MPEG_TS_PROBE_LIMIT);
     }
 }
