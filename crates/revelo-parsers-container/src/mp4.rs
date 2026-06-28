@@ -130,6 +130,8 @@ const MP4_METADATA_VALUE_LIMIT: usize = 64 * 1024;
 const MP4_KEY_VALUE_LIMIT: usize = 4 * 1024;
 const MP4_HANDLER_NAME_LIMIT: usize = 4 * 1024;
 const MP4A_EXTENSION_SCAN_LIMIT: usize = 256 * 1024;
+const MP4_AVCC_PARSE_LIMIT: usize = 256 * 1024;
+const MP4_HVCC_PARSE_LIMIT: usize = 256 * 1024;
 const MP4_DVCC_PARSE_LIMIT: usize = 5;
 
 #[derive(Debug, Default)]
@@ -1476,9 +1478,10 @@ fn parse_avcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "avcc_short");
         return;
     }
-    let body = fa.read_raw(body_size).to_vec();
-    // read_raw yields exactly body_size bytes or, on a truncated file, an empty
-    // slice — guard on the actual length before indexing.
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_AVCC_PARSE_LIMIT, "avcc_payload")
+        .unwrap_or_default();
+    // Oversized codec configuration boxes are parsed from a bounded prefix.
+    // Guard on the actual bytes returned before indexing.
     if body.len() < 4 {
         return;
     }
@@ -1558,13 +1561,14 @@ fn parse_hvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "hvcc_short");
         return;
     }
-    let body = fa.read_raw(body_size).to_vec();
-    // read_raw yields exactly body_size bytes or, on a truncated file, an empty
-    // slice; guard on the actual length so the fixed-offset reads below (and the
-    // body_size-based bounds checks, which then equal body.len()) stay in range.
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_HVCC_PARSE_LIMIT, "hvcc_payload")
+        .unwrap_or_default();
+    // Oversized codec configuration boxes are parsed from a bounded prefix.
+    // Guard on the actual length so fixed-offset reads stay in range.
     if body.len() < 23 {
         return;
     }
+    let body_size = body.len();
     let profile_byte = body[1];
     track.hevc_tier_high = Some((profile_byte & 0x20) != 0);
     track.hevc_profile_idc = Some(profile_byte & 0x1F);
@@ -3500,5 +3504,50 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mp4(&mut fa));
         assert!(fa.access_stats().max_request_len < MP4_METADATA_VALUE_LIMIT + 1);
+    }
+
+    #[test]
+    fn caps_oversized_avcc_payload() {
+        let mut body = vec![
+            1,    // configurationVersion
+            0x64, // AVCProfileIndication
+            0,    // profile_compatibility
+            0x1F, // AVCLevelIndication
+            0xFF, // lengthSizeMinusOne
+            0xE0, // numOfSequenceParameterSets = 0
+            0,    // numOfPictureParameterSets
+        ];
+        body.resize(MP4_AVCC_PARSE_LIMIT + 1024, 0);
+
+        let mut fa = FileAnalyze::new(&body);
+        let mut track = TrackInfo::default();
+        parse_avcc(&mut fa, body.len(), &mut track);
+
+        assert_eq!(track.avc_profile_idc, Some(0x64));
+        assert_eq!(track.avc_level_idc, Some(0x1F));
+        assert_eq!(fa.element_offset(), body.len());
+        assert_eq!(fa.access_stats().max_request_len, MP4_AVCC_PARSE_LIMIT);
+    }
+
+    #[test]
+    fn caps_oversized_hvcc_payload() {
+        let mut body = vec![0; 23];
+        body[0] = 1; // configurationVersion
+        body[1] = 0x21; // high tier + Main profile
+        body[12] = 0x5D; // level_idc
+        body[16] = 1; // chroma_format_idc
+        body[17] = 2; // bit_depth_luma_minus8
+        body[22] = 0; // num_of_arrays
+        body.resize(MP4_HVCC_PARSE_LIMIT + 1024, 0);
+
+        let mut fa = FileAnalyze::new(&body);
+        let mut track = TrackInfo::default();
+        parse_hvcc(&mut fa, body.len(), &mut track);
+
+        assert_eq!(track.hevc_profile_idc, Some(1));
+        assert_eq!(track.hevc_level_idc, Some(0x5D));
+        assert_eq!(track.hevc_bit_depth_luma, Some(10));
+        assert_eq!(fa.element_offset(), body.len());
+        assert_eq!(fa.access_stats().max_request_len, MP4_HVCC_PARSE_LIMIT);
     }
 }
