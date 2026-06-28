@@ -391,6 +391,37 @@ fn fill_streams(fa: &mut FileAnalyze, streams: &[OggStream]) {
 mod tests {
     use super::*;
 
+    const OGG_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+
+    fn ogg_page(header_type: u8, granule: u64, serial: u32, seq: u32, payload: &[u8]) -> Vec<u8> {
+        assert!(payload.len() <= 255);
+        let mut buf = Vec::new();
+        buf.extend_from_slice(OGG_MAGIC);
+        buf.push(0);
+        buf.push(header_type);
+        buf.extend_from_slice(&granule.to_le_bytes());
+        buf.extend_from_slice(&serial.to_le_bytes());
+        buf.extend_from_slice(&seq.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.push(1);
+        buf.push(payload.len() as u8);
+        buf.extend_from_slice(payload);
+        buf
+    }
+
+    fn vorbis_ident_packet() -> Vec<u8> {
+        let mut ident = Vec::new();
+        ident.extend_from_slice(b"\x01vorbis");
+        ident.extend_from_slice(&0u32.to_le_bytes());
+        ident.push(2);
+        ident.extend_from_slice(&48_000u32.to_le_bytes());
+        ident.extend_from_slice(&0u32.to_le_bytes());
+        ident.extend_from_slice(&128_000u32.to_le_bytes());
+        ident.extend_from_slice(&0u32.to_le_bytes());
+        ident.extend_from_slice(&[0xB0, 1]);
+        ident
+    }
+
     #[test]
     fn rejects_non_ogg_buffer() {
         let mut fa = FileAnalyze::new(b"NOT an Ogg file at all");
@@ -415,5 +446,22 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ogg(&mut fa));
         assert_eq!(fa.access_stats().max_request_len, OGG_BOS_PACKET_LIMIT);
+    }
+
+    #[test]
+    fn large_sparse_tail_access_stays_bounded() {
+        let mut buf = Vec::new();
+        buf.extend(ogg_page(0x02, u64::MAX, 1, 0, &vorbis_ident_packet()));
+        buf.extend(ogg_page(0x04, 48_000, 1, 1, &[0]));
+        buf.resize(buf.len() + OGG_METADATA_ONLY_BUDGET as usize + 1024, 0);
+
+        assert!(buf.len() as u64 > OGG_METADATA_ONLY_BUDGET);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ogg(&mut fa));
+
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < OGG_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < OGG_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.max_request_len <= OGG_BOS_PACKET_LIMIT, "{stats:?}");
     }
 }
