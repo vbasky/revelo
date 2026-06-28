@@ -90,8 +90,13 @@ pub fn parse_aiff(fa: &mut FileAnalyze) -> bool {
     parse(fa).is_some()
 }
 
+fn form_end(file_size: usize, form_size: u32) -> usize {
+    8usize.checked_add(form_size as usize).map(|end| end.min(file_size)).unwrap_or(file_size)
+}
+
 fn parse(fa: &mut FileAnalyze) -> Option<()> {
     let (comm, audio_stream_size) = {
+        let file_size = fa.element_size();
         let r = &mut Reader::wrap(fa);
         if r.peek_be_u32()? != FOURCC_FORM {
             return None;
@@ -99,8 +104,9 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
 
         r.element_begin("FORM");
         r.fourcc("ID")?;
-        r.be_u32("Size")?;
+        let form_size = r.be_u32("Size")?;
         let form_type = r.fourcc("Type")?;
+        let container_end = form_end(file_size, form_size);
 
         if form_type != FOURCC_AIFF && form_type != FOURCC_AIFC {
             r.element_end();
@@ -111,12 +117,12 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
         let mut comm: Option<CommChunk> = None;
         let mut audio_stream_size: u64 = 0;
 
-        while r.remain() >= 8 {
+        while container_end.saturating_sub(r.element_offset()) >= 8 && r.remain() >= 8 {
             let chunk_id = r.fourcc("ChunkID")?;
             let chunk_size = r.be_u32("ChunkSize")?;
 
             let chunk_size_usize = chunk_size as usize;
-            if r.remain() < chunk_size_usize {
+            if container_end.saturating_sub(r.element_offset()) < chunk_size_usize {
                 break;
             }
 
@@ -155,7 +161,7 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
                     if chunk_size_usize > consumed {
                         r.skip(chunk_size_usize - consumed)?; // Extension
                     }
-                    if chunk_size_usize % 2 == 1 {
+                    if chunk_size_usize % 2 == 1 && r.element_offset() < container_end {
                         let _ = r.be_u8("Padding");
                     }
                     r.element_end();
@@ -177,14 +183,14 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
                     let samples_size = chunk_size_usize.saturating_sub(8);
                     audio_stream_size = samples_size as u64;
                     r.skip(samples_size)?; // Samples
-                    if chunk_size_usize % 2 == 1 {
+                    if chunk_size_usize % 2 == 1 && r.element_offset() < container_end {
                         let _ = r.be_u8("Padding");
                     }
                     r.element_end();
                 }
                 _ => {
                     r.skip(chunk_size_usize)?; // Unknown
-                    if chunk_size_usize % 2 == 1 {
+                    if chunk_size_usize % 2 == 1 && r.element_offset() < container_end {
                         let _ = r.be_u8("Padding");
                     }
                 }
@@ -426,6 +432,28 @@ mod tests {
         // No Endianness/Sign fills for float per task spec.
         assert!(a("Format_Settings_Endianness").is_none());
         assert!(a("Format_Settings_Sign").is_none());
+    }
+
+    #[test]
+    fn aiff_ignores_trailing_bytes_after_form_size() {
+        let mut buf = make_aiff(2, 48000, 16, 48000);
+        let declared_end = buf.len();
+        buf.resize(declared_end + TEST_LARGE_CHUNK_SIZE, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_aiff(&mut fa));
+        assert_eq!(fa.element_offset(), declared_end);
+    }
+
+    #[test]
+    fn aifc_ignores_trailing_bytes_after_form_size() {
+        let mut buf = make_aifc(2, 48000, 16, 48000, b"sowt");
+        let declared_end = buf.len();
+        buf.resize(declared_end + TEST_LARGE_CHUNK_SIZE, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_aiff(&mut fa));
+        assert_eq!(fa.element_offset(), declared_end);
     }
 
     #[test]

@@ -141,6 +141,14 @@ fn parse_bext_chunk(fa: &mut FileAnalyze, chunk_size: usize) -> BwfInfo {
     info
 }
 
+fn riff_end(file_size: usize, riff_size: u64) -> usize {
+    usize::try_from(riff_size)
+        .ok()
+        .and_then(|size| 8usize.checked_add(size))
+        .map(|end| end.min(file_size))
+        .unwrap_or(file_size)
+}
+
 /// Parse a WAV file buffer, filling the General and Audio streams on the
 /// provided FileAnalyze. Returns `true` if a valid RIFF/WAVE container
 /// was recognized.
@@ -152,9 +160,14 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
 
     fa.element_begin("RIFF");
     let riff_id = fa.get_c4("ID");
-    let _riff_size = fa.get_l4("Size");
+    let riff_size = fa.get_l4("Size");
     let form_type = fa.get_c4("Type");
     let is_rf64 = riff_id == FOURCC_RF64;
+    let mut container_end = if is_rf64 && riff_size == u32::MAX {
+        fa.element_size()
+    } else {
+        riff_end(fa.element_size(), u64::from(riff_size))
+    };
 
     if form_type != FOURCC_WAVE {
         fa.element_end();
@@ -166,7 +179,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     let mut rf64_data_size: Option<u64> = None;
     let mut bwf: Option<BwfInfo> = None;
 
-    while fa.remain() >= 8 {
+    while container_end.saturating_sub(fa.element_offset()) >= 8 && fa.remain() >= 8 {
         let chunk_id = fa.get_c4("ChunkID");
         let chunk_size = fa.get_l4("ChunkSize");
 
@@ -182,7 +195,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
         } else {
             chunk_size as usize
         };
-        if fa.remain() < chunk_size_usize {
+        if container_end.saturating_sub(fa.element_offset()) < chunk_size_usize {
             break;
         }
 
@@ -190,7 +203,8 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
             FOURCC_DS64 if is_rf64 => {
                 fa.element_begin("ds64");
                 if chunk_size_usize >= 28 {
-                    let _riff_size_64 = fa.get_l8("riffSize");
+                    let riff_size_64 = fa.get_l8("riffSize");
+                    container_end = riff_end(fa.element_size(), riff_size_64);
                     rf64_data_size = Some(fa.get_l8("dataSize"));
                     let _sample_count_64 = fa.get_l8("sampleCount");
                     let _table_length = fa.get_l4("tableLength");
@@ -198,7 +212,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 } else {
                     fa.skip_hexa(chunk_size_usize, "ds64_short");
                 }
-                if chunk_size_usize % 2 == 1 {
+                if chunk_size_usize % 2 == 1 && fa.element_offset() < container_end {
                     let mut _pad: u8 = 0;
                     _pad = fa.get_b1("Padding");
                 }
@@ -218,7 +232,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                 if chunk_size_usize > consumed_in_fmt {
                     fa.skip_hexa(chunk_size_usize - consumed_in_fmt, "Extension");
                 }
-                if chunk_size_usize % 2 == 1 {
+                if chunk_size_usize % 2 == 1 && fa.element_offset() < container_end {
                     let mut _pad: u8 = 0;
                     _pad = fa.get_b1("Padding");
                 }
@@ -241,7 +255,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
                     u64::from(chunk_size)
                 };
                 fa.skip_hexa(chunk_size_usize, "Samples");
-                if chunk_size_usize % 2 == 1 {
+                if chunk_size_usize % 2 == 1 && fa.element_offset() < container_end {
                     let mut _pad: u8 = 0;
                     _pad = fa.get_b1("Padding");
                 }
@@ -288,7 +302,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
             _ => {
                 // Unknown chunk — skip it, honoring word-alignment.
                 fa.skip_hexa(chunk_size_usize, "Unknown");
-                if chunk_size_usize % 2 == 1 {
+                if chunk_size_usize % 2 == 1 && fa.element_offset() < container_end {
                     let mut _pad: u8 = 0;
                     _pad = fa.get_b1("Padding");
                 }
@@ -630,6 +644,28 @@ mod tests {
                 .as_deref(),
             Some("100")
         );
+    }
+
+    #[test]
+    fn riff_wave_ignores_trailing_bytes_after_declared_size() {
+        let mut buf = make_pcm_wav(1, 8000, 16, 1600);
+        let declared_end = buf.len();
+        buf.resize(declared_end + TEST_LARGE_CHUNK_SIZE, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_wav(&mut fa));
+        assert_eq!(fa.element_offset(), declared_end);
+    }
+
+    #[test]
+    fn rf64_ignores_trailing_bytes_after_ds64_size() {
+        let mut buf = rf64_with_large_data();
+        let declared_end = buf.len();
+        buf.resize(declared_end + TEST_LARGE_CHUNK_SIZE, 0);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_wav(&mut fa));
+        assert_eq!(fa.element_offset(), declared_end);
     }
 
     #[test]
