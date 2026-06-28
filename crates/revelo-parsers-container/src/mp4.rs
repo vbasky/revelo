@@ -3438,12 +3438,133 @@ fn channel_layout_for_format(
 mod tests {
     use super::*;
 
+    const MP4_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+    const TEST_MDAT_SIZE: usize = 16 * 1024 * 1024;
+    const TEST_CODEC_CONFIG_SIZE: usize = MP4_AVCC_PARSE_LIMIT + 1024;
+    const TEST_METADATA_SIZE: usize = MP4_METADATA_VALUE_LIMIT + 1024;
+
     fn mp4_box(ty: &[u8; 4], payload: Vec<u8>) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&((payload.len() + 8) as u32).to_be_bytes());
         out.extend_from_slice(ty);
         out.extend(payload);
         out
+    }
+
+    fn ftyp_box(major: &[u8; 4]) -> Vec<u8> {
+        mp4_box(
+            b"ftyp",
+            [major.as_slice(), &0u32.to_be_bytes(), b"isom".as_slice(), b"mp42".as_slice()]
+                .concat(),
+        )
+    }
+
+    fn ilst_metadata_box(payload_len: usize) -> Vec<u8> {
+        let mut data_body = Vec::with_capacity(payload_len + 8);
+        data_body.extend_from_slice(&1u32.to_be_bytes());
+        data_body.extend_from_slice(&0u32.to_be_bytes());
+        data_body.resize(data_body.len() + payload_len, b'x');
+
+        let item_type = ITUNES_KEY_TOOL.to_be_bytes();
+        mp4_box(&item_type, mp4_box(b"data", data_body))
+    }
+
+    fn visual_entry(
+        entry_type: &[u8; 4],
+        codec_box_type: &[u8; 4],
+        codec_body: Vec<u8>,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.resize(6, 0);
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.resize(payload.len() + 16, 0);
+        payload.extend_from_slice(&1920u16.to_be_bytes());
+        payload.extend_from_slice(&1080u16.to_be_bytes());
+        payload.extend_from_slice(&0x0048_0000u32.to_be_bytes());
+        payload.extend_from_slice(&0x0048_0000u32.to_be_bytes());
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.resize(payload.len() + 32, 0);
+        payload.extend_from_slice(&24u16.to_be_bytes());
+        payload.extend_from_slice(&0xFFFFu16.to_be_bytes());
+        payload.extend(mp4_box(codec_box_type, codec_body));
+        mp4_box(entry_type, payload)
+    }
+
+    fn mp4a_entry(esds_body: Vec<u8>) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.resize(6, 0);
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&2u16.to_be_bytes());
+        payload.extend_from_slice(&16u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&(48_000u32 << 16).to_be_bytes());
+        payload.extend(mp4_box(b"esds", esds_body));
+        mp4_box(b"mp4a", payload)
+    }
+
+    fn stsd_box(entry: Vec<u8>) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&1u32.to_be_bytes());
+        payload.extend(entry);
+        mp4_box(b"stsd", payload)
+    }
+
+    fn trak_with_stsd(entry: Vec<u8>) -> Vec<u8> {
+        mp4_box(b"trak", mp4_box(b"mdia", mp4_box(b"minf", mp4_box(b"stbl", stsd_box(entry)))))
+    }
+
+    fn structured_moov() -> Vec<u8> {
+        let metadata = mp4_box(
+            b"udta",
+            mp4_box(b"meta", mp4_box(b"ilst", ilst_metadata_box(TEST_METADATA_SIZE))),
+        );
+        let avcc = {
+            let mut body = vec![1, 0x64, 0, 0x1F, 0xFF, 0xE0, 0];
+            body.resize(TEST_CODEC_CONFIG_SIZE, 0);
+            trak_with_stsd(visual_entry(b"avc1", b"avcC", body))
+        };
+        let hvcc = {
+            let mut body = vec![0; 23];
+            body[0] = 1;
+            body[1] = 0x21;
+            body[12] = 0x5D;
+            body[16] = 1;
+            body[17] = 2;
+            body.resize(TEST_CODEC_CONFIG_SIZE, 0);
+            trak_with_stsd(visual_entry(b"hvc1", b"hvcC", body))
+        };
+        let esds = {
+            let mut body = vec![0; TEST_CODEC_CONFIG_SIZE];
+            body[4] = 0x03;
+            trak_with_stsd(mp4a_entry(body))
+        };
+        mp4_box(b"moov", [metadata, avcc, hvcc, esds].concat())
+    }
+
+    fn structured_mp4(major: &[u8; 4], moov_first: bool) -> Vec<u8> {
+        let ftyp = ftyp_box(major);
+        let moov = structured_moov();
+        let mdat_size = 8 + TEST_MDAT_SIZE as u32;
+        let mut buf = Vec::new();
+        buf.extend(ftyp);
+        if moov_first {
+            buf.extend(moov);
+            buf.extend_from_slice(&mdat_size.to_be_bytes());
+            buf.extend_from_slice(b"mdat");
+            buf.resize(buf.len() + TEST_MDAT_SIZE, 0);
+        } else {
+            buf.extend_from_slice(&mdat_size.to_be_bytes());
+            buf.extend_from_slice(b"mdat");
+            buf.resize(buf.len() + TEST_MDAT_SIZE, 0);
+            buf.extend(moov);
+        }
+        buf
     }
 
     #[test]
@@ -3504,6 +3625,26 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mp4(&mut fa));
         assert!(fa.access_stats().max_request_len < MP4_METADATA_VALUE_LIMIT + 1);
+    }
+
+    #[test]
+    fn structured_mp4_metadata_only_access_stays_bounded() {
+        for (label, major, moov_first) in [
+            ("moov_front", *b"isom", true),
+            ("moov_tail", *b"qt  ", false),
+            ("snv2_tail", *b"SNV2", false),
+        ] {
+            let buf = structured_mp4(&major, moov_first);
+            assert!(buf.len() as u64 > MP4_METADATA_ONLY_BUDGET, "{label}");
+
+            let mut fa = FileAnalyze::new(&buf);
+            assert!(parse_mp4(&mut fa), "{label}");
+
+            let stats = fa.access_stats();
+            assert!(stats.bytes_requested < MP4_METADATA_ONLY_BUDGET, "{label}: {stats:?}");
+            assert!(stats.bytes_returned < MP4_METADATA_ONLY_BUDGET, "{label}: {stats:?}");
+            assert!(stats.max_request_len <= MP4A_EXTENSION_SCAN_LIMIT, "{label}: {stats:?}");
+        }
     }
 
     #[test]
