@@ -23,10 +23,11 @@ binary. Two reference tools' worth of metadata, in one pure-Rust crate.
 
 ## How it reads a file
 
-First revelo detects the format (every parser races to claim the bytes), then it
-walks the container's *native* on-disk structure, reading fields box-by-box. An
-MP4/MOV file is a tree of boxes ("atoms") — `moov` holds the metadata, `mdat` the
-coded samples:
+First revelo detects the format, then it walks the container's *native* on-disk
+structure, reading fields box-by-box. Small inputs use a parallel parser race;
+large inputs use a bounded sequential probe so speculative parser candidates do
+not read the whole file before the real container parser wins. An MP4/MOV file is
+a tree of boxes ("atoms") — `moov` holds the metadata, `mdat` the coded samples:
 
 ```text
   ftyp                          file brand: isom · qt · M4A …
@@ -101,7 +102,7 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | **Memory safety** | Manual | Compile-time guaranteed |
 | **Build** | `./Configure` + `make` + 10 system deps | `cargo build` (no system libs) |
 | **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelo-cli` or `brew tap vbasky/revelo && brew install revelo` |
-| **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table, parallel race via rayon |
+| **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table; parallel race for small buffers, bounded sequential detection for large buffers |
 | **Output fidelity** | Reference oracle | Byte-equal XML (differential harness) |
 | **License** | BSD-2-Clause | BSD-2-Clause |
 | **Format support** | ~200 formats | 190+ parsers, 185 fields |
@@ -191,7 +192,7 @@ The crate stack, from consumers at the top down to the foundation:
 ├────────────────────────────────────────────────────────────┤
 │  revelo-export       revelo-reader                         │  output / input
 ├────────────────────────────────────────────────────────────┤
-│  revelo-dispatcher — parser table + parallel detect()       │  dispatch
+│  revelo-dispatcher — parser table + bounded detect()        │  dispatch
 ├────────────────────────────────────────────────────────────┤
 │  container · audio · video · image · text · tag · archive    │  parsers (193)
 ├────────────────────────────────────────────────────────────┤
@@ -211,7 +212,7 @@ output/API surface, and the differential test harness.
 | --- | --- | --- |
 | `revelo-util` | ZenLib port — `Ztring`, bit reader, integer/float types | Stable |
 | `revelo-core` | Analysis engine — `FileAnalyze` byte reader, stream model, demux/trace, config dispatch, computed fields | Stable |
-| `revelo-dispatcher` | Parser table (single source of truth) + parallel `detect()` | Stable |
+| `revelo-dispatcher` | Parser table (single source of truth) + bounded `detect()` | Stable |
 
 ### Format parsers
 
@@ -308,7 +309,7 @@ let xml = to_xml(fa.streams(), "video.mp4");
 | --- | --- |
 | **Pure Rust** | No C++ FFI, no system DLLs, no `pkg-config` — a single `cargo build` |
 | **Harness-validated** | Every ported parser is diffed against the `mediainfo` oracle for byte-equal XML |
-| **Race + walk** | All parsers race in parallel to detect the format; the winner re-parses from a fresh state to extract every field |
+| **Detect + walk** | Parser-table detection prefers containers before elementary streams; small buffers race in parallel, while large buffers use a bounded sequential probe before the winner re-parses from a fresh state |
 | **Container-native** | Each container is walked through its *own* on-disk structure (boxes, EBML, RIFF chunks, PES packets) — not a unified abstraction |
 | **No unsafe** | `#![deny(unsafe_code)]` enforced workspace-wide |
 | **BSD-2-Clause** | Permissive license, no GPL restrictions |
