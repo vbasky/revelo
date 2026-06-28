@@ -16,9 +16,11 @@ use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, StreamKind};
 
 const FOURCC_RIFF: u32 = u32::from_be_bytes(*b"RIFF");
+const FOURCC_RF64: u32 = u32::from_be_bytes(*b"RF64");
 const FOURCC_WAVE: u32 = u32::from_be_bytes(*b"WAVE");
 const FOURCC_FMT: u32 = u32::from_be_bytes(*b"fmt ");
 const FOURCC_DATA: u32 = u32::from_be_bytes(*b"data");
+const FOURCC_DS64: u32 = u32::from_be_bytes(*b"ds64");
 const FOURCC_BEXT: u32 = u32::from_be_bytes(*b"bext");
 const FOURCC_IXML: u32 = u32::from_be_bytes(*b"iXML");
 const FOURCC_AXML: u32 = u32::from_be_bytes(*b"axml");
@@ -144,14 +146,15 @@ fn parse_bext_chunk(fa: &mut FileAnalyze, chunk_size: usize) -> BwfInfo {
 /// was recognized.
 pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     let magic = fa.peek_b4();
-    if magic != FOURCC_RIFF {
+    if magic != FOURCC_RIFF && magic != FOURCC_RF64 {
         return false;
     }
 
     fa.element_begin("RIFF");
-    let _riff_id = fa.get_c4("ID");
+    let riff_id = fa.get_c4("ID");
     let _riff_size = fa.get_l4("Size");
     let form_type = fa.get_c4("Type");
+    let is_rf64 = riff_id == FOURCC_RF64;
 
     if form_type != FOURCC_WAVE {
         fa.element_end();
@@ -159,19 +162,48 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     }
 
     let mut fmt: Option<FmtChunk> = None;
-    let mut data_size: u32 = 0;
+    let mut data_size: u64 = 0;
+    let mut rf64_data_size: Option<u64> = None;
     let mut bwf: Option<BwfInfo> = None;
 
     while fa.remain() >= 8 {
         let chunk_id = fa.get_c4("ChunkID");
         let chunk_size = fa.get_l4("ChunkSize");
 
-        let chunk_size_usize = chunk_size as usize;
+        let chunk_size_usize = if is_rf64
+            && chunk_id == FOURCC_DATA
+            && chunk_size == u32::MAX
+            && let Some(size64) = rf64_data_size
+        {
+            let Ok(size64) = usize::try_from(size64) else {
+                break;
+            };
+            size64
+        } else {
+            chunk_size as usize
+        };
         if fa.remain() < chunk_size_usize {
             break;
         }
 
         match chunk_id {
+            FOURCC_DS64 if is_rf64 => {
+                fa.element_begin("ds64");
+                if chunk_size_usize >= 28 {
+                    let _riff_size_64 = fa.get_l8("riffSize");
+                    rf64_data_size = Some(fa.get_l8("dataSize"));
+                    let _sample_count_64 = fa.get_l8("sampleCount");
+                    let _table_length = fa.get_l4("tableLength");
+                    fa.skip_hexa(chunk_size_usize - 28, "ds64_tail");
+                } else {
+                    fa.skip_hexa(chunk_size_usize, "ds64_short");
+                }
+                if chunk_size_usize % 2 == 1 {
+                    let mut _pad: u8 = 0;
+                    _pad = fa.get_b1("Padding");
+                }
+                fa.element_end();
+            }
             FOURCC_FMT => {
                 fa.element_begin("fmt");
                 let audio_format = fa.get_l2("AudioFormat");
@@ -203,7 +235,11 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
             }
             FOURCC_DATA => {
                 fa.element_begin("data");
-                data_size = chunk_size;
+                data_size = if is_rf64 && chunk_size == u32::MAX {
+                    rf64_data_size.unwrap_or(u64::from(chunk_size))
+                } else {
+                    u64::from(chunk_size)
+                };
                 fa.skip_hexa(chunk_size_usize, "Samples");
                 if chunk_size_usize % 2 == 1 {
                     let mut _pad: u8 = 0;
@@ -270,7 +306,7 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     }
 }
 
-fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Option<BwfInfo>) {
+fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u64, bwf: &Option<BwfInfo>) {
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "Wave");
     if let Some(m) = mime_for_container("WAVE") {
@@ -306,7 +342,7 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u32, bwf: &Opti
     fa.set_field(StreamKind::Audio, 0, "StreamSize", data_size.to_string());
 
     if fmt.block_align > 0 {
-        let sample_count = data_size as u64 / fmt.block_align as u64;
+        let sample_count = data_size / fmt.block_align as u64;
         fa.set_field(StreamKind::Audio, 0, "SamplingCount", sample_count.to_string());
         if fmt.sample_rate > 0 {
             // Duration in milliseconds, matching C++ output convention.
@@ -397,6 +433,62 @@ fn wav_format_descriptors(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const AUDIO_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+    const TEST_LARGE_CHUNK_SIZE: usize = 9 * 1024 * 1024;
+
+    fn append_pcm_fmt(buf: &mut Vec<u8>) {
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&48000u32.to_le_bytes());
+        buf.extend_from_slice(&96000u32.to_le_bytes());
+        buf.extend_from_slice(&2u16.to_le_bytes());
+        buf.extend_from_slice(&16u16.to_le_bytes());
+    }
+
+    fn append_large_chunk(buf: &mut Vec<u8>, id: &[u8; 4], size_field: u32, payload_len: usize) {
+        buf.extend_from_slice(id);
+        buf.extend_from_slice(&size_field.to_le_bytes());
+        buf.resize(buf.len() + payload_len, 0);
+    }
+
+    fn wav_with_large_metadata_and_data() -> Vec<u8> {
+        let mut body = Vec::new();
+        append_pcm_fmt(&mut body);
+        append_large_chunk(&mut body, b"LIST", TEST_LARGE_CHUNK_SIZE as u32, TEST_LARGE_CHUNK_SIZE);
+        append_large_chunk(&mut body, b"ID3 ", TEST_LARGE_CHUNK_SIZE as u32, TEST_LARGE_CHUNK_SIZE);
+        append_large_chunk(&mut body, b"data", TEST_LARGE_CHUNK_SIZE as u32, TEST_LARGE_CHUNK_SIZE);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&(4 + body.len() as u32).to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend(body);
+        buf
+    }
+
+    fn rf64_with_large_data() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(b"ds64");
+        body.extend_from_slice(&28u32.to_le_bytes());
+        let riff_size_64 = 4 + (8 + 28) + (8 + 16) + (8 + TEST_LARGE_CHUNK_SIZE as u64) * 2;
+        body.extend_from_slice(&riff_size_64.to_le_bytes());
+        body.extend_from_slice(&(TEST_LARGE_CHUNK_SIZE as u64).to_le_bytes());
+        body.extend_from_slice(&((TEST_LARGE_CHUNK_SIZE / 2) as u64).to_le_bytes());
+        body.extend_from_slice(&0u32.to_le_bytes());
+        append_pcm_fmt(&mut body);
+        append_large_chunk(&mut body, b"ID3 ", TEST_LARGE_CHUNK_SIZE as u32, TEST_LARGE_CHUNK_SIZE);
+        append_large_chunk(&mut body, b"data", u32::MAX, TEST_LARGE_CHUNK_SIZE);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RF64");
+        buf.extend_from_slice(&u32::MAX.to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend(body);
+        buf
+    }
 
     /// Build a minimal valid PCM WAV: 1 channel, 8000 Hz, 16-bit, with
     /// `frame_count` audio frames (each 2 bytes). Returns the buffer.
@@ -538,6 +630,26 @@ mod tests {
                 .as_deref(),
             Some("100")
         );
+    }
+
+    #[test]
+    fn large_wav_metadata_and_data_access_stays_bounded() {
+        for (label, buf) in
+            [("riff_wave", wav_with_large_metadata_and_data()), ("rf64", rf64_with_large_data())]
+        {
+            assert!(buf.len() as u64 > AUDIO_METADATA_ONLY_BUDGET, "{label}");
+
+            let mut fa = FileAnalyze::new(&buf);
+            assert!(parse_wav(&mut fa), "{label}");
+            let stream_size =
+                fa.retrieve(StreamKind::Audio, 0, "StreamSize").map(|z| z.as_str().to_owned());
+            assert_eq!(stream_size.as_deref(), Some("9437184"), "{label}");
+
+            let stats = fa.access_stats();
+            assert!(stats.bytes_requested < AUDIO_METADATA_ONLY_BUDGET, "{label}: {stats:?}");
+            assert!(stats.bytes_returned < AUDIO_METADATA_ONLY_BUDGET, "{label}: {stats:?}");
+            assert!(stats.max_request_len <= BEXT_PARSE_LIMIT, "{label}: {stats:?}");
+        }
     }
 
     #[test]

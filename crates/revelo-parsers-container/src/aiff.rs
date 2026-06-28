@@ -263,6 +263,9 @@ fn fill_streams(fa: &mut FileAnalyze, comm: &CommChunk, audio_stream_size: u64) 
 mod tests {
     use super::*;
 
+    const AIFF_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+    const TEST_LARGE_CHUNK_SIZE: usize = 9 * 1024 * 1024;
+
     /// Build a minimal valid AIFF: stereo 24-bit, with the given sample
     /// rate and frame count. SSND prefix offset/block_size are zero.
     fn make_aiff(channels: u16, sample_rate_hz: u32, bits: u16, frame_count: u32) -> Vec<u8> {
@@ -423,6 +426,54 @@ mod tests {
         // No Endianness/Sign fills for float per task spec.
         assert!(a("Format_Settings_Endianness").is_none());
         assert!(a("Format_Settings_Sign").is_none());
+    }
+
+    #[test]
+    fn large_aiff_metadata_and_sound_data_access_stays_bounded() {
+        let channels = 1u16;
+        let bits = 16u16;
+        let frame_count = (TEST_LARGE_CHUNK_SIZE / 2) as u32;
+        let comm_chunk_size = 18u32;
+        let ssnd_chunk_size = 8 + TEST_LARGE_CHUNK_SIZE as u32;
+        let id3_chunk_size = TEST_LARGE_CHUNK_SIZE as u32;
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"FORM");
+        let form_size = 4 + (8 + comm_chunk_size) + (8 + id3_chunk_size) + (8 + ssnd_chunk_size);
+        buf.extend_from_slice(&form_size.to_be_bytes());
+        buf.extend_from_slice(b"AIFF");
+
+        buf.extend_from_slice(b"COMM");
+        buf.extend_from_slice(&comm_chunk_size.to_be_bytes());
+        buf.extend_from_slice(&channels.to_be_bytes());
+        buf.extend_from_slice(&frame_count.to_be_bytes());
+        buf.extend_from_slice(&bits.to_be_bytes());
+        buf.extend_from_slice(&encode_f80_be(48000.0));
+
+        buf.extend_from_slice(b"ID3 ");
+        buf.extend_from_slice(&id3_chunk_size.to_be_bytes());
+        buf.resize(buf.len() + TEST_LARGE_CHUNK_SIZE, 0);
+
+        buf.extend_from_slice(b"SSND");
+        buf.extend_from_slice(&ssnd_chunk_size.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        buf.resize(buf.len() + TEST_LARGE_CHUNK_SIZE, 0);
+
+        assert!(buf.len() as u64 > AIFF_METADATA_ONLY_BUDGET);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_aiff(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::Audio, 0, "StreamSize")
+                .map(|z| z.as_str().to_owned())
+                .as_deref(),
+            Some("9437184")
+        );
+
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < AIFF_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < AIFF_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.max_request_len <= 10, "{stats:?}");
     }
 
     #[test]
