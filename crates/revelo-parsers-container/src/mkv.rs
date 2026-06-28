@@ -1726,6 +1726,11 @@ fn walk_elements(
 mod tests {
     use super::*;
 
+    const MKV_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+    const TEST_LARGE_ELEMENT_SIZE: usize = 9 * 1024 * 1024;
+    const TEST_TAG_VALUE_SIZE: usize = MKV_TEXT_VALUE_LIMIT + 1024;
+    const CUES_ID: &[u8; 4] = &[0x1C, 0x53, 0xBB, 0x6B];
+
     fn ebml_size(size: usize) -> Vec<u8> {
         if size <= 0x7f {
             vec![0x80 | size as u8]
@@ -1749,6 +1754,51 @@ mod tests {
         out.extend_from_slice(&ebml_size(payload.len()));
         out.extend_from_slice(&payload);
         out
+    }
+
+    fn ebml_header(doc_type: &[u8]) -> Vec<u8> {
+        element(&[0x1A, 0x45, 0xDF, 0xA3], element(&[0x42, 0x82], doc_type.to_vec()))
+    }
+
+    fn minimal_track() -> Vec<u8> {
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![1]));
+        track.extend(element(&[0x83], vec![2]));
+        track.extend(element(&[0x86], b"A_OPUS".to_vec()));
+        element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track))
+    }
+
+    fn large_tags() -> Vec<u8> {
+        let mut simple_tag = Vec::new();
+        simple_tag.extend(element(&[0x45, 0xA3], b"TITLE".to_vec()));
+        simple_tag.extend(element(&[0x44, 0x87], vec![b'x'; TEST_TAG_VALUE_SIZE]));
+        element(
+            &[0x12, 0x54, 0xC3, 0x67],
+            element(&[0x73, 0x73], element(&[0x67, 0xC8], simple_tag)),
+        )
+    }
+
+    fn large_attachment() -> Vec<u8> {
+        let mut attached_file = Vec::new();
+        attached_file.extend(element(&[0x46, 0x6E], b"cover.jpg".to_vec()));
+        attached_file.extend(element(&[0x46, 0x60], b"image/jpeg".to_vec()));
+        attached_file.extend(element(&[0x46, 0x5C], vec![0; TEST_LARGE_ELEMENT_SIZE]));
+        element(&[0x19, 0x41, 0xA4, 0x69], element(&[0x61, 0xA7], attached_file))
+    }
+
+    fn large_sparse_webm() -> Vec<u8> {
+        let mut segment_payload = Vec::new();
+        segment_payload.extend(minimal_track());
+        segment_payload.extend(large_tags());
+        segment_payload.extend(large_attachment());
+        segment_payload.extend(element(CUES_ID, vec![0; TEST_LARGE_ELEMENT_SIZE]));
+        segment_payload
+            .extend(element(&[0x1F, 0x43, 0xB6, 0x75], vec![0; TEST_LARGE_ELEMENT_SIZE]));
+
+        let mut buf = Vec::new();
+        buf.extend(ebml_header(b"webm"));
+        buf.extend(element(&[0x18, 0x53, 0x80, 0x67], segment_payload));
+        buf
     }
 
     #[test]
@@ -1812,6 +1862,28 @@ mod tests {
 
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_mkv(&mut fa));
-        assert!(fa.access_stats().max_request_len <= MKV_TEXT_VALUE_LIMIT);
+        assert!(fa.access_stats().max_request_len <= MKV_CODEC_PRIVATE_LIMIT);
+    }
+
+    #[test]
+    fn large_webm_metadata_only_access_stays_bounded() {
+        let buf = large_sparse_webm();
+        assert!(buf.len() as u64 > MKV_METADATA_ONLY_BUDGET);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
+            Some("WebM")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Cover").map(|z| z.as_str().to_owned()).as_deref(),
+            Some("Yes")
+        );
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < MKV_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < MKV_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.max_request_len <= MKV_TEXT_VALUE_LIMIT, "{stats:?}");
     }
 }
