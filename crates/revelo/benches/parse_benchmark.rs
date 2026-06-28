@@ -205,6 +205,36 @@ fn structured_moov() -> Vec<u8> {
     mp4_box(b"moov", [metadata, avcc, hvcc, esds].concat())
 }
 
+fn small_structured_moov() -> Vec<u8> {
+    let metadata = mp4_box(b"udta", mp4_box(b"meta", mp4_box(b"ilst", ilst_metadata_box(16))));
+    let avcc = {
+        let body = vec![1, 0x64, 0, 0x1F, 0xFF, 0xE0, 0];
+        trak_with_stsd(visual_entry(b"avc1", b"avcC", body))
+    };
+    let hvcc = {
+        let mut body = vec![0; 23];
+        body[0] = 1;
+        body[1] = 0x21;
+        body[12] = 0x5D;
+        body[16] = 1;
+        body[17] = 2;
+        trak_with_stsd(visual_entry(b"hvc1", b"hvcC", body))
+    };
+    let esds = {
+        let mut body = vec![0; 16];
+        body[4] = 0x03;
+        trak_with_stsd(mp4a_entry(body))
+    };
+    mp4_box(b"moov", [metadata, avcc, hvcc, esds].concat())
+}
+
+fn small_structured_mp4(major_brand: &[u8; 4], moov_first: bool) -> Vec<u8> {
+    let ftyp = ftyp_box(major_brand, &[*b"isom", *b"mp42"]);
+    let moov = small_structured_moov();
+    let mdat = mp4_box(b"mdat", vec![0; 128]);
+    if moov_first { [ftyp, moov, mdat].concat() } else { [ftyp, mdat, moov].concat() }
+}
+
 fn write_structured_mp4(
     file: &NamedTempFile,
     major_brand: &[u8; 4],
@@ -619,6 +649,18 @@ fn bench_parse(c: &mut Criterion) {
     }
 
     // ── structured sparse MP4/MOV-like files with moov metadata ─
+    let small_mp4_moov_front = small_structured_mp4(b"isom", true);
+    let (small_mp4_moov_front_file, small_mp4_moov_front_total) =
+        write_temp_bytes(&small_mp4_moov_front);
+
+    let small_mov_moov_tail = small_structured_mp4(b"qt  ", false);
+    let (small_mov_moov_tail_file, small_mov_moov_tail_total) =
+        write_temp_bytes(&small_mov_moov_tail);
+
+    let small_snv2_moov_tail = small_structured_mp4(b"SNV2", false);
+    let (small_snv2_moov_tail_file, small_snv2_moov_tail_total) =
+        write_temp_bytes(&small_snv2_moov_tail);
+
     let mp4_moov_front_file = NamedTempFile::new().expect("tempfile");
     let mp4_moov_front_total =
         write_structured_mp4(&mp4_moov_front_file, b"isom", true).expect("write mp4 moov front");
@@ -711,6 +753,39 @@ fn bench_parse(c: &mut Criterion) {
     group.bench_function(BenchmarkId::new("large_wav_sparse", "100 MiB"), |b| {
         b.iter(|| black_box(revelo::Metadata::from_file(black_box(&large_path))));
     });
+
+    let small_mp4_moov_front_path =
+        small_mp4_moov_front_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(small_mp4_moov_front_total));
+    group.bench_function(
+        BenchmarkId::new("small_mp4_moov_front", bytes_label(small_mp4_moov_front_total)),
+        |b| {
+            b.iter(|| {
+                black_box(revelo::Metadata::from_file(black_box(&small_mp4_moov_front_path)))
+            });
+        },
+    );
+    let small_mov_moov_tail_path =
+        small_mov_moov_tail_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(small_mov_moov_tail_total));
+    group.bench_function(
+        BenchmarkId::new("small_mov_moov_tail", bytes_label(small_mov_moov_tail_total)),
+        |b| {
+            b.iter(|| black_box(revelo::Metadata::from_file(black_box(&small_mov_moov_tail_path))));
+        },
+    );
+    let small_snv2_moov_tail_path =
+        small_snv2_moov_tail_file.path().to_str().expect("path").to_string();
+    group.throughput(Throughput::Bytes(small_snv2_moov_tail_total));
+    group.bench_function(
+        BenchmarkId::new("small_snv2_moov_tail", bytes_label(small_snv2_moov_tail_total)),
+        |b| {
+            b.iter(|| {
+                black_box(revelo::Metadata::from_file(black_box(&small_snv2_moov_tail_path)))
+            });
+        },
+    );
+
     let large_mp4_path = large_mp4_file.path().to_str().expect("path").to_string();
     group.throughput(Throughput::Bytes(large_mp4_total));
     group.bench_function(BenchmarkId::new("large_mp4_sparse", "100 MiB"), |b| {
