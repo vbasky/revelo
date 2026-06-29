@@ -74,9 +74,14 @@ pub mod reader;
 mod revelo_util_re_export;
 pub mod stream;
 
-pub use byte_source::{ByteSource, ReadBackend};
+#[cfg(feature = "mmap")]
+pub use byte_source::MmapBackend;
+pub use byte_source::{
+    ByteRange, ByteSource, FileBackend, MediaReadAt, ReadAtError, ReadBackend, SliceBackend,
+    SourceStats,
+};
 pub use element::{ElementInfo, ElementNode, ElementTree};
-pub use file_analyze::FileAnalyze;
+pub use file_analyze::{AccessStats, FileAnalyze};
 /// Ergonomic alias for [`FileAnalyze`]. Both names refer to the same type.
 pub type MediaFile<'a> = FileAnalyze<'a>;
 pub use file_level::{FileLevelInfo, fill_file_level_fields};

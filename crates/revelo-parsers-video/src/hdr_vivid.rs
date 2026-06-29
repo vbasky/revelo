@@ -4,11 +4,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: HDRV/HVIV magic.
 /// Fills: HDR metadata fields.
 pub fn parse_hdr_vivid(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(4) else { return false };
     if &buf[0..4] == b"HDRV" || &buf[0..4] == b"HVIV" {
         let pos = fa.stream_prepare(StreamKind::Video);
         fa.set_field(StreamKind::Video, pos, "Format", "HDR Vivid");

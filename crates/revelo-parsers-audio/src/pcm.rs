@@ -7,11 +7,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: WAVEFORMATEX format_tag 0x0001/0xFFFE.
 /// Fills: Channels, sample rate, bit depth, endianness.
 pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 16 {
-        return false;
-    }
+    let buf = match fa.peek_raw(16) {
+        Some(b) => b,
+        None => return false,
+    };
 
     let format_tag = u16::from_le_bytes([buf[0], buf[1]]);
     if format_tag != 0x0001 && format_tag != 0xFFFE {
@@ -20,7 +19,7 @@ pub fn parse_pcm(fa: &mut FileAnalyze) -> bool {
 
     let channels = u16::from_le_bytes([buf[2], buf[3]]);
     let sample_rate = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
-    let bits_per_sample = if buf.len() >= 16 { u16::from_le_bytes([buf[14], buf[15]]) } else { 16 };
+    let bits_per_sample = u16::from_le_bytes([buf[14], buf[15]]);
 
     let pos = fa.stream_prepare(StreamKind::Audio);
     fa.set_field(StreamKind::Audio, pos, "Format", "PCM");
@@ -50,5 +49,18 @@ mod tests {
         buf[15] = 0x00; // 16-bit
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_pcm(&mut fa));
+    }
+
+    #[test]
+    fn pcm_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0] = 0x01;
+        buf[2] = 0x02;
+        buf[4] = 0x80;
+        buf[5] = 0xBB;
+        buf[14] = 0x10;
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_pcm(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 16);
     }
 }

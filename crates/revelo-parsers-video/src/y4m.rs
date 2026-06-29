@@ -14,6 +14,8 @@
 
 use revelo_core::{FileAnalyze, StreamKind};
 
+const Y4M_HEADER_SCAN_LIMIT: usize = 4096;
+
 pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
     // Must be at least 10 bytes for magic
     let magic = match fa.peek_raw(10) {
@@ -28,8 +30,8 @@ pub fn parse_y4m(fa: &mut FileAnalyze) -> bool {
 
     // Scan for LF to find end of header
     let hdr_end = {
-        let remain = fa.remain();
-        let data = match fa.peek_raw(remain) {
+        let scan_len = fa.remain().min(Y4M_HEADER_SCAN_LIMIT);
+        let data = match fa.peek_raw(scan_len) {
             Some(d) => d,
             None => {
                 fa.element_end();
@@ -230,5 +232,14 @@ mod tests {
             fa.retrieve(StreamKind::Video, 0, "ChromaSubsampling").map(|z| z.as_str()),
             Some("4:4:4")
         );
+    }
+
+    #[test]
+    fn y4m_does_not_request_full_payload() {
+        let mut buf = make_y4m("W1920 H1080 F25:1 C420jpeg");
+        buf.resize(1024 * 1024, 0x80);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_y4m(&mut fa));
+        assert!(fa.access_stats().max_request_len <= Y4M_HEADER_SCAN_LIMIT);
     }
 }

@@ -11,6 +11,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 const EBML_HEADER_BYTES: [u8; 4] = [0x1A, 0x45, 0xDF, 0xA3];
 const DOC_TYPE: u64 = 0x4282;
 const IBI_DOC_TYPE: &str = "MediaInfo Index";
+const IBI_DOC_TYPE_LIMIT: usize = 128;
 
 /// Parse Index of Binary Information file.
 /// Fills: Seek table metadata.
@@ -29,8 +30,12 @@ pub fn parse_ibi(fa: &mut FileAnalyze) -> bool {
         if id == 0x1A45DFA3 {
             walk_elements(fa, size, &mut |fa, id, sz, _| {
                 if id == DOC_TYPE {
-                    let bytes = fa.read_raw(sz).to_vec();
-                    doc_type = Some(strip_nuls(&bytes));
+                    if sz <= IBI_DOC_TYPE_LIMIT {
+                        let bytes = fa.read_raw(sz).to_vec();
+                        doc_type = Some(strip_nuls(&bytes));
+                    } else {
+                        fa.skip_hexa(sz, "doc_type");
+                    }
                 } else {
                     fa.skip_hexa(sz, "ebml_child");
                 }
@@ -103,16 +108,20 @@ fn walk_elements(
     region_size: usize,
     visit: &mut dyn FnMut(&mut FileAnalyze, u64, usize, usize),
 ) {
-    let region_end = fa.element_offset() + region_size;
+    let Some(region_end) = fa.element_offset().checked_add(region_size) else {
+        return;
+    };
     while fa.element_offset() < region_end && fa.remain() > 0 {
         let elem_start = fa.element_offset();
         let Some(id) = read_vint_id(fa) else { break };
         let Some(size) = read_vint_size(fa) else { break };
-        let body_size = size as usize;
-        if fa.element_offset() + body_size > region_end {
+        let Ok(body_size) = usize::try_from(size) else { break };
+        let Some(body_end) = fa.element_offset().checked_add(body_size) else {
+            break;
+        };
+        if body_end > region_end {
             break;
         }
-        let body_end = fa.element_offset() + body_size;
         visit(fa, id, body_size, elem_start);
         if fa.element_offset() < body_end {
             fa.skip_hexa(body_end - fa.element_offset(), "element_tail");
@@ -126,19 +135,27 @@ fn walk_elements(
 mod tests {
     use super::*;
 
+    fn ebml_size(size: usize) -> Vec<u8> {
+        if size <= 0x7f {
+            vec![0x80 | size as u8]
+        } else if size <= 0x3fff {
+            vec![0x40 | ((size >> 8) as u8), (size & 0xff) as u8]
+        } else {
+            vec![0x20 | ((size >> 16) as u8), ((size >> 8) & 0xff) as u8, (size & 0xff) as u8]
+        }
+    }
+
     fn make_ibi_header(doc_type: &str) -> Vec<u8> {
         // Build EBML header child: DocType element + a DocTypeVersion stub.
         // DocType id = 0x4282 (2-byte VINT), size = VINT-encoded string length.
         let mut header_children = Vec::new();
         header_children.extend_from_slice(&[0x42, 0x82]);
-        // VINT size for ASCII <128 bytes: 1-byte form 0x80 | len.
-        header_children.push(0x80 | doc_type.len() as u8);
+        header_children.extend_from_slice(&ebml_size(doc_type.len()));
         header_children.extend_from_slice(doc_type.as_bytes());
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&EBML_HEADER_BYTES);
-        // EBML header size as 1-byte VINT (works while children < 128 bytes).
-        buf.push(0x80 | header_children.len() as u8);
+        buf.extend_from_slice(&ebml_size(header_children.len()));
         buf.extend_from_slice(&header_children);
         buf
     }
@@ -166,5 +183,15 @@ mod tests {
     fn rejects_non_ebml_buffer() {
         let mut fa = FileAnalyze::new(b"NOT an EBML file at all");
         assert!(!parse_ibi(&mut fa));
+    }
+
+    #[test]
+    fn oversized_doctype_is_skipped() {
+        let doc_type = "X".repeat(IBI_DOC_TYPE_LIMIT + 1024);
+        let buf = make_ibi_header(&doc_type);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(!parse_ibi(&mut fa));
+        assert!(fa.access_stats().max_request_len < doc_type.len());
     }
 }

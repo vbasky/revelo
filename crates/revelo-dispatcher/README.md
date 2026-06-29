@@ -1,12 +1,14 @@
 # revelo-dispatcher
 
-Parallel format-detection dispatch table for revelo's media parsers.
+Format-detection dispatch table for revelo's media parsers.
 
 Holds 180 parser function pointers ordered so that containers are checked
-before elementary streams, races them all across CPU cores via
-[rayon](https://docs.rs/rayon), and returns the first match in table order.
-Both `revelo-cli` and `revelo-cdylib` depend on this crate as their single
-entry point to format detection.
+before elementary streams. Small buffers race parser candidates across CPU
+cores via [rayon](https://docs.rs/rayon); large buffers use a sequential,
+raw-read-capped probe so speculative candidates cannot fault or copy a whole
+large file before an early container match wins. Both `revelo-cli` and
+`revelo-cdylib` depend on this crate as their single entry point to format
+detection.
 
 Part of the [**revelo**](https://github.com/vbasky/revelo) project — a fast,
 safe, pure-Rust port of [MediaInfoLib](https://mediaarea.net/en/MediaInfo) for
@@ -18,7 +20,7 @@ extracting technical and tag metadata from media files. See the
 | Symbol | Signature | Description |
 | --- | --- | --- |
 | `table` | `fn() -> [fn(&mut FileAnalyze) -> bool; 180]` | Returns the complete ordered dispatch table |
-| `detect` | `fn(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool>` | Races all parsers and returns the first match, or `None` |
+| `detect` | `fn(bytes: &[u8]) -> Option<fn(&mut FileAnalyze) -> bool>` | Returns the first matching parser in table order, or `None` |
 
 ## Usage
 
@@ -47,13 +49,13 @@ For an even higher-level entry point, use the
 
 ## How detection works
 
-`detect` calls `table()`, then runs `par_iter().find_first()` over the result.
-Each candidate parser is invoked on a fresh, zero-cost `FileAnalyze` view over
-the same buffer — parsers only peek at magic bytes or inspect the first few
-hundred bytes, so the detection pass is cheap. `find_first` returns the
-leftmost match in table order even though candidates are evaluated in parallel,
-preserving the priority rule that containers are preferred over elementary
-streams.
+`detect` calls `table()`, then evaluates parser candidates against fresh
+`FileAnalyze` views over the same bytes. Small buffers use
+`par_iter().find_first()`: the leftmost match in table order wins even though
+candidates run in parallel, preserving the priority rule that containers are
+preferred over elementary streams. Large buffers are evaluated sequentially with
+a raw-read cap, which keeps speculative probes from touching all pages of a
+large mmap before the matching container parser is selected.
 
 Once a winner is found, the caller re-runs it against a fresh `FileAnalyze` to
 extract full metadata.

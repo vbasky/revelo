@@ -7,11 +7,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: `WEBVTT\n` header.
 /// Fills: Track info, cue blocks.
 pub fn parse_webvtt(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 6 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(6) else { return false };
 
     let magic = std::str::from_utf8(&buf[0..6]).unwrap_or("");
     if magic != "WEBVTT" {
@@ -38,6 +34,7 @@ mod tests {
             fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("WebVTT".into())
         );
+        assert_eq!(fa.access_stats().max_request_len, 6);
     }
 
     #[test]

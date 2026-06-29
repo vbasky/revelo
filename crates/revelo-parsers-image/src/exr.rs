@@ -19,18 +19,21 @@
 use revelo_core::{FileAnalyze, StreamKind};
 
 const EXR_MAGIC: [u8; 4] = [0x76, 0x2F, 0x31, 0x01];
+const EXR_HEADER_SCAN_LIMIT: usize = 256 * 1024;
+const EXR_ATTRIBUTE_TOKEN_LIMIT: usize = 1024;
+const EXR_COMMENT_LIMIT: usize = 4096;
 
 pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     let total = fa.remain();
-    let buf = match fa.peek_raw(total) {
+    let head = match fa.peek_raw(8) {
         Some(b) => b,
         None => return false,
     };
-    if buf.len() < 8 || buf[0..4] != EXR_MAGIC {
+    if head[0..4] != EXR_MAGIC {
         return false;
     }
-    let version = buf[4];
-    let flags = u32::from_le_bytes([0, buf[5], buf[6], buf[7]]);
+    let version = head[4];
+    let flags = u32::from_le_bytes([0, head[5], head[6], head[7]]);
     let is_tile = (flags & 0x200) != 0;
 
     let mut width: u32 = 0;
@@ -40,48 +43,40 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     let mut pixel_aspect_ratio: Option<f32> = None;
     let mut comments: Option<String> = None;
 
+    let header_limit = total.min(EXR_HEADER_SCAN_LIMIT);
     let mut i = 8usize;
-    while i < buf.len() {
+    while i < header_limit {
         // End-of-header sentinel: empty name (single null byte).
-        if buf[i] == 0 {
+        if fa.peek_raw_at(i, 1) == Some(&[0][..]) {
             break;
         }
-        let name_end = match buf[i..].iter().position(|&b| b == 0) {
-            Some(p) => i + p,
-            None => break,
+        let Some((name, after_name)) = read_exr_cstring(fa, i, header_limit) else {
+            break;
         };
-        let name = std::str::from_utf8(&buf[i..name_end]).unwrap_or("").to_owned();
-        let after_name = name_end + 1;
-        if after_name >= buf.len() {
+        let Some((type_str, after_type)) = read_exr_cstring(fa, after_name, header_limit) else {
             break;
-        }
-        let type_end = match buf[after_name..].iter().position(|&b| b == 0) {
-            Some(p) => after_name + p,
-            None => break,
         };
-        let type_str = std::str::from_utf8(&buf[after_name..type_end]).unwrap_or("");
-        let after_type = type_end + 1;
-        if after_type + 4 > buf.len() {
-            break;
-        }
-        let size = u32::from_le_bytes([
-            buf[after_type],
-            buf[after_type + 1],
-            buf[after_type + 2],
-            buf[after_type + 3],
-        ]) as usize;
+        let Some(size_bytes) = fa.peek_raw_at(after_type, 4) else { break };
+        let size = u32::from_le_bytes([size_bytes[0], size_bytes[1], size_bytes[2], size_bytes[3]])
+            as usize;
         let value_start = after_type + 4;
-        let value_end = value_start + size;
-        if value_end > buf.len() {
+        let Some(value_end) = value_start.checked_add(size) else {
+            break;
+        };
+        if value_end > header_limit {
             break;
         }
-        let value = &buf[value_start..value_end];
 
-        match (name.as_str(), type_str) {
+        match (name.as_str(), type_str.as_str()) {
             ("compression", "compression") if size == 1 => {
-                compression = exr_compression(value[0]);
+                if let Some(value) = fa.peek_raw_at(value_start, 1) {
+                    compression = exr_compression(value[0]);
+                }
             }
             ("displayWindow", "box2i") if size == 16 => {
+                let Some(value) = fa.peek_raw_at(value_start, 16) else {
+                    break;
+                };
                 let x_min = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
                 let y_min = u32::from_le_bytes([value[4], value[5], value[6], value[7]]);
                 let x_max = u32::from_le_bytes([value[8], value[9], value[10], value[11]]);
@@ -90,10 +85,16 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
                 height = y_max.wrapping_sub(y_min).wrapping_add(1);
             }
             ("pixelAspectRatio", "float") if size == 4 => {
+                let Some(value) = fa.peek_raw_at(value_start, 4) else {
+                    break;
+                };
                 pixel_aspect_ratio =
                     Some(f32::from_le_bytes([value[0], value[1], value[2], value[3]]));
             }
             ("framesPerSecond", "rational") if size == 8 => {
+                let Some(value) = fa.peek_raw_at(value_start, 8) else {
+                    break;
+                };
                 let n = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
                 let d = u32::from_le_bytes([value[4], value[5], value[6], value[7]]);
                 if d > 0 {
@@ -101,7 +102,9 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
                 }
             }
             ("comments", "string") => {
-                comments = Some(String::from_utf8_lossy(value).to_string());
+                if let Some(value) = fa.peek_raw_at(value_start, size.min(EXR_COMMENT_LIMIT)) {
+                    comments = Some(String::from_utf8_lossy(value).to_string());
+                }
             }
             _ => {}
         }
@@ -156,6 +159,18 @@ pub fn parse_exr(fa: &mut FileAnalyze) -> bool {
     fa.set_field(StreamKind::Image, 0, "StreamSize", file_size.to_string());
     fa.force_field(StreamKind::General, 0, "StreamSize", "0");
     true
+}
+
+fn read_exr_cstring(
+    fa: &FileAnalyze,
+    offset: usize,
+    header_limit: usize,
+) -> Option<(String, usize)> {
+    let max_len = header_limit.checked_sub(offset)?.min(EXR_ATTRIBUTE_TOKEN_LIMIT);
+    let bytes = fa.peek_raw_at(offset, max_len)?;
+    let end = bytes.iter().position(|&b| b == 0)?;
+    let value = std::str::from_utf8(&bytes[..end]).unwrap_or("").to_owned();
+    Some((value, offset + end + 1))
 }
 
 fn exr_compression(v: u8) -> Option<&'static str> {
@@ -215,5 +230,15 @@ mod tests {
         assert_eq!(i("Height").as_deref(), Some("240"));
         assert_eq!(i("Format_Compression").as_deref(), Some("ZIP"));
         assert_eq!(i("Format_Profile").as_deref(), Some("Line"));
+    }
+
+    #[test]
+    fn exr_probe_stops_at_header_sentinel() {
+        let mut buf = build_minimal_exr(320, 240, 3);
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_exr(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, EXR_ATTRIBUTE_TOKEN_LIMIT);
     }
 }

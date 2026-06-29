@@ -4,15 +4,12 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// HEIF files have major_brand "mif1", "msf1", "heic", "heix", "hevc",
 /// "heim", "heis", "hevm", "hevs".
 pub fn parse_heif(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 12 {
-        return false;
-    }
+    let file_size = fa.remain();
+    let Some(buf) = fa.peek_raw(12) else { return false };
 
     // ISO BMFF box: 4-byte size + 4-byte type
     let box_size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    if box_size < 8 || buf.len() < box_size {
+    if box_size < 12 || box_size > file_size {
         return false;
     }
     let box_type = &buf[4..8];
@@ -21,7 +18,8 @@ pub fn parse_heif(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let major_brand = std::str::from_utf8(&buf[8..12]).unwrap_or("");
+    let major_brand_bytes = [buf[8], buf[9], buf[10], buf[11]];
+    let major_brand = std::str::from_utf8(&major_brand_bytes).unwrap_or("");
     let heif_brands = ["mif1", "msf1", "heic", "heix", "hevc", "heim", "heis", "hevm", "hevs"];
 
     if !heif_brands.contains(&major_brand) {
@@ -58,6 +56,18 @@ mod tests {
             fa.retrieve(StreamKind::Image, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("HEIC".into())
         );
+    }
+
+    #[test]
+    fn heif_probe_is_header_bounded() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0..4].copy_from_slice(&(32u32.to_be_bytes()));
+        buf[4..8].copy_from_slice(b"ftyp");
+        buf[8..12].copy_from_slice(b"heic");
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_heif(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 12);
     }
 
     #[test]

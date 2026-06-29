@@ -29,6 +29,7 @@ pub struct HevcInfo {
 
 const ANNEX_B_START_CODE: [u8; 3] = [0x00, 0x00, 0x01];
 const ANNEX_B_START_CODE_LONG: [u8; 4] = [0x00, 0x00, 0x00, 0x01];
+const HEVC_NAL_SCAN_LIMIT: usize = 1024 * 1024;
 
 const NAL_TYPE_VPS: u8 = 32;
 const NAL_TYPE_SPS: u8 = 33;
@@ -809,7 +810,8 @@ pub fn parse_hevc(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let data = if let Some(d) = fa.peek_raw(fa.remain()) {
+    let scan_len = fa.remain().min(HEVC_NAL_SCAN_LIMIT);
+    let data = if let Some(d) = fa.peek_raw(scan_len) {
         d.to_vec()
     } else {
         fa.element_end();
@@ -1045,6 +1047,15 @@ mod tests {
         let buf = vec![0xFFu8; 100];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_hevc(&mut fa));
+    }
+
+    #[test]
+    fn hevc_does_not_request_full_payload() {
+        let mut buf = vec![0u8; HEVC_NAL_SCAN_LIMIT + 1024];
+        buf[0..4].copy_from_slice(&ANNEX_B_START_CODE_LONG);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_hevc(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, HEVC_NAL_SCAN_LIMIT);
     }
 
     #[test]

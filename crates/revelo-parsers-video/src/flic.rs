@@ -4,11 +4,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: 0xAF11/0xAF12 magic.
 /// Fills: Dimensions, frame count.
 pub fn parse_flic(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 6 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(6) else { return false };
     let _file_size = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
     let magic = u16::from_le_bytes([buf[4], buf[5]]);
     if magic != 0xAF11 && magic != 0xAF12 {

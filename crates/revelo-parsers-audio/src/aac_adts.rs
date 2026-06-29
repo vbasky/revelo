@@ -58,18 +58,17 @@ pub fn parse_aac_adts(fa: &mut FileAnalyze) -> bool {
     let file_size = fa.remain();
     let mut frame_count: u64 = 0;
     let mut pos = 0usize;
-    let buf_view = match fa.peek_raw(file_size) {
-        Some(b) => b,
-        None => return false,
-    };
-    while pos + 7 <= buf_view.len() {
-        if buf_view[pos] != 0xFF || (buf_view[pos + 1] & 0xF0) != 0xF0 {
+    while pos + 7 <= file_size {
+        let Some(frame_header) = fa.peek_raw_at(pos, 7) else {
+            break;
+        };
+        if frame_header[0] != 0xFF || (frame_header[1] & 0xF0) != 0xF0 {
             break;
         }
-        let frame_length = (((buf_view[pos + 3] & 0x3) as usize) << 11)
-            | ((buf_view[pos + 4] as usize) << 3)
-            | (((buf_view[pos + 5] >> 5) & 0x7) as usize);
-        if frame_length < 7 || pos + frame_length > buf_view.len() {
+        let frame_length = (((frame_header[3] & 0x3) as usize) << 11)
+            | ((frame_header[4] as usize) << 3)
+            | (((frame_header[5] >> 5) & 0x7) as usize);
+        if frame_length < 7 || pos + frame_length > file_size {
             break;
         }
         frame_count += 1;
@@ -131,9 +130,38 @@ fn channel_layout(channels: u16) -> (Option<&'static str>, Option<&'static str>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_adts_frame(frame_length: usize) -> Vec<u8> {
+        let mut frame = vec![0u8; frame_length];
+        frame[0] = 0xFF;
+        frame[1] = 0xF1;
+        frame[2] = 0x50;
+        frame[3] = 0x80 | (((frame_length >> 11) & 0x3) as u8);
+        frame[4] = ((frame_length >> 3) & 0xFF) as u8;
+        frame[5] = (((frame_length & 0x7) as u8) << 5) | 0x1F;
+        frame[6] = 0xFC;
+        frame
+    }
+
     #[test]
     fn rejects_non_adts() {
         let mut fa = FileAnalyze::new(b"NOT ADTS");
         assert!(!parse_aac_adts(&mut fa));
+    }
+
+    #[test]
+    fn adts_frame_scan_reads_headers_by_offset() {
+        let frame = make_adts_frame(7);
+        let mut buf = frame.clone();
+        buf.extend_from_slice(&frame);
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_aac_adts(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::Audio, 0, "FrameCount").map(|z| z.as_str().to_owned()),
+            Some("2".to_owned())
+        );
+        assert_eq!(fa.access_stats().max_request_len, 7);
     }
 }

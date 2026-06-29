@@ -27,7 +27,7 @@ pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
     if file_size < 18 {
         return false;
     }
-    let head = match fa.peek_raw(file_size) {
+    let head = match fa.peek_raw(18) {
         Some(b) => b,
         None => return false,
     };
@@ -73,16 +73,23 @@ pub fn parse_tga(fa: &mut FileAnalyze) -> bool {
     }
 
     // Read the Image ID string (variable length, immediately after the header).
-    let image_id: String = if id_length > 0 && (18 + id_length as usize) <= head.len() {
-        let raw = &head[18..18 + id_length as usize];
-        String::from_utf8_lossy(raw).trim_end_matches('\0').to_string()
+    let image_id: String = if id_length > 0 && (18 + id_length as usize) <= file_size {
+        match fa.peek_raw(18 + id_length as usize).and_then(|raw| raw.get(18..)) {
+            Some(raw) => String::from_utf8_lossy(raw).trim_end_matches('\0').to_string(),
+            None => String::new(),
+        }
     } else {
         String::new()
     };
 
     // Detect Version 2 by footer signature.
-    let version =
-        if file_size >= 26 && &head[file_size - 18..file_size] == V2_SIGNATURE { 2u8 } else { 1 };
+    let version = if file_size >= 26
+        && fa.peek_raw_at(file_size - 18, V2_SIGNATURE.len()) == Some(V2_SIGNATURE.as_slice())
+    {
+        2u8
+    } else {
+        1
+    };
 
     fa.stream_prepare(StreamKind::Image);
     let _pos = 0usize;
@@ -194,5 +201,27 @@ mod tests {
                 .as_deref(),
             Some("Version 2")
         );
+    }
+
+    #[test]
+    fn tga_probe_uses_header_and_footer_windows() {
+        let mut buf = vec![0u8; 18];
+        buf[0] = 4;
+        buf[2] = 2;
+        buf[12..14].copy_from_slice(&320u16.to_le_bytes());
+        buf[14..16].copy_from_slice(&240u16.to_le_bytes());
+        buf[16] = 24;
+        buf.extend_from_slice(b"name");
+        buf.resize(1024 * 1024, 0);
+        let start = buf.len() - V2_SIGNATURE.len();
+        buf[start..].copy_from_slice(V2_SIGNATURE);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_tga(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Title").map(|z| z.as_str().to_owned()),
+            Some("name".to_owned())
+        );
+        assert_eq!(fa.access_stats().max_request_len, 22);
     }
 }

@@ -20,6 +20,11 @@
 
 use revelo_core::{FileAnalyze, StreamKind};
 
+const JPEG_SOF_PARSE_LIMIT: usize = 256;
+const JPEG_COMMENT_PARSE_LIMIT: usize = 16 * 1024;
+const JPEG_JFIF_HEADER_LEN: usize = 7;
+const JPEG_EXIF_PARSE_LIMIT: usize = 64 * 1024;
+
 /// Embedded-thumbnail geometry, read from the EXIF IFD1 chain. This is the
 /// only part of the EXIF block the container parser needs (it drives the
 /// `Image #2` stream, `ImageCount`, and the `StreamSize` deduction).
@@ -113,7 +118,7 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
                 | 0xCF
         );
         if is_sof && !found_sof && payload_size >= 6 {
-            let payload = fa.read_raw(payload_size).to_vec();
+            let payload = fa.peek_raw(payload_size.min(JPEG_SOF_PARSE_LIMIT)).unwrap_or(&[]);
             precision = payload[0];
             height = u16::from_be_bytes([payload[1], payload[2]]);
             width = u16::from_be_bytes([payload[3], payload[4]]);
@@ -126,23 +131,31 @@ pub fn parse_jpeg(fa: &mut FileAnalyze) -> bool {
                     sampling.push(((hv >> 4) & 0xF, hv & 0xF));
                 }
             }
+            fa.skip_hexa(payload_size, "sof_segment");
             found_sof = true;
         } else if marker == 0xFE {
             // COM (Comment) segment — payload is UTF-8 text.
-            let payload = fa.read_raw(payload_size).to_vec();
+            let payload =
+                fa.peek_raw(payload_size.min(JPEG_COMMENT_PARSE_LIMIT)).unwrap_or(&[]).to_vec();
+            fa.skip_hexa(payload_size, "comment_segment");
             comment = Some(String::from_utf8_lossy(&payload).trim_end_matches('\0').to_string());
         } else if marker == 0xE0 && payload_size >= 7 {
             // APP0 JFIF: "JFIF\0" + version major + minor (rendered N.NN).
-            let payload = fa.read_raw(payload_size).to_vec();
+            let payload = fa.peek_raw(JPEG_JFIF_HEADER_LEN).unwrap_or(&[]);
             if &payload[..5] == b"JFIF\0" {
                 jfif_version = Some(format!("{}.{:02}", payload[5], payload[6]));
             }
+            fa.skip_hexa(payload_size, "jfif_segment");
         } else if marker == 0xE1 && payload_size >= 14 {
             // APP1 Exif: walk only the IFD1 thumbnail chain. All other EXIF
             // tags are handled by the generic tag pass (revelo-parsers-tag).
-            let payload = fa.read_raw(payload_size).to_vec();
-            if payload.len() >= 14 && &payload[..6] == b"Exif\0\0" {
-                parse_exif_thumbnail(&payload[6..], &mut thumb);
+            if payload_size <= JPEG_EXIF_PARSE_LIMIT {
+                let payload = fa.read_raw(payload_size).to_vec();
+                if payload.len() >= 14 && &payload[..6] == b"Exif\0\0" {
+                    parse_exif_thumbnail(&payload[6..], &mut thumb);
+                }
+            } else {
+                fa.skip_hexa(payload_size, "exif_segment");
             }
         } else {
             fa.skip_hexa(payload_size, "segment");
@@ -408,9 +421,33 @@ fn fill_streams(
 mod tests {
     use super::*;
 
+    fn segment(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let mut out = vec![0xFF, marker];
+        out.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+
     #[test]
     fn rejects_non_jpeg_buffer() {
         let mut fa = FileAnalyze::new(b"NOT a JPEG file");
         assert!(!parse_jpeg(&mut fa));
+    }
+
+    #[test]
+    fn comment_segment_is_capped() {
+        let sof = [8, 0, 1, 0, 1, 1, 1, 0x11, 0];
+        let mut comment = Vec::new();
+        comment.resize(JPEG_COMMENT_PARSE_LIMIT + 256, b'a');
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&[0xFF, 0xD8]);
+        buf.extend(segment(0xC0, &sof));
+        buf.extend(segment(0xFE, &comment));
+        buf.extend_from_slice(&[0xFF, 0xD9]);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_jpeg(&mut fa));
+        assert!(fa.access_stats().max_request_len <= JPEG_COMMENT_PARSE_LIMIT);
     }
 }

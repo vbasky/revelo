@@ -5,16 +5,12 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: Identification header packet type 1 + `vorbis` magic.
 /// Fills: Channels, sample rate, bitrates, floor type, VorbisComment.
 pub fn parse_vorbis(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(30) {
         Some(b) => b,
         None => return false,
     };
 
     // Vorbis identification header: packet_type=1, "vorbis" (7 bytes)
-    if buf.len() < 30 {
-        return false;
-    }
-
     if buf[0] != 1 {
         return false;
     }
@@ -120,5 +116,18 @@ mod tests {
         let buf = vec![0u8; 30];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_vorbis(&mut fa));
+    }
+
+    #[test]
+    fn vorbis_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0] = 1;
+        buf[1..7].copy_from_slice(b"vorbis");
+        buf[11] = 2;
+        buf[12] = 0x80;
+        buf[13] = 0xBB;
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_vorbis(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 30);
     }
 }

@@ -46,6 +46,8 @@
 
 use revelo_core::{FileAnalyze, StreamKind};
 
+const AMIGA_ICON_PARSE_LIMIT: usize = 256 * 1024;
+
 pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
     let avail = fa.remain();
     if avail < 4 {
@@ -73,7 +75,7 @@ pub fn parse_amiga_icon(fa: &mut FileAnalyze) -> bool {
     let has_drawer_data = u32::from_be_bytes([head[66], head[67], head[68], head[69]]);
     let has_tool_window = u32::from_be_bytes([head[70], head[71], head[72], head[73]]);
 
-    let full = match fa.peek_raw(avail) {
+    let full = match fa.peek_raw(avail.min(AMIGA_ICON_PARSE_LIMIT)) {
         Some(b) => b,
         None => return false,
     };
@@ -399,5 +401,15 @@ mod tests {
     fn rejects_truncated_header() {
         let mut fa = FileAnalyze::new(&[0xE3, 0x10, 0x00, 0x01, 0x00]);
         assert!(!parse_amiga_icon(&mut fa));
+    }
+
+    #[test]
+    fn amiga_icon_probe_is_capped_for_large_inputs() {
+        let mut buf = build_header(2, 0, 0, 0, 0);
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_amiga_icon(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, AMIGA_ICON_PARSE_LIMIT);
     }
 }

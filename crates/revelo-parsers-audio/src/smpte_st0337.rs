@@ -2,11 +2,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 
 /// SMPTE ST 337 (non-PCM AES3 data transport, including Dolby E awareness).
 pub fn parse_smpte_st0337(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(4) else { return false };
     // ST 337 uses 0xF872 AES3 sync with data_type bits indicating non-PCM
     if buf[0] != 0xF8 || buf[1] != 0x72 {
         return false;

@@ -16,6 +16,9 @@
 use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, Reader, StreamKind};
 
+const MKV_TEXT_VALUE_LIMIT: usize = 16 * 1024;
+const MKV_CODEC_PRIVATE_LIMIT: usize = 256 * 1024;
+
 // EBML root + segment.
 const EBML_HEADER: u64 = 0x1A45DFA3;
 const SEGMENT: u64 = 0x18538067;
@@ -133,8 +136,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
             EBML_HEADER => {
                 walk_elements(fa, size, &mut |fa, id, sz, _| match id {
                     DOC_TYPE => {
-                        let bytes = fa.read_raw(sz).to_vec();
-                        doc_type = Some(strip_nuls(&bytes));
+                        doc_type = read_string_limited(fa, sz, "doc_type");
                     }
                     DOC_TYPE_VERSION => {
                         doc_type_version = read_uint(fa, sz);
@@ -282,12 +284,10 @@ fn parse_tags(fa: &mut FileAnalyze, size: usize, tag_pairs: &mut Vec<TagEntry>) 
                     let mut value = String::new();
                     walk_elements(fa, sz, &mut |fa, id, sz, _| match id {
                         TAG_NAME => {
-                            let bytes = fa.read_raw(sz).to_vec();
-                            name = strip_nuls(&bytes);
+                            name = read_string_limited(fa, sz, "tag_name").unwrap_or_default();
                         }
                         TAG_STRING => {
-                            let bytes = fa.read_raw(sz).to_vec();
-                            value = strip_nuls(&bytes);
+                            value = read_string_limited(fa, sz, "tag_string").unwrap_or_default();
                         }
                         _ => fa.skip_hexa(sz, "simple_tag_child"),
                     });
@@ -308,7 +308,7 @@ fn parse_tags(fa: &mut FileAnalyze, size: usize, tag_pairs: &mut Vec<TagEntry>) 
 fn parse_segment_info(fa: &mut FileAnalyze, size: usize, movie: &mut MovieInfo) {
     walk_elements(fa, size, &mut |fa, id, sz, _| match id {
         SEGMENT_UUID => {
-            movie.segment_uuid = Some(fa.read_raw(sz).to_vec());
+            movie.segment_uuid = read_bytes_limited(fa, sz, 16, "segment_uuid");
         }
         TIMECODE_SCALE => {
             movie.timecode_scale = Some(read_uint(fa, sz));
@@ -317,12 +317,10 @@ fn parse_segment_info(fa: &mut FileAnalyze, size: usize, movie: &mut MovieInfo) 
             movie.duration_units = Some(read_float(fa, sz));
         }
         MUXING_APP => {
-            let bytes = fa.read_raw(sz).to_vec();
-            movie.muxing_app = Some(strip_nuls(&bytes));
+            movie.muxing_app = read_string_limited(fa, sz, "muxing_app");
         }
         WRITING_APP => {
-            let bytes = fa.read_raw(sz).to_vec();
-            movie.writing_app = Some(strip_nuls(&bytes));
+            movie.writing_app = read_string_limited(fa, sz, "writing_app");
         }
         _ => fa.skip_hexa(sz, "info_child"),
     });
@@ -347,16 +345,13 @@ fn parse_track_entry(fa: &mut FileAnalyze, size: usize, entry: &mut TrackInfo) {
         FLAG_DEFAULT => entry.flag_default = Some(read_uint(fa, sz) != 0),
         FLAG_FORCED => entry.flag_forced = Some(read_uint(fa, sz) != 0),
         CODEC_ID => {
-            let bytes = fa.read_raw(sz).to_vec();
-            entry.codec_id = Some(strip_nuls(&bytes));
+            entry.codec_id = read_string_limited(fa, sz, "codec_id");
         }
         LANGUAGE => {
-            let bytes = fa.read_raw(sz).to_vec();
-            entry.language = Some(strip_nuls(&bytes));
+            entry.language = read_string_limited(fa, sz, "language");
         }
         NAME => {
-            let bytes = fa.read_raw(sz).to_vec();
-            entry.name = Some(strip_nuls(&bytes));
+            entry.name = read_string_limited(fa, sz, "track_name");
         }
         DEFAULT_DURATION => entry.default_duration_ns = Some(read_uint(fa, sz)),
         AUDIO_BLOCK => {
@@ -386,7 +381,10 @@ fn parse_track_entry(fa: &mut FileAnalyze, size: usize, entry: &mut TrackInfo) {
                 _ => fa.skip_hexa(sz, "video_child"),
             });
         }
-        CODEC_PRIVATE => entry.codec_private = Some(fa.read_raw(sz).to_vec()),
+        CODEC_PRIVATE => {
+            entry.codec_private =
+                read_bytes_limited(fa, sz, MKV_CODEC_PRIVATE_LIMIT, "codec_private")
+        }
         _ => fa.skip_hexa(sz, "trackentry_child"),
     });
 }
@@ -436,10 +434,7 @@ fn extract_chapter_name(fa: &mut FileAnalyze, size: usize) -> Option<String> {
                 // Look for ChapString inside ChapterDisplay
                 walk_elements(fa, sz, &mut |fa, id2, sz2, _| match id2 {
                     CHAP_STRING => {
-                        let data = fa.read_raw(sz2);
-                        if let Ok(s) = std::str::from_utf8(data) {
-                            name = Some(s.to_string());
-                        }
+                        name = read_string_limited(fa, sz2, "chapter_string");
                     }
                     _ => fa.skip_hexa(sz2, "chapterdisplay_child"),
                 });
@@ -481,8 +476,7 @@ fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<St
     walk_elements(fa, size, &mut |fa, id, sz, _| {
         match id {
             FILE_NAME => {
-                let data = fa.read_raw(sz);
-                if let Ok(name) = std::str::from_utf8(data) {
+                if let Some(name) = read_string_limited(fa, sz, "file_name") {
                     let lower = name.to_lowercase();
                     // Common cover art filenames
                     if lower.contains("cover")
@@ -498,18 +492,16 @@ fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<St
                 }
             }
             FILE_MIME_TYPE => {
-                let data = fa.read_raw(sz);
-                if let Ok(mime) = std::str::from_utf8(data) {
-                    mime_type = Some(mime.to_string());
+                if let Some(mime) = read_string_limited(fa, sz, "file_mime_type") {
                     // Image MIME types indicate potential cover
                     if mime.starts_with("image/") {
                         is_cover = true;
                     }
+                    mime_type = Some(mime);
                 }
             }
             FILE_DESCRIPTION => {
-                let data = fa.read_raw(sz);
-                if let Ok(desc) = std::str::from_utf8(data) {
+                if let Some(desc) = read_string_limited(fa, sz, "file_description") {
                     let lower = desc.to_lowercase();
                     if lower.contains("cover") || lower.contains("poster") {
                         is_cover = true;
@@ -1608,7 +1600,29 @@ fn strip_nuls(bytes: &[u8]) -> String {
     s.trim_end_matches('\0').to_string()
 }
 
+fn read_bytes_limited(
+    fa: &mut FileAnalyze,
+    size: usize,
+    limit: usize,
+    skip_label: &str,
+) -> Option<Vec<u8>> {
+    if size > limit {
+        fa.skip_hexa(size, skip_label);
+        return None;
+    }
+    Some(fa.read_raw(size).to_vec())
+}
+
+fn read_string_limited(fa: &mut FileAnalyze, size: usize, skip_label: &str) -> Option<String> {
+    let bytes = read_bytes_limited(fa, size, MKV_TEXT_VALUE_LIMIT, skip_label)?;
+    Some(strip_nuls(&bytes))
+}
+
 fn read_uint(fa: &mut FileAnalyze, size: usize) -> u64 {
+    if size == 0 || size > 8 {
+        fa.skip_hexa(size, "uint");
+        return 0;
+    }
     let bytes = fa.read_raw(size);
     let mut v: u64 = 0;
     for b in bytes {
@@ -1684,17 +1698,21 @@ fn walk_elements(
     region_size: usize,
     visit: &mut dyn FnMut(&mut FileAnalyze, u64, usize, usize),
 ) {
-    let region_end = fa.element_offset() + region_size;
+    let Some(region_end) = fa.element_offset().checked_add(region_size) else {
+        return;
+    };
     while fa.element_offset() < region_end && fa.remain() > 0 {
         let elem_start = fa.element_offset();
         let Some(id) = read_vint_id(fa) else { break };
         let Some(size) = read_vint_size(fa) else { break };
-        let body_size = size as usize;
-        if fa.element_offset() + body_size > region_end {
+        let Ok(body_size) = usize::try_from(size) else { break };
+        let Some(body_end) = fa.element_offset().checked_add(body_size) else {
+            break;
+        };
+        if body_end > region_end {
             // Truncated — bail.
             break;
         }
-        let body_end = fa.element_offset() + body_size;
         visit(fa, id, body_size, elem_start);
         if fa.element_offset() < body_end {
             fa.skip_hexa(body_end - fa.element_offset(), "element_tail");
@@ -1707,6 +1725,81 @@ fn walk_elements(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MKV_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+    const TEST_LARGE_ELEMENT_SIZE: usize = 9 * 1024 * 1024;
+    const TEST_TAG_VALUE_SIZE: usize = MKV_TEXT_VALUE_LIMIT + 1024;
+    const CUES_ID: &[u8; 4] = &[0x1C, 0x53, 0xBB, 0x6B];
+
+    fn ebml_size(size: usize) -> Vec<u8> {
+        if size <= 0x7f {
+            vec![0x80 | size as u8]
+        } else if size <= 0x3fff {
+            vec![0x40 | ((size >> 8) as u8), (size & 0xff) as u8]
+        } else if size <= 0x1f_ffff {
+            vec![0x20 | ((size >> 16) as u8), ((size >> 8) & 0xff) as u8, (size & 0xff) as u8]
+        } else {
+            vec![
+                0x10 | ((size >> 24) as u8),
+                ((size >> 16) & 0xff) as u8,
+                ((size >> 8) & 0xff) as u8,
+                (size & 0xff) as u8,
+            ]
+        }
+    }
+
+    fn element(id: &[u8], payload: Vec<u8>) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(id);
+        out.extend_from_slice(&ebml_size(payload.len()));
+        out.extend_from_slice(&payload);
+        out
+    }
+
+    fn ebml_header(doc_type: &[u8]) -> Vec<u8> {
+        element(&[0x1A, 0x45, 0xDF, 0xA3], element(&[0x42, 0x82], doc_type.to_vec()))
+    }
+
+    fn minimal_track() -> Vec<u8> {
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![1]));
+        track.extend(element(&[0x83], vec![2]));
+        track.extend(element(&[0x86], b"A_OPUS".to_vec()));
+        element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track))
+    }
+
+    fn large_tags() -> Vec<u8> {
+        let mut simple_tag = Vec::new();
+        simple_tag.extend(element(&[0x45, 0xA3], b"TITLE".to_vec()));
+        simple_tag.extend(element(&[0x44, 0x87], vec![b'x'; TEST_TAG_VALUE_SIZE]));
+        element(
+            &[0x12, 0x54, 0xC3, 0x67],
+            element(&[0x73, 0x73], element(&[0x67, 0xC8], simple_tag)),
+        )
+    }
+
+    fn large_attachment() -> Vec<u8> {
+        let mut attached_file = Vec::new();
+        attached_file.extend(element(&[0x46, 0x6E], b"cover.jpg".to_vec()));
+        attached_file.extend(element(&[0x46, 0x60], b"image/jpeg".to_vec()));
+        attached_file.extend(element(&[0x46, 0x5C], vec![0; TEST_LARGE_ELEMENT_SIZE]));
+        element(&[0x19, 0x41, 0xA4, 0x69], element(&[0x61, 0xA7], attached_file))
+    }
+
+    fn large_sparse_webm() -> Vec<u8> {
+        let mut segment_payload = Vec::new();
+        segment_payload.extend(minimal_track());
+        segment_payload.extend(large_tags());
+        segment_payload.extend(large_attachment());
+        segment_payload.extend(element(CUES_ID, vec![0; TEST_LARGE_ELEMENT_SIZE]));
+        segment_payload
+            .extend(element(&[0x1F, 0x43, 0xB6, 0x75], vec![0; TEST_LARGE_ELEMENT_SIZE]));
+
+        let mut buf = Vec::new();
+        buf.extend(ebml_header(b"webm"));
+        buf.extend(element(&[0x18, 0x53, 0x80, 0x67], segment_payload));
+        buf
+    }
 
     #[test]
     fn vint_single_byte_id() {
@@ -1746,5 +1839,51 @@ mod tests {
     fn rejects_non_ebml_buffer() {
         let mut fa = FileAnalyze::new(b"NOT a Matroska file at all");
         assert!(!parse_mkv(&mut fa));
+    }
+
+    #[test]
+    fn skips_oversized_codec_private_payload() {
+        let ebml = element(&[0x1A, 0x45, 0xDF, 0xA3], element(&[0x42, 0x82], b"matroska".to_vec()));
+
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![1]));
+        track.extend(element(&[0x83], vec![2]));
+        track.extend(element(&[0x86], b"A_OPUS".to_vec()));
+        track.extend(element(&[0x63, 0xA2], vec![0; MKV_CODEC_PRIVATE_LIMIT + 1024]));
+
+        let segment = element(
+            &[0x18, 0x53, 0x80, 0x67],
+            element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track)),
+        );
+
+        let mut buf = Vec::new();
+        buf.extend(ebml);
+        buf.extend(segment);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+        assert!(fa.access_stats().max_request_len <= MKV_CODEC_PRIVATE_LIMIT);
+    }
+
+    #[test]
+    fn large_webm_metadata_only_access_stays_bounded() {
+        let buf = large_sparse_webm();
+        assert!(buf.len() as u64 > MKV_METADATA_ONLY_BUDGET);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()).as_deref(),
+            Some("WebM")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Cover").map(|z| z.as_str().to_owned()).as_deref(),
+            Some("Yes")
+        );
+        let stats = fa.access_stats();
+        assert!(stats.bytes_requested < MKV_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.bytes_returned < MKV_METADATA_ONLY_BUDGET, "{stats:?}");
+        assert!(stats.max_request_len <= MKV_TEXT_VALUE_LIMIT, "{stats:?}");
     }
 }

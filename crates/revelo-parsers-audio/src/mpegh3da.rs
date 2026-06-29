@@ -7,22 +7,16 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: mhm1/mha1 box in MP4.
 /// Fills: Audio scene config.
 pub fn parse_mpegh3da(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 5 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(8) else { return false };
 
     // Check for mhm1/mha1 box (MPEG-H 3D Audio in MP4)
-    if buf.len() >= 8 {
-        let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
-        let box_type = std::str::from_utf8(&buf[4..8]).unwrap_or("");
-        if (box_type == "mhm1" || box_type == "mha1") && size >= 12 {
-            let pos = fa.stream_prepare(StreamKind::Audio);
-            fa.set_field(StreamKind::Audio, pos, "Format", "MPEG-H 3D Audio");
-            fa.set_field(StreamKind::Audio, pos, "Format_Info", "Immersive 3D Audio");
-            return true;
-        }
+    let size = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
+    let box_type = std::str::from_utf8(&buf[4..8]).unwrap_or("");
+    if (box_type == "mhm1" || box_type == "mha1") && size >= 12 {
+        let pos = fa.stream_prepare(StreamKind::Audio);
+        fa.set_field(StreamKind::Audio, pos, "Format", "MPEG-H 3D Audio");
+        fa.set_field(StreamKind::Audio, pos, "Format_Info", "Immersive 3D Audio");
+        return true;
     }
 
     false

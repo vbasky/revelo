@@ -3,13 +3,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Musepack SV8 parser. Detects "MPCK" magic (SV8 stream version marker).
 /// SV7 is handled by the existing mpc.rs parser.
 pub fn parse_mpc_sv8(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
-
-    let magic = &buf[0..4];
+    let magic = match fa.peek_raw(4) {
+        Some(buf) => buf,
+        None => return false,
+    };
     if magic != b"MPCK" {
         return false;
     }
@@ -33,5 +30,14 @@ mod tests {
             fa.retrieve(StreamKind::Audio, 0, "Format_Version").map(|z| z.as_str().to_owned()),
             Some("SV8".into())
         );
+    }
+
+    #[test]
+    fn mpc_sv8_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0..4].copy_from_slice(b"MPCK");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mpc_sv8(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 4);
     }
 }

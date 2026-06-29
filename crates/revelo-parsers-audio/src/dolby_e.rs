@@ -4,11 +4,10 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: looks for 0x078E sync word (SMPTE 337M preamble) followed by
 /// Dolby E guard band pattern.
 pub fn parse_dolby_e(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
+    let buf = match fa.peek_raw(4) {
+        Some(b) => b,
+        None => return false,
+    };
 
     // SMPTE 337M preamble: 0x96 0x69 for Dolby E + AES3 sync
     let preamble = u16::from_be_bytes([buf[0], buf[1]]);
@@ -48,5 +47,14 @@ mod tests {
         let buf = vec![0u8; 8];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_dolby_e(&mut fa));
+    }
+
+    #[test]
+    fn dolby_e_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0..4].copy_from_slice(&[0x96, 0x69, 0x07, 0x8E]);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_dolby_e(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 4);
     }
 }

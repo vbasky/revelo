@@ -19,11 +19,9 @@ pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
     if remain < 4 {
         return false;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
+    let Some(buf) = fa.peek_raw(remain.min(11)) else {
         return false;
-    }
+    };
     if buf[0] != 0x50 || buf[1] != 0x4B {
         return false;
     }
@@ -32,7 +30,7 @@ pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
-    let compression = if buf.len() > 10 { buf[8] } else { 0 };
+    let compression = buf.get(8).copied().unwrap_or(0);
     let method = match compression {
         0 => "Store",
         8 => "Deflate",
@@ -51,13 +49,10 @@ pub fn parse_zip(fa: &mut FileAnalyze) -> bool {
 /// Detection: `Rar!\x1A\x07\x00` magic.
 /// Fills: Version, file count.
 pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 7 {
+    let Some(buf) = fa.peek_raw(7) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 7 || &buf[0..4] != b"Rar!" {
+    };
+    if &buf[0..4] != b"Rar!" {
         return false;
     }
 
@@ -73,15 +68,9 @@ pub fn parse_rar(fa: &mut FileAnalyze) -> bool {
 /// Detection: `7z\xBC\xAF\x27\x1C` magic.
 /// Fills: Format.
 pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 6 {
+    let Some(buf) = fa.peek_raw(6) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 6 {
-        return false;
-    }
+    };
     if buf[0] != 0x37
         || buf[1] != 0x7A
         || buf[2] != 0xBC
@@ -102,22 +91,12 @@ pub fn parse_7z(fa: &mut FileAnalyze) -> bool {
 /// Detection: `ustar\x00` at offset 257.
 /// Fills: File count.
 pub fn parse_tar(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 512 {
-        return true;
-    } // partial, accept tentative
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 257 {
-        return false;
-    }
-
-    // UStar magic at offset 257
-    let magic = if buf.len() > 263 {
-        &buf[257..263]
-    } else {
+    let Some(buf) = fa.peek_raw(512) else {
         return false;
     };
+
+    // UStar magic at offset 257
+    let magic = &buf[257..263];
     let is_ustar = magic == b"ustar\x00" || magic == b"ustar ";
     if !is_ustar {
         // Try legacy TAR: check checksum
@@ -151,13 +130,14 @@ pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
     if remain < 2 {
         return false;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 2 || buf[0] != 0x1F || buf[1] != 0x8B {
+    let Some(buf) = fa.peek_raw(remain.min(3)) else {
+        return false;
+    };
+    if buf[0] != 0x1F || buf[1] != 0x8B {
         return false;
     }
 
-    let cm = if buf.len() > 2 { buf[2] } else { 8 };
+    let cm = buf.get(2).copied().unwrap_or(8);
     let method = match cm {
         8 => "Deflate",
         _ => "Unknown",
@@ -173,12 +153,9 @@ pub fn parse_gzip(fa: &mut FileAnalyze) -> bool {
 /// Detection: `BZh` + version digit.
 /// Fills: Block size.
 pub fn parse_bzip2(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 3 {
+    let Some(buf) = fa.peek_raw(fa.remain().min(4)) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
+    };
     if buf.len() < 3 || buf[0] != 0x42 || buf[1] != 0x5A || buf[2] != 0x68 {
         return false;
     }
@@ -199,25 +176,17 @@ pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
     if remain < 0x8000 + 6 {
         return false;
     }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    // ISO 9660 magic is at sector 16 (0x8000): "CD001"
-    let magic_offset = 0x8000 + 1;
-    if buf.len() < magic_offset + 5 {
+    // ISO 9660 primary volume descriptor is at sector 16 (0x8000).
+    let descriptor_offset = 0x8000;
+    let Some(descriptor) = fa.peek_raw_at(descriptor_offset, 72) else {
         return false;
-    }
-    if &buf[magic_offset..magic_offset + 5] != b"CD001" {
+    };
+    if descriptor.len() < 72 || &descriptor[1..6] != b"CD001" {
         return false;
     }
 
-    let sys_id = std::str::from_utf8(&buf[magic_offset - 1 + 8..magic_offset - 1 + 40])
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let vol_id = std::str::from_utf8(&buf[magic_offset - 1 + 40..magic_offset - 1 + 72])
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let sys_id = std::str::from_utf8(&descriptor[8..40]).unwrap_or("").trim().to_string();
+    let vol_id = std::str::from_utf8(&descriptor[40..72]).unwrap_or("").trim().to_string();
 
     let mut extras = Vec::new();
     if !sys_id.is_empty() {
@@ -239,13 +208,10 @@ pub fn parse_iso9660(fa: &mut FileAnalyze) -> bool {
 /// Detection: `\x7FELF` magic.
 /// Fills: Class, endianness, machine type.
 pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 16 {
+    let Some(buf) = fa.peek_raw(20) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 16 || buf[0] != 0x7F || &buf[1..4] != b"ELF" {
+    };
+    if buf[0] != 0x7F || &buf[1..4] != b"ELF" {
         return false;
     }
 
@@ -303,15 +269,9 @@ pub fn parse_elf(fa: &mut FileAnalyze) -> bool {
 /// Detection: FEEDFACE/BEBAFECA magic.
 /// Fills: Architecture, file type.
 pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 4 {
+    let Some(buf) = fa.peek_raw(4) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
+    };
 
     let magic = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
     let (bits, endian) = match magic {
@@ -334,27 +294,21 @@ pub fn parse_mach_o(fa: &mut FileAnalyze) -> bool {
 /// Detection: `MZ` + `PE` at offset at 0x3C.
 /// Fills: Architecture, subsystem.
 pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 2 {
+    let Some(head) = fa.peek_raw(fa.remain().min(0x40)) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 2 || buf[0] != 0x4D || buf[1] != 0x5A {
+    };
+    if head.len() < 2 || head[0] != 0x4D || head[1] != 0x5A {
         return false;
     }
 
     // Check for PE signature at offset from MZ header
-    let pe_offset = if buf.len() > 0x3C + 4 {
-        u32::from_le_bytes([buf[0x3C], buf[0x3D], buf[0x3E], buf[0x3F]]) as usize
+    let pe_offset = if head.len() >= 0x3C + 4 {
+        u32::from_le_bytes([head[0x3C], head[0x3D], head[0x3E], head[0x3F]]) as usize
     } else {
         0
     };
 
-    let format = if pe_offset > 0
-        && pe_offset + 4 <= buf.len()
-        && &buf[pe_offset..pe_offset + 4] == b"PE\0\0"
-    {
+    let format = if pe_offset > 0 && fa.peek_raw_at(pe_offset, 4) == Some(&b"PE\0\0"[..]) {
         "Windows PE"
     } else {
         "MZ DOS"
@@ -371,14 +325,11 @@ pub fn parse_mz_exe(fa: &mut FileAnalyze) -> bool {
 /// Detection: `**ACE**` magic.
 /// Fills: Format.
 pub fn parse_ace(fa: &mut FileAnalyze) -> bool {
-    let remain = fa.remain();
-    if remain < 7 {
+    let Some(buf) = fa.peek_raw(7) else {
         return false;
-    }
-    let buf = fa.peek_raw(remain).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
+    };
     // ACE magic: "**ACE**" crc16 size
-    if buf.len() < 7 || &buf[0..7] != b"**ACE**" {
+    if &buf[0..7] != b"**ACE**" {
         return false;
     }
     fill_archive(fa, "ACE", &[]);
@@ -462,5 +413,19 @@ mod tests {
         let buf = b"**ACE**".to_vec();
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_ace(&mut fa));
+    }
+
+    #[test]
+    fn archive_parsers_do_not_reintroduce_full_raw_scans() {
+        let source = include_str!("archives.rs");
+        for forbidden in [
+            concat!("peek_raw(", "fa.remain())"),
+            concat!("read_raw(", "fa.remain())"),
+            concat!("peek_raw(", "remain)"),
+            concat!("read_raw(", "remain)"),
+            concat!("peek_raw_at(0, ", "fa.element_size())"),
+        ] {
+            assert!(!source.contains(forbidden), "forbidden full-scan pattern: {forbidden}");
+        }
     }
 }

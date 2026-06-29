@@ -4,11 +4,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: CHQX/CHQH/CHQS/CHQL fourcc.
 /// Fills: Profile, dimensions, chroma format.
 pub fn parse_canopus(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 8 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(8) else { return false };
     let magic = &buf[4..8];
     let canopus = [b"CHQX", b"CHQX", b"CHQH", b"CHQS", b"CHQL", b"CHQX"];
     if !canopus.iter().any(|m| &m[..] == magic) {

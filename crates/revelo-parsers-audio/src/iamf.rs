@@ -15,6 +15,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 const OBU_IA_CODEC_CONFIG: u8 = 0;
 const OBU_IA_AUDIO_ELEMENT: u8 = 1;
 const OBU_IA_SEQUENCE_HEADER: u8 = 31;
+const IAMF_OBU_SCAN_LIMIT: usize = 1024 * 1024;
 
 // ── Audio element types ─────────────────────────────────────────────
 const AUDIO_ELEMENT_TYPE_CHANNEL_BASED: u8 = 0;
@@ -333,7 +334,8 @@ fn parse_audio_element(data: &[u8], pos: usize, hdr_size: usize) -> Option<Audio
 /// Walks descriptor OBUs to fill Format, codec info, sample rate,
 /// channel layout, profiles, and element types.
 pub fn parse_iamf(fa: &mut FileAnalyze) -> bool {
-    let data = match fa.peek_raw(fa.remain()) {
+    let scan_len = fa.remain().min(IAMF_OBU_SCAN_LIMIT);
+    let data = match fa.peek_raw(scan_len) {
         Some(d) => d.to_vec(),
         None => return false,
     };
@@ -721,6 +723,15 @@ mod tests {
         assert_eq!(a0("Format").as_deref(), Some("IAMF"));
         assert_eq!(a1("Format").as_deref(), Some("IAMF"));
         assert_eq!(a1("Channels").as_deref(), Some("6"));
+    }
+
+    #[test]
+    fn iamf_does_not_request_full_payload() {
+        let mut buf = make_iamf(0xF8);
+        buf.resize(IAMF_OBU_SCAN_LIMIT + 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_iamf(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, IAMF_OBU_SCAN_LIMIT);
     }
 
     #[test]

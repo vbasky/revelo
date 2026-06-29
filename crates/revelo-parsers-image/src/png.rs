@@ -17,6 +17,7 @@
 use revelo_core::{FileAnalyze, Reader, StreamKind};
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1A\n";
+const PNG_TEXT_CHUNK_PARSE_LIMIT: usize = 64 * 1024;
 
 /// Detection: 8-byte PNG signature (0x89 0x50 0x4E 0x47 …).
 /// Fills: IHDR (width, height, bit depth, color type), pHYs DPI, iTXt/tEXt metadata.
@@ -80,10 +81,17 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
         );
         if is_text {
             text_metadata_bytes += chunk_total_bytes;
+            if payload_len > PNG_TEXT_CHUNK_PARSE_LIMIT {
+                r.skip(payload_len + 4)?;
+                if is_iend {
+                    break;
+                }
+                continue;
+            }
+
             // Extract keywords from tEXt/iTXt for metadata fields.
             let payload = r.read_raw(payload_len)?.to_vec();
             r.skip(4)?; // crc
-
             // Parse tEXt chunk: keyword\0text
             if ty == u32::from_be_bytes(*b"tEXt") {
                 if let Some(nul) = payload.iter().position(|&b| b == 0) {
@@ -269,9 +277,39 @@ fn fill_streams(fa: &mut FileAnalyze, file_size: usize, meta: PngMeta) {
 mod tests {
     use super::*;
 
+    fn chunk(ty: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        out.extend_from_slice(ty);
+        out.extend_from_slice(payload);
+        out.extend_from_slice(&0u32.to_be_bytes());
+        out
+    }
+
     #[test]
     fn rejects_non_png_buffer() {
         let mut fa = FileAnalyze::new(b"NOT a PNG file at all");
         assert!(!parse_png(&mut fa));
+    }
+
+    #[test]
+    fn skips_oversized_text_chunk_payload() {
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&1u32.to_be_bytes());
+        ihdr.extend_from_slice(&1u32.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+
+        let mut payload = b"Comment\0".to_vec();
+        payload.resize(PNG_TEXT_CHUNK_PARSE_LIMIT + 1, b'x');
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(PNG_SIGNATURE);
+        buf.extend(chunk(b"IHDR", &ihdr));
+        buf.extend(chunk(b"tEXt", &payload));
+        buf.extend(chunk(b"IEND", &[]));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_png(&mut fa));
+        assert!(fa.access_stats().max_request_len < payload.len());
     }
 }

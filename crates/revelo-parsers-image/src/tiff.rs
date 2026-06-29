@@ -38,6 +38,8 @@ const TAG_SAMPLES_PER_PIXEL: u16 = 277;
 const TAG_ROWS_PER_STRIP: u16 = 278;
 const TAG_PLANAR_CONFIG: u16 = 284;
 const TAG_SAMPLE_FORMAT: u16 = 339;
+const TIFF_ASCII_VALUE_LIMIT: usize = 4096;
+const TIFF_MAX_IFD_ENTRIES: usize = 4096;
 
 #[derive(Default)]
 struct Ifd {
@@ -83,12 +85,8 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
     }
     let first_ifd_offset = read_u32(h, 4, little_endian) as usize;
     let total = fa.remain();
-    let buf = match fa.peek_raw(total) {
-        Some(b) => b,
-        None => return false,
-    };
 
-    let ifd = match read_ifd(buf, first_ifd_offset, little_endian) {
+    let ifd = match read_ifd(fa, total, first_ifd_offset, little_endian) {
         Some(i) => i,
         None => return false,
     };
@@ -202,20 +200,26 @@ pub fn parse_tiff(fa: &mut FileAnalyze) -> bool {
     true
 }
 
-fn read_ifd(buf: &[u8], offset: usize, le: bool) -> Option<Ifd> {
-    if offset + 2 > buf.len() {
+fn read_ifd(fa: &FileAnalyze, file_size: usize, offset: usize, le: bool) -> Option<Ifd> {
+    if offset + 2 > file_size {
         return None;
     }
-    let entry_count = read_u16(buf, offset, le) as usize;
+    let entry_count = read_u16_at(fa, offset, le)? as usize;
     let mut ifd = Ifd::default();
-    for i in 0..entry_count {
-        let entry_off = offset + 2 + i * 12;
-        if entry_off + 12 > buf.len() {
+    for i in 0..entry_count.min(TIFF_MAX_IFD_ENTRIES) {
+        let Some(entry_off) = offset.checked_add(2).and_then(|base| base.checked_add(i * 12))
+        else {
+            break;
+        };
+        if entry_off + 12 > file_size {
             break;
         }
-        let tag = read_u16(buf, entry_off, le);
-        let entry_type = read_u16(buf, entry_off + 2, le);
-        let count = read_u32(buf, entry_off + 4, le) as usize;
+        let Some(entry) = fa.peek_raw_at(entry_off, 12) else {
+            break;
+        };
+        let tag = read_u16(entry, 0, le);
+        let entry_type = read_u16(entry, 2, le);
+        let count = read_u32(entry, 4, le) as usize;
         let val_field = entry_off + 8;
         let type_size = match entry_type {
             1 | 2 | 7 => 1,
@@ -226,106 +230,87 @@ fn read_ifd(buf: &[u8], offset: usize, le: bool) -> Option<Ifd> {
             9 => 4,
             _ => 1,
         };
-        let total_bytes = count * type_size;
-        let data_off =
-            if total_bytes <= 4 { val_field } else { read_u32(buf, val_field, le) as usize };
+        let Some(total_bytes) = count.checked_mul(type_size) else {
+            continue;
+        };
+        let data_off = if total_bytes <= 4 {
+            val_field
+        } else {
+            let Some(offset) = read_u32_at(fa, val_field, le) else {
+                continue;
+            };
+            offset as usize
+        };
 
         match tag {
             TAG_SUBFILE_TYPE => {
-                let v = read_int(buf, data_off, entry_type, le);
+                let v = read_int_at(fa, data_off, entry_type, le);
                 if (v & 1) != 0 {
                     ifd.is_thumbnail = true;
                 }
             }
-            TAG_IMAGE_WIDTH => ifd.width = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_IMAGE_LENGTH => ifd.height = read_int(buf, data_off, entry_type, le) as u32,
+            TAG_IMAGE_WIDTH => ifd.width = read_int_at(fa, data_off, entry_type, le) as u32,
+            TAG_IMAGE_LENGTH => ifd.height = read_int_at(fa, data_off, entry_type, le) as u32,
             TAG_BITS_PER_SAMPLE => {
                 // May be one value (SHORT) or array. Use first element.
-                ifd.bits_per_sample = read_int(buf, data_off, entry_type, le) as u32;
+                ifd.bits_per_sample = read_int_at(fa, data_off, entry_type, le) as u32;
             }
-            TAG_COMPRESSION => ifd.compression = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_PHOTOMETRIC => ifd.photometric = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_EXTRA_SAMPLES => ifd.extra_samples = read_int(buf, data_off, entry_type, le) as u32,
+            TAG_COMPRESSION => ifd.compression = read_int_at(fa, data_off, entry_type, le) as u32,
+            TAG_PHOTOMETRIC => ifd.photometric = read_int_at(fa, data_off, entry_type, le) as u32,
+            TAG_EXTRA_SAMPLES => {
+                ifd.extra_samples = read_int_at(fa, data_off, entry_type, le) as u32
+            }
             TAG_SAMPLES_PER_PIXEL => {
-                ifd.samples_per_pixel = read_int(buf, data_off, entry_type, le) as u32
+                ifd.samples_per_pixel = read_int_at(fa, data_off, entry_type, le) as u32
             }
             TAG_ROWS_PER_STRIP => {
-                ifd.rows_per_strip = read_int(buf, data_off, entry_type, le) as u32
+                ifd.rows_per_strip = read_int_at(fa, data_off, entry_type, le) as u32
             }
-            TAG_PLANAR_CONFIG => ifd.planar_config = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_SAMPLE_FORMAT => ifd.sample_format = read_int(buf, data_off, entry_type, le) as u32,
-            TAG_ORIENTATION => ifd.orientation = read_int(buf, data_off, entry_type, le) as u32,
+            TAG_PLANAR_CONFIG => {
+                ifd.planar_config = read_int_at(fa, data_off, entry_type, le) as u32
+            }
+            TAG_SAMPLE_FORMAT => {
+                ifd.sample_format = read_int_at(fa, data_off, entry_type, le) as u32
+            }
+            TAG_ORIENTATION => ifd.orientation = read_int_at(fa, data_off, entry_type, le) as u32,
             TAG_MAKE if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-                    if !s.is_empty() {
-                        ifd.make = Some(s);
-                    }
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
+                    ifd.make = Some(s);
                 }
             }
             TAG_MODEL if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-                    if !s.is_empty() {
-                        ifd.model = Some(s);
-                    }
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
+                    ifd.model = Some(s);
                 }
             }
             TAG_SOFTWARE if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
                     ifd.software = Some(s);
                 }
             }
             TAG_ARTIST if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-                    if !s.is_empty() {
-                        ifd.artist = Some(s);
-                    }
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
+                    ifd.artist = Some(s);
                 }
             }
             TAG_COPYRIGHT if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-                    if !s.is_empty() {
-                        ifd.copyright = Some(s);
-                    }
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
+                    ifd.copyright = Some(s);
                 }
             }
             TAG_DATE_TIME if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-                    if !s.is_empty() {
-                        ifd.date_time = Some(s);
-                    }
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
+                    ifd.date_time = Some(s);
                 }
             }
             TAG_IMAGE_DESCRIPTION if entry_type == 2 => {
-                let end = (data_off + count).min(buf.len());
-                if data_off < buf.len() {
-                    let raw = &buf[data_off..end];
-                    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-                    if !s.is_empty() {
-                        ifd.image_description = Some(s);
-                    }
+                if let Some(s) = read_tiff_ascii(fa, data_off, count) {
+                    ifd.image_description = Some(s);
                 }
             }
-            TAG_X_RESOLUTION | TAG_Y_RESOLUTION if entry_type == 5 && data_off + 8 <= buf.len() => {
-                let num = read_u32(buf, data_off, le);
-                let den = read_u32(buf, data_off + 4, le);
+            TAG_X_RESOLUTION | TAG_Y_RESOLUTION if entry_type == 5 && data_off + 8 <= file_size => {
+                let num = read_u32_at(fa, data_off, le).unwrap_or(0);
+                let den = read_u32_at(fa, data_off + 4, le).unwrap_or(0);
                 if tag == TAG_X_RESOLUTION {
                     ifd.x_resolution = Some((num, den));
                 } else {
@@ -333,7 +318,7 @@ fn read_ifd(buf: &[u8], offset: usize, le: bool) -> Option<Ifd> {
                 }
             }
             TAG_RESOLUTION_UNIT => {
-                ifd.resolution_unit = read_int(buf, data_off, entry_type, le) as u32
+                ifd.resolution_unit = read_int_at(fa, data_off, entry_type, le) as u32
             }
             _ => {}
         }
@@ -341,13 +326,29 @@ fn read_ifd(buf: &[u8], offset: usize, le: bool) -> Option<Ifd> {
     Some(ifd)
 }
 
-fn read_int(buf: &[u8], off: usize, t: u16, le: bool) -> u64 {
+fn read_tiff_ascii(fa: &FileAnalyze, off: usize, count: usize) -> Option<String> {
+    let raw = fa.peek_raw_at(off, count.min(TIFF_ASCII_VALUE_LIMIT))?;
+    let s = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+fn read_int_at(fa: &FileAnalyze, off: usize, t: u16, le: bool) -> u64 {
     match t {
-        1 | 2 | 7 => *buf.get(off).unwrap_or(&0) as u64,
-        3 | 8 => read_u16(buf, off, le) as u64,
-        4 | 9 | 11 => read_u32(buf, off, le) as u64,
-        _ => read_u32(buf, off, le) as u64,
+        1 | 2 | 7 => fa.peek_raw_at(off, 1).and_then(|b| b.first()).copied().unwrap_or(0) as u64,
+        3 | 8 => read_u16_at(fa, off, le).unwrap_or(0) as u64,
+        4 | 9 | 11 => read_u32_at(fa, off, le).unwrap_or(0) as u64,
+        _ => read_u32_at(fa, off, le).unwrap_or(0) as u64,
     }
+}
+
+fn read_u16_at(fa: &FileAnalyze, off: usize, le: bool) -> Option<u16> {
+    let buf = fa.peek_raw_at(off, 2)?;
+    (buf.len() >= 2).then(|| read_u16(buf, 0, le))
+}
+
+fn read_u32_at(fa: &FileAnalyze, off: usize, le: bool) -> Option<u32> {
+    let buf = fa.peek_raw_at(off, 4)?;
+    (buf.len() >= 4).then(|| read_u32(buf, 0, le))
 }
 
 fn read_u16(buf: &[u8], off: usize, le: bool) -> u16 {
@@ -464,6 +465,16 @@ mod tests {
         assert_eq!(i("Compression_Mode").as_deref(), Some("Lossless"));
         assert_eq!(i("ColorSpace").as_deref(), Some("RGB"));
         assert_eq!(i("Format_Settings_Endianness").as_deref(), Some("Little"));
+    }
+
+    #[test]
+    fn tiff_probe_reads_ifd_entries_not_full_payload() {
+        let mut buf = build_le_tiff_minimal();
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_tiff(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 12);
     }
 
     #[test]

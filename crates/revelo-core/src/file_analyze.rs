@@ -8,11 +8,74 @@
 //! in the [`ElementTree`]. The [`StreamKind`] enum partitions fields by media type
 //! (General, Video, Audio, etc.).
 
-use crate::byte_source::ReadBackend;
+use crate::byte_source::{ByteRange, MediaReadAt, ReadBackend};
 use crate::config::MediaConfig;
 use crate::element::ElementTree;
 use crate::stream::{StreamCollection, StreamKind};
 use revelo_util::Ztring;
+use std::cell::Cell;
+
+/// Raw byte access counters collected by [`FileAnalyze`].
+///
+/// These counters measure parser requests at the `FileAnalyze` boundary. They
+/// are intentionally cheap and deterministic: mmap page faults and allocator
+/// behavior still need external benchmarks, but tests can use these values to
+/// reject accidental full-buffer requests.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct AccessStats {
+    pub peek_raw_calls: u64,
+    pub read_raw_calls: u64,
+    pub peek_raw_at_calls: u64,
+    pub bytes_requested: u64,
+    pub bytes_returned: u64,
+    pub max_request_len: usize,
+}
+
+#[derive(Debug, Default)]
+struct AccessStatsCells {
+    peek_raw_calls: Cell<u64>,
+    read_raw_calls: Cell<u64>,
+    peek_raw_at_calls: Cell<u64>,
+    bytes_requested: Cell<u64>,
+    bytes_returned: Cell<u64>,
+    max_request_len: Cell<usize>,
+}
+
+impl AccessStatsCells {
+    fn snapshot(&self) -> AccessStats {
+        AccessStats {
+            peek_raw_calls: self.peek_raw_calls.get(),
+            read_raw_calls: self.read_raw_calls.get(),
+            peek_raw_at_calls: self.peek_raw_at_calls.get(),
+            bytes_requested: self.bytes_requested.get(),
+            bytes_returned: self.bytes_returned.get(),
+            max_request_len: self.max_request_len.get(),
+        }
+    }
+
+    fn record_peek_raw(&self, requested: usize, returned: usize) {
+        self.peek_raw_calls.set(self.peek_raw_calls.get().saturating_add(1));
+        self.record_bytes(requested, returned);
+    }
+
+    fn record_read_raw(&self, requested: usize, returned: usize) {
+        self.read_raw_calls.set(self.read_raw_calls.get().saturating_add(1));
+        self.record_bytes(requested, returned);
+    }
+
+    fn record_peek_raw_at(&self, requested: usize, returned: usize) {
+        self.peek_raw_at_calls.set(self.peek_raw_at_calls.get().saturating_add(1));
+        self.record_bytes(requested, returned);
+    }
+
+    fn record_bytes(&self, requested: usize, returned: usize) {
+        self.bytes_requested.set(self.bytes_requested.get().saturating_add(requested as u64));
+        self.bytes_returned.set(self.bytes_returned.get().saturating_add(returned as u64));
+        if requested > self.max_request_len.get() {
+            self.max_request_len.set(requested);
+        }
+    }
+}
 
 /// Cursor-based byte reader over a [`ReadBackend`].
 ///
@@ -35,6 +98,8 @@ pub struct FileAnalyze<'a> {
     backend: ReadBackend<'a>,
     element_offset: usize,
     truncated: bool,
+    raw_read_limit: Option<usize>,
+    access_stats: AccessStatsCells,
     tree: ElementTree,
     streams: StreamCollection,
     /// When non-zero, bitstream mode is active and `Get_S*` reads consume
@@ -70,6 +135,8 @@ impl<'a> FileAnalyze<'a> {
             backend,
             element_offset: 0,
             truncated: false,
+            raw_read_limit: None,
+            access_stats: AccessStatsCells::default(),
             tree: ElementTree::new(),
             streams: StreamCollection::new(),
             bs_active: false,
@@ -86,6 +153,18 @@ impl<'a> FileAnalyze<'a> {
     /// Equivalent to `FileAnalyze::new(slice)`.
     pub fn from_slice(slice: &'a [u8]) -> Self {
         Self::new(slice)
+    }
+
+    /// Create a parser context that refuses raw slice requests above `limit`.
+    ///
+    /// This is intended for format detection and tests. Normal parsing remains
+    /// uncapped by default; detection can cap `peek_raw(fa.remain())` style
+    /// probes so candidate parsers cannot fault or copy an entire large file
+    /// before the real parser has been selected.
+    pub fn with_raw_read_limit(slice: &'a [u8], limit: usize) -> Self {
+        let mut fa = Self::new(slice);
+        fa.raw_read_limit = Some(limit);
+        fa
     }
 
     /// Returns a reference to the underlying [`ReadBackend`].
@@ -225,6 +304,14 @@ impl<'a> FileAnalyze<'a> {
 
     pub fn truncated(&self) -> bool {
         self.truncated
+    }
+
+    pub fn access_stats(&self) -> AccessStats {
+        self.access_stats.snapshot()
+    }
+
+    fn raw_request_allowed(&self, n: usize) -> bool {
+        self.raw_read_limit.is_none_or(|limit| n <= limit)
     }
 
     fn read_be_u64(&mut self, n: usize) -> Option<u64> {
@@ -392,14 +479,27 @@ impl<'a> FileAnalyze<'a> {
     /// Used by parsers reading variable-length payloads like the
     /// VORBIS_COMMENT vendor string.
     pub fn read_raw(&mut self, n: usize) -> &[u8] {
-        if self.remain() < n {
+        if !self.raw_request_allowed(n) {
+            self.access_stats.record_read_raw(n, 0);
             self.truncated = true;
             self.element_offset = self.buf().len();
             return &[];
         }
-        let start = self.element_offset;
+        let Ok(range) = ByteRange::from_usize(self.element_offset, n) else {
+            self.access_stats.record_read_raw(n, 0);
+            self.truncated = true;
+            self.element_offset = self.buf().len();
+            return &[];
+        };
+        let Ok(bytes) = self.backend.window_at(range) else {
+            self.access_stats.record_read_raw(n, 0);
+            self.truncated = true;
+            self.element_offset = self.buf().len();
+            return &[];
+        };
         self.element_offset += n;
-        &self.buf()[start..start + n]
+        self.access_stats.record_read_raw(n, n);
+        bytes
     }
 
     /// Non-advancing magic check — peek N bytes and compare against `expected`.
@@ -415,10 +515,24 @@ impl<'a> FileAnalyze<'a> {
     /// Non-advancing variant of `read_raw`. Returns `None` if fewer than
     /// `n` bytes are available.
     pub fn peek_raw(&self, n: usize) -> Option<&[u8]> {
-        if self.remain() < n {
+        if !self.raw_request_allowed(n) {
+            self.access_stats.record_peek_raw(n, 0);
             return None;
         }
-        Some(&self.buf()[self.element_offset..self.element_offset + n])
+        let range = ByteRange::from_usize(self.element_offset, n).ok()?;
+        let bytes = match self.backend.window_at(range) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                self.access_stats.record_peek_raw(n, 0);
+                return None;
+            }
+        };
+        if bytes.len() != n {
+            self.access_stats.record_peek_raw(n, 0);
+            return None;
+        }
+        self.access_stats.record_peek_raw(n, n);
+        Some(bytes)
     }
 
     /// Read up to `n` bytes starting at absolute file offset `at`, ignoring
@@ -426,11 +540,20 @@ impl<'a> FileAnalyze<'a> {
     /// if it runs past EOF), or `None` if `at` is out of bounds. Used to
     /// reach into mdat sample data at offsets recorded from stco/co64.
     pub fn peek_raw_at(&self, at: usize, n: usize) -> Option<&[u8]> {
-        if at >= self.buf().len() {
+        if !self.raw_request_allowed(n) {
+            self.access_stats.record_peek_raw_at(n, 0);
             return None;
         }
-        let end = (at + n).min(self.buf().len());
-        Some(&self.buf()[at..end])
+        let range = ByteRange::from_usize(at, n).ok()?;
+        let bytes = match self.backend.window_at_partial(range) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                self.access_stats.record_peek_raw_at(n, 0);
+                return None;
+            }
+        };
+        self.access_stats.record_peek_raw_at(n, bytes.len());
+        Some(bytes)
     }
 
     fn skip(&mut self, n: usize) {
@@ -1084,6 +1207,51 @@ mod tests {
         assert_eq!(v, 0x1234_5678);
         fa.element_end();
         assert!(fa.tree().root().children[0].infos.is_empty());
+    }
+
+    #[test]
+    fn raw_access_stats_count_requests_and_returned_bytes() {
+        let buf = [0, 1, 2, 3, 4, 5, 6, 7];
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert_eq!(fa.peek_raw(4), Some(&buf[..4][..]));
+        assert_eq!(fa.read_raw(2), &buf[..2]);
+        assert_eq!(fa.peek_raw_at(6, 8), Some(&buf[6..8][..]));
+        assert_eq!(fa.peek_raw(16), None);
+
+        assert_eq!(
+            fa.access_stats(),
+            AccessStats {
+                peek_raw_calls: 2,
+                read_raw_calls: 1,
+                peek_raw_at_calls: 1,
+                bytes_requested: 30,
+                bytes_returned: 8,
+                max_request_len: 16,
+            }
+        );
+    }
+
+    #[test]
+    fn raw_read_limit_blocks_large_detection_requests() {
+        let buf = [0u8; 16];
+        let mut fa = FileAnalyze::with_raw_read_limit(&buf, 8);
+
+        assert_eq!(fa.peek_raw(16), None);
+        assert!(!fa.truncated());
+        assert_eq!(fa.read_raw(16), &[]);
+        assert!(fa.truncated());
+        assert_eq!(
+            fa.access_stats(),
+            AccessStats {
+                peek_raw_calls: 1,
+                read_raw_calls: 1,
+                peek_raw_at_calls: 0,
+                bytes_requested: 32,
+                bytes_returned: 0,
+                max_request_len: 16,
+            }
+        );
     }
 
     #[test]

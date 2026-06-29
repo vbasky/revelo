@@ -1,11 +1,14 @@
 use revelo_core::{FileAnalyze, StreamKind};
 
+const DOLBY_VISION_XML_SCAN_LIMIT: usize = 64 * 1024;
+
 /// Parse Dolby Vision HDR metadata.
 ///
 /// Detection: dvcC/dvvC boxes in MP4, codec ID in MKV, standalone XML.
 /// Fills: Profile (5/7/8.1), level, BL compatibility, HDR format fields.
 pub fn parse_dolby_vision(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let scan_len = fa.remain().min(DOLBY_VISION_XML_SCAN_LIMIT);
+    let buf = match fa.peek_raw(scan_len) {
         Some(b) => b,
         None => return false,
     };
@@ -181,5 +184,15 @@ mod tests {
         let buf = vec![0xFF, 0xD8, 0xFF, 0xE0];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_dolby_vision(&mut fa));
+    }
+
+    #[test]
+    fn dv_does_not_request_full_payload() {
+        let xml = b"<DolbyVisionMetadata><dv_profile>8.1</dv_profile></DolbyVisionMetadata>";
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[..xml.len()].copy_from_slice(xml);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_dolby_vision(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, DOLBY_VISION_XML_SCAN_LIMIT);
     }
 }

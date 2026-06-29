@@ -4,11 +4,7 @@ use revelo_core::{FileAnalyze, StreamKind};
 /// Detection: HFYU fourcc.
 /// Fills: Bit depth, colourplane count.
 pub fn parse_huffyuv(fa: &mut FileAnalyze) -> bool {
-    let buf = fa.peek_raw(fa.remain()).map(|b| b.to_vec());
-    let Some(buf) = buf else { return false };
-    if buf.len() < 4 {
-        return false;
-    }
+    let Some(buf) = fa.peek_raw(4) else { return false };
     if &buf[0..4] != b"HFYU" {
         return false;
     }

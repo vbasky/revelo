@@ -1,5 +1,7 @@
 use revelo_core::{FileAnalyze, StreamKind};
 
+const TRUEHD_SCAN_LIMIT: usize = 8192;
+
 /// TrueHD (MLP) parser with Dolby Atmos (MAT) detection.
 ///
 /// Detection: Sync 0xF8726FBA (TrueHD) / 0xF8726FBB (AC-3+TrueHD).
@@ -14,7 +16,8 @@ use revelo_core::{FileAnalyze, StreamKind};
 ///
 /// Fills: Channels, sample rate, bit depth, Lossless, VBR, Atmos.
 pub fn parse_truehd(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()).map(|b| b.to_vec()) {
+    let scan_len = fa.remain().min(TRUEHD_SCAN_LIMIT);
+    let buf = match fa.peek_raw(scan_len).map(|b| b.to_vec()) {
         Some(b) => b,
         None => return false,
     };
@@ -316,5 +319,14 @@ mod tests {
         assert!(parse_truehd(&mut fa));
         let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(a("BitRate_Mode").as_deref(), Some("VBR"));
+    }
+
+    #[test]
+    fn truehd_does_not_request_full_payload() {
+        let mut buf = make_truehd(0xF8726FBA, 0x13, 0x3E, &[0x20, 0, 0]);
+        buf.resize(1024 * 1024, 0);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_truehd(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, TRUEHD_SCAN_LIMIT);
     }
 }

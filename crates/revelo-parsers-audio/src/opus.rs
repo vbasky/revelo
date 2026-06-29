@@ -27,16 +27,12 @@ const OPUS_CHANNEL_LAYOUT: [&str; 8] = [
 /// Detection: OpusHead packet in Ogg/WebM, TOC byte.
 /// Fills: Channels, channel mapping family, preskip, sample rate.
 pub fn parse_opus(fa: &mut FileAnalyze) -> bool {
-    let buf = match fa.peek_raw(fa.remain()) {
+    let buf = match fa.peek_raw(19) {
         Some(b) => b,
         None => return false,
     };
 
     // Opus identification header: "OpusHead" (8 bytes)
-    if buf.len() < 19 {
-        return false;
-    }
-
     let magic = match std::str::from_utf8(&buf[0..8]) {
         Ok("OpusHead") => true,
         _ => false,
@@ -126,5 +122,16 @@ mod tests {
         let buf = vec![0u8; 19];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_opus(&mut fa));
+    }
+
+    #[test]
+    fn opus_does_not_request_full_payload() {
+        let mut buf = vec![0u8; 1024 * 1024];
+        buf[0..8].copy_from_slice(b"OpusHead");
+        buf[8] = 1;
+        buf[9] = 2;
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_opus(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, 19);
     }
 }

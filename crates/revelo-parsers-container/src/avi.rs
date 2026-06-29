@@ -42,6 +42,8 @@ const FOURCC_ISBJ: u32 = u32::from_be_bytes(*b"ISBJ"); // Subject
 const FOURCC_ISRC: u32 = u32::from_be_bytes(*b"ISRC"); // Source
 const FOURCC_ITCH: u32 = u32::from_be_bytes(*b"ITCH"); // Technician/Encoded by
 const FOURCC_MOVI: u32 = u32::from_be_bytes(*b"movi");
+const AVI_INFO_VALUE_LIMIT: usize = 4096;
+const AVI_ENCODER_SCAN_LIMIT: usize = 256 * 1024;
 
 #[derive(Default, Debug)]
 struct AviHeader {
@@ -122,14 +124,9 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     if form != FOURCC_AVI {
         return false;
     }
-    // Riff size (LE at h[4..8]) declared but we walk the actual file.
-    let _ = u32::from_le_bytes([h[4], h[5], h[6], h[7]]);
+    let riff_size = u32::from_le_bytes([h[4], h[5], h[6], h[7]]) as usize;
     let total = fa.remain();
-    let body = match fa.peek_raw(total) {
-        Some(b) => b,
-        None => return false,
-    };
-    // body[0..12] is RIFF/size/AVI, body[12..] starts the first chunk.
+    let riff_end = 8usize.saturating_add(riff_size).min(total);
     let mut header = AviHeader::default();
     let mut streams: Vec<AviStream> = Vec::new();
     let mut isft: Option<String> = None;
@@ -145,73 +142,109 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     // the average interleave step.
     let mut movi_chunk_counts: Vec<u64> = Vec::new();
 
-    walk_riff_chunks(&body[12..], total - 12, &mut |fourcc, list_type, payload| {
+    walk_riff_chunks_at(fa, 12, riff_end, &mut |fourcc, list_type, payload_at, payload_len| {
         match (fourcc, list_type) {
             (FOURCC_LIST, Some(FOURCC_HDRL)) => {
-                walk_riff_chunks(payload, payload.len(), &mut |fc, lt, p| match (fc, lt) {
-                    (FOURCC_AVIH, _) => parse_avih(p, &mut header),
-                    (FOURCC_LIST, Some(FOURCC_STRL)) => {
-                        let mut s = AviStream::default();
-                        walk_riff_chunks(p, p.len(), &mut |fc2, _lt2, p2| match fc2 {
-                            FOURCC_STRH => parse_strh(p2, &mut s.strh),
-                            FOURCC_STRF => match s.strh.fcc_type {
-                                STRH_VIDS => s.video = parse_strf_video(p2),
-                                STRH_AUDS => s.audio = parse_strf_audio(p2),
-                                _ => {}
-                            },
-                            _ => {}
-                        });
-                        streams.push(s);
-                    }
-                    _ => {}
-                });
-            }
-            (FOURCC_LIST, Some(FOURCC_INFO)) => {
-                walk_riff_chunks(payload, payload.len(), &mut |fc, _, p| {
-                    let s = String::from_utf8_lossy(p).trim_end_matches('\0').to_string();
-                    match fc {
-                        FOURCC_ISFT => {
-                            isft = Some(s);
+                walk_riff_chunks_at(
+                    fa,
+                    payload_at,
+                    payload_at + payload_len,
+                    &mut |fc, lt, p_at, p_len| match (fc, lt) {
+                        (FOURCC_AVIH, _) => {
+                            if let Some(payload) = fa.peek_raw_at(p_at, p_len.min(40)) {
+                                parse_avih(payload, &mut header);
+                            }
                         }
-                        FOURCC_IART => {
-                            meta.artist = Some(s);
-                        }
-                        FOURCC_ICMT => {
-                            meta.comments = Some(s);
-                        }
-                        FOURCC_ICOP => {
-                            meta.copyright = Some(s);
-                        }
-                        FOURCC_ICRD => {
-                            meta.creation_date = Some(s);
-                        }
-                        FOURCC_IGNR => {
-                            meta.genre = Some(s);
-                        }
-                        FOURCC_IKEY => {
-                            meta.keywords = Some(s);
-                        }
-                        FOURCC_IMED => {
-                            meta.medium = Some(s);
-                        }
-                        FOURCC_INAM => {
-                            meta.title = Some(s);
-                        }
-                        FOURCC_IPRD => {
-                            meta.product = Some(s);
-                        }
-                        FOURCC_ISBJ => {
-                            meta.subject = Some(s);
-                        }
-                        FOURCC_ISRC => {
-                            meta.source = Some(s);
-                        }
-                        FOURCC_ITCH => {
-                            meta.technician = Some(s);
+                        (FOURCC_LIST, Some(FOURCC_STRL)) => {
+                            let mut s = AviStream::default();
+                            walk_riff_chunks_at(
+                                fa,
+                                p_at,
+                                p_at + p_len,
+                                &mut |fc2, _lt2, p2_at, p2_len| match fc2 {
+                                    FOURCC_STRH => {
+                                        if let Some(payload) = fa.peek_raw_at(p2_at, p2_len.min(56))
+                                        {
+                                            parse_strh(payload, &mut s.strh);
+                                        }
+                                    }
+                                    FOURCC_STRF => match s.strh.fcc_type {
+                                        STRH_VIDS => {
+                                            s.video = fa
+                                                .peek_raw_at(p2_at, p2_len.min(40))
+                                                .and_then(parse_strf_video);
+                                        }
+                                        STRH_AUDS => {
+                                            s.audio = fa
+                                                .peek_raw_at(p2_at, p2_len.min(16))
+                                                .and_then(parse_strf_audio);
+                                        }
+                                        _ => {}
+                                    },
+                                    _ => {}
+                                },
+                            );
+                            streams.push(s);
                         }
                         _ => {}
-                    }
-                });
+                    },
+                );
+            }
+            (FOURCC_LIST, Some(FOURCC_INFO)) => {
+                walk_riff_chunks_at(
+                    fa,
+                    payload_at,
+                    payload_at + payload_len,
+                    &mut |fc, _, p_at, p_len| {
+                        let Some(payload) = fa.peek_raw_at(p_at, p_len.min(AVI_INFO_VALUE_LIMIT))
+                        else {
+                            return;
+                        };
+                        let s = String::from_utf8_lossy(payload).trim_end_matches('\0').to_string();
+                        match fc {
+                            FOURCC_ISFT => {
+                                isft = Some(s);
+                            }
+                            FOURCC_IART => {
+                                meta.artist = Some(s);
+                            }
+                            FOURCC_ICMT => {
+                                meta.comments = Some(s);
+                            }
+                            FOURCC_ICOP => {
+                                meta.copyright = Some(s);
+                            }
+                            FOURCC_ICRD => {
+                                meta.creation_date = Some(s);
+                            }
+                            FOURCC_IGNR => {
+                                meta.genre = Some(s);
+                            }
+                            FOURCC_IKEY => {
+                                meta.keywords = Some(s);
+                            }
+                            FOURCC_IMED => {
+                                meta.medium = Some(s);
+                            }
+                            FOURCC_INAM => {
+                                meta.title = Some(s);
+                            }
+                            FOURCC_IPRD => {
+                                meta.product = Some(s);
+                            }
+                            FOURCC_ISBJ => {
+                                meta.subject = Some(s);
+                            }
+                            FOURCC_ISRC => {
+                                meta.source = Some(s);
+                            }
+                            FOURCC_ITCH => {
+                                meta.technician = Some(s);
+                            }
+                            _ => {}
+                        }
+                    },
+                );
             }
             (FOURCC_LIST, Some(FOURCC_MOVI)) => {
                 // Sample data — count its total size to derive per-stream
@@ -219,19 +252,24 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
                 // sample chunks follow the convention "NNxx" where NN is
                 // the 2-digit stream index in ASCII (00, 01, ...) and xx
                 // is dc/db (video DC/DB), wb (audio WAVE), or tx (text).
-                walk_riff_chunks(payload, payload.len(), &mut |fcc, _, p| {
-                    let b = fcc.to_be_bytes();
-                    if !(b[0].is_ascii_digit() && b[1].is_ascii_digit()) {
-                        return;
-                    }
-                    let idx = ((b[0] - b'0') * 10 + (b[1] - b'0')) as usize;
-                    while movi_sizes.len() <= idx {
-                        movi_sizes.push(0);
-                        movi_chunk_counts.push(0);
-                    }
-                    movi_sizes[idx] += p.len() as u64;
-                    movi_chunk_counts[idx] += 1;
-                });
+                walk_riff_chunks_at(
+                    fa,
+                    payload_at,
+                    payload_at + payload_len,
+                    &mut |fcc, _, _p_at, p_len| {
+                        let b = fcc.to_be_bytes();
+                        if !(b[0].is_ascii_digit() && b[1].is_ascii_digit()) {
+                            return;
+                        }
+                        let idx = ((b[0] - b'0') * 10 + (b[1] - b'0')) as usize;
+                        while movi_sizes.len() <= idx {
+                            movi_sizes.push(0);
+                            movi_chunk_counts.push(0);
+                        }
+                        movi_sizes[idx] += p_len as u64;
+                        movi_chunk_counts[idx] += 1;
+                    },
+                );
             }
             _ => {}
         }
@@ -246,24 +284,25 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     // inside the MPEG-4 Visual user_data section, which is inline in
     // the movi stream — not exposed at the RIFF chunk level.
     let mut encoded_library: Option<String> = None;
-    let scan_end = total.min(256 * 1024);
-    let scan_buf = &body[..scan_end];
-    for i in 0..scan_buf.len().saturating_sub(13) {
-        if &scan_buf[i..i + 4] == b"Lavc" && scan_buf[i + 4].is_ascii_digit() {
-            // Read until a non-printable byte to capture e.g. "Lavc62.28.101".
-            let mut end = i + 4;
-            while end < scan_buf.len() && end - i < 32 {
-                let c = scan_buf[end];
-                if c.is_ascii_alphanumeric() || c == b'.' {
-                    end += 1;
-                } else {
-                    break;
+    let scan_end = total.min(AVI_ENCODER_SCAN_LIMIT);
+    if let Some(scan_buf) = fa.peek_raw(scan_end) {
+        for i in 0..scan_buf.len().saturating_sub(13) {
+            if &scan_buf[i..i + 4] == b"Lavc" && scan_buf[i + 4].is_ascii_digit() {
+                // Read until a non-printable byte to capture e.g. "Lavc62.28.101".
+                let mut end = i + 4;
+                while end < scan_buf.len() && end - i < 32 {
+                    let c = scan_buf[end];
+                    if c.is_ascii_alphanumeric() || c == b'.' {
+                        end += 1;
+                    } else {
+                        break;
+                    }
                 }
+                if let Ok(s) = std::str::from_utf8(&scan_buf[i..end]) {
+                    encoded_library = Some(s.to_owned());
+                }
+                break;
             }
-            if let Ok(s) = std::str::from_utf8(&scan_buf[i..end]) {
-                encoded_library = Some(s.to_owned());
-            }
-            break;
         }
     }
 
@@ -283,34 +322,46 @@ pub fn parse_avi(fa: &mut FileAnalyze) -> bool {
     true
 }
 
-/// Walk a buffer of RIFF chunks. For each chunk, invoke `visit(fourcc,
-/// list_type, payload)` where `list_type` is `Some(t)` when fourcc=LIST
-/// (the 4-byte type that follows the size field).
-fn walk_riff_chunks<F: FnMut(u32, Option<u32>, &[u8])>(buf: &[u8], len: usize, visit: &mut F) {
-    let mut i = 0;
-    while i + 8 <= len {
-        let fourcc = u32::from_be_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
-        let size = u32::from_le_bytes([buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7]]) as usize;
-        let data_start = i + 8;
-        // checked_add guards 32-bit (wasm32) overflow where `size` (from a u32)
-        // can wrap `data_start`; the filter folds in the past-end check.
-        let Some(data_end) = data_start.checked_add(size).filter(|&e| e <= len) else {
+/// Walk RIFF chunks in `[start, end)`. For each chunk, invoke
+/// `visit(fourcc, list_type, payload_at, payload_len)` where `list_type`
+/// is `Some(t)` when fourcc=LIST.
+fn walk_riff_chunks_at<F: FnMut(u32, Option<u32>, usize, usize)>(
+    fa: &FileAnalyze,
+    start: usize,
+    end: usize,
+    visit: &mut F,
+) {
+    let mut offset = start;
+    while offset + 8 <= end {
+        let Some(header) = fa.peek_raw_at(offset, 8) else {
+            break;
+        };
+        let fourcc = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+        let size = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+        let data_start = offset + 8;
+        let Some(_data_end) = data_start.checked_add(size).filter(|&e| e <= end) else {
             break;
         };
         if fourcc == FOURCC_LIST && size >= 4 {
+            let Some(list_header) = fa.peek_raw_at(data_start, 4) else {
+                break;
+            };
             let list_type = u32::from_be_bytes([
-                buf[data_start],
-                buf[data_start + 1],
-                buf[data_start + 2],
-                buf[data_start + 3],
+                list_header[0],
+                list_header[1],
+                list_header[2],
+                list_header[3],
             ]);
-            visit(fourcc, Some(list_type), &buf[data_start + 4..data_end]);
+            visit(fourcc, Some(list_type), data_start + 4, size - 4);
         } else {
-            visit(fourcc, None, &buf[data_start..data_end]);
+            visit(fourcc, None, data_start, size);
         }
         // Chunks pad to 2-byte alignment.
         let advance = 8 + size + (size & 1);
-        i += advance;
+        let Some(next) = offset.checked_add(advance) else {
+            break;
+        };
+        offset = next;
     }
 }
 
@@ -871,5 +922,20 @@ mod tests {
                 .as_deref(),
             Some("1000")
         );
+    }
+
+    #[test]
+    fn avi_probe_does_not_read_full_movi_payload() {
+        let mut buf = make_minimal_avi();
+        let movi = build_list(b"movi", &[(b"00dc", vec![0; 1024 * 1024])]);
+        buf.extend_from_slice(b"LIST");
+        buf.extend_from_slice(&(movi.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&movi);
+        let riff_size = (buf.len() - 8) as u32;
+        buf[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_avi(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, AVI_ENCODER_SCAN_LIMIT);
     }
 }

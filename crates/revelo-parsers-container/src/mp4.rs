@@ -126,6 +126,14 @@ const BOX_DVCC: u32 = u32::from_be_bytes(*b"dvcC");
 const BOX_DVVC: u32 = u32::from_be_bytes(*b"dvvC");
 const BOX_PASP: u32 = u32::from_be_bytes(*b"pasp");
 
+const MP4_METADATA_VALUE_LIMIT: usize = 64 * 1024;
+const MP4_KEY_VALUE_LIMIT: usize = 4 * 1024;
+const MP4_HANDLER_NAME_LIMIT: usize = 4 * 1024;
+const MP4A_EXTENSION_SCAN_LIMIT: usize = 256 * 1024;
+const MP4_AVCC_PARSE_LIMIT: usize = 256 * 1024;
+const MP4_HVCC_PARSE_LIMIT: usize = 256 * 1024;
+const MP4_DVCC_PARSE_LIMIT: usize = 5;
+
 #[derive(Debug, Default)]
 struct MovieInfo {
     timescale: u32,
@@ -774,12 +782,13 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
                 let type_indicator = Reader::wrap(fa).be_u32("type_indicator").unwrap_or(0);
                 fa.skip_hexa(4, "locale");
                 let payload_size = sub_body - 8;
-                let payload = fa.read_raw(payload_size).to_vec();
+                let payload =
+                    read_payload_limited(fa, payload_size, MP4_METADATA_VALUE_LIMIT, "data");
                 // type_indicator: 1 = UTF-8 string, 23 = 32-bit float BE,
                 // 75 = unsigned 8-bit. We keep strings universally as
                 // UTF-8 and the few small numerics encountered in
                 // QuickTime metadata (e.g. flags) as decimal strings.
-                let value = match type_indicator {
+                let value = payload.as_deref().and_then(|payload| match type_indicator {
                     1 => Some(String::from_utf8_lossy(&payload).into_owned()),
                     21 if payload_size == 1 => Some((payload[0] as i8).to_string()),
                     21 if payload_size == 4 => Some(
@@ -796,7 +805,7 @@ fn parse_ilst(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
                         f32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]])
                     )),
                     _ => None,
-                };
+                });
                 if let Some(v) = value {
                     // QuickTime mdta items use a small numeric item_type
                     // (1-based index into `keys`). Any 4cc with the high
@@ -852,9 +861,12 @@ fn parse_keys(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
         if total < 8 || fa.element_offset() + (total - 8) > end {
             break;
         }
-        let key_bytes = fa.read_raw(total - 8).to_vec();
-        let key = String::from_utf8_lossy(&key_bytes).into_owned();
-        movie.qt_keys.push(key);
+        if let Some(key_bytes) =
+            read_payload_limited(fa, total - 8, MP4_KEY_VALUE_LIMIT, "key_value")
+        {
+            let key = String::from_utf8_lossy(&key_bytes).into_owned();
+            movie.qt_keys.push(key);
+        }
     }
     if fa.element_offset() < end {
         fa.skip_hexa(end - fa.element_offset(), "keys_tail");
@@ -968,8 +980,7 @@ fn parse_hdlr(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     let consumed_so_far = fa.element_offset() - start;
     let name_bytes_len = body_size.saturating_sub(consumed_so_far);
     let raw_name = if name_bytes_len > 0 {
-        let bytes = fa.read_raw(name_bytes_len).to_vec();
-        Some(bytes)
+        peek_payload_prefix_and_skip(fa, name_bytes_len, MP4_HANDLER_NAME_LIMIT, "handler_name")
     } else {
         None
     };
@@ -1145,7 +1156,13 @@ fn parse_mp4a_entry(fa: &mut FileAnalyze, entry_total: usize, track: &mut TrackI
     // extension shape, snarf the whole tail and scan for an esds box
     // at any 4-byte alignment.
     if remaining > 0 {
-        let tail = fa.read_raw(remaining).to_vec();
+        let tail = peek_payload_prefix_and_skip(
+            fa,
+            remaining,
+            MP4A_EXTENSION_SCAN_LIMIT,
+            "mp4a_extension",
+        )
+        .unwrap_or_default();
         // Try the strict box-walk first (works for standard ISO BMFF).
         let mut walked_ok = false;
         let mut p = 0usize;
@@ -1383,8 +1400,8 @@ fn parse_colr(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         track.color_matrix_idc = Some(mat);
         let mut consumed = 4 + 6;
         if is_nclx && body_size >= 4 + 7 {
-            let flag_bytes = fa.read_raw(1).to_vec();
-            track.color_full_range = Some((flag_bytes[0] & 0x80) != 0);
+            let flag_byte = Reader::wrap(fa).be_u8("full_range_flag").unwrap_or(0);
+            track.color_full_range = Some((flag_byte & 0x80) != 0);
             consumed += 1;
         }
         let rest = body_size - consumed;
@@ -1418,7 +1435,11 @@ fn parse_dvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "dvcc_short");
         return;
     }
-    let body = fa.read_raw(body_size).to_vec();
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_DVCC_PARSE_LIMIT, "dvcc")
+        .unwrap_or_default();
+    if body.len() < 4 {
+        return;
+    }
     // dvcC layout:
     //   byte 0: dv_version_major
     //   byte 1: dv_version_minor
@@ -1457,9 +1478,10 @@ fn parse_avcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "avcc_short");
         return;
     }
-    let body = fa.read_raw(body_size).to_vec();
-    // read_raw yields exactly body_size bytes or, on a truncated file, an empty
-    // slice — guard on the actual length before indexing.
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_AVCC_PARSE_LIMIT, "avcc_payload")
+        .unwrap_or_default();
+    // Oversized codec configuration boxes are parsed from a bounded prefix.
+    // Guard on the actual bytes returned before indexing.
     if body.len() < 4 {
         return;
     }
@@ -1539,13 +1561,14 @@ fn parse_hvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
         fa.skip_hexa(body_size, "hvcc_short");
         return;
     }
-    let body = fa.read_raw(body_size).to_vec();
-    // read_raw yields exactly body_size bytes or, on a truncated file, an empty
-    // slice; guard on the actual length so the fixed-offset reads below (and the
-    // body_size-based bounds checks, which then equal body.len()) stay in range.
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_HVCC_PARSE_LIMIT, "hvcc_payload")
+        .unwrap_or_default();
+    // Oversized codec configuration boxes are parsed from a bounded prefix.
+    // Guard on the actual length so fixed-offset reads stay in range.
     if body.len() < 23 {
         return;
     }
+    let body_size = body.len();
     let profile_byte = body[1];
     track.hevc_tier_high = Some((profile_byte & 0x20) != 0);
     track.hevc_profile_idc = Some(profile_byte & 0x1F);
@@ -1840,6 +1863,31 @@ fn parse_decoder_specific_info(fa: &mut FileAnalyze, size: usize, track: &mut Tr
     if size > 2 {
         fa.skip_hexa(size - 2, "dsi_tail");
     }
+}
+
+fn read_payload_limited(
+    fa: &mut FileAnalyze,
+    size: usize,
+    limit: usize,
+    skip_label: &str,
+) -> Option<Vec<u8>> {
+    if size > limit {
+        fa.skip_hexa(size, skip_label);
+        None
+    } else {
+        Some(fa.read_raw(size).to_vec())
+    }
+}
+
+fn peek_payload_prefix_and_skip(
+    fa: &mut FileAnalyze,
+    size: usize,
+    limit: usize,
+    skip_label: &str,
+) -> Option<Vec<u8>> {
+    let bytes = fa.peek_raw(size.min(limit)).map(|payload| payload.to_vec());
+    fa.skip_hexa(size, skip_label);
+    bytes
 }
 
 fn parse_stsz(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
@@ -3390,6 +3438,135 @@ fn channel_layout_for_format(
 mod tests {
     use super::*;
 
+    const MP4_METADATA_ONLY_BUDGET: u64 = 8 * 1024 * 1024;
+    const TEST_MDAT_SIZE: usize = 16 * 1024 * 1024;
+    const TEST_CODEC_CONFIG_SIZE: usize = MP4_AVCC_PARSE_LIMIT + 1024;
+    const TEST_METADATA_SIZE: usize = MP4_METADATA_VALUE_LIMIT + 1024;
+
+    fn mp4_box(ty: &[u8; 4], payload: Vec<u8>) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&((payload.len() + 8) as u32).to_be_bytes());
+        out.extend_from_slice(ty);
+        out.extend(payload);
+        out
+    }
+
+    fn ftyp_box(major: &[u8; 4]) -> Vec<u8> {
+        mp4_box(
+            b"ftyp",
+            [major.as_slice(), &0u32.to_be_bytes(), b"isom".as_slice(), b"mp42".as_slice()]
+                .concat(),
+        )
+    }
+
+    fn ilst_metadata_box(payload_len: usize) -> Vec<u8> {
+        let mut data_body = Vec::with_capacity(payload_len + 8);
+        data_body.extend_from_slice(&1u32.to_be_bytes());
+        data_body.extend_from_slice(&0u32.to_be_bytes());
+        data_body.resize(data_body.len() + payload_len, b'x');
+
+        let item_type = ITUNES_KEY_TOOL.to_be_bytes();
+        mp4_box(&item_type, mp4_box(b"data", data_body))
+    }
+
+    fn visual_entry(
+        entry_type: &[u8; 4],
+        codec_box_type: &[u8; 4],
+        codec_body: Vec<u8>,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.resize(6, 0);
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.resize(payload.len() + 16, 0);
+        payload.extend_from_slice(&1920u16.to_be_bytes());
+        payload.extend_from_slice(&1080u16.to_be_bytes());
+        payload.extend_from_slice(&0x0048_0000u32.to_be_bytes());
+        payload.extend_from_slice(&0x0048_0000u32.to_be_bytes());
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.resize(payload.len() + 32, 0);
+        payload.extend_from_slice(&24u16.to_be_bytes());
+        payload.extend_from_slice(&0xFFFFu16.to_be_bytes());
+        payload.extend(mp4_box(codec_box_type, codec_body));
+        mp4_box(entry_type, payload)
+    }
+
+    fn mp4a_entry(esds_body: Vec<u8>) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.resize(6, 0);
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&2u16.to_be_bytes());
+        payload.extend_from_slice(&16u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&(48_000u32 << 16).to_be_bytes());
+        payload.extend(mp4_box(b"esds", esds_body));
+        mp4_box(b"mp4a", payload)
+    }
+
+    fn stsd_box(entry: Vec<u8>) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&1u32.to_be_bytes());
+        payload.extend(entry);
+        mp4_box(b"stsd", payload)
+    }
+
+    fn trak_with_stsd(entry: Vec<u8>) -> Vec<u8> {
+        mp4_box(b"trak", mp4_box(b"mdia", mp4_box(b"minf", mp4_box(b"stbl", stsd_box(entry)))))
+    }
+
+    fn structured_moov() -> Vec<u8> {
+        let metadata = mp4_box(
+            b"udta",
+            mp4_box(b"meta", mp4_box(b"ilst", ilst_metadata_box(TEST_METADATA_SIZE))),
+        );
+        let avcc = {
+            let mut body = vec![1, 0x64, 0, 0x1F, 0xFF, 0xE0, 0];
+            body.resize(TEST_CODEC_CONFIG_SIZE, 0);
+            trak_with_stsd(visual_entry(b"avc1", b"avcC", body))
+        };
+        let hvcc = {
+            let mut body = vec![0; 23];
+            body[0] = 1;
+            body[1] = 0x21;
+            body[12] = 0x5D;
+            body[16] = 1;
+            body[17] = 2;
+            body.resize(TEST_CODEC_CONFIG_SIZE, 0);
+            trak_with_stsd(visual_entry(b"hvc1", b"hvcC", body))
+        };
+        let esds = {
+            let mut body = vec![0; TEST_CODEC_CONFIG_SIZE];
+            body[4] = 0x03;
+            trak_with_stsd(mp4a_entry(body))
+        };
+        mp4_box(b"moov", [metadata, avcc, hvcc, esds].concat())
+    }
+
+    fn structured_mp4(major: &[u8; 4], moov_first: bool) -> Vec<u8> {
+        let ftyp = ftyp_box(major);
+        let moov = structured_moov();
+        let mdat_size = 8 + TEST_MDAT_SIZE as u32;
+        let mut buf = Vec::new();
+        buf.extend(ftyp);
+        if moov_first {
+            buf.extend(moov);
+            buf.extend_from_slice(&mdat_size.to_be_bytes());
+            buf.extend_from_slice(b"mdat");
+            buf.resize(buf.len() + TEST_MDAT_SIZE, 0);
+        } else {
+            buf.extend_from_slice(&mdat_size.to_be_bytes());
+            buf.extend_from_slice(b"mdat");
+            buf.resize(buf.len() + TEST_MDAT_SIZE, 0);
+            buf.extend(moov);
+        }
+        buf
+    }
+
     #[test]
     fn rejects_non_mp4_buffer() {
         let mut fa = FileAnalyze::new(b"NOT a valid MP4 file at all");
@@ -3425,5 +3602,96 @@ mod tests {
                 .as_deref(),
             Some("M4A /isom")
         );
+    }
+
+    #[test]
+    fn skips_oversized_ilst_metadata_payload() {
+        let mut data_body = Vec::new();
+        data_body.extend_from_slice(&1u32.to_be_bytes());
+        data_body.extend_from_slice(&0u32.to_be_bytes());
+        data_body.resize(8 + MP4_METADATA_VALUE_LIMIT + 1, b'x');
+
+        let item_type = ITUNES_KEY_TOOL.to_be_bytes();
+        let ilst = mp4_box(&item_type, mp4_box(b"data", data_body));
+        let moov = mp4_box(b"moov", mp4_box(b"udta", mp4_box(b"meta", mp4_box(b"ilst", ilst))));
+
+        let mut buf = Vec::new();
+        buf.extend(mp4_box(
+            b"ftyp",
+            [b"M4A ".as_slice(), &0u32.to_be_bytes(), b"isom".as_slice()].concat(),
+        ));
+        buf.extend(moov);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        assert!(fa.access_stats().max_request_len < MP4_METADATA_VALUE_LIMIT + 1);
+    }
+
+    #[test]
+    fn structured_mp4_metadata_only_access_stays_bounded() {
+        for (label, major, moov_first) in [
+            ("mp4_moov_front", *b"isom", true),
+            ("mp4_moov_tail", *b"isom", false),
+            ("mov_moov_front", *b"qt  ", true),
+            ("mov_moov_tail", *b"qt  ", false),
+            ("snv2_front", *b"SNV2", true),
+            ("snv2_tail", *b"SNV2", false),
+        ] {
+            let buf = structured_mp4(&major, moov_first);
+            assert!(buf.len() as u64 > MP4_METADATA_ONLY_BUDGET, "{label}");
+
+            let mut fa = FileAnalyze::new(&buf);
+            assert!(parse_mp4(&mut fa), "{label}");
+
+            let stats = fa.access_stats();
+            assert!(stats.bytes_requested < MP4_METADATA_ONLY_BUDGET, "{label}: {stats:?}");
+            assert!(stats.bytes_returned < MP4_METADATA_ONLY_BUDGET, "{label}: {stats:?}");
+            assert!(stats.max_request_len <= MP4A_EXTENSION_SCAN_LIMIT, "{label}: {stats:?}");
+        }
+    }
+
+    #[test]
+    fn caps_oversized_avcc_payload() {
+        let mut body = vec![
+            1,    // configurationVersion
+            0x64, // AVCProfileIndication
+            0,    // profile_compatibility
+            0x1F, // AVCLevelIndication
+            0xFF, // lengthSizeMinusOne
+            0xE0, // numOfSequenceParameterSets = 0
+            0,    // numOfPictureParameterSets
+        ];
+        body.resize(MP4_AVCC_PARSE_LIMIT + 1024, 0);
+
+        let mut fa = FileAnalyze::new(&body);
+        let mut track = TrackInfo::default();
+        parse_avcc(&mut fa, body.len(), &mut track);
+
+        assert_eq!(track.avc_profile_idc, Some(0x64));
+        assert_eq!(track.avc_level_idc, Some(0x1F));
+        assert_eq!(fa.element_offset(), body.len());
+        assert_eq!(fa.access_stats().max_request_len, MP4_AVCC_PARSE_LIMIT);
+    }
+
+    #[test]
+    fn caps_oversized_hvcc_payload() {
+        let mut body = vec![0; 23];
+        body[0] = 1; // configurationVersion
+        body[1] = 0x21; // high tier + Main profile
+        body[12] = 0x5D; // level_idc
+        body[16] = 1; // chroma_format_idc
+        body[17] = 2; // bit_depth_luma_minus8
+        body[22] = 0; // num_of_arrays
+        body.resize(MP4_HVCC_PARSE_LIMIT + 1024, 0);
+
+        let mut fa = FileAnalyze::new(&body);
+        let mut track = TrackInfo::default();
+        parse_hvcc(&mut fa, body.len(), &mut track);
+
+        assert_eq!(track.hevc_profile_idc, Some(1));
+        assert_eq!(track.hevc_level_idc, Some(0x5D));
+        assert_eq!(track.hevc_bit_depth_luma, Some(10));
+        assert_eq!(fa.element_offset(), body.len());
+        assert_eq!(fa.access_stats().max_request_len, MP4_HVCC_PARSE_LIMIT);
     }
 }

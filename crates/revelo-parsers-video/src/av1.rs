@@ -21,6 +21,7 @@ const OBU_REDUNDANT_FRAME_HEADER: u8 = 7;
 const OBU_TILE_LIST: u8 = 8;
 #[allow(dead_code)]
 const OBU_PADDING: u8 = 15;
+const AV1_OBU_SCAN_LIMIT: usize = 1024 * 1024;
 
 /// AV1 sequence header info extracted from OBU.
 #[derive(Debug)]
@@ -370,7 +371,8 @@ pub fn parse_av1_sequence_header(data: &[u8]) -> Option<Av1Info> {
 pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
     fa.element_begin("AV1");
 
-    let data = if let Some(d) = fa.peek_raw(fa.remain()) {
+    let scan_len = fa.remain().min(AV1_OBU_SCAN_LIMIT);
+    let data = if let Some(d) = fa.peek_raw(scan_len) {
         d.to_vec()
     } else {
         fa.element_end();
@@ -823,6 +825,15 @@ mod tests {
         assert!(parse_av1(&mut fa));
         let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(v("HDR_Format"), None);
+    }
+
+    #[test]
+    fn parse_av1_does_not_request_full_payload() {
+        let mut data = make_av1_obu_reduced(0, 320, 240);
+        data.resize(AV1_OBU_SCAN_LIMIT + 1024, 0);
+        let mut fa = FileAnalyze::new(&data);
+        assert!(parse_av1(&mut fa));
+        assert_eq!(fa.access_stats().max_request_len, AV1_OBU_SCAN_LIMIT);
     }
 
     #[test]

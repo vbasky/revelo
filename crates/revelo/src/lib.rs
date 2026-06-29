@@ -82,9 +82,9 @@
 //! (GPL-1.0-or-later OR Artistic-1.0-Perl, © Phil Harvey). A binary or library
 //! built with this feature is subject to those terms.
 
-#[cfg(feature = "mmap")]
-use revelo_core::byte_source::ReadBackend;
 use revelo_core::stream::{StreamCollection, StreamKind};
+#[cfg(feature = "mmap")]
+use revelo_core::{MediaReadAt, MmapBackend, ReadBackend};
 use revelo_dispatcher::detect;
 use revelo_parsers_tag::parse_tags;
 
@@ -167,8 +167,9 @@ impl Metadata {
             // mapped. The mapping is dropped before the file handle closes.
             match unsafe { memmap2::Mmap::map(&file) } {
                 Ok(mmap) => {
-                    let backend = ReadBackend::Mapped(&mmap);
-                    let parser = detect(backend.as_slice())?;
+                    let mmap_backend = MmapBackend::new(&mmap);
+                    let parser = detect(mmap_backend.as_contiguous()?)?;
+                    let backend = ReadBackend::from(mmap_backend);
                     let mut fa = MediaFile::from_backend(backend);
                     parser(&mut fa);
                     parse_tags(&mut fa);
@@ -254,5 +255,26 @@ impl Metadata {
     /// Iterate over (field_name, value) pairs in the XMP stream.
     pub fn xmp(&self) -> impl Iterator<Item = (&str, &str)> {
         self.stream_iter(StreamKind::Xmp, 0)
+    }
+}
+
+#[cfg(all(test, feature = "mmap"))]
+mod tests {
+    use super::*;
+    use revelo_core::{ByteRange, MediaReadAt, MmapBackend};
+    use std::io::Write;
+
+    #[test]
+    fn mmap_backend_windows_match_file_bytes() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&[40, 41, 42, 43, 44, 45]).unwrap();
+        file.as_file().sync_all().unwrap();
+
+        let mmap = unsafe { memmap2::Mmap::map(file.as_file()).unwrap() };
+        let source = MmapBackend::new(&mmap);
+
+        assert_eq!(source.len_u64(), 6);
+        assert_eq!(source.window_at(ByteRange::new(2, 3).unwrap()).unwrap(), &[42, 43, 44]);
+        assert_eq!(source.window_at_partial(ByteRange::new(4, 8).unwrap()).unwrap(), &[44, 45]);
     }
 }
