@@ -1,6 +1,6 @@
 [package]
 name = "revelo-exif-diff"
-version = "0.5.0"
+version = "0.5.1"
 edition.workspace = true
 rust-version.workspace = true
 repository.workspace = true
@@ -19,10 +19,10 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.5.0" }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.0" }
+revelo-core = { path = "../revelo-core", version = "0.5.1" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.1" }
 # Force the ExifTool tables on for this validator so we compare revelo's
 # best-effort output against exiftool itself.
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.0", features = [
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.1", features = [
     "exiftool-tables",
 ] }

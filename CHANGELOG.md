@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.1] - 2026-06-30
+
+### Fixed
+
+- **Large-file metadata parsing** — parser traversal no longer scales with
+  payload size after 0.5.0 mmap. Bounded reads and skips across MP4/MOV,
+  RIFF/RF64/FORM, Matroska, Ogg, MPEG-TS/PS, and codec/tag probes. Fixes #1.
+- **CLI single-file path** — `revelo-cli` memory-maps ordinary inputs instead
+  of reading the entire file into a `Vec` first.
+- **RIFF/FORM tail scanning** — WAV/AIFF parsers stop at the declared
+  container boundary instead of walking sparse trailing bytes.
+
+### Added
+
+- **Access accounting** — `FileAnalyze::access_stats()` for deterministic
+  regression testing of read budgets.
+- **Bounded large-input detection** — sequential, raw-read-capped format
+  detection for inputs larger than 8 MiB.
+- **Extended benchmark fixtures** — structured sparse cases for MP4/MOV/SNV2,
+  WebM, RF64, AIFF, FLAC, MP3, Ogg, MPEG-TS/PS in `parse_benchmark`.
+
 ## [0.5.0] - 2026-06-28
 
 ### Added
