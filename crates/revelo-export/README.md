@@ -39,8 +39,8 @@ Add the dependency:
 
 ```toml
 [dependencies]
-revelo-export = "0.4"
-revelo-core   = "0.4"
+revelo-export = "0.5"
+revelo-core   = "0.5"
 ```
 
 Call any formatter with a `StreamCollection` and the file path:

@@ -42,7 +42,7 @@ and wires them into the dispatcher automatically.
 
 ```toml
 [dependencies]
-revelo-parsers-tag = { version = "0.4", features = ["exiftool-tables"] }
+revelo-parsers-tag = { version = "0.5", features = ["exiftool-tables"] }
 ```
 
 Enables ExifTool-grade maker-note decoding for camera-vendor proprietary tags.

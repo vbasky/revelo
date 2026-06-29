@@ -92,7 +92,7 @@ Add the dependency:
 
 ```toml
 [dependencies]
-revelo-util = "0.4"
+revelo-util = "0.5"
 ```
 
 ```rust,no_run

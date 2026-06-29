@@ -24,7 +24,7 @@
 //! than depending on this crate directly:
 //!
 //! ```ignore
-//! // In your Cargo.toml: revelo = "0.4"
+//! // In your Cargo.toml: revelo = "0.5"
 //! use revelo::Metadata;
 //!
 //! let meta = Metadata::from_file("photo.jpg").unwrap();

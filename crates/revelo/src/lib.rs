@@ -75,7 +75,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! revelo = { version = "0.4", features = ["exiftool-tables"] }
+//! revelo = { version = "0.5", features = ["exiftool-tables"] }
 //! ```
 //!
 //! **License caveat:** `exiftool-tables` pulls in `revelo-exiftool-tables`

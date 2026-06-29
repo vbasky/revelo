@@ -17,7 +17,7 @@ Part of the [**revelo**](https://github.com/vbasky/revelo) project — see the
 
 ```toml
 [dependencies]
-revelo = "0.4"
+revelo = "0.5"
 ```
 
 Or via Cargo:
@@ -31,7 +31,7 @@ feature:
 
 ```toml
 [dependencies]
-revelo = { version = "0.4", features = ["exiftool-tables"] }
+revelo = { version = "0.5", features = ["exiftool-tables"] }
 ```
 
 > **License note:** the default build is **BSD-2-Clause**. The `exiftool-tables` feature pulls in

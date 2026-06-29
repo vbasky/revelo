@@ -23,7 +23,7 @@ facade crate, not this crate directly:
 
 ```toml
 [dependencies]
-revelo = "0.4"
+revelo = "0.5"
 ```
 
 This crate is a public implementation detail of the revelo workspace, exposed

@@ -35,8 +35,8 @@ Add the dependency:
 
 ```toml
 [dependencies]
-revelo-reader = "0.4"
-revelo-core   = "0.4"
+revelo-reader = "0.5"
+revelo-core   = "0.5"
 ```
 
 Register a reader before handing the context to the format parsers:
