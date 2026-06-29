@@ -19,7 +19,10 @@ updates the Homebrew tap. Nothing is published by hand.
 
 1. Land the changes on `main` (themed commits are encouraged).
 2. **Bump versions** — every crate's package version *and* its inter-crate
-   dependency requirements:
+   dependency requirements. Prefer `scripts/release.sh`, which also syncs
+   `revelo = "0.X"` / `{ version = "0.X", ... }` lines in crate READMEs and
+   `lib.rs` rustdoc to the new compat line (e.g. `0.5.1` → `"0.5"`).
+   Manual bump:
    ```sh
    find crates -name Cargo.toml -exec sed -i '' 's/"0\.4\.1"/"0.4.2"/g' {} +
    # macOS sed shown; on Linux use: sed -i 's/.../.../g'

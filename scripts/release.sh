@@ -10,8 +10,9 @@
 #
 # Steps:
 #   1. Bump versions in all crate Cargo.toml
-#   2. Commit, tag, push (triggers CI binary build)
-#   3. Publish to crates.io (dependency order)
+#   2. Sync README/rustdoc dependency examples (e.g. 0.5.1 -> revelo = "0.5")
+#   3. Commit, tag, push (triggers CI binary build)
+#   4. Publish to crates.io (dependency order)
 #
 # Notes:
 #   * Update CHANGELOG.md and commit it before running (the tree must be clean).
@@ -71,10 +72,22 @@ echo "==> docs: ${PARSER_COUNT} parsers, ${CRATE_COUNT} crates"
 for f in crates/*/Cargo.toml; do
   perl -i -pe "s/version = \"\Q${CUR}\E\"/version = \"${VERSION}\"/g" "$f"
 done
+
+# ── sync README / rustdoc dependency examples ───────────────────────────────
+COMPAT="${VERSION%.*}"
+export COMPAT
+while IFS= read -r -d '' f; do
+  perl -i -pe '
+    s/(revelo(?:-[a-z-]+)?)\s*=\s*"\K0\.\d+(?:\.\d+)?(?=")/$ENV{COMPAT}/g;
+    s/(revelo(?:-[a-z-]+)?)\s*=\s*\{\s*version\s*=\s*"\K0\.\d+(?:\.\d+)?(?=")/$ENV{COMPAT}/g;
+  ' "$f"
+done < <(find crates -type f \( -name README.md -o -path '*/src/lib.rs' \) -print0)
+echo "==> docs: dependency examples -> \"${COMPAT}\""
+
 cargo build --workspace   # validate manifests + compile before tagging
 
 # ── commit, tag, push ──────────────────────────────────────────────────────
-git add crates/*/Cargo.toml CHANGELOG.md
+git add crates/*/Cargo.toml crates/*/README.md crates/*/src/lib.rs CHANGELOG.md
 git commit -m "release: ${TAG}"
 git tag -a "${TAG}" -m "revelo ${VERSION}"
 git push origin main
