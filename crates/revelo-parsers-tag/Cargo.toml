@@ -26,7 +26,7 @@ workspace = true
 exiftool-tables = ["dep:revelo-exiftool-tables"]
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.5.1" }
+revelo-core = { path = "../revelo-core", version = "0.5.1", default-features = false }
 revelo-util = { path = "../revelo-util", version = "0.5.1" }
 revelo-exiftool-tables = { path = "../revelo-exiftool-tables", version = "0.5.1", optional = true }
 flate2 = "1"
