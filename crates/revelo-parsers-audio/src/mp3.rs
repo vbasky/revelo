@@ -64,6 +64,7 @@ const SAMPLES_PER_FRAME: [[u16; 4]; 4] = [
     [0, 1152, 1152, 384], // MPEG 1
 ];
 const ID3V2_PARSE_LIMIT: usize = 64 * 1024;
+const ID3V2_TRAILING_ZERO_PADDING_SCAN_LIMIT: usize = 4 * 1024;
 
 /// Coefficient × bitrate_kbps × 1000 / sample_rate = frame size in bytes
 /// (before padding). MPEG-1 Layer I needs special handling.
@@ -212,6 +213,7 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
     let (id3v2_size, _id3_metadata) = parse_id3v2(fa);
     if id3v2_size > 0 {
         fa.skip_hexa(id3v2_size, "ID3v2");
+        skip_id3v2_trailing_zero_padding(fa);
     }
 
     let head = fa.peek_raw(4);
@@ -319,6 +321,17 @@ pub fn parse_mp3(fa: &mut FileAnalyze) -> bool {
         },
     );
     true
+}
+
+fn skip_id3v2_trailing_zero_padding(fa: &mut FileAnalyze) {
+    let scan_len = fa.remain().min(ID3V2_TRAILING_ZERO_PADDING_SCAN_LIMIT);
+    let Some(buf) = fa.peek_raw(scan_len) else {
+        return;
+    };
+    let padding = buf.iter().take_while(|&&b| b == 0).count();
+    if padding > 0 {
+        fa.skip_hexa(padding, "ID3v2Padding");
+    }
 }
 
 /// Parse Xing/LAME fields from the info frame. Returns
@@ -838,6 +851,28 @@ mod tests {
         assert!(stats.bytes_requested < MP3_METADATA_ONLY_BUDGET, "{stats:?}");
         assert!(stats.bytes_returned < MP3_METADATA_ONLY_BUDGET, "{stats:?}");
         assert!(stats.max_request_len <= ID3V2_PARSE_LIMIT + 10, "{stats:?}");
+    }
+
+    #[test]
+    fn id3v2_padding_before_first_frame_is_accepted() {
+        let id3_payload_size = 32;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"ID3");
+        buf.extend_from_slice(&[3, 0, 0x80]);
+        buf.extend_from_slice(&syncsafe(id3_payload_size));
+        buf.resize(10 + id3_payload_size, 0);
+        buf.resize(buf.len() + 626, 0);
+        buf.extend(mp3_frame());
+        buf.extend(mp3_frame());
+
+        let mut fa = FileAnalyze::new(&buf);
+
+        assert!(parse_mp3(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
+            Some("MPEG Audio")
+        );
+        assert!(fa.access_stats().max_request_len <= ID3V2_PARSE_LIMIT + 10);
     }
 
     #[test]

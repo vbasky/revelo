@@ -286,15 +286,19 @@ struct TrackInfo {
     has_data: bool,
 }
 
-/// Detection: `ftyp` box at offset 4.
+/// Detection: `ftyp` box at offset 4, or legacy QuickTime `moov` as first box.
 /// Fills: Brands, moov→trak→mdia→minf→stbl metadata, CodecPrivate, tracks, chapters.
 pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
-    // Detect by leading ftyp box.
+    // Detect by leading ftyp box. Older QuickTime files can start directly
+    // with moov and omit ftyp.
     let head = fa.peek_raw(8);
     let Some(h) = head else { return false };
-    if &h[4..8] != b"ftyp" {
+    let starts_with_ftyp = &h[4..8] == b"ftyp";
+    let starts_with_moov = &h[4..8] == b"moov";
+    if !starts_with_ftyp && !starts_with_moov {
         return false;
     }
+    let quicktime_without_ftyp = !starts_with_ftyp && starts_with_moov;
 
     let mut tracks: Vec<TrackInfo> = Vec::new();
     let mut ftyp_brands: Vec<String> = Vec::new();
@@ -347,6 +351,11 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
     // it before emitting (HEVC already gets its SEI from the hvcC arrays).
     scan_avc_encoder_sei(fa, &mut tracks);
     fill_streams(fa, &ftyp_brands, &tracks, &movie, &layout);
+    if quicktime_without_ftyp {
+        fa.force_field(StreamKind::General, 0, "Format", "QuickTime");
+        fa.set_field(StreamKind::General, 0, "Format_Profile", "QuickTime");
+        fa.set_field(StreamKind::General, 0, "InternetMediaType", "video/quicktime");
+    }
     true
 }
 
@@ -3601,6 +3610,28 @@ mod tests {
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("M4A /isom")
+        );
+    }
+
+    #[test]
+    fn parses_legacy_quicktime_moov_first_without_ftyp() {
+        let mut mvhd = Vec::new();
+        mvhd.extend_from_slice(&0u32.to_be_bytes()); // version + flags
+        mvhd.extend_from_slice(&0u32.to_be_bytes()); // creation time
+        mvhd.extend_from_slice(&0u32.to_be_bytes()); // modification time
+        mvhd.extend_from_slice(&600u32.to_be_bytes()); // timescale
+        mvhd.extend_from_slice(&1200u32.to_be_bytes()); // duration
+        let buf = mp4_box(b"moov", mp4_box(b"mvhd", mvhd));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()),
+            Some("QuickTime")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "InternetMediaType").map(|z| z.as_str()),
+            Some("video/quicktime")
         );
     }
 
