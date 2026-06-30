@@ -1,0 +1,36 @@
+{
+  "schema": "revelo_perf_manifest_v2",
+  "settings": {
+    "warmups": 2,
+    "runs": 10,
+    "render_png": false
+  },
+  "cases": [
+    {
+      "id": "synthetic-mp4-snv2-tail-389m",
+      "label": "MP4 / SNV2 / moov tail / 389 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "H.264",
+      "layout": "SNV2 brand, moov tail, sparse mdat",
+      "source": "generated",
+      "synthetic": {
+        "kind": "mp4_snv2_tail",
+        "size_bytes": 407896064
+      }
+    },
+    {
+      "id": "synthetic-wav-list-id3-512m",
+      "label": "WAV / PCM / LIST+ID3 / 512 MiB",
+      "class": "synthetic",
+      "container": "WAV",
+      "codec": "PCM",
+      "layout": "LIST metadata, ID3 metadata, sparse data chunk",
+      "source": "generated",
+      "synthetic": {
+        "kind": "wav_list_id3_data",
+        "size_bytes": 536870912
+      }
+    }
+  ]
+}
