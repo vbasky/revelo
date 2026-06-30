@@ -1,0 +1,86 @@
+{
+  "schema": "revelo_benchmark_table_config_v1",
+  "title": "Revelo benchmark comparison",
+  "template_path": "templates/benchmark-table.html",
+  "stylesheet_path": "styles/benchmark-table.css",
+  "capture_id": "benchmark-table-capture",
+  "footer_note": "Values are median milliseconds. Generated fixtures are parser-oriented sparse files; real rows come from the local manifest.",
+  "column_labels": {
+    "revelo_0_4_6": "Revelo 0.4.6",
+    "revelo_0_5_0": "Revelo 0.5.0",
+    "revelo_0_5_1": "Revelo 0.5.1",
+    "revelo_branch": "Revelo branch",
+    "revelo_cli_text": "Revelo",
+    "mediainfo": "MediaInfo",
+    "ffprobe": "ffprobe"
+  },
+  "baseline": "mediainfo",
+  "sections": [
+    {
+      "id": "synthetic",
+      "label": "Generated fixtures",
+      "match": {
+        "class": "synthetic"
+      }
+    },
+    {
+      "id": "real",
+      "label": "Real media",
+      "match": {
+        "class": "real"
+      }
+    }
+  ],
+  "groups": [
+    "MP4",
+    "MOV",
+    "MKV",
+    "WebM",
+    "AVI",
+    "MPEG-TS",
+    "VOB",
+    "WAV",
+    "AIFF",
+    "FLAC",
+    "Ogg",
+    "MP3"
+  ],
+  "latency_tiers_ms": [
+    {
+      "name": "instant",
+      "label": "under 10 ms",
+      "max": 10,
+      "class": "instant"
+    },
+    {
+      "name": "very_fast",
+      "label": "10-30 ms",
+      "max": 30,
+      "class": "very-fast"
+    },
+    {
+      "name": "fast",
+      "label": "30-80 ms",
+      "max": 80,
+      "class": "fast"
+    },
+    {
+      "name": "medium",
+      "label": "80-150 ms",
+      "max": 150,
+      "class": "medium"
+    },
+    {
+      "name": "slow",
+      "label": "150-500 ms",
+      "max": 500,
+      "class": "slow"
+    },
+    {
+      "name": "very_slow",
+      "label": "over 500 ms",
+      "max": null,
+      "class": "very-slow"
+    }
+  ]
+}

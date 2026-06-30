@@ -1,0 +1,351 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+  --bg: oklch(0.055 0 0);
+  --surface: oklch(0.095 0 0);
+  --surface-2: oklch(0.125 0 0);
+  --row: oklch(0.115 0 0);
+  --row-alt: oklch(0.092 0 0);
+  --head: oklch(0.07 0 0);
+  --ink: oklch(0.955 0 0);
+  --muted: oklch(0.72 0 0);
+  --line: oklch(0.24 0 0 / 0.7);
+  --latency-instant-bg: oklch(0.215 0.075 162);
+  --latency-instant-ink: oklch(0.965 0.035 162);
+  --latency-very-fast-bg: oklch(0.265 0.075 150);
+  --latency-very-fast-ink: oklch(0.94 0.03 150);
+  --latency-fast-bg: oklch(0.265 0.06 205);
+  --latency-fast-ink: oklch(0.94 0.025 205);
+  --latency-medium-bg: oklch(0.305 0.07 86);
+  --latency-medium-ink: oklch(0.95 0.032 86);
+  --latency-slow-bg: oklch(0.31 0.075 45);
+  --latency-slow-ink: oklch(0.95 0.032 45);
+  --latency-very-slow-bg: oklch(0.292 0.086 25);
+  --latency-very-slow-ink: oklch(0.95 0.03 25);
+  --missing-bg: oklch(0.235 0 0);
+  --missing-ink: oklch(0.88 0 0);
+  --oracle-pass-bg: oklch(0.23 0.07 150);
+  --oracle-pass-ink: oklch(0.94 0.035 150);
+  --oracle-diff-bg: oklch(0.29 0.085 68);
+  --oracle-diff-ink: oklch(0.95 0.04 68);
+  --oracle-fail-bg: oklch(0.285 0.09 30);
+  --oracle-fail-ink: oklch(0.95 0.035 30);
+  --oracle-na-bg: oklch(0.18 0 0);
+  --oracle-na-ink: oklch(0.72 0 0);
+  --instant-bg: var(--latency-instant-bg);
+  --instant-ink: var(--latency-instant-ink);
+  --very-fast-bg: var(--latency-very-fast-bg);
+  --very-fast-ink: var(--latency-very-fast-ink);
+  --fast-bg: var(--latency-fast-bg);
+  --fast-ink: var(--latency-fast-ink);
+  --medium-bg: var(--latency-medium-bg);
+  --medium-ink: var(--latency-medium-ink);
+  --slow-bg: var(--latency-slow-bg);
+  --slow-ink: var(--latency-slow-ink);
+  --very-slow-bg: var(--latency-very-slow-bg);
+  --very-slow-ink: var(--latency-very-slow-ink);
+  --matrix-width: 1200px;
+  --case-col: 360px;
+  --runs-col: 112px;
+  --oracle-col: 72px;
+  --tool-col: 124px;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+main {
+  width: min(var(--matrix-width), 100vw);
+  margin: 0 auto;
+  padding: 16px 0 22px;
+}
+
+header {
+  margin: 0 0 12px;
+  padding: 0 10px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 1120px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.panel {
+  background: var(--surface);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 10px 6px;
+  background: var(--surface-2);
+}
+
+h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.section-title span {
+  color: var(--muted);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+table {
+  width: var(--matrix-width);
+  max-width: 100vw;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  border: 0;
+  padding: 4px 7px;
+  vertical-align: middle;
+}
+
+th {
+  background: var(--head);
+  color: var(--muted);
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+tbody tr {
+  background: var(--row);
+}
+
+tbody tr:nth-child(even) {
+  background: var(--row-alt);
+}
+
+tbody td:first-child {
+  background: inherit;
+}
+
+.col-case {
+  width: var(--case-col);
+}
+
+.col-runs {
+  width: var(--runs-col);
+}
+
+.col-oracle {
+  width: var(--oracle-col);
+  text-align: center;
+}
+
+.col-tool {
+  width: var(--tool-col);
+  text-align: right;
+}
+
+th:nth-child(n+4) {
+  text-align: right;
+}
+
+.case strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 1px;
+}
+
+.case span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.runs {
+  color: var(--ink);
+  font-weight: 850;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.05;
+}
+
+.split-runs span {
+  display: block;
+}
+
+.split-runs span + span {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.measure {
+  position: relative;
+  text-align: right;
+  font-weight: 900;
+  font-size: 16px;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  padding: 9px 18px 4px 6px;
+}
+
+.oracle-cell {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.oracle-pass {
+  background: var(--oracle-pass-bg);
+  color: var(--oracle-pass-ink);
+}
+
+.oracle-diff {
+  background: var(--oracle-diff-bg);
+  color: var(--oracle-diff-ink);
+}
+
+.oracle-fail {
+  background: var(--oracle-fail-bg);
+  color: var(--oracle-fail-ink);
+}
+
+.oracle-na {
+  background: var(--oracle-na-bg);
+  color: var(--oracle-na-ink);
+}
+
+.ms-value {
+  display: block;
+}
+
+.ms-unit {
+  position: absolute;
+  top: 2px;
+  right: 5px;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 900;
+  opacity: 0.78;
+  text-transform: uppercase;
+}
+
+.missing {
+  background: var(--missing-bg);
+  color: var(--missing-ink);
+}
+
+.instant {
+  background: var(--instant-bg);
+  color: var(--instant-ink);
+}
+
+.very-fast {
+  background: var(--very-fast-bg);
+  color: var(--very-fast-ink);
+}
+
+.fast {
+  background: var(--fast-bg);
+  color: var(--fast-ink);
+}
+
+.medium {
+  background: var(--medium-bg);
+  color: var(--medium-ink);
+}
+
+.slow {
+  background: var(--slow-bg);
+  color: var(--slow-ink);
+}
+
+.very-slow {
+  background: var(--very-slow-bg);
+  color: var(--very-slow-ink);
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.scale {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scale span {
+  border-radius: 3px;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  main {
+    width: 100%;
+    padding-top: 14px;
+  }
+
+  footer {
+    display: block;
+  }
+
+  .scale {
+    justify-content: flex-start;
+    margin-top: 8px;
+  }
+
+  table {
+    min-width: 900px;
+  }
+
+  .panel {
+    overflow-x: auto;
+  }
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+{{ css }}
+  </style>
+</head>
+<body>
+  <main id="{{ capture_id }}">
+    <header>
+      <h1>{{ title }}</h1>
+      <div class="sub">{{ caption }}</div>
+    </header>
+    <div class="grid">
+{{ sections }}
+    </div>
+    <footer>
+      <div>{{ footer_note }}</div>
+      <div class="scale" aria-label="Latency color scale">
+{{ legend }}
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
