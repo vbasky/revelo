@@ -239,6 +239,8 @@ binaries prepared outside git, for example:
 - template path;
 - stylesheet path;
 - PNG capture element id;
+- optional aligned section tables;
+- optional size column;
 - optional visible tool columns;
 - display names for columns;
 - row sections;
@@ -252,6 +254,11 @@ focused on latency. When `--oracle-results` is provided explicitly, it adds one
 compact status column per case: `pass`, `diff`, `fail` or `n/a`. The PNG capture
 targets only the `#benchmark-table-capture` element so screenshots do not need
 manual cropping.
+Set `align_sections` to `true` when rendering multiple sections that should
+share the same case-column width. Leave it unset or `false` for independent
+content-width tables.
+Set `show_size_column` to `true` to render file size once in a dedicated column
+instead of mixing it into case titles or subtitles.
 
 The default template lives at `scripts/perf/templates/benchmark-table.html` and
 the default stylesheet lives at `scripts/perf/styles/benchmark-table.css`.

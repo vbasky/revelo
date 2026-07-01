@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 
@@ -23,13 +22,17 @@ def main() -> int:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     script = build_script(args.html.resolve(), args.output.resolve(), args.selector)
-    with tempfile.TemporaryDirectory() as tmp:
-        script_path = Path(tmp) / "capture.mjs"
+    script_path = args.output.with_suffix(".capture.mjs")
+    try:
         script_path.write_text(script, encoding="utf-8")
         completed = subprocess.run(["node", str(script_path)], text=True, capture_output=True)
         if completed.returncode != 0:
             print("Playwright capture unavailable; HTML table is still available")
+            if completed.stderr:
+                print(completed.stderr.strip())
             return 0
+    finally:
+        script_path.unlink(missing_ok=True)
     print(args.output)
     return 0
 
@@ -39,15 +42,38 @@ def build_script(html_path: Path, output_path: Path, selector: str) -> str:
 import {{ chromium }} from 'playwright';
 
 const browser = await chromium.launch();
-const page = await browser.newPage({{ viewport: {{ width: 1400, height: 1000 }}, deviceScaleFactor: 2 }});
+const page = await browser.newPage({{ viewport: {{ width: 1600, height: 1200 }}, deviceScaleFactor: 2 }});
 await page.goto({html_path.as_uri()!r});
-const element = await page.locator({selector!r});
-const box = await element.boundingBox();
-if (!box) {{
+const locator = page.locator({selector!r});
+await locator.waitFor({{ state: 'visible' }});
+const measure = async () => locator.evaluate((element) => {{
+  const rects = [element, ...element.querySelectorAll('*')].map((node) => node.getBoundingClientRect());
+  const left = Math.min(...rects.map((rect) => rect.left));
+  const top = Math.min(...rects.map((rect) => rect.top));
+  const right = Math.max(...rects.map((rect) => rect.right));
+  const bottom = Math.max(...rects.map((rect) => rect.bottom));
+  return {{
+    x: Math.max(0, Math.floor(left)),
+    y: Math.max(0, Math.floor(top)),
+    width: Math.ceil(Math.max(element.scrollWidth, right - left)),
+    height: Math.ceil(Math.max(element.scrollHeight, bottom - top)),
+  }};
+}});
+const initial = await measure();
+await page.setViewportSize({{ width: initial.width, height: initial.height }});
+const box = await measure();
+if (!box || box.width <= 0 || box.height <= 0) {{
   throw new Error('missing capture element');
 }}
-await page.setViewportSize({{ width: Math.ceil(box.width), height: Math.ceil(box.height) }});
-await element.screenshot({{ path: {str(output_path)!r} }});
+await page.screenshot({{
+  path: {str(output_path)!r},
+  clip: {{
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+  }},
+}});
 await browser.close();
 """
 

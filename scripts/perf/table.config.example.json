@@ -5,10 +5,13 @@
   "stylesheet_path": "styles/benchmark-table.css",
   "capture_id": "benchmark-table-capture",
   "footer_note": "Values are median milliseconds. Generated fixtures are parser-oriented sparse files; real rows come from the local manifest.",
+  "align_sections": true,
+  "show_size_column": true,
   "column_labels": {
     "revelo_0_4_6": "Revelo 0.4.6",
     "revelo_0_5_0": "Revelo 0.5.0",
     "revelo_0_5_1": "Revelo 0.5.1",
+    "revelo_pr5": "Revelo PR #5",
     "revelo_branch": "Revelo branch",
     "revelo_cli_text": "Revelo",
     "mediainfo": "MediaInfo",

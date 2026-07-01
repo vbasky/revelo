@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, TypeAlias, cast
@@ -18,6 +19,7 @@ DEFAULT_COLUMNS = [
     "revelo_0_4_6",
     "revelo_0_5_0",
     "revelo_0_5_1",
+    "revelo_pr5",
     "revelo_branch",
     "revelo_cli_text",
     "mediainfo",
@@ -46,6 +48,8 @@ TABLE_CONFIG_KEYS = {
     "columns",
     "column_labels",
     "baseline",
+    "align_sections",
+    "show_size_column",
     "sections",
     "groups",
     "latency_tiers_ms",
@@ -122,6 +126,10 @@ def validate_config(config: JsonObject) -> None:
     for key in ("title", "caption", "template_path", "stylesheet_path", "capture_id", "footer_note", "baseline"):
         if key in config and not isinstance(config[key], str):
             raise SystemExit(f"table config {key} must be a string")
+    if "align_sections" in config and not isinstance(config["align_sections"], bool):
+        raise SystemExit("table config align_sections must be a boolean")
+    if "show_size_column" in config and not isinstance(config["show_size_column"], bool):
+        raise SystemExit("table config show_size_column must be a boolean")
     if "columns" in config:
         validate_string_list(config["columns"], "table config columns")
     if "groups" in config:
@@ -201,7 +209,9 @@ def render_html(results: JsonObject, config: JsonObject) -> str:
     cases = sorted(results.get("cases", []), key=lambda case: (section_index(case, config), group_index(case, groups), case.get("label", "")))
     caption = build_caption(results)
     show_oracle = any("_oracle_status" in case for case in cases)
-    sections = render_sections(cases, columns, tiers, config, show_oracle)
+    show_size = config.get("show_size_column") is True
+    main_style = render_main_style(cases, config, show_size)
+    sections = render_sections(cases, columns, tiers, config, show_oracle, show_size)
     legend = " ".join(
         f"<span class=\"{escape(tier.get('class', tier.get('name', 'tier')))}\">{escape(tier.get('label', tier.get('name', '')))}</span>"
         for tier in tiers
@@ -214,6 +224,7 @@ def render_html(results: JsonObject, config: JsonObject) -> str:
             "title": escape(title),
             "caption": escape(config.get("caption") or caption),
             "capture_id": escape(capture_id),
+            "main_style": main_style,
             "css": css,
             "sections": sections,
             "footer_note": escape(config.get("footer_note") or "Values are median milliseconds."),
@@ -231,12 +242,29 @@ def visible_columns(results: JsonObject) -> list[str]:
     return ordered or DEFAULT_COLUMNS
 
 
+def render_main_style(cases: list[JsonObject], config: JsonObject, show_size: bool) -> str:
+    if config.get("align_sections") is not True:
+        return ""
+    width = case_column_width_ch(cases, show_size)
+    return f" style=\"--case-col: {width}ch;\""
+
+
+def case_column_width_ch(cases: list[JsonObject], show_size: bool) -> int:
+    longest = 0
+    for case in cases:
+        label = case_label(case, show_size)
+        subtitle = case_subtitle(case, label, not show_size)
+        longest = max(longest, len(label), len(subtitle))
+    return max(36, longest + 2)
+
+
 def render_sections(
     cases: list[JsonObject],
     columns: list[str],
     tiers: list[JsonObject],
     config: JsonObject,
     show_oracle: bool,
+    show_size: bool,
 ) -> str:
     section_defs = config.get("sections") or [{"id": "all", "label": "Benchmark cases", "match": {}}]
     rendered: list[str] = []
@@ -246,11 +274,11 @@ def render_sections(
         if not section_cases:
             continue
         used_ids.update(str(case.get("id") or case.get("label")) for case in section_cases)
-        rendered.append(render_section(section_def, section_cases, columns, tiers, config, show_oracle))
+        rendered.append(render_section(section_def, section_cases, columns, tiers, config, show_oracle, show_size))
 
     remaining = [case for case in cases if str(case.get("id") or case.get("label")) not in used_ids]
     if remaining:
-        rendered.append(render_section({"label": "Other cases"}, remaining, columns, tiers, config, show_oracle))
+        rendered.append(render_section({"label": "Other cases"}, remaining, columns, tiers, config, show_oracle, show_size))
     return "\n".join(rendered)
 
 
@@ -261,10 +289,12 @@ def render_section(
     tiers: list[JsonObject],
     config: JsonObject,
     show_oracle: bool,
+    show_size: bool,
 ) -> str:
     headers = "\n".join(f"<th class=\"col-tool\">{escape(column_label(column, config))}</th>" for column in columns)
+    size_header = "<th class=\"col-size\">Size</th>" if show_size else ""
     oracle_header = "<th class=\"col-oracle\">Oracle</th>" if show_oracle else ""
-    rows = "\n".join(render_row(case, columns, tiers, show_oracle) for case in cases)
+    rows = "\n".join(render_row(case, columns, tiers, show_oracle, show_size) for case in cases)
     label = section_def.get("label") or "Benchmark cases"
     count_label = f"{len(cases)} rows"
     return f"""<section class="panel">
@@ -276,6 +306,7 @@ def render_section(
     <thead>
       <tr>
         <th class="col-case">Case</th>
+        {size_header}
         <th class="col-runs">Runs</th>
         {oracle_header}
         {headers}
@@ -313,19 +344,109 @@ def build_caption(results: JsonObject) -> str:
     return f"{warmups} warmups + {runs} runs; {machine}; commit {commit}"
 
 
-def render_row(case: JsonObject, columns: list[str], tiers: list[JsonObject], show_oracle: bool) -> str:
+def render_row(case: JsonObject, columns: list[str], tiers: list[JsonObject], show_oracle: bool, show_size: bool) -> str:
     cells = "\n".join(render_measurement_cell(case.get("measurements", {}).get(column), tiers) for column in columns)
-    label = case.get("label") or case.get("id") or "case"
-    size = format_bytes(case.get("size_bytes"))
-    metadata = " / ".join(part for part in [case.get("container"), case.get("codec"), case.get("layout"), size] if part)
+    label = case_label(case, show_size)
+    metadata = case_subtitle(case, label, not show_size)
+    subtitle = f"<span>{escape(metadata)}</span>" if metadata else ""
+    size_cell = f"<td class=\"size\">{escape(format_bytes(case.get('size_bytes')) or 'n/a')}</td>" if show_size else ""
     runs = runs_label(case.get("measurements", {}))
     oracle_cell = render_oracle_cell(case) if show_oracle else ""
     return f"""<tr>
-  <td class="case"><strong>{escape(label)}</strong><span>{escape(metadata)}</span></td>
+  <td class="case"><strong>{escape(label)}</strong>{subtitle}</td>
+  {size_cell}
   <td class="runs split-runs">{runs}</td>
   {oracle_cell}
   {cells}
 </tr>"""
+
+
+def case_label(case: JsonObject, show_size: bool) -> str:
+    label = str(case.get("label") or case.get("id") or "case")
+    if not show_size:
+        return label
+    return remove_source_suffix(remove_size_suffix(label), case)
+
+
+def remove_size_suffix(label: str) -> str:
+    return re.sub(r"\s*/\s*\d+(?:\.\d+)?\s*(?:B|KiB|MiB|GiB)\s*$", "", label)
+
+
+def remove_source_suffix(label: str, case: JsonObject) -> str:
+    source = useful_source(case)
+    if not source:
+        return label
+    return re.sub(rf"\s*/\s*real\s+{re.escape(source)}\s*$", "", label, flags=re.IGNORECASE)
+
+
+def case_subtitle(case: JsonObject, label: Any, include_size: bool) -> str:
+    label_text = str(label)
+    label_normalized = normalize_case_text(label_text)
+    label_tokens = set(label_normalized.split())
+    parts: list[str] = []
+    seen: set[str] = set()
+    values = [*detail_fragments(case.get("layout")), useful_source(case)]
+    if include_size:
+        values.append(format_bytes(case.get("size_bytes")))
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        text = trim_repeated_phrases(value.strip(), label_text)
+        normalized = normalize_case_text(text)
+        if not normalized or normalized in seen or is_repeated_detail(normalized, label_normalized, label_tokens):
+            continue
+        parts.append(text)
+        seen.add(normalized)
+    return " | ".join(parts)
+
+
+def detail_fragments(value: Any) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    return [fragment.strip() for fragment in value.split(",") if fragment.strip()]
+
+
+def is_repeated_detail(detail: str, label: str, label_tokens: set[str]) -> bool:
+    if detail in label:
+        return True
+    detail_tokens = {token for token in detail.split() if token not in {"and", "with"}}
+    return bool(detail_tokens) and detail_tokens <= label_tokens
+
+
+def trim_repeated_phrases(detail: str, label: str) -> str:
+    cleaned = detail
+    for phrase in label.split("/"):
+        cleaned = remove_phrase(cleaned, phrase)
+    if "mp4" in normalize_case_text(label).split():
+        cleaned = remove_phrase(cleaned, "M4A")
+    cleaned = re.sub(r"(^|\s)(with|and)($|\s)", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" ,/+_-")
+
+
+def remove_phrase(value: str, phrase: str) -> str:
+    tokens = re.findall(r"[A-Za-z0-9.]+", phrase)
+    if not tokens:
+        return value
+    pattern = r"[\s/+_,:()\-]*".join(re.escape(token) for token in tokens)
+    return re.sub(pattern, " ", value, flags=re.IGNORECASE)
+
+
+def useful_source(case: JsonObject) -> str:
+    source = case.get("source")
+    if not isinstance(source, str):
+        return ""
+    if source.lower().startswith("generated"):
+        return ""
+    return source
+
+
+def normalize_case_text(value: str) -> str:
+    value = re.sub(r"(?<=\d)\.0\b", "", value)
+    value = value.replace("M4A", "MP4").replace("m4a", "mp4")
+    for character in "/+-_,:()[]":
+        value = value.replace(character, " ")
+    return " ".join(value.casefold().split())
 
 
 def render_oracle_cell(case: JsonObject) -> str:
@@ -343,7 +464,7 @@ def render_measurement_cell(measurement: JsonObject | None, tiers: list[JsonObje
     if median is None:
         return "<td class=\"measure missing\">n/a</td>"
     tier_class = tier_for(float(median), tiers)
-    return f"<td class=\"measure {escape(tier_class)}\"><span class=\"ms-value\">{float(median):.1f}</span><span class=\"ms-unit\">ms</span></td>"
+    return f"<td class=\"measure {escape(tier_class)}\"><span class=\"ms-value\">{float(median):.1f}</span></td>"
 
 
 def runs_label(measurements: JsonObject) -> str:

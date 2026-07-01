@@ -47,8 +47,9 @@
   --slow-ink: var(--latency-slow-ink);
   --very-slow-bg: var(--latency-very-slow-bg);
   --very-slow-ink: var(--latency-very-slow-ink);
-  --matrix-width: 1200px;
-  --case-col: 360px;
+  --matrix-min-width: 1200px;
+  --case-col: max-content;
+  --size-col: 76px;
   --runs-col: 112px;
   --oracle-col: 72px;
   --tool-col: 124px;
@@ -64,8 +65,9 @@ body {
 }
 
 main {
-  width: min(var(--matrix-width), 100vw);
-  margin: 0 auto;
+  width: max-content;
+  min-width: var(--matrix-min-width);
+  margin: 0;
   padding: 16px 0 22px;
 }
 
@@ -96,7 +98,7 @@ h1 {
 .panel {
   background: var(--surface);
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .section-title {
@@ -121,14 +123,15 @@ h2 {
 }
 
 table {
-  width: var(--matrix-width);
-  max-width: 100vw;
+  width: max-content;
+  min-width: var(--matrix-min-width);
+  max-width: none;
   margin: 0;
   padding: 0;
   border: 0;
   border-collapse: collapse;
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: auto;
   font-variant-numeric: tabular-nums;
 }
 
@@ -163,19 +166,29 @@ tbody td:first-child {
 
 .col-case {
   width: var(--case-col);
+  min-width: var(--case-col);
 }
 
 .col-runs {
   width: var(--runs-col);
+  min-width: var(--runs-col);
+}
+
+.col-size {
+  width: var(--size-col);
+  min-width: var(--size-col);
+  text-align: right;
 }
 
 .col-oracle {
   width: var(--oracle-col);
+  min-width: var(--oracle-col);
   text-align: center;
 }
 
 .col-tool {
   width: var(--tool-col);
+  min-width: var(--tool-col);
   text-align: right;
 }
 
@@ -187,12 +200,22 @@ th:nth-child(n+4) {
   display: block;
   font-size: 13px;
   margin-bottom: 1px;
+  white-space: nowrap;
 }
 
 .case span {
   display: block;
   color: var(--muted);
   font-size: 11px;
+  white-space: nowrap;
+}
+
+.size {
+  color: var(--muted);
+  font-weight: 850;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
 }
 
 .runs {
@@ -219,7 +242,9 @@ th:nth-child(n+4) {
   font-size: 16px;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
-  padding: 9px 18px 4px 6px;
+  padding: 7px 9px 7px 6px;
+  width: var(--tool-col);
+  min-width: var(--tool-col);
 }
 
 .oracle-cell {
@@ -252,17 +277,6 @@ th:nth-child(n+4) {
 
 .ms-value {
   display: block;
-}
-
-.ms-unit {
-  position: absolute;
-  top: 2px;
-  right: 5px;
-  font-size: 8px;
-  line-height: 1;
-  font-weight: 900;
-  opacity: 0.78;
-  text-transform: uppercase;
 }
 
 .missing {
@@ -328,7 +342,7 @@ footer {
 
 @media (max-width: 980px) {
   main {
-    width: 100%;
+    width: max-content;
     padding-top: 14px;
   }
 
@@ -341,11 +355,7 @@ footer {
     margin-top: 8px;
   }
 
-  table {
-    min-width: 900px;
-  }
-
   .panel {
-    overflow-x: auto;
+    overflow: visible;
   }
 }
