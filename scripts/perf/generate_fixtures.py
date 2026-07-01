@@ -249,13 +249,28 @@ def generate_aifc_ssnd(path: Path, size_bytes: int) -> None:
 
 
 def generate_flac_large(path: Path, size_bytes: int) -> None:
-    streaminfo = b"\x00" * 34
-
     def writer(file: Any, target: int) -> None:
         file.write(b"fLaC")
+        audio_size = max(target - 42, 4)
+        streaminfo = flac_streaminfo_payload(audio_size)
         file.write(bytes([0x80]) + len(streaminfo).to_bytes(3, "big") + streaminfo)
 
     write_exact_size(path, size_bytes, writer)
+
+
+def flac_streaminfo_payload(audio_size: int) -> bytes:
+    samples = max(audio_size // 4, 1)
+    packed = pack_flac_streaminfo(48_000, 1, 15, samples)
+    return b"\x00\x10" + b"\x10\x00" + b"\x00\x00\x00" + b"\x00\x00\x00" + packed + b"\x00" * 16
+
+
+def pack_flac_streaminfo(sample_rate: int, channels_m1: int, bps_m1: int, samples: int) -> bytes:
+    packed = 0
+    packed |= sample_rate << (3 + 5 + 36)
+    packed |= channels_m1 << (5 + 36)
+    packed |= bps_m1 << 36
+    packed |= samples & ((1 << 36) - 1)
+    return packed.to_bytes(8, "big")
 
 
 def generate_mp3_id3_large(path: Path, size_bytes: int) -> None:
@@ -276,12 +291,60 @@ def generate_mp3_id3_large(path: Path, size_bytes: int) -> None:
 
 
 def generate_ogg_large(path: Path, size_bytes: int) -> None:
-    header = b"OggS\x00\x02" + b"\x00" * 8 + b"\x01\x00\x00\x00\x00\x00\x00\x00" + b"\x00\x00\x00\x00" + b"\x01" + b"\x1e" + b"\x01vorbis" + b"\x00" * 23
+    opus_head = (
+        b"OpusHead"
+        + bytes([1, 2])
+        + (312).to_bytes(2, "little")
+        + (48_000).to_bytes(4, "little")
+        + (0).to_bytes(2, "little")
+        + bytes([0])
+    )
+    opus_tags = b"OpusTags" + (0).to_bytes(4, "little") + (0).to_bytes(4, "little")
+    opus_packet = b"\xfc\xff\xfe"
+    header = (
+        ogg_page(opus_head, header_type=2, sequence=0, granule_position=0)
+        + ogg_page(opus_tags, header_type=0, sequence=1, granule_position=0)
+        + ogg_page(opus_packet, header_type=4, sequence=2, granule_position=960)
+    )
 
     def writer(file: Any, target: int) -> None:
         file.write(header)
 
     write_exact_size(path, size_bytes, writer)
+
+
+def ogg_page(packet: bytes, *, header_type: int, sequence: int, granule_position: int) -> bytes:
+    segments = []
+    remaining = len(packet)
+    while remaining >= 255:
+        segments.append(255)
+        remaining -= 255
+    segments.append(remaining)
+    header = (
+        b"OggS"
+        + bytes([0, header_type])
+        + granule_position.to_bytes(8, "little")
+        + (1).to_bytes(4, "little")
+        + sequence.to_bytes(4, "little")
+        + b"\x00\x00\x00\x00"
+        + bytes([len(segments)])
+        + bytes(segments)
+    )
+    page = header + packet
+    crc = ogg_crc(page)
+    return page[:22] + crc.to_bytes(4, "little") + page[26:]
+
+
+def ogg_crc(data: bytes) -> int:
+    crc = 0
+    for byte in data:
+        crc ^= byte << 24
+        for _ in range(8):
+            if crc & 0x8000_0000:
+                crc = ((crc << 1) ^ 0x04C1_1DB7) & 0xFFFF_FFFF
+            else:
+                crc = (crc << 1) & 0xFFFF_FFFF
+    return crc
 
 
 def generate_mpeg_ts_large(path: Path, size_bytes: int) -> None:
@@ -324,7 +387,24 @@ def generate_avi_large(path: Path, size_bytes: int) -> None:
 
 
 def generate_webm_sparse(path: Path, size_bytes: int) -> None:
-    header = bytes.fromhex("1A45DFA39F4286810142F7810142F2810442F381084282847765626D")
+    generate_ebml_sparse(path, size_bytes, doc_type=b"webm")
+
+
+def generate_mkv_sparse(path: Path, size_bytes: int) -> None:
+    generate_ebml_sparse(path, size_bytes, doc_type=b"matroska")
+
+
+def generate_ebml_sparse(path: Path, size_bytes: int, *, doc_type: bytes) -> None:
+    header_payload = (
+        bytes.fromhex("42868101")
+        + bytes.fromhex("42F78101")
+        + bytes.fromhex("42F28104")
+        + bytes.fromhex("42F38108")
+        + bytes.fromhex("4282")
+        + vint_size(len(doc_type))
+        + doc_type
+    )
+    header = bytes.fromhex("1A45DFA3") + vint_size(len(header_payload)) + header_payload
     segment = bytes.fromhex("18538067") + b"\x01\xff\xff\xff\xff\xff\xff\xff"
     info = bytes.fromhex("1549A966") + b"\x84" + b"\x2A\xD7\xB1\x81\x0F"
     cluster = bytes.fromhex("1F43B675") + b"\x01\xff\xff\xff\xff\xff\xff\xff"
@@ -336,6 +416,14 @@ def generate_webm_sparse(path: Path, size_bytes: int) -> None:
         file.write(cluster)
 
     write_exact_size(path, size_bytes, writer)
+
+
+def vint_size(size: int) -> bytes:
+    if size < 0x7F:
+        return bytes([0x80 | size])
+    if size < 0x3FFF:
+        return bytes([0x40 | (size >> 8), size & 0xFF])
+    raise SystemExit(f"EBML fixture size field too large: {size}")
 
 
 EXTENSIONS = {
@@ -366,7 +454,7 @@ GENERATORS: dict[str, Callable[[Path, int], None]] = {
     "mov_moov_tail": generate_mov_moov_tail,
     "fragmented_mp4": generate_fragmented_mp4,
     "webm_sparse": generate_webm_sparse,
-    "mkv_sparse": generate_webm_sparse,
+    "mkv_sparse": generate_mkv_sparse,
     "wav_list_id3_data": generate_wav_list_id3_data,
     "bwf_data": generate_bwf_data,
     "rf64_ds64_data": generate_rf64_ds64_data,
@@ -394,6 +482,26 @@ def self_test() -> int:
             assert path.stat().st_size == 1048576
         mp4 = Path(tmp) / "self-test-mp4_snv2_tail.mp4"
         assert mp4.read_bytes()[4:8] == b"ftyp"
+        webm = Path(tmp) / "self-test-webm_sparse.webm"
+        mkv = Path(tmp) / "self-test-mkv_sparse.mkv"
+        assert webm.read_bytes()[:5] == bytes.fromhex("1A45DFA397")
+        assert b"\x42\x82\x84webm" in webm.read_bytes()[:64]
+        assert b"\x42\x82\x88matroska" in mkv.read_bytes()[:64]
+        flac = Path(tmp) / "self-test-flac_large.flac"
+        flac_bytes = flac.read_bytes()[:42]
+        assert flac_bytes[:4] == b"fLaC"
+        assert flac_bytes[4:8] == bytes([0x80, 0, 0, 34])
+        assert flac_bytes[18:26] != b"\x00" * 8
+        ogg = Path(tmp) / "self-test-ogg_large.ogg"
+        ogg_bytes = ogg.read_bytes()
+        assert ogg_bytes[:4] == b"OggS"
+        segment_count = ogg_bytes[26]
+        first_page_len = 27 + segment_count + sum(ogg_bytes[27 : 27 + segment_count])
+        first_page = ogg_bytes[:first_page_len]
+        assert ogg_crc(first_page[:22] + b"\x00\x00\x00\x00" + first_page[26:]) == int.from_bytes(
+            first_page[22:26],
+            "little",
+        )
     print("fixture generator self-test ok")
     return 0
 
