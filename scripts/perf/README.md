@@ -35,6 +35,13 @@ Run the full PR evidence pipeline with a shared run id:
 just bench-evidence manifest=path/to/local-manifest.json
 ```
 
+Include oracle status in the rendered table only when that is useful for a
+diagnostic report:
+
+```sh
+just bench-evidence-with-oracle-table manifest=path/to/local-manifest.json
+```
+
 Include the optional WASM probe in the same run directory:
 
 ```sh
@@ -86,8 +93,11 @@ running measurements. It fails if `hyperfine` is not installed.
 
 `bench-evidence` runs the comparison, oracle parity check and table rendering
 through `run_benchmark_evidence.py`, using one shared `run_id`, fixture
-directory and output directory. The rendered table includes an `Oracle` column
-when `oracle-parity.json` is available. It writes:
+directory and output directory. The rendered table is performance-only by
+default; `oracle-parity.json` is kept as a separate diagnostic artifact.
+Pass `--include-oracle-in-table` directly, or use
+`bench-evidence-with-oracle-table`, when the rendered report should include an
+`Oracle` column. It writes:
 
 ```text
 target/perf-investigation/<run-id>/
@@ -225,10 +235,12 @@ binaries prepared outside git, for example:
 - latency color thresholds;
 - optional baseline metadata.
 
-The renderer produces a standalone table, not a dashboard. When
-`--oracle-results` is provided, it adds one compact status column per case:
-`pass`, `diff`, `fail` or `n/a`. The PNG capture targets only the
-`#benchmark-table-capture` element so screenshots do not need manual cropping.
+The renderer produces a standalone table, not a dashboard. The default evidence
+pipeline leaves oracle status out of the table so benchmark screenshots stay
+focused on latency. When `--oracle-results` is provided explicitly, it adds one
+compact status column per case: `pass`, `diff`, `fail` or `n/a`. The PNG capture
+targets only the `#benchmark-table-capture` element so screenshots do not need
+manual cropping.
 
 The default template lives at `scripts/perf/templates/benchmark-table.html` and
 the default stylesheet lives at `scripts/perf/styles/benchmark-table.css`.
@@ -238,9 +250,11 @@ standard library; Jinja2 is not required.
 ## Oracle Parity
 
 `run_oracle_parity.py` compares Revelo `--json` output with
-`mediainfo --Output=JSON` on the same manifest cases. It is intended for the
-cap/truncation question: use real risky files plus required fields that should
-survive bounded metadata reads.
+`mediainfo --Output=JSON` on the same manifest cases. It is a configurable
+diagnostic for cap/truncation questions: use real risky files plus required
+fields that should survive bounded metadata reads. It is not a replacement for
+the existing `revelo-diff` XML harness and should not be treated as a full
+MediaInfo parity gate unless the config is intentionally scoped that way.
 
 The default entrypoint is:
 

@@ -270,6 +270,7 @@ def test_evidence_plan_reuses_run_id_and_fixture_dir() -> None:
         fixture_dir=Path("target/perf-fixtures"),
         table_config=Path("scripts/perf/table.config.example.json"),
         oracle_config=Path("scripts/perf/oracle.config.example.json"),
+        include_oracle_in_table=False,
         include_wasm=False,
         warmups=None,
         runs=None,
@@ -283,6 +284,23 @@ def test_evidence_plan_reuses_run_id_and_fixture_dir() -> None:
             assert "--fixture-dir" in command
             assert "target/perf-fixtures" in command
     render_command = [str(part) for part in plan[2].command]
+    assert "--oracle-results" not in render_command
+
+
+def test_evidence_plan_can_render_oracle_when_requested() -> None:
+    plan = evidence.build_plan(
+        manifest=Path("local-manifest.json"),
+        run_id="run-1",
+        out_dir=Path("target/perf-investigation"),
+        fixture_dir=Path("target/perf-fixtures"),
+        table_config=Path("scripts/perf/table.config.example.json"),
+        oracle_config=Path("scripts/perf/oracle.config.example.json"),
+        include_oracle_in_table=True,
+        include_wasm=False,
+        warmups=None,
+        runs=None,
+    )
+    render_command = [str(part) for part in plan[2].command]
     assert "--oracle-results" in render_command
 
 
@@ -294,6 +312,7 @@ def test_evidence_plan_can_include_wasm() -> None:
         fixture_dir=Path("target/perf-fixtures"),
         table_config=Path("scripts/perf/table.config.example.json"),
         oracle_config=Path("scripts/perf/oracle.config.example.json"),
+        include_oracle_in_table=False,
         include_wasm=True,
         warmups=1,
         runs=2,

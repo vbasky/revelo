@@ -59,6 +59,10 @@ bench-wasm manifest:
 bench-evidence manifest table_config="scripts/perf/table.config.example.json" oracle_config="scripts/perf/oracle.config.example.json":
     python3 scripts/perf/run_benchmark_evidence.py --manifest "{{manifest}}" --table-config "{{table_config}}" --oracle-config "{{oracle_config}}"
 
+# Run benchmark evidence and include oracle status in the rendered table.
+bench-evidence-with-oracle-table manifest table_config="scripts/perf/table.config.example.json" oracle_config="scripts/perf/oracle.config.example.json":
+    python3 scripts/perf/run_benchmark_evidence.py --manifest "{{manifest}}" --table-config "{{table_config}}" --oracle-config "{{oracle_config}}" --include-oracle-in-table
+
 # Run benchmark compare, oracle parity and the optional WASM probe together.
 bench-evidence-wasm manifest table_config="scripts/perf/table.config.example.json" oracle_config="scripts/perf/oracle.config.example.json":
     python3 scripts/perf/run_benchmark_evidence.py --manifest "{{manifest}}" --table-config "{{table_config}}" --oracle-config "{{oracle_config}}" --include-wasm

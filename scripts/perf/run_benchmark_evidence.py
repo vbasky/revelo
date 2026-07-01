@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("--run-id", help="override run id; defaults to current timestamp")
     parser.add_argument("--table-config", type=Path, default=DEFAULT_TABLE_CONFIG)
     parser.add_argument("--oracle-config", type=Path, default=DEFAULT_ORACLE_CONFIG)
+    parser.add_argument("--include-oracle-in-table", action="store_true")
     parser.add_argument("--include-wasm", action="store_true")
     parser.add_argument("--warmups", type=int)
     parser.add_argument("--runs", type=int)
@@ -56,6 +57,7 @@ def main() -> int:
         fixture_dir=args.fixture_dir,
         table_config=args.table_config,
         oracle_config=args.oracle_config,
+        include_oracle_in_table=args.include_oracle_in_table,
         include_wasm=args.include_wasm,
         warmups=args.warmups,
         runs=args.runs,
@@ -85,6 +87,7 @@ def build_plan(
     fixture_dir: Path,
     table_config: Path,
     oracle_config: Path,
+    include_oracle_in_table: bool,
     include_wasm: bool,
     warmups: int | None,
     runs: int | None,
@@ -101,6 +104,19 @@ def build_plan(
         run_id,
     ]
     timing_args = optional_timing_args(warmups, runs)
+    render_command: list[str | Path] = [
+        sys.executable,
+        SCRIPT_DIR / "render_benchmark_table.py",
+        "--results",
+        run_dir / "results.json",
+        "--output",
+        run_dir / "benchmark-table.html",
+        "--config",
+        table_config,
+    ]
+    if include_oracle_in_table:
+        render_command.extend(["--oracle-results", run_dir / "oracle-parity.json"])
+
     steps = [
         EvidenceStep(
             "bench_compare",
@@ -127,18 +143,7 @@ def build_plan(
         ),
         EvidenceStep(
             "render_table",
-            [
-                sys.executable,
-                SCRIPT_DIR / "render_benchmark_table.py",
-                "--results",
-                run_dir / "results.json",
-                "--oracle-results",
-                run_dir / "oracle-parity.json",
-                "--output",
-                run_dir / "benchmark-table.html",
-                "--config",
-                table_config,
-            ],
+            render_command,
             run_dir / "benchmark-table.html",
         ),
         EvidenceStep(
@@ -202,6 +207,7 @@ def self_test() -> int:
         fixture_dir=Path("target/perf-fixtures"),
         table_config=DEFAULT_TABLE_CONFIG,
         oracle_config=DEFAULT_ORACLE_CONFIG,
+        include_oracle_in_table=False,
         include_wasm=True,
         warmups=1,
         runs=2,
@@ -213,7 +219,21 @@ def self_test() -> int:
         if step.name in {"bench_compare", "oracle_parity", "wasm_probe"}
     )
     render_command = [str(part) for part in plan[2].command]
-    assert "--oracle-results" in render_command
+    assert "--oracle-results" not in render_command
+
+    oracle_plan = build_plan(
+        manifest=Path("manifest.json"),
+        run_id="self-test",
+        out_dir=Path("target/perf-investigation"),
+        fixture_dir=Path("target/perf-fixtures"),
+        table_config=DEFAULT_TABLE_CONFIG,
+        oracle_config=DEFAULT_ORACLE_CONFIG,
+        include_oracle_in_table=True,
+        include_wasm=False,
+        warmups=None,
+        runs=None,
+    )
+    assert "--oracle-results" in [str(part) for part in oracle_plan[2].command]
     print("benchmark evidence self-test ok")
     return 0
 
