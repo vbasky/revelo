@@ -1,0 +1,390 @@
+{
+  "schema": "revelo_perf_manifest_v2",
+  "settings": {
+    "warmups": 2,
+    "runs": 10,
+    "render_png": false
+  },
+  "cases": [
+    {
+      "id": "synthetic-mp4-snv2-tail-389m",
+      "label": "MP4 / SNV2 / moov tail / 389 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "H.264",
+      "layout": "SNV2 brand, moov tail, sparse mdat",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "mp4_snv2_tail", "size_bytes": 407896064 }
+    },
+    {
+      "id": "synthetic-mp4-avc-faststart-256m",
+      "label": "MP4 / H.264 + AAC / faststart / 256 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "H.264 + AAC",
+      "layout": "ffmpeg-generated headers, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp4_avc_faststart", "size_bytes": 268435456 }
+    },
+    {
+      "id": "synthetic-mp4-snv2-faststart-256m",
+      "label": "MP4 / SNV2 H.264 + AAC / faststart / 256 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "H.264 + AAC",
+      "layout": "ffmpeg-generated headers, patched SNV2 brand",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp4_snv2_faststart", "size_bytes": 268435456 }
+    },
+    {
+      "id": "synthetic-mp4-hevc10-faststart-192m",
+      "label": "MP4 / HEVC 10-bit + AAC / faststart / 192 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "HEVC 10-bit + AAC",
+      "layout": "ffmpeg-generated headers, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp4_hevc10_faststart", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-mp4-av1-faststart-192m",
+      "label": "MP4 / AV1 10-bit + AAC / faststart / 192 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "AV1 10-bit + AAC",
+      "layout": "ffmpeg-generated headers, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp4_av1_faststart", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-mp4-aac-audio-192m",
+      "label": "MP4 / AAC / audio-only / 192 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "AAC",
+      "layout": "audio-only M4A, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp4_aac_audio", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-mp4-tail-256m",
+      "label": "MP4 / H.264 + AAC / moov tail / 256 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "H.264 + AAC",
+      "layout": "ffmpeg-generated moov tail, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp4_tail", "size_bytes": 268435456 }
+    },
+    {
+      "id": "synthetic-mov-pcm-192m",
+      "label": "MOV / MPEG-4 Video + PCM / 192 MiB",
+      "class": "synthetic",
+      "container": "MOV",
+      "codec": "MPEG-4 Video + PCM",
+      "layout": "QuickTime MOV, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mov_mpeg4_pcm", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-fmp4-192m",
+      "label": "MP4 / H.264 + AAC / fragmented / 192 MiB",
+      "class": "synthetic",
+      "container": "MP4",
+      "codec": "H.264 + AAC",
+      "layout": "fragmented MP4, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_fragmented_mp4", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-mkv-h264-aac-256m",
+      "label": "MKV / H.264 + AAC / Matroska / 256 MiB",
+      "class": "synthetic",
+      "container": "MKV",
+      "codec": "H.264 + AAC",
+      "layout": "ffmpeg-generated Matroska headers, sparse cluster tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mkv_h264_aac", "size_bytes": 268435456 }
+    },
+    {
+      "id": "synthetic-mkv-ffv1-flac-192m",
+      "label": "MKV / FFV1 + FLAC / archival / 192 MiB",
+      "class": "synthetic",
+      "container": "MKV",
+      "codec": "FFV1 + FLAC",
+      "layout": "ffmpeg-generated Matroska headers, sparse cluster tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mkv_ffv1_flac", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-webm-vp8-opus-192m",
+      "label": "WebM / VP8 + Opus / 192 MiB",
+      "class": "synthetic",
+      "container": "WebM",
+      "codec": "VP8 + Opus",
+      "layout": "ffmpeg-generated WebM headers, sparse cluster tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_webm_vp8_opus", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-webm-av1-opus-192m",
+      "label": "WebM / AV1 10-bit + Opus / 192 MiB",
+      "class": "synthetic",
+      "container": "WebM",
+      "codec": "AV1 10-bit + Opus",
+      "layout": "ffmpeg-generated WebM headers, sparse cluster tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_webm_av1_opus", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-flv-nellymoser-192m",
+      "label": "FLV / NellyMoser / 192 MiB",
+      "class": "synthetic",
+      "container": "FLV",
+      "codec": "NellyMoser",
+      "layout": "ffmpeg-generated FLV audio, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_flv_nellymoser", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-asf-wma-192m",
+      "label": "ASF / WMA / 192 MiB",
+      "class": "synthetic",
+      "container": "ASF",
+      "codec": "WMA",
+      "layout": "ffmpeg-generated ASF audio, sparse media tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_asf_wma", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-wav-list-id3-512m",
+      "label": "WAV / PCM / LIST + ID3 / 512 MiB",
+      "class": "synthetic",
+      "container": "WAV",
+      "codec": "PCM",
+      "layout": "LIST metadata, ID3 metadata, sparse data chunk",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "wav_list_id3_data", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-wav-192khz-256m",
+      "label": "WAV / PCM 192 kHz / 256 MiB",
+      "class": "synthetic",
+      "container": "WAV",
+      "codec": "PCM",
+      "layout": "high sample-rate RIFF WAV, sparse data chunk",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "wav_192khz_data", "size_bytes": 268435456 }
+    },
+    {
+      "id": "synthetic-wav-9ch-256m",
+      "label": "WAV / PCM 9-channel / 256 MiB",
+      "class": "synthetic",
+      "container": "WAV",
+      "codec": "PCM",
+      "layout": "multi-channel RIFF WAV, sparse data chunk",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "wav_9ch_data", "size_bytes": 268435456 }
+    },
+    {
+      "id": "synthetic-bwf-192m",
+      "label": "BWF / PCM / bext + LIST + ID3 / 192 MiB",
+      "class": "synthetic",
+      "container": "WAV",
+      "codec": "PCM",
+      "layout": "Broadcast-WAV bext metadata, sparse data chunk",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "bwf_data", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-rf64-192m",
+      "label": "RF64 / PCM / ds64 / 192 MiB",
+      "class": "synthetic",
+      "container": "RF64",
+      "codec": "PCM",
+      "layout": "RF64 ds64 metadata, sparse data chunk",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "rf64_ds64_data", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-aiff-192m",
+      "label": "AIFF / PCM / SSND / 192 MiB",
+      "class": "synthetic",
+      "container": "AIFF",
+      "codec": "PCM",
+      "layout": "AIFF metadata, sparse SSND",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "aiff_ssnd", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-aifc-mace3-192m",
+      "label": "AIFF-C / MACE3 / SSND / 192 MiB",
+      "class": "synthetic",
+      "container": "AIFF-C",
+      "codec": "MACE3",
+      "layout": "AIFF-C metadata, sparse SSND",
+      "source": "generated sparse fixture",
+      "synthetic": { "kind": "aifc_mace3_ssnd", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-flac-ffmpeg-192m",
+      "label": "FLAC / FLAC / native / 192 MiB",
+      "class": "synthetic",
+      "container": "FLAC",
+      "codec": "FLAC",
+      "layout": "ffmpeg-generated FLAC headers, sparse audio tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_flac", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-mp3-id3-192m",
+      "label": "MP3 / MPEG Audio / ID3v2 / 192 MiB",
+      "class": "synthetic",
+      "container": "MP3",
+      "codec": "MPEG Audio",
+      "layout": "ffmpeg-generated ID3 and MP3 frames, sparse audio tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mp3", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-ogg-vorbis-192m",
+      "label": "Ogg / Vorbis / 192 MiB",
+      "class": "synthetic",
+      "container": "Ogg",
+      "codec": "Vorbis",
+      "layout": "ffmpeg-generated Ogg pages, sparse audio tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_ogg_vorbis", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-ogg-opus-192m",
+      "label": "Ogg / Opus / 192 MiB",
+      "class": "synthetic",
+      "container": "Ogg",
+      "codec": "Opus",
+      "layout": "ffmpeg-generated Ogg pages, sparse audio tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_ogg_opus", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-ogg-flac-192m",
+      "label": "Ogg / FLAC / 192 MiB",
+      "class": "synthetic",
+      "container": "Ogg",
+      "codec": "FLAC",
+      "layout": "ffmpeg-generated Ogg/FLAC pages, sparse audio tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_ogg_flac", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-mpeg-ts-mp2-512m",
+      "label": "MPEG-TS / MPEG-2 + MP2 / 512 MiB",
+      "class": "synthetic",
+      "container": "MPEG-TS",
+      "codec": "MPEG-2 Video + MP2",
+      "layout": "ffmpeg-generated transport stream, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mpeg_ts", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-mpeg-ts-ac3-512m",
+      "label": "MPEG-TS / MPEG-2 + AC-3 / 512 MiB",
+      "class": "synthetic",
+      "container": "MPEG-TS",
+      "codec": "MPEG-2 Video + AC-3",
+      "layout": "ffmpeg-generated transport stream, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mpeg_ts_ac3", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-m2ts-512m",
+      "label": "M2TS / MPEG-2 + MP2 / 512 MiB",
+      "class": "synthetic",
+      "container": "M2TS",
+      "codec": "MPEG-2 Video + MP2",
+      "layout": "ffmpeg-generated M2TS packets, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_m2ts", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-mpeg-ps-mp2-512m",
+      "label": "MPEG-PS / MPEG-2 + MP2 / 512 MiB",
+      "class": "synthetic",
+      "container": "MPEG-PS",
+      "codec": "MPEG-2 Video + MP2",
+      "layout": "ffmpeg-generated program stream, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_mpeg_ps", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-vob-512m",
+      "label": "VOB / MPEG-2 + MP2 / 512 MiB",
+      "class": "synthetic",
+      "container": "VOB",
+      "codec": "MPEG-2 Video + MP2",
+      "layout": "ffmpeg-generated VOB, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_vob", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-avi-mpeg4-mp3-512m",
+      "label": "AVI / MPEG-4 + MP3 / RIFF / 512 MiB",
+      "class": "synthetic",
+      "container": "AVI",
+      "codec": "MPEG-4 Video + MP3",
+      "layout": "ffmpeg-generated RIFF AVI, sparse movi tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_avi_mpeg4_mp3", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-avi-mpeg4-wma-512m",
+      "label": "AVI / MPEG-4 + WMA / RIFF / 512 MiB",
+      "class": "synthetic",
+      "container": "AVI",
+      "codec": "MPEG-4 Video + WMA",
+      "layout": "ffmpeg-generated RIFF AVI, sparse movi tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_avi_mpeg4_wma", "size_bytes": 536870912 }
+    },
+    {
+      "id": "synthetic-raw-aac-192m",
+      "label": "AAC / ADTS / elementary stream / 192 MiB",
+      "class": "synthetic",
+      "container": "AAC",
+      "codec": "AAC",
+      "layout": "ffmpeg-generated ADTS frames, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_raw_aac", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-raw-ac3-192m",
+      "label": "AC-3 / elementary stream / 192 MiB",
+      "class": "synthetic",
+      "container": "AC-3",
+      "codec": "AC-3",
+      "layout": "ffmpeg-generated elementary stream, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_raw_ac3", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-raw-eac3-192m",
+      "label": "E-AC-3 / elementary stream / 192 MiB",
+      "class": "synthetic",
+      "container": "E-AC-3",
+      "codec": "E-AC-3",
+      "layout": "ffmpeg-generated elementary stream, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_raw_eac3", "size_bytes": 201326592 }
+    },
+    {
+      "id": "synthetic-opus-standalone-192m",
+      "label": "Opus / standalone / 192 MiB",
+      "class": "synthetic",
+      "container": "Opus",
+      "codec": "Opus",
+      "layout": "ffmpeg-generated standalone Opus, sparse tail",
+      "source": "generated ffmpeg fixture",
+      "synthetic": { "kind": "ffmpeg_opus", "size_bytes": 201326592 }
+    }
+  ]
+}

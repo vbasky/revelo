@@ -1,0 +1,32 @@
+{
+  "schema": "revelo_oracle_parity_config_v1",
+  "ignore_fields": [
+    "CompleteName",
+    "FolderName",
+    "FileName",
+    "FileExtension",
+    "File_Modified_Date",
+    "File_Modified_Date_Local",
+    "Encoded_Date",
+    "Tagged_Date"
+  ],
+  "required_fields": [
+    {
+      "track_type": "General",
+      "field": "Format"
+    },
+    {
+      "track_type": "General",
+      "field": "CodecID"
+    },
+    {
+      "track_type": "Video",
+      "field": "Format"
+    },
+    {
+      "track_type": "Audio",
+      "field": "Format"
+    }
+  ],
+  "case_overrides": {}
+}

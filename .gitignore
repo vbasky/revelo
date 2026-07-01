@@ -8,3 +8,5 @@ Cargo.lock
 /revelo
 /revelo-util
 .serena/
+__pycache__/
+*.py[cod]

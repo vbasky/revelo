@@ -544,6 +544,36 @@ mod tests {
         assert!(stats.max_request_len <= EMBEDDED_METADATA_SCAN_LIMIT, "{stats:?}");
         assert!(stats.bytes_returned < 64 * 1024 * 1024, "{stats:?}");
     }
+
+    #[test]
+    fn parse_tags_skips_image_metadata_scans_for_known_containers() {
+        let buf = vec![0u8; EMBEDDED_METADATA_SCAN_LIMIT + 1024];
+        let mut fa = FileAnalyze::new(&buf);
+        fa.stream_prepare(StreamKind::General);
+        fa.set_field(StreamKind::General, 0, "Format", "MPEG-4");
+
+        assert!(parse_tags(&mut fa));
+
+        let stats = fa.access_stats();
+        assert!(stats.bytes_returned < 1024, "{stats:?}");
+        assert!(stats.max_request_len <= 128, "{stats:?}");
+    }
+
+    #[test]
+    fn parse_tags_keeps_embedded_metadata_for_image_formats() {
+        let buf =
+            br#"prefix xmpmeta <rdf:RDF><xmp:CreatorTool>Camera</CreatorTool></rdf:RDF> suffix"#;
+        let mut fa = FileAnalyze::new(buf);
+        fa.stream_prepare(StreamKind::General);
+        fa.set_field(StreamKind::General, 0, "Format", "JPEG");
+
+        assert!(parse_tags(&mut fa));
+
+        assert_eq!(
+            fa.retrieve(StreamKind::Xmp, 0, "Encoded_Application").map(|z| z.as_str()),
+            Some("Camera")
+        );
+    }
 }
 
 // ---------- EXIF ----------
@@ -2717,20 +2747,85 @@ pub fn parse_jpeg_com(fa: &mut FileAnalyze) -> bool {
 
 // ---------- Update parse_tags ----------
 
+fn general_format<'fa, 'src>(fa: &'fa FileAnalyze<'src>) -> Option<&'fa str> {
+    fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str())
+}
+
+fn should_scan_tail_audio_tags(fa: &FileAnalyze) -> bool {
+    let Some(format) = general_format(fa) else {
+        return true;
+    };
+    if fa.stream_count(StreamKind::Video) > 0 || fa.stream_count(StreamKind::Image) > 0 {
+        return false;
+    }
+    fa.stream_count(StreamKind::Audio) > 0
+        || matches!(
+            format,
+            "MPEG Audio"
+                | "Monkey's Audio"
+                | "Musepack"
+                | "WavPack"
+                | "True Audio"
+                | "FLAC"
+                | "Ogg"
+        )
+}
+
+fn should_scan_embedded_metadata(fa: &FileAnalyze) -> bool {
+    let Some(format) = general_format(fa) else {
+        return true;
+    };
+    if fa.stream_count(StreamKind::Image) > 0
+        || fa.stream_count(StreamKind::Exif) > 0
+        || fa.stream_count(StreamKind::Iptc) > 0
+        || fa.stream_count(StreamKind::Xmp) > 0
+        || fa.stream_count(StreamKind::Icc) > 0
+        || fa.stream_count(StreamKind::C2pa) > 0
+        || fa.stream_count(StreamKind::MakerNotes) > 0
+    {
+        return true;
+    }
+
+    matches!(
+        format,
+        "JPEG"
+            | "PNG"
+            | "TIFF"
+            | "JPEG 2000"
+            | "HEIF"
+            | "WebP"
+            | "BMP"
+            | "GIF"
+            | "PSD"
+            | "DPX"
+            | "DDS"
+            | "OpenEXR"
+            | "BPG"
+            | "PCX"
+            | "ARRIRAW"
+            | "TGA"
+            | "Gain Map"
+    )
+}
+
 pub fn parse_tags(fa: &mut FileAnalyze) -> bool {
     let _ = parse_id3v1(fa);
     let _ = parse_id3v2(fa);
-    let _ = parse_ape_tag(fa);
-    let _ = parse_lyrics3(fa);
-    let _ = parse_exif(fa);
-    let _ = parse_xmp(fa);
-    let _ = parse_icc(fa);
-    let _ = parse_c2pa(fa);
-    let _ = parse_iim(fa);
-    let _ = parse_property_list(fa);
-    let _ = parse_spherical_video(fa);
-    let _ = parse_jpeg_com(fa);
-    let _ = parse_png_text(fa);
+    if should_scan_tail_audio_tags(fa) {
+        let _ = parse_ape_tag(fa);
+        let _ = parse_lyrics3(fa);
+    }
+    if should_scan_embedded_metadata(fa) {
+        let _ = parse_exif(fa);
+        let _ = parse_xmp(fa);
+        let _ = parse_icc(fa);
+        let _ = parse_c2pa(fa);
+        let _ = parse_iim(fa);
+        let _ = parse_property_list(fa);
+        let _ = parse_spherical_video(fa);
+        let _ = parse_jpeg_com(fa);
+        let _ = parse_png_text(fa);
+    }
     infer_raw_format(fa);
     true
 }

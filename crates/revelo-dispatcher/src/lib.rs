@@ -5,7 +5,7 @@
 //!
 //! # Public API
 //!
-//! - [`table`] — returns the ordered `[fn(&mut FileAnalyze) -> bool; 180]`
+//! - [`table`] — returns the ordered `[fn(&mut FileAnalyze) -> bool; 179]`
 //!   array of parser function pointers. Containers come before elementary
 //!   streams to prevent false-positive matches on random bytes.
 //! - [`detect`] — returns the first match in table order. Small buffers use
@@ -67,7 +67,7 @@ use revelo_parsers_container::{
 use revelo_parsers_image::{
     parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_cr2, parse_dds, parse_dpx,
     parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jp2, parse_jpeg, parse_pcx, parse_png,
-    parse_psd, parse_raf, parse_rle, parse_tga, parse_tiff, parse_webp,
+    parse_psd, parse_raf, parse_tga, parse_tiff, parse_webp,
 };
 use revelo_parsers_text::{
     parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dtvcc_transport, parse_dvb_subtitle,
@@ -123,13 +123,13 @@ fn detect_sequential_with_stats(
     (None, stats)
 }
 
-/// Returns the complete parser dispatch table (180 entries).
+/// Returns the complete parser dispatch table (179 entries).
 ///
 /// Ordering: containers first (header peek → sub-parser delegation),
 /// then video codecs, audio codecs, images, text, and archives.
 /// Container-vs-elementary ordering matters — a raw codec parser
 /// running before a container could false-match on random bytes.
-pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
+pub fn table() -> [fn(&mut FileAnalyze) -> bool; 179] {
     [
         // ── Containers ──────────────────────────────────────────
         parse_wav,           // WAV
@@ -277,7 +277,6 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
         // ── Images (fallback / extension) ───────────────────────
         parse_tga,      // TGA
         parse_gain_map, // Gain Map
-        parse_rle,      // RLE
         // ── Audio (fallback / extension) ────────────────────────
         parse_adpcm,                // ADPCM
         parse_adm,                  // ADM
@@ -387,5 +386,12 @@ mod tests {
         assert!(stats.candidates_run < 20, "{stats:?}");
         assert!(stats.bytes_returned < 64 * 1024, "{stats:?}");
         assert!(stats.max_request_len < LARGE_INPUT_RAW_READ_LIMIT, "{stats:?}");
+    }
+
+    #[test]
+    fn rle_is_not_a_top_level_file_detector() {
+        let rle = revelo_parsers_image::parse_rle as *const () as usize;
+
+        assert!(!table().iter().any(|parser| *parser as *const () as usize == rle));
     }
 }

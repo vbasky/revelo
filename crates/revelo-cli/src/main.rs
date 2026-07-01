@@ -243,9 +243,16 @@ fn format_text_output(text: &str, add_version: bool, add_timestamp: bool) -> Str
     header + text
 }
 
-/// Local timezone offset in seconds east of UTC, via `date +%z`
-/// (e.g. "+1000" → 36000). Used for the `_Local` date variant.
+/// Local timezone offset in seconds east of UTC, for the `_Local` date variant.
 fn local_offset_seconds() -> i64 {
+    #[cfg(unix)]
+    if let Some(offset) = local_offset_seconds_unix() {
+        return offset;
+    }
+    local_offset_seconds_from_date()
+}
+
+fn local_offset_seconds_from_date() -> i64 {
     let Ok(out) = process::Command::new("date").arg("+%z").output() else {
         return 0;
     };
@@ -258,4 +265,46 @@ fn local_offset_seconds() -> i64 {
     let hh: i64 = s[1..3].parse().unwrap_or(0);
     let mm: i64 = s[3..5].parse().unwrap_or(0);
     sign * (hh * 3600 + mm * 60)
+}
+
+#[cfg(unix)]
+fn local_offset_seconds_unix() -> Option<i64> {
+    use std::os::raw::{c_char, c_int, c_long};
+
+    type TimeT = i64;
+
+    #[repr(C)]
+    struct Tm {
+        tm_sec: c_int,
+        tm_min: c_int,
+        tm_hour: c_int,
+        tm_mday: c_int,
+        tm_mon: c_int,
+        tm_year: c_int,
+        tm_wday: c_int,
+        tm_yday: c_int,
+        tm_isdst: c_int,
+        tm_gmtoff: c_long,
+        tm_zone: *const c_char,
+    }
+
+    unsafe extern "C" {
+        fn time(tloc: *mut TimeT) -> TimeT;
+        fn localtime_r(timep: *const TimeT, result: *mut Tm) -> *mut Tm;
+    }
+
+    // SAFETY: `time` accepts a null pointer when the caller only needs the
+    // returned timestamp. `localtime_r` writes into a stack-allocated `Tm`
+    // with the platform C layout used by Unix targets supported here.
+    unsafe {
+        let now = time(std::ptr::null_mut());
+        if now == -1 {
+            return None;
+        }
+        let mut tm = std::mem::zeroed::<Tm>();
+        if localtime_r(&now, &mut tm).is_null() {
+            return None;
+        }
+        Some(tm.tm_gmtoff as i64)
+    }
 }
