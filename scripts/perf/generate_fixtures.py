@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import struct
+import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +77,93 @@ def write_exact_size(path: Path, size_bytes: int, writer: Callable[[Any, int], N
         if file.tell() > size_bytes:
             raise SystemExit(f"fixture writer exceeded target size for {path.name}")
         file.truncate(size_bytes)
+
+
+def run_checked(command: list[str]) -> None:
+    subprocess.run(command, check=True)
+
+
+def require_tool(name: str) -> str:
+    resolved = shutil.which(name)
+    if resolved is None:
+        raise SystemExit(f"{name} is required to generate this synthetic fixture")
+    return resolved
+
+
+def truncate_sparse(path: Path, size_bytes: int) -> None:
+    with path.open("ab") as file:
+        file.truncate(size_bytes)
+
+
+def ffmpeg_base_video(size: str = "640x360", rate: str = "30") -> list[str]:
+    return [
+        require_tool("ffmpeg"),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={size}:rate={rate}",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=1000:sample_rate=48000",
+        "-t",
+        "2",
+        "-shortest",
+    ]
+
+
+def ffmpeg_base_audio(source: str = "sine=frequency=1000:sample_rate=48000") -> list[str]:
+    return [
+        require_tool("ffmpeg"),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        source,
+        "-t",
+        "2",
+    ]
+
+
+def ffmpeg_metadata_args() -> list[str]:
+    return [
+        "-metadata",
+        "title=Revelo benchmark fixture",
+        "-metadata",
+        "comment=generated public benchmark fixture",
+    ]
+
+
+def write_ffmpeg_sparse(path: Path, size_bytes: int, command: list[str]) -> None:
+    path.unlink(missing_ok=True)
+    tmp = path.with_name(f"{path.stem}.tmp{path.suffix}")
+    tmp.unlink(missing_ok=True)
+    try:
+        run_checked([*command, str(tmp)])
+        if tmp.stat().st_size > size_bytes:
+            raise SystemExit(f"ffmpeg fixture exceeded target size for {path.name}")
+        truncate_sparse(tmp, size_bytes)
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def patch_major_brand(path: Path, brand: bytes) -> None:
+    if len(brand) != 4:
+        raise SystemExit("major brand must be exactly four bytes")
+    with path.open("r+b") as file:
+        header = file.read(16)
+        if len(header) < 16 or header[4:8] != b"ftyp":
+            raise SystemExit(f"{path.name} does not start with an ftyp box")
+        file.seek(8)
+        file.write(brand)
 
 
 def box(name: bytes, payload: bytes) -> bytes:
@@ -165,7 +254,16 @@ def generate_fragmented_mp4(path: Path, size_bytes: int) -> None:
     write_exact_size(path, size_bytes, writer)
 
 
-def generate_wav(path: Path, size_bytes: int, *, rf64: bool = False, bext: bool = False) -> None:
+def generate_wav(
+    path: Path,
+    size_bytes: int,
+    *,
+    rf64: bool = False,
+    bext: bool = False,
+    channels: int = 2,
+    sample_rate: int = 48_000,
+    bits_per_sample: int = 16,
+) -> None:
     list_chunk = b"INFO" + b"INAM" + struct.pack("<I", 8) + b"fixture\x00"
     id3_chunk = b"ID3\x04\x00\x00\x00\x00\x00\x10" + b"\x00" * 16
     bext_chunk = b"benchmark".ljust(602, b"\x00") if bext else b""
@@ -173,7 +271,9 @@ def generate_wav(path: Path, size_bytes: int, *, rf64: bool = False, bext: bool 
     def chunk(name: bytes, payload: bytes) -> bytes:
         return name + struct.pack("<I", len(payload)) + payload + (b"\x00" if len(payload) % 2 else b"")
 
-    fmt = chunk(b"fmt ", struct.pack("<HHIIHH", 1, 2, 48000, 192000, 4, 16))
+    block_align = channels * bits_per_sample // 8
+    byte_rate = sample_rate * block_align
+    fmt = chunk(b"fmt ", struct.pack("<HHIIHH", 1, channels, sample_rate, byte_rate, block_align, bits_per_sample))
     metadata = chunk(b"LIST", list_chunk) + chunk(b"ID3 ", id3_chunk)
     if bext:
         metadata = chunk(b"bext", bext_chunk) + metadata
@@ -210,11 +310,13 @@ def generate_rf64_ds64_data(path: Path, size_bytes: int) -> None:
     generate_wav(path, size_bytes, rf64=True)
 
 
-def generate_aiff(path: Path, size_bytes: int, *, compressed: bool = False) -> None:
+def generate_aiff(path: Path, size_bytes: int, *, compressed: bool = False, compression_type: bytes = b"NONE") -> None:
     form = b"AIFC" if compressed else b"AIFF"
     common_payload = b"\x00\x02\x00\x00\x00\x01\x00\x10@\x0e\xac\x44\x00\x00\x00\x00\x00\x00"
     if compressed:
-        common_payload += b"NONE\x0enot compressed"
+        if len(compression_type) != 4:
+            raise SystemExit("AIFF-C compression type must be four bytes")
+        common_payload += compression_type + b"\x0enot compressed"
     common = aiff_chunk(b"COMM", common_payload)
     name = aiff_chunk(b"NAME", b"fixture")
     id3 = aiff_chunk(b"ID3 ", b"ID3\x04\x00\x00\x00\x00\x00\x10" + b"\x00" * 16)
@@ -368,22 +470,35 @@ def generate_mpeg_ps_large(path: Path, size_bytes: int) -> None:
 
 
 def generate_avi_large(path: Path, size_bytes: int) -> None:
-    avih = b"avih" + struct.pack("<I", 56) + b"\x00" * 56
-    hdrl = b"LIST" + struct.pack("<I", len(avih) + 4) + b"hdrl" + avih
+    write_ffmpeg_sparse(
+        path,
+        size_bytes,
+        ffmpeg_base_video()
+        + [
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "5",
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "128k",
+            "-f",
+            "avi",
+        ],
+    )
 
-    def writer(file: Any, target: int) -> None:
-        movi_size = target - 12 - len(hdrl) - 12
-        if movi_size < 0:
-            raise SystemExit("target AVI size too small")
-        file.write(b"RIFF")
-        file.write(struct.pack("<I", min(target - 8, 0xFFFF_FFFF)))
-        file.write(b"AVI ")
-        file.write(hdrl)
-        file.write(b"LIST")
-        file.write(struct.pack("<I", min(movi_size + 4, 0xFFFF_FFFF)))
-        file.write(b"movi")
 
-    write_exact_size(path, size_bytes, writer)
+def generate_wav_192khz_data(path: Path, size_bytes: int) -> None:
+    generate_wav(path, size_bytes, sample_rate=192_000)
+
+
+def generate_wav_9ch_data(path: Path, size_bytes: int) -> None:
+    generate_wav(path, size_bytes, channels=9)
+
+
+def generate_aifc_mace3_ssnd(path: Path, size_bytes: int) -> None:
+    generate_aiff(path, size_bytes, compressed=True, compression_type=b"MAC3")
 
 
 def generate_webm_sparse(path: Path, size_bytes: int) -> None:
@@ -426,7 +541,155 @@ def vint_size(size: int) -> bytes:
     raise SystemExit(f"EBML fixture size field too large: {size}")
 
 
-EXTENSIONS = {
+class FfmpegFixture(NamedTuple):
+    extension: str
+    command: Callable[[], list[str]]
+    major_brand: bytes | None = None
+
+
+def with_metadata(command: list[str]) -> list[str]:
+    return [*command, *ffmpeg_metadata_args()]
+
+
+def make_ffmpeg_generator(fixture: FfmpegFixture) -> Callable[[Path, int], None]:
+    def generate(path: Path, size_bytes: int) -> None:
+        write_ffmpeg_sparse(path, size_bytes, fixture.command())
+        if fixture.major_brand is not None:
+            patch_major_brand(path, fixture.major_brand)
+
+    return generate
+
+
+FFMPEG_FIXTURES: dict[str, FfmpegFixture] = {
+    "ffmpeg_mp4_avc_faststart": FfmpegFixture(
+        "mp4",
+        lambda: with_metadata(
+            ffmpeg_base_video()
+            + ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart"]
+        ),
+    ),
+    "ffmpeg_mp4_snv2_faststart": FfmpegFixture(
+        "mp4",
+        lambda: with_metadata(
+            ffmpeg_base_video()
+            + ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart"]
+        ),
+        b"SNV2",
+    ),
+    "ffmpeg_mp4_hevc10_faststart": FfmpegFixture(
+        "mp4",
+        lambda: with_metadata(
+            ffmpeg_base_video()
+            + [
+                "-c:v",
+                "libx265",
+                "-preset",
+                "ultrafast",
+                "-x265-params",
+                "log-level=error",
+                "-pix_fmt",
+                "yuv420p10le",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "96k",
+                "-movflags",
+                "+faststart",
+            ]
+        ),
+    ),
+    "ffmpeg_mp4_av1_faststart": FfmpegFixture(
+        "mp4",
+        lambda: with_metadata(
+            ffmpeg_base_video()
+            + [
+                "-c:v",
+                "libsvtav1",
+                "-preset",
+                "13",
+                "-crf",
+                "45",
+                "-pix_fmt",
+                "yuv420p10le",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "96k",
+                "-movflags",
+                "+faststart",
+            ]
+        ),
+    ),
+    "ffmpeg_mp4_aac_audio": FfmpegFixture("m4a", lambda: with_metadata(ffmpeg_base_audio() + ["-c:a", "aac", "-b:a", "128k", "-f", "mp4"])),
+    "ffmpeg_mp4_tail": FfmpegFixture(
+        "mp4",
+        lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k"]),
+    ),
+    "ffmpeg_mov_mpeg4_pcm": FfmpegFixture("mov", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg4", "-q:v", "5", "-c:a", "pcm_s16be", "-f", "mov"])),
+    "ffmpeg_fragmented_mp4": FfmpegFixture(
+        "mp4",
+        lambda: with_metadata(
+            ffmpeg_base_video() + ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "frag_keyframe+empty_moov+default_base_moof"]
+        ),
+    ),
+    "ffmpeg_mkv_h264_aac": FfmpegFixture("mkv", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-f", "matroska"])),
+    "ffmpeg_mkv_ffv1_flac": FfmpegFixture("mkv", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "ffv1", "-level", "3", "-c:a", "flac", "-f", "matroska"])),
+    "ffmpeg_webm_vp8_opus": FfmpegFixture(
+        "webm",
+        lambda: with_metadata(
+            ffmpeg_base_video() + ["-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "500k", "-c:a", "libopus", "-b:a", "64k", "-f", "webm"]
+        ),
+    ),
+    "ffmpeg_webm_av1_opus": FfmpegFixture(
+        "webm",
+        lambda: with_metadata(
+            ffmpeg_base_video()
+            + ["-c:v", "libsvtav1", "-preset", "13", "-crf", "45", "-pix_fmt", "yuv420p10le", "-c:a", "libopus", "-b:a", "64k", "-f", "webm"]
+        ),
+    ),
+    "ffmpeg_flv_nellymoser": FfmpegFixture(
+        "flv",
+        lambda: with_metadata(ffmpeg_base_audio("sine=frequency=1000:sample_rate=44100") + ["-c:a", "nellymoser", "-f", "flv"]),
+    ),
+    "ffmpeg_asf_wma": FfmpegFixture("asf", lambda: with_metadata(ffmpeg_base_audio() + ["-c:a", "wmav2", "-f", "asf"])),
+    "ffmpeg_flac": FfmpegFixture("flac", lambda: with_metadata(ffmpeg_base_audio("anoisesrc=r=48000:a=0.25") + ["-c:a", "flac", "-f", "flac"])),
+    "ffmpeg_mp3": FfmpegFixture(
+        "mp3",
+        lambda: with_metadata(
+            ffmpeg_base_audio("anoisesrc=r=48000:a=0.25") + ["-c:a", "libmp3lame", "-b:a", "320k", "-write_id3v2", "1", "-id3v2_version", "3", "-f", "mp3"]
+        ),
+    ),
+    "ffmpeg_ogg_vorbis": FfmpegFixture(
+        "ogg",
+        lambda: with_metadata(ffmpeg_base_audio("anullsrc=r=48000:cl=stereo") + ["-strict", "-2", "-c:a", "vorbis", "-q:a", "5", "-f", "ogg"]),
+    ),
+    "ffmpeg_ogg_opus": FfmpegFixture(
+        "ogg",
+        lambda: with_metadata(ffmpeg_base_audio("anullsrc=r=48000:cl=stereo") + ["-c:a", "libopus", "-b:a", "128k", "-f", "ogg"]),
+    ),
+    "ffmpeg_ogg_flac": FfmpegFixture("oga", lambda: with_metadata(ffmpeg_base_audio("anoisesrc=r=48000:a=0.25") + ["-c:a", "flac", "-f", "ogg"])),
+    "ffmpeg_mpeg_ts": FfmpegFixture("ts", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg2video", "-b:v", "2M", "-c:a", "mp2", "-b:a", "128k", "-f", "mpegts"])),
+    "ffmpeg_mpeg_ts_ac3": FfmpegFixture("ts", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg2video", "-b:v", "2M", "-c:a", "ac3", "-b:a", "192k", "-f", "mpegts"])),
+    "ffmpeg_m2ts": FfmpegFixture(
+        "m2ts",
+        lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg2video", "-b:v", "2M", "-c:a", "mp2", "-b:a", "128k", "-mpegts_m2ts_mode", "1", "-f", "mpegts"]),
+    ),
+    "ffmpeg_mpeg_ps": FfmpegFixture("mpg", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg2video", "-b:v", "2M", "-c:a", "mp2", "-b:a", "128k", "-f", "mpeg"])),
+    "ffmpeg_mpeg_ps_ac3": FfmpegFixture("mpg", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg2video", "-b:v", "2M", "-c:a", "ac3", "-b:a", "192k", "-f", "mpeg"])),
+    "ffmpeg_vob": FfmpegFixture(
+        "vob",
+        lambda: with_metadata(ffmpeg_base_video("720x480", "30000/1001") + ["-c:v", "mpeg2video", "-b:v", "4M", "-c:a", "mp2", "-b:a", "192k", "-f", "vob"]),
+    ),
+    "ffmpeg_avi_mpeg4_mp3": FfmpegFixture("avi", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg4", "-q:v", "5", "-c:a", "libmp3lame", "-b:a", "128k", "-f", "avi"])),
+    "ffmpeg_avi_mpeg4_wma": FfmpegFixture("avi", lambda: with_metadata(ffmpeg_base_video() + ["-c:v", "mpeg4", "-q:v", "5", "-c:a", "wmav2", "-b:a", "128k", "-f", "avi"])),
+    "ffmpeg_raw_aac": FfmpegFixture("aac", lambda: ffmpeg_base_audio() + ["-c:a", "aac", "-b:a", "128k", "-f", "adts"]),
+    "ffmpeg_raw_ac3": FfmpegFixture("ac3", lambda: ffmpeg_base_audio() + ["-c:a", "ac3", "-b:a", "192k", "-f", "ac3"]),
+    "ffmpeg_raw_eac3": FfmpegFixture("eac3", lambda: ffmpeg_base_audio() + ["-c:a", "eac3", "-b:a", "192k", "-f", "eac3"]),
+    "ffmpeg_opus": FfmpegFixture("opus", lambda: with_metadata(ffmpeg_base_audio() + ["-c:a", "libopus", "-b:a", "64k", "-f", "opus"])),
+}
+
+
+SPARSE_EXTENSIONS = {
     "mp4_moov_front": "mp4",
     "mp4_moov_tail": "mp4",
     "mp4_snv2_tail": "mp4",
@@ -435,10 +698,13 @@ EXTENSIONS = {
     "webm_sparse": "webm",
     "mkv_sparse": "mkv",
     "wav_list_id3_data": "wav",
+    "wav_192khz_data": "wav",
+    "wav_9ch_data": "wav",
     "bwf_data": "wav",
     "rf64_ds64_data": "wav",
     "aiff_ssnd": "aiff",
     "aifc_ssnd": "aifc",
+    "aifc_mace3_ssnd": "aifc",
     "flac_large": "flac",
     "mp3_id3_large": "mp3",
     "ogg_large": "ogg",
@@ -447,7 +713,11 @@ EXTENSIONS = {
     "avi_large": "avi",
 }
 
-GENERATORS: dict[str, Callable[[Path, int], None]] = {
+
+EXTENSIONS = {**SPARSE_EXTENSIONS, **{kind: fixture.extension for kind, fixture in FFMPEG_FIXTURES.items()}}
+
+
+SPARSE_GENERATORS: dict[str, Callable[[Path, int], None]] = {
     "mp4_moov_front": generate_mp4_moov_front,
     "mp4_moov_tail": generate_mp4_moov_tail,
     "mp4_snv2_tail": generate_mp4_snv2_tail,
@@ -456,10 +726,13 @@ GENERATORS: dict[str, Callable[[Path, int], None]] = {
     "webm_sparse": generate_webm_sparse,
     "mkv_sparse": generate_mkv_sparse,
     "wav_list_id3_data": generate_wav_list_id3_data,
+    "wav_192khz_data": generate_wav_192khz_data,
+    "wav_9ch_data": generate_wav_9ch_data,
     "bwf_data": generate_bwf_data,
     "rf64_ds64_data": generate_rf64_ds64_data,
     "aiff_ssnd": generate_aiff_ssnd,
     "aifc_ssnd": generate_aifc_ssnd,
+    "aifc_mace3_ssnd": generate_aifc_mace3_ssnd,
     "flac_large": generate_flac_large,
     "mp3_id3_large": generate_mp3_id3_large,
     "ogg_large": generate_ogg_large,
@@ -469,17 +742,33 @@ GENERATORS: dict[str, Callable[[Path, int], None]] = {
 }
 
 
+GENERATORS: dict[str, Callable[[Path, int], None]] = {
+    **SPARSE_GENERATORS,
+    **{kind: make_ffmpeg_generator(fixture) for kind, fixture in FFMPEG_FIXTURES.items()},
+}
+
+SELF_TEST_KINDS = (
+    "mp4_snv2_tail",
+    "webm_sparse",
+    "mkv_sparse",
+    "flac_large",
+    "ogg_large",
+    "avi_large",
+)
+
+
 def self_test() -> int:
+    assert set(GENERATORS) == set(EXTENSIONS)
     with tempfile.TemporaryDirectory() as tmp:
-        for kind in sorted(GENERATORS):
+        for kind in SELF_TEST_KINDS:
             case = {
                 "id": f"self-test-{kind}",
                 "label": f"self test {kind}",
-                "synthetic": {"kind": kind, "size_bytes": 1048576},
+                "synthetic": {"kind": kind, "size_bytes": 8 * 1024 * 1024},
             }
             path = generate_case_fixture(case, Path(tmp))
             assert path.exists()
-            assert path.stat().st_size == 1048576
+            assert path.stat().st_size == 8 * 1024 * 1024
         mp4 = Path(tmp) / "self-test-mp4_snv2_tail.mp4"
         assert mp4.read_bytes()[4:8] == b"ftyp"
         webm = Path(tmp) / "self-test-webm_sparse.webm"
@@ -502,6 +791,10 @@ def self_test() -> int:
             first_page[22:26],
             "little",
         )
+        avi = Path(tmp) / "self-test-avi_large.avi"
+        avi_header = avi.read_bytes()[:16]
+        assert avi_header[:4] == b"RIFF"
+        assert avi_header[8:12] == b"AVI "
     print("fixture generator self-test ok")
     return 0
 

@@ -16,6 +16,7 @@ Required tools for the full comparison:
 
 - `hyperfine`
 - `mediainfo`
+- `ffmpeg`
 - `ffprobe`
 
 Use `--skip-mediainfo` or `--skip-ffprobe` only for local smoke tests where the
@@ -27,6 +28,12 @@ Run the full comparison from a local manifest:
 
 ```sh
 just bench-compare manifest=scripts/perf/manifest.example.json
+```
+
+Run the larger generated-only fixture matrix:
+
+```sh
+just bench-compare manifest=scripts/perf/manifest.extended.example.json
 ```
 
 Run the full PR evidence pipeline with a shared run id:
@@ -89,7 +96,11 @@ just bench-wasm manifest=path/to/local-manifest.json
 ```
 
 `bench-compare` builds the release CLI and the `perf_probe` example before
-running measurements. It fails if `hyperfine` is not installed.
+running measurements. It fails if `hyperfine` is not installed. Some generated
+fixtures need encoder-realistic headers; those are created with `ffmpeg` and
+then extended as sparse files to the requested logical size. Use
+`manifest.example.json` for a tiny smoke manifest and
+`manifest.extended.example.json` for a broader generated-only matrix.
 
 `bench-evidence` runs the comparison, oracle parity check and table rendering
 through `run_benchmark_evidence.py`, using one shared `run_id`, fixture
@@ -307,23 +318,59 @@ Current fixture kinds:
 - `mp4_snv2_tail`
 - `mov_moov_tail`
 - `fragmented_mp4`
+- `ffmpeg_mp4_avc_faststart`
+- `ffmpeg_mp4_snv2_faststart`
+- `ffmpeg_mp4_hevc10_faststart`
+- `ffmpeg_mp4_av1_faststart`
+- `ffmpeg_mp4_aac_audio`
+- `ffmpeg_mp4_tail`
+- `ffmpeg_mov_mpeg4_pcm`
+- `ffmpeg_fragmented_mp4`
+- `ffmpeg_mkv_h264_aac`
+- `ffmpeg_mkv_ffv1_flac`
+- `ffmpeg_webm_vp8_opus`
+- `ffmpeg_webm_av1_opus`
+- `ffmpeg_flv_nellymoser`
+- `ffmpeg_asf_wma`
 - `webm_sparse`
 - `mkv_sparse`
 - `wav_list_id3_data`
+- `wav_192khz_data`
+- `wav_9ch_data`
 - `bwf_data`
 - `rf64_ds64_data`
 - `aiff_ssnd`
 - `aifc_ssnd`
+- `aifc_mace3_ssnd`
 - `flac_large`
+- `ffmpeg_flac`
 - `mp3_id3_large`
+- `ffmpeg_mp3`
 - `ogg_large`
+- `ffmpeg_ogg_vorbis`
+- `ffmpeg_ogg_opus`
+- `ffmpeg_ogg_flac`
 - `mpeg_ts_large`
+- `ffmpeg_mpeg_ts`
+- `ffmpeg_mpeg_ts_ac3`
+- `ffmpeg_m2ts`
 - `mpeg_ps_large`
+- `ffmpeg_mpeg_ps`
+- `ffmpeg_mpeg_ps_ac3`
+- `ffmpeg_vob`
 - `avi_large`
+- `ffmpeg_avi_mpeg4_mp3`
+- `ffmpeg_avi_mpeg4_wma`
+- `ffmpeg_raw_aac`
+- `ffmpeg_raw_ac3`
+- `ffmpeg_raw_eac3`
+- `ffmpeg_opus`
 
-The generated files are parser-oriented sparse fixtures. They are useful for
-bounded-access and cross-tool timing checks, but they do not replace real media
-corpus coverage.
+The generated files are parser-oriented sparse fixtures. Direct fixtures cover
+bounded container access; `ffmpeg`-backed fixtures cover formats whose parser
+behavior depends on realistic stream headers. They are useful for bounded-access
+and cross-tool timing checks, but they do not replace real media corpus
+coverage.
 
 ## Privacy Contract
 
