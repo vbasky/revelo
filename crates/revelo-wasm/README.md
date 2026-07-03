@@ -19,7 +19,7 @@ import init, { parse, version } from "revelo-wasm";
 
 await init();
 
-console.log(version()); // e.g. "0.5.2"
+console.log(version()); // e.g. "0.5.1"
 
 const input = document.querySelector('input[type="file"]');
 input.addEventListener("change", async (event) => {
