@@ -175,6 +175,42 @@ jobs:
             cargo publish -p "${c}"
           done
 
+  publish-npm:
+    name: Publish revelo-wasm to npm
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build and publish revelo-wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "revelo-wasm") | .version')
+          if [ -z "$version" ]; then
+            echo "::error::No version found for revelo-wasm in workspace metadata"
+            exit 1
+          fi
+          published=$(npm view revelo-wasm version 2>/dev/null || true)
+          if [ "$published" = "$version" ]; then
+            echo "==> SKIP revelo-wasm@${version}: already on npm"
+            exit 0
+          fi
+          wasm-pack build crates/revelo-wasm --release
+          cd crates/revelo-wasm/pkg
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          npm publish --access public
+
   formula:
     name: Homebrew tap
     needs: [publish]

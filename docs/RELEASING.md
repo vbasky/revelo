@@ -2,8 +2,9 @@
 
 Releases are **pipeline-driven**: pushing a `vX.Y.Z` tag triggers
 [`.github/workflows/release.yml`](../.github/workflows/release.yml), which builds
-binaries, creates the GitHub Release, **publishes every crate to crates.io**, and
-updates the Homebrew tap. Nothing is published by hand.
+binaries, creates the GitHub Release, **publishes every crate to crates.io**,
+**publishes `revelo-wasm` to npm**, and updates the Homebrew tap. Nothing is
+published by hand.
 
 ## Versioning model
 
@@ -45,7 +46,10 @@ updates the Homebrew tap. Nothing is published by hand.
 3. **Publish to crates.io** — in dependency order, **skipping any version already
    on crates.io** (so partial-failure reruns are safe). It also **bails if a prior
    release run started < 10 minutes ago**, to respect the crates.io rate limit.
-4. **Homebrew tap** — regenerate and push the formula to `vbasky/homebrew-revelo`.
+4. **Publish to npm** — build `revelo-wasm` with `wasm-pack` and publish to
+   `revelo-wasm@X.Y.Z`, skipping if that version is already on npm. Requires the
+   `NPM_TOKEN` repository secret (npm automation token with publish access).
+5. **Homebrew tap** — regenerate and push the formula to `vbasky/homebrew-revelo`.
 
 ### The crates.io publish list
 

@@ -2,8 +2,8 @@
 #
 # Release revelo to crates.io.
 #
-# Binary builds + Homebrew formula generation happen automatically in CI
-# (`.github/workflows/release.yml`) when the tag is pushed.
+# Binary builds, npm (revelo-wasm), and Homebrew formula generation happen
+# automatically in CI (`.github/workflows/release.yml`) when the tag is pushed.
 #
 # Usage:
 #   scripts/release.sh <version>      e.g.  scripts/release.sh 0.2.2
@@ -101,4 +101,4 @@ for c in "${CRATES[@]}"; do
   cargo publish -p "${c}"
 done
 
-echo "✓ released revelo ${VERSION} — crates.io, tag ${TAG}, and GitHub release all in sync"
+echo "✓ released revelo ${VERSION} — crates.io, npm (revelo-wasm), tag ${TAG}, and GitHub release all in sync"
