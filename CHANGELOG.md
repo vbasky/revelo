@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.5.3] - 2026-07-05
+
+_Version 0.5.2 was skipped: the `revelo-wasm` npm package had 0.5.1 and 0.5.2
+published then unpublished, and npm permanently reserves unpublished version
+strings. 0.5.3 is the next version free on both crates.io and npm._
+
+### Changed
+
+- **Speculative metadata scans** — `parse_tags` now skips the generic
+  embedded-metadata scans for known media containers and files that already
+  carry audio/video streams. Unlisted formats still fall through to the full
+  legacy scan, so no metadata is dropped (guarded by a `Format=PDF` regression
+  test).
+
+### Fixed
+
+- **`revelo-diff` oracle harness** — now follows the CLI metadata path
+  (computed fields, duplicate-stream detection, `parse_tags`) before XML export,
+  so `--strict` oracle diffs actually exercise the tag path.
+
+### Performance
+
+- **Local timezone** — the CLI/diff date path reads the UTC offset via
+  `localtime_r` on Unix instead of spawning a `date +%z` subprocess.
+
+### Added
+
+- **Rust-native benchmark tooling** (dev-only) — `crates/revelo-bench` with
+  `generate-fixtures`, `compare`, `render-table`, `evidence`, and `self-test`
+  subcommands, plus `just bench-*` entry points and a `perf_probe` example.
+  Replaces the earlier Python perf prototype.
+
+### Thanks
+
+Nearly all of this release is the work of **@Else00**:
+
+- the Rust-native benchmark evidence pipeline (`revelo-bench`) — fixture
+  generator, Hyperfine comparison runner, HTML/PNG table rendering, and a
+  `self-test` mode, wired up behind `just bench-*` targets;
+- the `parse_tags` speculative-scan reductions that cut fixed parsing overhead
+  without dropping metadata for unlisted formats;
+- aligning the `revelo-diff` oracle harness with the CLI metadata path, so tag
+  output is now genuinely gated against MediaInfo;
+- the Unix `localtime_r` fast-path replacing the `date +%z` subprocess.
+
+This continues their large-file bounded-access work from #4 (shipped in 0.5.1).
+
 ## [0.5.1] - 2026-06-30
 
 ### Fixed
@@ -20,6 +67,12 @@
   detection for inputs larger than 8 MiB.
 - **Extended benchmark fixtures** — structured sparse cases for MP4/MOV/SNV2,
   WebM, RF64, AIFF, FLAC, MP3, Ogg, MPEG-TS/PS in `parse_benchmark`.
+
+### Thanks
+
+- **@Else00** for the large-file bounded-access work at the heart of this
+  release — the bounded reads and skips across the container, codec, and tag
+  probes that stopped parse time scaling with file size (#4, closes #1).
 
 ## [0.5.0] - 2026-06-28
 
