@@ -1,0 +1,24 @@
+[package]
+name = "revelo-bench"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "revelo-bench"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+ureq = { version = "2", default-features = false, features = ["json"] }
+
+[lints]
+workspace = true

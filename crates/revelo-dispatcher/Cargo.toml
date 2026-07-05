@@ -19,7 +19,7 @@ parallel = ["dep:rayon"]
 
 [dependencies]
 rayon = { workspace = true, optional = true }
-revelo-core = { path = "../revelo-core", version = "0.5.1" }
+revelo-core = { path = "../revelo-core", version = "0.5.1", default-features = false }
 revelo-parsers-archive = { path = "../revelo-parsers-archive", version = "0.5.1" }
 revelo-parsers-audio = { path = "../revelo-parsers-audio", version = "0.5.1" }
 revelo-parsers-container = { path = "../revelo-parsers-container", version = "0.5.1" }
