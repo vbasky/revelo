@@ -22,8 +22,8 @@ mmap = ["dep:memmap2", "revelo-core/mmap"]
 parallel = ["revelo-dispatcher/parallel"]
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.5.1" }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.1" }
+revelo-core = { path = "../revelo-core", version = "0.5.1", default-features = false }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.1", default-features = false }
 revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.1" }
 memmap2 = { version = "0.9", optional = true }
 

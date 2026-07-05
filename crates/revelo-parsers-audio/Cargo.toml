@@ -18,5 +18,5 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.5.1" }
+revelo-core = { path = "../revelo-core", version = "0.5.1", default-features = false }
 revelo-util = { path = "../revelo-util", version = "0.5.1" }
