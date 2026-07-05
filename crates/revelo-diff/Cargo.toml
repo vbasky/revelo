@@ -20,3 +20,4 @@ workspace = true
 revelo-core = { path = "../revelo-core", version = "0.5.1" }
 revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.1" }
 revelo-export = { path = "../revelo-export", version = "0.5.1" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.1" }
