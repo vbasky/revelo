@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Panasonic maker-note decoding** — the shared maker-note IFD walker bailed on
+  any directory with more than 100 entries, and the Panasonic LUMIX maker note
+  carries 112. Every Panasonic tag was silently dropped (ExifTool parity 42%).
+  Raised the sanity cap (`MAX_MAKERNOTE_ENTRIES`); the per-entry bounds check
+  remains the real limit on how far the walker reads. Panasonic parity on the
+  DMC-TZ61 corpus rises **42% → 92%** (the remaining gap is Multi-Picture Format
+  in APP2 and three face-detect sub-IFD tags, both separate features). Regression
+  test covers a 112-entry IFD.
+
+### Thanks
+
+- **@juleskers** (#2) contributed a breadth-of-devices test-photo corpus
+  (Panasonic, Fujifilm, Sony, three Fairphones, a toy camera) that quantified the
+  previously-unmeasured vendors and surfaced the Panasonic maker-note bug above.
+
 ## [0.5.3] - 2026-07-05
 
 _Version 0.5.2 was skipped: the `revelo-wasm` npm package had 0.5.1 and 0.5.2

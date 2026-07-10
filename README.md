@@ -136,10 +136,10 @@ dedicated sample corpus.
 | --- | --- | --- | --- |
 | Canon | Yes | CameraSettings, ShotInfo, AFInfo1/2/3, MyColors, ContrastInfo, TimeInfo, AspectInfo, FaceDetect3, FileInfo, FocalLength, Panorama | 99% |
 | Nikon | Yes (Type 2/3) | AFInfo, FlashInfo | 95% |
-| Fujifilm | Yes | — | 98–100% |
-| Olympus | Yes (Type 1/2) | Equipment, CameraSettings, RawDevelopment, ImageProcessing, FocusInfo | — |
+| Fujifilm | Yes | — | 98% |
+| Olympus | Yes (Type 1/2) | Equipment, CameraSettings, RawDevelopment, ImageProcessing, FocusInfo | ~80% ᵃ |
 | Sony | Yes | — | — |
-| Panasonic | Yes | — | — |
+| Panasonic | Yes | — | 92% |
 | Pentax | Yes | — | — |
 | Konica‑Minolta | Yes | — | 97% |
 | Samsung | Yes | — | — |
@@ -148,6 +148,10 @@ dedicated sample corpus.
 | Casio | Yes | — | — |
 | DJI | Yes | — | — |
 | FLIR | Yes | — | — |
+
+ᵃ Olympus parity is measured from a Sony DSC‑S750 — this budget body writes
+Olympus‑format maker notes, which exiftool attributes to the `Olympus` group. A
+Sony‑proper maker‑note sample is still needed to quantify the `Sony` row.
 
 Vendors not listed (Leica, Kodak, Ricoh, Epson, Kyocera, etc.) have no maker-note
 parser and fall back to standard EXIF IFD tags only. ExifTool supports ~50 camera

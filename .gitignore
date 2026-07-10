@@ -8,3 +8,9 @@ Cargo.lock
 /revelo
 /revelo-util
 .serena/
+
+# Private sample corpus — real camera samples for EXIF/maker-note parity.
+# Contributed under non-transferable, "NOT publication" licenses. Never commit
+# the media itself; the manifest (corpus/README.md) documents it for repro.
+/corpus/*
+!/corpus/README.md

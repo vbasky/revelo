@@ -2938,6 +2938,12 @@ fn apply_print_conv(vendor: MakerVendor, id: u16, raw: String) -> String {
     raw
 }
 
+/// Upper bound on maker-note IFD entry counts. Guards against a bogus count
+/// read from misaligned data while still clearing real cameras: the Panasonic
+/// LUMIX IFD carries 110+ entries, well past the old limit of 100 that silently
+/// dropped every Panasonic tag.
+const MAX_MAKERNOTE_ENTRIES: usize = 512;
+
 fn parse_makernote_ifd(
     data: &[u8],
     offset: usize,
@@ -2951,12 +2957,16 @@ fn parse_makernote_ifd(
         return;
     }
     let count = read_tiff_u16(data, offset, bo) as usize;
-    if count > 100 {
+    // Sanity gate against a bogus (misaligned) count. Real maker notes run
+    // large — Panasonic's LUMIX IFD alone carries 110+ entries — so the cap
+    // must clear that; the per-entry `pos + 12 > data.len()` break below is
+    // the true bound on how far we actually walk.
+    if count > MAX_MAKERNOTE_ENTRIES {
         return;
     }
     let mut pos = offset + 2;
 
-    for _ in 0..count.min(100) {
+    for _ in 0..count.min(MAX_MAKERNOTE_ENTRIES) {
         if pos + 12 > data.len() {
             break;
         }
@@ -5890,6 +5900,31 @@ mod exif_tests {
         parse_panasonic_makernote(&mn, 0, &mut tags);
         assert_eq!(tags.len(), 1);
         assert!(tags.iter().any(|(k, v)| *k == "PanasonicQuality" && v == "5"));
+    }
+
+    #[test]
+    fn makernote_ifd_over_100_entries_is_not_truncated() {
+        // Regression: a real Panasonic LUMIX maker note carries 110+ IFD
+        // entries. The walker used to bail on `count > 100`, silently
+        // dropping every Panasonic tag (42% parity). Build a 112-entry IFD of
+        // tag 0x0001 (ImageQuality / PanasonicQuality — resolves in both the
+        // hand-written and ExifTool-table paths) and confirm all are walked.
+        const N: usize = 112; // > the old cap of 100 that caused the bug
+        let mut mn = Vec::new();
+        mn.extend_from_slice(b"Panasonic\0\0\0"); // 12-byte header
+        mn.extend_from_slice(&(N as u16).to_le_bytes()); // IFD entry count
+        for _ in 0..N {
+            mn.extend_from_slice(&0x0001u16.to_le_bytes()); // tag 0x0001
+            mn.extend_from_slice(&3u16.to_le_bytes()); // type SHORT
+            mn.extend_from_slice(&1u32.to_le_bytes()); // count = 1
+            mn.extend_from_slice(&5u16.to_le_bytes()); // value = 5
+            mn.extend_from_slice(&[0, 0]); // value padding
+        }
+        mn.extend_from_slice(&[0, 0, 0, 0]); // next-IFD pointer
+
+        let mut tags = Vec::new();
+        parse_panasonic_makernote(&mn, 0, &mut tags);
+        assert_eq!(tags.len(), N, "all {N} entries should be parsed, not capped at 100");
     }
 
     #[test]
