@@ -301,6 +301,7 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
     let mut movie = MovieInfo::default();
     let mut mdat_offset: Option<usize> = None;
     let mut mdat_size: Option<usize> = None;
+    let mut mdat_header_size: Option<usize> = None;
     let mut moov_offset: Option<usize> = None;
     let file_size = fa.remain();
 
@@ -309,40 +310,49 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
             ftyp_brands = parse_ftyp(fa, box_size);
         }
         BOX_MDAT => {
+            // Cursor is already past the header (8 or 16 bytes for size32==1).
+            // Do not assume an 8-byte header — that over-skips and causes
+            // walk_boxes to bail before visiting a trailing moov (#7).
+            let header_size = fa.element_offset().saturating_sub(box_start);
             if mdat_offset.is_none() {
                 mdat_offset = Some(box_start);
                 mdat_size = Some(box_size);
+                mdat_header_size = Some(header_size);
             }
-            fa.skip_hexa(box_size.saturating_sub(8), "mdat_body");
+            fa.skip_hexa(box_size.saturating_sub(header_size), "mdat_body");
         }
         BOX_MOOV => {
             if moov_offset.is_none() {
                 moov_offset = Some(box_start);
             }
-            let inner = box_size.saturating_sub(8);
+            let header_size = fa.element_offset().saturating_sub(box_start);
+            let inner = box_size.saturating_sub(header_size);
             walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
                 handle_inner(fa, t, s, &mut tracks, &mut movie);
             });
         }
         BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
-            let inner = box_size.saturating_sub(8);
+            let header_size = fa.element_offset().saturating_sub(box_start);
+            let inner = box_size.saturating_sub(header_size);
             walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
                 handle_inner(fa, t, s, &mut tracks, &mut movie);
             });
         }
         BOX_TRAK => {
             tracks.push(TrackInfo::default());
-            let inner = box_size.saturating_sub(8);
+            let header_size = fa.element_offset().saturating_sub(box_start);
+            let inner = box_size.saturating_sub(header_size);
             walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
                 handle_inner(fa, t, s, &mut tracks, &mut movie);
             });
         }
         _ => {
-            fa.skip_hexa(box_size.saturating_sub(8), "BoxBody");
+            let header_size = fa.element_offset().saturating_sub(box_start);
+            fa.skip_hexa(box_size.saturating_sub(header_size), "BoxBody");
         }
     });
 
-    let layout = BoxLayout { file_size, mdat_offset, mdat_size, moov_offset };
+    let layout = BoxLayout { file_size, mdat_offset, mdat_size, mdat_header_size, moov_offset };
     // AVC encoder SEI lives in the first mdat sample, not avcC — scan for
     // it before emitting (HEVC already gets its SEI from the hvcC arrays).
     scan_avc_encoder_sei(fa, &mut tracks);
@@ -405,6 +415,8 @@ struct BoxLayout {
     file_size: usize,
     mdat_offset: Option<usize>,
     mdat_size: Option<usize>,
+    /// ISO BMFF header length for the first `mdat` (8 or 16 when size32==1).
+    mdat_header_size: Option<usize>,
     moov_offset: Option<usize>,
 }
 
@@ -2047,11 +2059,13 @@ fn fill_streams(
     //   HeaderSize = bytes before mdat box (ftyp + free + any pre-mdat moov)
     //   DataSize   = mdat total size (header + body)
     //   FooterSize = bytes after mdat
-    //   StreamSize (general) = FileSize - mdat_body_size = HeaderSize + 8 + FooterSize
+    //   StreamSize (general) = FileSize - mdat_body_size
+    //                        = HeaderSize + mdat_header + FooterSize
     //   IsStreamable = "Yes" if moov precedes mdat, else "No"
     if let (Some(mdat_off), Some(mdat_tot)) = (layout.mdat_offset, layout.mdat_size) {
+        let mdat_hdr = layout.mdat_header_size.unwrap_or(8);
         let footer_size = layout.file_size.saturating_sub(mdat_off + mdat_tot);
-        let stream_size = layout.file_size.saturating_sub(mdat_tot.saturating_sub(8));
+        let stream_size = layout.file_size.saturating_sub(mdat_tot.saturating_sub(mdat_hdr));
         fa.force_field(StreamKind::General, 0, "StreamSize", stream_size.to_string());
         fa.set_field(StreamKind::General, 0, "HeaderSize", mdat_off.to_string());
         fa.set_field(StreamKind::General, 0, "DataSize", mdat_tot.to_string());
@@ -3601,6 +3615,46 @@ mod tests {
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("M4A /isom")
+        );
+    }
+
+    #[test]
+    fn parses_moov_after_extended_size_mdat() {
+        // ISO BMFF: size32 == 1 means an 8-byte largesize follows the type.
+        // Empty mdat: total size 16 (header only). Trailing moov must still
+        // be visited — visitors must not assume an 8-byte header (#7).
+        let mut mvhd_body = vec![0; 12];
+        mvhd_body.extend_from_slice(&1_000u32.to_be_bytes()); // timescale
+        mvhd_body.extend_from_slice(&2_000u32.to_be_bytes()); // duration units
+
+        let mut buf = ftyp_box(b"isom");
+        buf.extend_from_slice(&1u32.to_be_bytes()); // size32 = 1 → extended
+        buf.extend_from_slice(b"mdat");
+        buf.extend_from_slice(&16u64.to_be_bytes()); // largesize = header only
+        buf.extend(mp4_box(b"moov", mp4_box(b"mvhd", mvhd_body)));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "Duration")
+                .map(|value| value.as_str().to_owned())
+                .as_deref(),
+            Some("2000")
+        );
+        assert_eq!(fa.remain(), 0);
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "IsStreamable")
+                .map(|value| value.as_str().to_owned())
+                .as_deref(),
+            Some("No")
+        );
+        // StreamSize = FileSize − mdat_body; empty extended mdat body ⇒ whole file.
+        let expected_stream_size = buf.len().to_string();
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "StreamSize")
+                .map(|value| value.as_str().to_owned())
+                .as_deref(),
+            Some(expected_stream_size.as_str())
         );
     }
 

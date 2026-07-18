@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.5] - 2026-07-18
+
+### Fixed
+
+- **MP4 extended-size `mdat` (#7)** — top-level visitors assumed an 8-byte box
+  header. When `mdat` used the ISO BMFF form `size32 == 1` (16-byte header),
+  the body skip over-consumed by 8 bytes and `walk_boxes` bailed before a
+  trailing `moov`, so video/audio streams were empty. Derive header length from
+  the body cursor vs. box start; apply the same rule to other top-level skips
+  and to general `StreamSize` (header is 8 or 16). Regression: empty
+  extended-size `mdat` then `moov`/`mvhd`.
+
 ## [0.5.4] - 2026-07-11
 
 ### Fixed
