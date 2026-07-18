@@ -11,10 +11,11 @@ commitment to a date.
 ## Status snapshot
 
 **Covered:** 180+ parsers (containers, video, audio, tags, text, archives,
-images); 8 export formats (XML, Text, JSON, EBUCore, MPEG-7, PBCore, NISO,
-FIMS); `detect()` auto-format matching; `race + walk` parallel detection;
-`#![deny(unsafe_code)]` workspace-wide; C ABI (`revelo-cdylib`); WASM support;
-CLI with stream filtering, container verification, format metadata, and log file.
+images); 10 export formats (XML, Text, JSON, YAML, HTML, CSV, EBUCore, MPEG-7,
+PBCore, NISO, FIMS); `detect()` auto-format matching; `race + walk` parallel
+detection; `#![deny(unsafe_code)]` workspace-wide; C ABI (`revelo-cdylib`, with a
+`catch_unwind` panic firewall); WASM support; CLI with stream filtering, glob /
+multi-file batch (NDJSON), container verification, format metadata, and log file.
 
 **Blocked (unverifiable):** APV, AV2, Ancillary (SMPTE 436 VANC), Ikegami UMF —
 no obtainable oracle samples exist for these formats, so the differential harness
@@ -29,27 +30,50 @@ can't validate a port.
 - [x] **Duration calculation precision.** Standardized to round-to-nearest
       `duration_ms()` helper in `revelo-core` — applied to WAV and MP3 parsers.
       Ogg retains intentional truncation to match the mediainfo oracle.
-- [ ] **Elementary-stream extraction.** Wire PES payload parsing for MPEG-TS
-      (AVC/AAC), VP9 frame headers in MKV/WebM, FLV per-tag AVC bitstream, and
-      AV1 OBU sequence headers in MP4. These close the remaining ~10 divergence
-      gaps against mediainfo.
-- [ ] **Blocked field validation.** `FrameRate_Mode_Original` and
-      `Format_Settings_SBR` need real-world test samples to validate against the
-      oracle.
-- [ ] **Malformed input hardening.** Audit all parsers for panic safety on
-      truncated or fuzzed input — every `read_*` path must return `Err`, not
-      panic.
-- [ ] **Duration calculation precision.** Review `Duration` / `PlayTime` field
-      computations across fragmented containers (MP4 fragmented, segmented MXF)
-      for edge-case rounding mismatches against mediainfo.
+- [x] **Elementary-stream extraction.** All four targets wired and validated
+      against the mediainfo oracle on ffmpeg-generated samples:
+      - **MP4 AV1** — `av01` sample entry + `av1C` box → sequence-header colour
+        decode. av1.mp4 parity 63→94 matching lines.
+      - **MPEG-TS AVC/AAC** — first-SPS/PPS/SEI scan of the PES accumulator →
+        `parse_avc_sps`, plus SDT-derived Menu and PCR/PTS timing. ts.ts 59→93
+        matching, **0 spurious** rust lines.
+      - **MKV/WebM VP9** — first-keyframe block-payload decode via `parse_vp9`.
+        vp9.mkv **byte-equal (0/0)**, vp9.webm **byte-equal (0/0)**.
+      - **FLV** — header-only parser replaced with a full tag demuxer (AVC
+        `avcC`→SPS, AAC AudioSpecificConfig). flv.flv 21→72 matching.
+      Remaining gaps are MediaInfo-internal bitrate/StreamSize estimation
+      heuristics, left unfabricated.
+- [~] **Blocked field validation.** `Format_Settings_SBR` is now emitted by the
+      FLV AAC path (from the AudioSpecificConfig). `FrameRate_Mode_Original`
+      remains blocked: mediainfo recovers a "was VFR" signal that isn't present
+      in a normalized (uniform-`stts`) sample table, so synthesizing it risks
+      mislabelling genuine CFR files. The spurious equal-copy the computed layer
+      used to emit was removed (see hardening below). Still needs a real-world
+      VFR-normalized sample to validate a correct derivation.
+- [x] **Malformed input hardening.** The read layer (`FileAnalyze`/`Reader`/
+      `byte_source`) is panic-safe by construction (guarded reads degrade to
+      `0`/empty + a truncated flag). Fixed the residual `flac` short-block
+      unsigned-underflow; added a **`catch_unwind` panic firewall** at the
+      `extern "C"` cdylib boundary (a parser panic there was UB); added a
+      **fuzz/truncation sweep** that runs all 180 parsers against truncated
+      magics, random, and degenerate buffers (`revelo-dispatcher` tests).
+- [ ] **Duration calculation precision (fragmented).** Diagnosed: fragmented
+      MP4 (`moof`/`traf`/`trun`, `empty_moov`) is not yet parsed, so sample
+      counts/durations read as 0 (frag.mp4). Fix is scoped — aggregate `trun`
+      sample counts/durations/sizes with `tfhd`/`trex` defaults, keyed by
+      track_ID, and feed tracks whose `stbl` is empty. Segmented MXF unaffected.
 
 ## P1 — output & reporting
 
-- [ ] **YAML export.** YAML output format for pipeline integration.
-- [ ] **HTML report.** Self-contained visual report with collapsible sections and
-      summary cards.
-- [ ] **Glob / batch processing.** `revelo --json "**/*.mp4"` for directory trees,
-      output as NDJSON or array.
+- [x] **YAML export.** `--yaml`/`-y`; mirrors the JSON structure, all keys and
+      values emitted as double-quoted scalars. `revelo-export::to_yaml`.
+- [x] **HTML report.** `--html`; self-contained (inline CSS, no JS —
+      `<details>`/`<summary>` collapsibles), summary cards + per-stream tables,
+      theme-aware. `revelo-export::to_html`.
+- [x] **Glob / batch processing.** `revelo --json "**/*.mp4"` walks trees;
+      multi-file JSON defaults to NDJSON (one compact object per line),
+      `--json-array` wraps a single array; other formats concatenate. Single-file
+      output is byte-identical to before.
 
 ## P2 — extraction & diffing
 

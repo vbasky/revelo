@@ -5,7 +5,6 @@ pub fn fill_computed_fields(sc: &mut StreamCollection) {
     fill_bits_pixel_frame(sc);
     fill_compression_ratio(sc);
     fill_format_profile_general(sc);
-    fill_frame_rate_mode_original(sc);
     fill_bitrate_ranges(sc);
     fill_inferred_av1_level(sc);
 }
@@ -139,15 +138,14 @@ fn fill_format_profile_general(sc: &mut StreamCollection) {
     }
 }
 
-fn fill_frame_rate_mode_original(sc: &mut StreamCollection) {
-    // Set FrameRate_Mode_Original from the first Video FR mode before any CFR override.
-    let n = sc.stream_count(StreamKind::Video);
-    for i in 0..n {
-        if let Some(mode) = field_val(sc, StreamKind::Video, i, "FrameRate_Mode") {
-            sc.set_field(StreamKind::Video, i, "FrameRate_Mode_Original", Ztring::from(mode));
-        }
-    }
-}
+// NOTE: `FrameRate_Mode_Original` is intentionally NOT synthesized as a
+// computed field. MediaInfo emits it only when the *source* frame-rate mode
+// differs from the final one (e.g. a VFR source normalized to CFR on mux).
+// revelo has no independent signal for the original mode from a normalized
+// sample table, so mirroring `FrameRate_Mode` here always produced a
+// redundant value the oracle omits (it never emits `_Original == Mode`).
+// Parsers that *can* recover a genuinely different original (e.g. the FLV
+// demuxer, from tag-timestamp variance) set the field directly.
 
 /// Infer the minimum AV1 level required for a given resolution and framerate,
 /// then set `Format_Level_Inferred` if it differs from the reported level.
@@ -200,12 +198,19 @@ fn fill_inferred_av1_level(sc: &mut StreamCollection) {
         let inferred_level_idx = av1_inferred_level_idx(max_dim, frame_rate);
 
         if let Some(inferred) = inferred_level_idx {
-            // Only emit if it differs from the reported level (extract level from @L suffix)
-            let reported_level_idx =
-                profile_str.split("@L").nth(1).and_then(|s| s.parse::<u8>().ok());
-
-            if reported_level_idx != Some(inferred) {
-                let level_name = av1_level_name(inferred);
+            let level_name = av1_level_name(inferred);
+            // The reported level may appear as an "@Lx.y" suffix on
+            // Format_Profile (Matroska shape, e.g. "Main@L2.0") or as a
+            // standalone Format_Level field (MP4 shape: Format_Profile="Main"
+            // plus Format_Level="2.0"). Compare level *names* and suppress the
+            // inferred value whenever it already matches whatever the container
+            // reported — otherwise the MP4 shape always emitted a redundant
+            // Format_Level_Inferred because the old @L-suffix parse saw nothing.
+            let profile_suffix = profile_str.split("@L").nth(1);
+            let level_field = field_val(sc, StreamKind::Video, i, "Format_Level");
+            let already_reported =
+                profile_suffix == Some(level_name) || level_field.as_deref() == Some(level_name);
+            if !already_reported {
                 sc.set_field(
                     StreamKind::Video,
                     i,

@@ -9,7 +9,7 @@ use revelo_core::multi_file::MultiFileLoader;
 use revelo_core::multi_file::find_duplicate_streams;
 use revelo_core::{FileAnalyze, FileLevelInfo, ReadBackend, StreamKind, fill_file_level_fields};
 use revelo_dispatcher::detect;
-use revelo_export::{to_csv, to_json, to_summary, to_text, to_xml};
+use revelo_export::{to_csv, to_html, to_json, to_summary, to_text, to_xml, to_yaml};
 use revelo_parsers_tag::parse_tags;
 
 mod cli;
@@ -18,42 +18,121 @@ use cli::Cli;
 fn main() -> process::ExitCode {
     let cli = <Cli as clap::Parser>::parse();
 
-    let path = match cli.path.as_deref() {
-        Some(p) => p,
-        None => {
+    // Expand glob patterns and collect the concrete input paths. A bare path
+    // (no glob metacharacters) is kept verbatim so a genuinely missing file
+    // still surfaces its own open error rather than silently vanishing.
+    let inputs = expand_paths(&cli.paths);
+    if inputs.is_empty() {
+        if cli.paths.is_empty() {
+            // No arguments at all: show help.
             let _ = Cli::command().print_help();
             println!();
             return process::ExitCode::SUCCESS;
         }
-    };
+        // Patterns were supplied but matched nothing on disk.
+        eprintln!("no files matched: {}", cli.paths.join(", "));
+        return process::ExitCode::from(1);
+    }
 
-    let metadata = fs::metadata(&path).ok();
-    let mut parsed = false;
-    let source_len: usize;
+    let batch = inputs.len() > 1;
+    let mut outputs: Vec<String> = Vec::new();
+    let mut any_failed = false;
+
+    for path in &inputs {
+        match analyze_one(&cli, path) {
+            Some(out) => outputs.push(out),
+            None => any_failed = true,
+        }
+    }
+
+    if outputs.is_empty() {
+        return process::ExitCode::from(1);
+    }
+
+    let combined = combine_outputs(&cli, outputs, batch);
+    if let Some(ref log_file) = cli.log_file {
+        let _ = fs::write(log_file, &combined);
+    } else {
+        println!("{combined}");
+    }
+
+    if any_failed { process::ExitCode::from(1) } else { process::ExitCode::SUCCESS }
+}
+
+/// Expand each argument: glob patterns (containing `*`, `?`, or `[`) are
+/// walked and their matching files collected in sorted order; plain paths
+/// pass through unchanged. A pattern that matches nothing contributes no
+/// inputs. A malformed pattern is treated as a literal path.
+fn expand_paths(patterns: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for pat in patterns {
+        if pat.contains(['*', '?', '[']) {
+            match glob::glob(pat) {
+                Ok(entries) => {
+                    for entry in entries.flatten() {
+                        if entry.is_file() {
+                            out.push(entry.to_string_lossy().into_owned());
+                        }
+                    }
+                }
+                Err(_) => out.push(pat.clone()),
+            }
+        } else {
+            out.push(pat.clone());
+        }
+    }
+    out
+}
+
+/// Combine per-file outputs. For multi-file JSON the default is NDJSON (one
+/// compact object per line); `--json-array` wraps every result in a single
+/// JSON array (and applies even to a single file). Other formats are simply
+/// concatenated. A single non-array result is returned verbatim, preserving
+/// byte-for-byte single-file output.
+fn combine_outputs(cli: &Cli, outputs: Vec<String>, batch: bool) -> String {
+    if cli.json_array {
+        return format!("[\n{}\n]", outputs.join(",\n"));
+    }
+    if batch && cli.json {
+        // NDJSON: the JSON formatter uses newlines only as structural
+        // separators (values escape their own newlines), so stripping them
+        // yields a valid compact object per line.
+        return outputs.iter().map(|o| o.replace('\n', "")).collect::<Vec<_>>().join("\n");
+    }
+    if batch {
+        return outputs.join("\n");
+    }
+    outputs.into_iter().next().unwrap_or_default()
+}
+
+/// Read, detect, parse and format a single input path. Returns the formatted
+/// output, or `None` (after printing a diagnostic to stderr) on any failure.
+fn analyze_one(cli: &Cli, path: &str) -> Option<String> {
+    let metadata = fs::metadata(path).ok();
 
     if cli.multi_file {
-        let mut parse_buf = match fs::read(&path) {
+        let mut parse_buf = match fs::read(path) {
             Ok(b) => b,
             Err(e) => {
                 eprintln!("{path}: {e}");
-                return process::ExitCode::from(1);
+                return None;
             }
         };
 
         let mut loader = MultiFileLoader::new();
-        loader.scan_references(std::path::Path::new(&path), &Default::default());
+        loader.scan_references(std::path::Path::new(path), &Default::default());
         let mut has_references = false;
         if let Some((data, _count)) = loader.load_all() {
             parse_buf.extend_from_slice(&data);
             has_references = true;
         }
 
-        source_len = parse_buf.len();
+        let source_len = parse_buf.len();
         if let Some(winner) = detect(&parse_buf) {
             let fa = FileAnalyze::new(parse_buf.as_slice());
-            parsed = parse_and_emit(
-                &cli,
-                &path,
+            return format_one(
+                cli,
+                path,
                 metadata.as_ref(),
                 source_len,
                 fa,
@@ -61,67 +140,50 @@ fn main() -> process::ExitCode {
                 has_references,
             );
         }
-    } else {
-        let file = match fs::File::open(&path) {
-            Ok(file) => file,
-            Err(e) => {
-                eprintln!("{path}: {e}");
-                return process::ExitCode::from(1);
-            }
-        };
+        eprintln!("{path}: no parser matched ({source_len} bytes)");
+        return None;
+    }
 
-        // SAFETY: the file is opened read-only and is not mutated while mapped.
-        match unsafe { memmap2::Mmap::map(&file) } {
-            Ok(mmap) => {
-                let bytes = mmap.as_ref();
-                source_len = bytes.len();
-                if let Some(winner) = detect(bytes) {
-                    let fa = FileAnalyze::from_backend(ReadBackend::from(&mmap));
-                    parsed = parse_and_emit(
-                        &cli,
-                        &path,
-                        metadata.as_ref(),
-                        source_len,
-                        fa,
-                        winner,
-                        false,
-                    );
-                }
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("{path}: {e}");
+            return None;
+        }
+    };
+
+    // SAFETY: the file is opened read-only and is not mutated while mapped.
+    match unsafe { memmap2::Mmap::map(&file) } {
+        Ok(mmap) => {
+            let bytes = mmap.as_ref();
+            let source_len = bytes.len();
+            if let Some(winner) = detect(bytes) {
+                let fa = FileAnalyze::from_backend(ReadBackend::from(&mmap));
+                return format_one(cli, path, metadata.as_ref(), source_len, fa, winner, false);
             }
-            Err(_) => {
-                let bytes = match fs::read(&path) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("{path}: {e}");
-                        return process::ExitCode::from(1);
-                    }
-                };
-                source_len = bytes.len();
-                if let Some(winner) = detect(&bytes) {
-                    let fa = FileAnalyze::new(bytes.as_slice());
-                    parsed = parse_and_emit(
-                        &cli,
-                        &path,
-                        metadata.as_ref(),
-                        source_len,
-                        fa,
-                        winner,
-                        false,
-                    );
+            eprintln!("{path}: no parser matched ({source_len} bytes)");
+            None
+        }
+        Err(_) => {
+            let bytes = match fs::read(path) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{path}: {e}");
+                    return None;
                 }
+            };
+            let source_len = bytes.len();
+            if let Some(winner) = detect(&bytes) {
+                let fa = FileAnalyze::new(bytes.as_slice());
+                return format_one(cli, path, metadata.as_ref(), source_len, fa, winner, false);
             }
+            eprintln!("{path}: no parser matched ({source_len} bytes)");
+            None
         }
     }
-
-    if !parsed {
-        eprintln!("{path}: no parser matched ({source_len} bytes)");
-        return process::ExitCode::from(1);
-    }
-
-    process::ExitCode::SUCCESS
 }
 
-fn parse_and_emit(
+fn format_one(
     cli: &Cli,
     path: &str,
     metadata: Option<&fs::Metadata>,
@@ -129,7 +191,7 @@ fn parse_and_emit(
     mut fa: FileAnalyze<'_>,
     winner: fn(&mut FileAnalyze) -> bool,
     has_references: bool,
-) -> bool {
+) -> Option<String> {
     fa.set_option("demux", &cli.demux);
     fa.set_option("trace_level", &cli.trace);
     fa.set_option("multi_file", if cli.multi_file { "1" } else { "0" });
@@ -137,7 +199,7 @@ fn parse_and_emit(
         fa.reference_count = 1;
     }
     if !winner(&mut fa) {
-        return false;
+        return None;
     }
 
     let modified_unix_secs = metadata
@@ -202,7 +264,11 @@ fn parse_and_emit(
         fa.streams_mut().filter_keep(&keep_kinds, &cli.stream);
     }
 
-    let output = if cli.json {
+    let output = if cli.html {
+        to_html(fa.streams(), path)
+    } else if cli.yaml {
+        to_yaml(fa.streams(), path)
+    } else if cli.json || cli.json_array {
         to_json(fa.streams(), path)
     } else if cli.xml {
         to_xml(fa.streams(), path)
@@ -214,13 +280,7 @@ fn parse_and_emit(
         format_text_output(&to_text(fa.streams(), path), cli.inform_version, cli.inform_timestamp)
     };
 
-    if let Some(ref log_file) = cli.log_file {
-        let _ = fs::write(log_file, &output);
-    } else {
-        println!("{output}");
-    }
-
-    true
+    Some(output)
 }
 
 /// Add library version and/or timestamp header to text output if requested.
@@ -306,5 +366,63 @@ fn local_offset_seconds_unix() -> Option<i64> {
             return None;
         }
         Some(tm.tm_gmtoff as i64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cli_json(array: bool) -> Cli {
+        let mut c = <Cli as clap::Parser>::parse_from(["revelo", "x"]);
+        c.json = true;
+        c.json_array = array;
+        c
+    }
+
+    #[test]
+    fn single_output_returned_verbatim() {
+        let cli = <Cli as clap::Parser>::parse_from(["revelo", "x"]);
+        let out = combine_outputs(&cli, vec!["{\n\"a\":1}".to_string()], false);
+        assert_eq!(out, "{\n\"a\":1}");
+    }
+
+    #[test]
+    fn batch_json_defaults_to_ndjson() {
+        let cli = cli_json(false);
+        let out =
+            combine_outputs(&cli, vec!["{\n\"a\":1}".to_string(), "{\n\"b\":2}".to_string()], true);
+        // One compact object per line, newlines only between records.
+        assert_eq!(out, "{\"a\":1}\n{\"b\":2}");
+        assert_eq!(out.lines().count(), 2);
+    }
+
+    #[test]
+    fn json_array_wraps_all_records() {
+        let cli = cli_json(true);
+        let out =
+            combine_outputs(&cli, vec!["{\"a\":1}".to_string(), "{\"b\":2}".to_string()], true);
+        assert_eq!(out, "[\n{\"a\":1},\n{\"b\":2}\n]");
+    }
+
+    #[test]
+    fn batch_non_json_concatenates() {
+        let cli = <Cli as clap::Parser>::parse_from(["revelo", "x"]);
+        let out = combine_outputs(&cli, vec!["A".to_string(), "B".to_string()], true);
+        assert_eq!(out, "A\nB");
+    }
+
+    #[test]
+    fn expand_plain_paths_pass_through() {
+        let got = expand_paths(&["a.mp4".to_string(), "dir/b.mkv".to_string()]);
+        assert_eq!(got, vec!["a.mp4".to_string(), "dir/b.mkv".to_string()]);
+    }
+
+    #[test]
+    fn expand_nonmatching_glob_yields_nothing() {
+        // A glob (has a metacharacter) that matches no files contributes no
+        // inputs — distinct from a plain path, which passes through.
+        let got = expand_paths(&["/nonexistent_dir_zzz/*.mp4".to_string()]);
+        assert!(got.is_empty(), "{got:?}");
     }
 }

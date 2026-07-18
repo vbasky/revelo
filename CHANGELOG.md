@@ -1,5 +1,70 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Elementary-stream extraction (P0)** — parsers now decode the elementary
+  bitstream inside four containers, validated against the mediainfo oracle on
+  ffmpeg-generated samples:
+  - **MP4 AV1** — `av01` sample entry + `av1C` box, with a spec-correct
+    sequence-header colour decode (Format_Profile/Level, ColorSpace,
+    ChromaSubsampling, BitDepth, colour_range). av1.mp4: 63→94 matching lines.
+  - **MPEG-TS AVC/AAC** — scans the PES accumulator for the first SPS/PPS/SEI
+    and feeds `parse_avc_sps` (profile/level/CABAC/ref-frames/dimensions/colour
+    + x264 `Encoded_Library_Settings`); adds SDT-derived Menu service fields and
+    PCR/PTS-based duration/bitrate/delay. ts.ts: 59→93 matching, 0 spurious.
+  - **MKV/WebM VP9** — decodes the first keyframe's block payload via
+    `parse_vp9` when there's no CodecPrivate. vp9.mkv and vp9.webm are now
+    **byte-equal** with the oracle.
+  - **FLV** — the header-only parser is replaced by a full tag demuxer that
+    reads the AVC `avcC`→SPS and AAC AudioSpecificConfig, counts frames, and
+    derives per-stream timing. flv.flv: 21→72 matching.
+- **YAML export (P1)** — `--yaml`/`-y`; a YAML mirror of the JSON structure
+  (`revelo-export::to_yaml`).
+- **HTML report (P1)** — `--html`; a self-contained report (inline CSS, no
+  JavaScript) with summary cards and collapsible per-stream tables, theme-aware
+  (`revelo-export::to_html`).
+- **Glob / batch processing (P1)** — path arguments accept glob patterns
+  (`revelo --json "**/*.mp4"`). Multi-file JSON defaults to NDJSON (one compact
+  object per line); `--json-array` emits a single array; other formats
+  concatenate. Single-file output is byte-for-byte unchanged.
+- **Fuzz / truncation sweep** — a `revelo-dispatcher` test runs all 180 parsers
+  against truncated format signatures, 2000 random buffers, and degenerate
+  (all-zero / all-`0xFF`) inputs, asserting none panic.
+- `Format_Settings_SBR` is now emitted for AAC by the FLV path (from the
+  AudioSpecificConfig).
+
+### Fixed
+
+- **Panic firewall at the C ABI** — a parser (or formatter) panic unwinding
+  across the `extern "C"` boundary in `revelo-cdylib` was undefined behavior.
+  `MediaInfo_Open` and `MediaInfo_Inform` now wrap their work in
+  `catch_unwind` and report a clean failure instead.
+- **`flac` short-block underflow** — a VORBIS_COMMENT block whose declared
+  length was smaller than its 4-byte vendor-length field underflowed an unsigned
+  subtraction (panic under overflow-checks). Now uses `saturating_sub`;
+  regression test added.
+- **`mp4` esds underflow** — the ES-descriptor chain length now uses
+  `saturating_sub` so a malformed box can't underflow the cursor arithmetic.
+- **Spurious `FrameRate_Mode_Original`** — the computed layer unconditionally
+  mirrored `FrameRate_Mode` into `FrameRate_Mode_Original`, but mediainfo emits
+  the latter only when it *differs* (a VFR source normalized to CFR). The
+  redundant equal-copy is removed; parsers that can recover a genuinely
+  different original (e.g. FLV, from tag-timestamp variance) set it directly.
+- **Spurious `Format_Level_Inferred`** — the AV1 inferred-level check only read
+  the Matroska-shaped `Format_Profile@Lx.y`; it now also honours a standalone
+  `Format_Level` field (MP4 shape) and suppresses the inferred value when it
+  matches what the container reported.
+
+### Known gaps
+
+- **Fragmented MP4 duration** — `moof`/`traf`/`trun` are not yet parsed, so
+  fragmented files (`empty_moov`) report zero sample counts/durations. The fix
+  is scoped in [STATUS.md](STATUS.md).
+- **`FrameRate_Mode_Original`** for normalized-VFR sources — the signal is not
+  present in a uniform sample table; needs a real-world sample to derive safely.
+
 ## [0.5.5] - 2026-07-18
 
 ### Fixed

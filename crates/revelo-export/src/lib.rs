@@ -13,6 +13,8 @@
 //! |---|---|
 //! | [`to_xml`] | MediaInfo-compatible XML (schema version 2.0) |
 //! | [`to_json`] | MediaInfo-compatible JSON |
+//! | [`to_yaml`] | YAML mirror of the JSON structure; pipe-friendly |
+//! | [`to_html`] | Self-contained HTML report (summary cards + collapsible sections) |
 //! | [`to_text`] | Human-readable text report (MediaInfo default style) |
 //! | [`to_csv`] | CSV with per-kind sections; pipe-friendly |
 //! | [`to_summary`] | Compact aggregate statistics across all streams |
@@ -63,6 +65,7 @@ pub mod csv;
 pub mod ebu_core;
 pub mod fims;
 pub mod graph;
+pub mod html;
 pub mod json;
 pub mod mpeg7;
 pub mod niso;
@@ -71,11 +74,13 @@ pub mod revtmd;
 pub mod summary;
 pub mod text;
 pub mod xml;
+pub mod yaml;
 
 pub use csv::to_csv;
 pub use ebu_core::to_ebu_core;
 pub use fims::to_fims;
 pub use graph::to_graph;
+pub use html::to_html;
 pub use json::to_json;
 pub use mpeg7::to_mpeg7;
 pub use niso::to_niso;
@@ -84,6 +89,7 @@ pub use revtmd::to_revtmd;
 pub use summary::to_summary;
 pub use text::to_text;
 pub use xml::to_xml;
+pub use yaml::to_yaml;
 
 /// Escapes XML text-content special characters (`&`, `<`, `>`) for the
 /// auxiliary exporters (ebuCore / MPEG-7 / PBCore / RevTMD). Without this a

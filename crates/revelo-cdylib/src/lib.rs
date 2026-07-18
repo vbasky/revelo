@@ -94,12 +94,25 @@ pub unsafe extern "C" fn MediaInfo_Open(handle: *mut c_void, filename: *const c_
     let Some(parser) = detect(&bytes) else {
         return 0;
     };
-    let mut fa = FileAnalyze::new(bytes.as_slice());
-    fa.set_config(handle.config.clone());
-    parser(&mut fa);
-    parse_tags(&mut fa);
-    handle.streams = Some(fa.streams().clone());
-    1
+    let config = handle.config.clone();
+    // Panic firewall: a parser panicking while unwinding across this
+    // `extern "C"` boundary is undefined behavior. Catch it here and report
+    // a clean open failure instead. `AssertUnwindSafe` is sound because the
+    // captured state (`bytes`, `config`) is local and dropped on unwind.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut fa = FileAnalyze::new(bytes.as_slice());
+        fa.set_config(config);
+        parser(&mut fa);
+        parse_tags(&mut fa);
+        fa.streams().clone()
+    }));
+    match result {
+        Ok(streams) => {
+            handle.streams = Some(streams);
+            1
+        }
+        Err(_) => 0,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -120,7 +133,13 @@ pub unsafe extern "C" fn MediaInfo_Inform(handle: *mut c_void, _reserved: u32) -
         Some(s) => s,
         None => return std::ptr::null_mut(),
     };
-    let text = to_text(streams, "");
+    // Panic firewall around the formatter — unwinding across `extern "C"`
+    // is UB. Report null (no output) on panic instead.
+    let text = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| to_text(streams, "")))
+    {
+        Ok(t) => t,
+        Err(_) => return std::ptr::null_mut(),
+    };
     match CString::new(text) {
         Ok(c) => c.into_raw(),
         Err(_) => std::ptr::null_mut(),

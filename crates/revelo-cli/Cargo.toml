@@ -25,6 +25,7 @@ exiftool-tables = ["revelo-parsers-tag/exiftool-tables"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+glob = "0.3"
 memmap2 = "0.9"
 revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.5" }
 revelo-core = { path = "../revelo-core", version = "0.5.5" }

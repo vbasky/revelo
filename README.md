@@ -386,28 +386,31 @@ Planned features and high-impact areas for the next development phase:
 
 - ✅ **CSV export** — Machine-friendly format for pipeline integration
   (`--csv`).
-- **YAML export** — YAML output format for pipeline integration.
-- **HTML report** — Self-contained visual report with collapsible sections and
-  summary cards.
+- ✅ **YAML export** — YAML output format for pipeline integration (`--yaml`).
+- ✅ **HTML report** — Self-contained visual report with collapsible sections and
+  summary cards (`--html`).
 - ✅ **Summary mode** — Aggregate statistics across a file collection: codec
   distribution, resolution ranges, bitrate profiles, container breakdown.
 
 ### Batch & Comparison
 
-- **Glob / batch processing** — `revelo --json "**/*.mp4"` to process an entire
-  directory tree and output as NDJSON or an array. Currently only single-file +
-  BDMV playlists are supported.
+- ✅ **Glob / batch processing** — `revelo --json "**/*.mp4"` processes an entire
+  directory tree, emitting NDJSON by default (`--json-array` for a single array).
+  Other formats concatenate; single-file output is unchanged.
 - **Diff mode** — `revelo --diff a.mkv b.mkv` to show which fields differ
   between two files (user-facing, distinct from the harness-oriented
   `revelo-diff`).
 
 ### Fidelity gaps
 
-- **Elementary-stream extraction** — Wire PES payload parsing for MPEG-TS
-  (AVC/AAC), VP9 frame headers in MKV/WebM, FLV per-tag AVC bitstream, and AV1
-  OBU sequence headers in MP4 to close the remaining ~10 divergence gaps.
-- **Blocked fields** — `FrameRate_Mode_Original` and `Format_Settings_SBR` need
-  real-world test samples to validate against the oracle.
+- ✅ **Elementary-stream extraction** — PES payload parsing for MPEG-TS
+  (AVC SPS/PPS/SEI + AAC), VP9 keyframe headers in MKV/WebM, a full FLV tag
+  demuxer (AVC/AAC), and AV1 OBU sequence headers in MP4. Validated against the
+  mediainfo oracle; VP9 in MKV/WebM is byte-equal.
+- **Blocked fields** — `Format_Settings_SBR` is now derived by the FLV AAC path;
+  `FrameRate_Mode_Original` still needs a real-world VFR-normalized sample (the
+  signal is absent from a normalized sample table, so it can't be synthesized
+  without mislabelling genuine CFR files).
 
 ### Broader reach
 

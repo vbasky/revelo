@@ -13,7 +13,6 @@
 //! - For sizes, the leading 1-bit is stripped and the remaining bits
 //!   plus N-1 subsequent bytes form the integer.
 
-use revelo_core::mime::mime_for_container;
 use revelo_core::{FileAnalyze, Reader, StreamKind};
 
 const MKV_TEXT_VALUE_LIMIT: usize = 16 * 1024;
@@ -36,6 +35,9 @@ const DOC_TYPE_VERSION: u64 = 0x4287;
 const SEGMENT_INFO: u64 = 0x1549A966;
 const TRACKS: u64 = 0x1654AE6B;
 const CLUSTER: u64 = 0x1F43B675;
+const SIMPLE_BLOCK: u64 = 0xA3;
+const BLOCK_GROUP: u64 = 0xA0;
+const BLOCK: u64 = 0xA1;
 const SEEK_HEAD: u64 = 0x114D9B74;
 const TAGS: u64 = 0x1254C367;
 const CHAPTERS: u64 = 0x1043A770;
@@ -130,6 +132,12 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
     let mut seekhead_before_cluster = true;
     let mut crc32_at_level1 = false;
     let mut tag_pairs: Vec<TagEntry> = Vec::new();
+    // First VP9/VP8 video keyframe's frame bytes (uncompressed header
+    // prefix), extracted from the first Cluster. VP9-in-Matroska carries
+    // no CodecPrivate, so profile/bit-depth must come from the bitstream —
+    // this mirrors what MediaInfoLib does when it demuxes the elementary
+    // stream.
+    let mut vpx_keyframe: Option<Vec<u8>> = None;
 
     walk_elements(fa, file_size, &mut |fa, id, size, _start| {
         match id {
@@ -168,7 +176,31 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
                         TRACKS => parse_tracks(fa, sz, &mut tracks),
                         CLUSTER => {
                             cluster_seen = true;
-                            fa.skip_hexa(sz, "cluster");
+                            // Only descend into clusters while we still
+                            // need the VP9/VP8 keyframe; otherwise skip
+                            // wholesale (block payloads are irrelevant to
+                            // the rest of the metadata).
+                            let vpx_track = tracks.iter().find(|t| {
+                                t.track_type == Some(1)
+                                    && matches!(
+                                        t.codec_id.as_deref(),
+                                        Some("V_VP9") | Some("V_VP8")
+                                    )
+                            });
+                            match vpx_track.and_then(|t| t.number) {
+                                Some(track_num) if vpx_keyframe.is_none() => {
+                                    walk_elements(fa, sz, &mut |fa, bid, bsz, _| {
+                                        capture_vpx_keyframe(
+                                            fa,
+                                            bid,
+                                            bsz,
+                                            track_num,
+                                            &mut vpx_keyframe,
+                                        );
+                                    });
+                                }
+                                _ => fa.skip_hexa(sz, "cluster"),
+                            }
                         }
                         TAGS => parse_tags(fa, sz, &mut tag_pairs),
                         CHAPTERS => {
@@ -208,6 +240,7 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
         },
         &tag_pairs,
         file_size,
+        vpx_keyframe.as_deref(),
     );
     true
 }
@@ -529,6 +562,7 @@ fn fill_streams(
     container: &MkvContainerInfo,
     tag_pairs: &[TagEntry],
     file_size: usize,
+    vpx_keyframe: Option<&[u8]>,
 ) {
     let &MkvContainerInfo { doc_type, doc_type_version, is_streamable, crc32_at_level1 } =
         container;
@@ -546,9 +580,7 @@ fn fill_streams(
     // matroska files report "Matroska".
     let fmt = if doc_type == "webm" { "WebM" } else { "Matroska" };
     fa.set_field(StreamKind::General, 0, "Format", fmt);
-    if let Some(m) = mime_for_container("matroska") {
-        fa.set_field(StreamKind::General, 0, "InternetMediaType", m);
-    }
+    // MediaInfoLib emits no InternetMediaType for Matroska/WebM.
     if doc_type_version > 0 {
         fa.set_field(StreamKind::General, 0, "Format_Version", doc_type_version.to_string());
     }
@@ -815,26 +847,14 @@ fn fill_streams(
                 // missing values to "No".
                 let forced = track.flag_forced.unwrap_or(false);
                 fa.set_field(StreamKind::Audio, pos, "Forced", if forced { "Yes" } else { "No" });
-                // For MKV, Delay defaults to 0.000s and Delay_Source is
-                // "Container" — oracle emits these for every audio
-                // track even when no explicit CodecDelay element is
-                // present. For Opus, use the pre-skip from CodecPrivate
-                // (samples at 48 kHz → delay_secs = preskip / 48000).
-                let delay_secs = if track.codec_id.as_deref() == Some("A_OPUS") {
-                    track
-                        .codec_private
-                        .as_ref()
-                        .filter(|p| p.len() >= 12 && &p[0..8] == b"OpusHead")
-                        .map(|p| {
-                            let preskip = u16::from_le_bytes([p[10], p[11]]);
-                            preskip as f64 / 48000.0
-                        })
-                        .unwrap_or(0.0)
-                } else {
-                    0.0
-                };
-                fa.set_field(StreamKind::Audio, pos, "Delay", format!("{:.3}", delay_secs));
+                // For MKV, the presented timeline is already compensated
+                // for any codec pre-roll (Opus pre-skip / CodecDelay), so
+                // MediaInfoLib reports Delay = 0.000 with Delay_Source =
+                // "Container" for every audio track. It also emits
+                // Video_Delay = 0.000 (audio-relative-to-video offset).
+                fa.set_field(StreamKind::Audio, pos, "Delay", "0.000");
                 fa.set_field(StreamKind::Audio, pos, "Delay_Source", "Container");
+                fa.set_field(StreamKind::Audio, pos, "Video_Delay", "0.000");
                 // MKV oracle emits Audio.Duration with 9 fractional
                 // digits (the file's float precision). Store the
                 // pre-formatted string here so the exporter's
@@ -931,26 +951,57 @@ fn fill_streams(
                         );
                     }
                 }
-                // Container-level Duration → Video.
-                if let Some(s) = duration_seconds {
-                    fa.set_field(StreamKind::Video, pos, "Duration", format!("{:.9}", s));
+                // Video Duration. With a per-frame DefaultDuration known,
+                // MediaInfoLib derives it from the frame timeline
+                // (FrameCount × DefaultDuration), which can be shorter than
+                // the segment Duration (the longest track). Fall back to
+                // the segment Duration otherwise.
+                let frame_dur_ns = track.default_duration_ns.filter(|&ns| ns > 0);
+                let frame_count = match (duration_seconds, frame_dur_ns) {
+                    (Some(s), Some(ns)) => Some((s * 1_000_000_000.0 / ns as f64).round() as u64),
+                    _ => None,
+                };
+                match (frame_count, frame_dur_ns) {
+                    (Some(fc), Some(ns)) => {
+                        let video_secs = fc as f64 * ns as f64 / 1_000_000_000.0;
+                        fa.set_field(
+                            StreamKind::Video,
+                            pos,
+                            "Duration",
+                            format!("{video_secs:.9}"),
+                        );
+                    }
+                    _ => {
+                        if let Some(s) = duration_seconds {
+                            fa.set_field(StreamKind::Video, pos, "Duration", format!("{s:.9}"));
+                        }
+                    }
                 }
                 // FrameRate from DefaultDuration. 1 frame per ns →
                 // frame_rate = 1e9 / default_duration_ns. CFR when
                 // DefaultDuration is set (MKV doesn't expose per-frame
-                // deltas without walking clusters).
-                if let Some(ns) = track.default_duration_ns
-                    && ns > 0
-                {
+                // deltas without walking clusters). FrameRate_Num/_Den are
+                // the exact rational 1e9 / ns reduced by their GCD.
+                if let Some(ns) = frame_dur_ns {
                     let fr = 1_000_000_000.0 / ns as f64;
                     fa.set_field(StreamKind::Video, pos, "FrameRate_Mode", "CFR");
                     fa.set_field(StreamKind::Video, pos, "FrameRate", format!("{fr:.3}"));
-                    // FrameCount = Duration / DefaultDuration.
-                    if let Some(s) = duration_seconds {
-                        let fc = (s * 1_000_000_000.0 / ns as f64).round() as u64;
+                    let g = gcd_u64(1_000_000_000, ns);
+                    fa.set_field(
+                        StreamKind::Video,
+                        pos,
+                        "FrameRate_Num",
+                        (1_000_000_000 / g).to_string(),
+                    );
+                    fa.set_field(StreamKind::Video, pos, "FrameRate_Den", (ns / g).to_string());
+                    if let Some(fc) = frame_count {
                         fa.set_field(StreamKind::Video, pos, "FrameCount", fc.to_string());
                     }
                 }
+                // MKV presents a compensated timeline, so the video track
+                // has zero delay (Delay_Source = Container).
+                fa.set_field(StreamKind::Video, pos, "Delay", "0.000");
+                fa.set_field(StreamKind::Video, pos, "Delay_Source", "Container");
                 if let Some(bd) = track.video_bit_depth {
                     fa.set_field(StreamKind::Video, pos, "BitDepth", bd.to_string());
                 }
@@ -1057,6 +1108,48 @@ fn fill_streams(
                     fa.set_field(StreamKind::Video, pos, "ChromaSubsampling", chroma);
                     let range = if video_full_range != 0 { "Full" } else { "Limited" };
                     fa.set_field(StreamKind::Video, pos, "colour_range", range);
+                }
+
+                // VP9-in-Matroska usually carries no CodecPrivate, so
+                // profile and bit depth come from the first keyframe's
+                // uncompressed header — reuse the VP9 frame-header decoder
+                // rather than duplicating its bit-parsing here. Only fill
+                // fields the container didn't already provide.
+                if matches!(track.codec_id.as_deref(), Some("V_VP9"))
+                    && fa.retrieve(StreamKind::Video, pos, "Format_Profile").is_none()
+                    && let Some(frame) = vpx_keyframe
+                {
+                    let mut tmp = FileAnalyze::new(frame);
+                    if revelo_parsers_video::parse_vp9(&mut tmp) {
+                        let profile = tmp
+                            .retrieve(StreamKind::Video, 0, "Format_Profile")
+                            .map(|z| z.as_str().to_owned());
+                        let bit_depth = tmp
+                            .retrieve(StreamKind::Video, 0, "BitDepth")
+                            .map(|z| z.as_str().to_owned());
+                        if let Some(profile) = profile {
+                            fa.set_field(StreamKind::Video, pos, "Format_Profile", profile);
+                        }
+                        if track.video_bit_depth.is_none()
+                            && let Some(bd) = bit_depth
+                        {
+                            fa.set_field(StreamKind::Video, pos, "BitDepth", bd);
+                        }
+                        // The colour info (matrix_coefficients) was read
+                        // from the bitstream. When the container's Colour
+                        // element didn't also carry a matrix, MediaInfoLib
+                        // labels the source "Stream". A CS_UNKNOWN
+                        // colorspace maps to "unspecified", whose value is
+                        // suppressed, but the source is still reported.
+                        if track.colour_matrix.is_none() {
+                            fa.set_field(
+                                StreamKind::Video,
+                                pos,
+                                "matrix_coefficients_Source",
+                                "Stream",
+                            );
+                        }
+                    }
                 }
 
                 // For AVC tracks with CodecPrivate, parse avcC to get profile/level
@@ -1271,24 +1364,35 @@ fn fill_streams(
                     }
                 }
 
-                fa.set_field(StreamKind::Video, pos, "ColorSpace", "YUV");
+                // MediaInfoLib reports its colour info for VP9 from the
+                // bitstream (matrix_coefficients_Source = Stream) and emits
+                // no ColorSpace for it; other codecs get the YUV default.
+                let is_vpx = matches!(track.codec_id.as_deref(), Some("V_VP9") | Some("V_VP8"));
+                if !is_vpx {
+                    fa.set_field(StreamKind::Video, pos, "ColorSpace", "YUV");
+                }
                 // ChromaSubsampling default: 4:2:0 (no Colour element in
                 // MKV explicitly carries this; the codec implies it).
                 fa.set_field(StreamKind::Video, pos, "ChromaSubsampling", "4:2:0");
-                // Colour element → colour_* fields, marked _Source=
-                // "Container / Stream" (oracle's label when present in
-                // both container Colour and codec VUI).
+                // Colour element → colour_* fields. The presence flag's
+                // source is the container's Colour element ("Container").
+                // For codecs whose bitstream also carries a VUI colour
+                // description that rust parses (AVC/HEVC), MediaInfoLib
+                // merges the sources into "Container / Stream"; VP9's
+                // bitstream carries no such presence flag, so it stays
+                // "Container".
                 let has_colour = track.colour_primaries.is_some()
                     || track.colour_transfer.is_some()
                     || track.colour_matrix.is_some()
                     || track.colour_range.is_some();
                 if has_colour {
                     fa.set_field(StreamKind::Video, pos, "colour_description_present", "Yes");
+                    let desc_source = if is_vpx { "Container" } else { "Container / Stream" };
                     fa.set_field(
                         StreamKind::Video,
                         pos,
                         "colour_description_present_Source",
-                        "Container / Stream",
+                        desc_source,
                     );
                 }
                 if let Some(r) = track.colour_range {
@@ -1363,6 +1467,28 @@ fn fill_streams(
                 );
                 let forced = track.flag_forced.unwrap_or(false);
                 fa.set_field(StreamKind::Video, pos, "Forced", if forced { "Yes" } else { "No" });
+                // Encoded_Library from a matching ENCODER tag (e.g.
+                // "Lavc62.28.102 libvpx-vp9"), preferring a track-targeted
+                // tag over a global (muxer-level) one.
+                if let Some(track_uid) = track.uid {
+                    let mut track_value: Option<&str> = None;
+                    let mut global_value: Option<&str> = None;
+                    for tag in tag_pairs {
+                        if !tag.name.eq_ignore_ascii_case("ENCODER") {
+                            continue;
+                        }
+                        if tag.target_track_uid == track_uid {
+                            track_value = Some(&tag.value);
+                            break;
+                        }
+                        if tag.target_track_uid == 0 && global_value.is_none() {
+                            global_value = Some(&tag.value);
+                        }
+                    }
+                    if let Some(v) = track_value.or(global_value) {
+                        fa.set_field(StreamKind::Video, pos, "Encoded_Library", v.to_string());
+                    }
+                }
                 video_count += 1;
             }
             _ => {}
@@ -1399,9 +1525,10 @@ fn fill_streams(
 
         // Calculate OverallBitRate = FileSize * 8 / Duration_ms * 1000
         if ms > 0 && file_size > 0 {
-            let overall_bitrate = (file_size as u64 * 8 * 1000) / ms;
+            // Round (not truncate) to match MediaInfoLib: it computes
+            // FileSize * 8 / Duration_s and rounds to the nearest bit/s.
+            let overall_bitrate = (file_size as f64 * 8000.0 / ms as f64).round() as u64;
             fa.set_field(StreamKind::General, 0, "OverallBitRate", overall_bitrate.to_string());
-            fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "VBR");
         }
     }
 }
@@ -1691,6 +1818,94 @@ fn read_vint_size(fa: &mut FileAnalyze) -> Option<u64> {
     Some(v)
 }
 
+/// Euclidean GCD, used to reduce FrameRate_Num/FrameRate_Den.
+fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a.max(1)
+}
+
+/// Extract the first VP9/VP8 keyframe's frame bytes from a Cluster child
+/// (a `SimpleBlock`, or a `Block` inside a `BlockGroup`). Only the leading
+/// bytes — enough for the VP9 uncompressed header — are captured, and only
+/// for the requested track. Once `out` is populated the remaining blocks
+/// are skipped cheaply.
+fn capture_vpx_keyframe(
+    fa: &mut FileAnalyze,
+    id: u64,
+    size: usize,
+    track_num: u64,
+    out: &mut Option<Vec<u8>>,
+) {
+    if out.is_some() {
+        fa.skip_hexa(size, "block");
+        return;
+    }
+    // Enough to cover the block header (track VINT + 2-byte timecode +
+    // flags) plus the VP9 uncompressed header.
+    const PROBE: usize = 64;
+    match id {
+        SIMPLE_BLOCK => {
+            if let Some(prefix) = fa.peek_raw(size.min(PROBE))
+                && let Some(frame) = vpx_frame_from_block(prefix, track_num, true)
+            {
+                *out = Some(frame.to_vec());
+            }
+            fa.skip_hexa(size, "simpleblock");
+        }
+        BLOCK_GROUP => {
+            walk_elements(fa, size, &mut |fa, bid, bsz, _| {
+                if bid == BLOCK
+                    && out.is_none()
+                    && let Some(prefix) = fa.peek_raw(bsz.min(PROBE))
+                    && let Some(frame) = vpx_frame_from_block(prefix, track_num, false)
+                {
+                    *out = Some(frame.to_vec());
+                }
+                fa.skip_hexa(bsz, "blockgroup_child");
+            });
+        }
+        _ => fa.skip_hexa(size, "cluster_child"),
+    }
+}
+
+/// Parse a Matroska (Simple)Block header and return the elementary-stream
+/// frame bytes when it belongs to `track_num`, is unlaced, and — for a
+/// SimpleBlock — is flagged as a keyframe. `payload` may be a truncated
+/// prefix; the returned slice is likewise a prefix of the frame.
+fn vpx_frame_from_block(payload: &[u8], track_num: u64, is_simpleblock: bool) -> Option<&[u8]> {
+    let first = *payload.first()?;
+    if first == 0 {
+        return None;
+    }
+    let len = first.leading_zeros() as usize + 1;
+    if len > 8 || payload.len() < len + 3 {
+        return None;
+    }
+    let marker_mask: u8 = if len == 8 { 0 } else { !(0xFF << (8 - len)) };
+    let mut tn = (first & marker_mask) as u64;
+    for &b in &payload[1..len] {
+        tn = (tn << 8) | b as u64;
+    }
+    if tn != track_num {
+        return None;
+    }
+    // payload[len..len+2] = int16 relative timecode, payload[len+2] = flags.
+    let flags = payload[len + 2];
+    if (flags >> 1) & 0x03 != 0 {
+        return None; // laced block — skip
+    }
+    if is_simpleblock && flags & 0x80 == 0 {
+        return None; // not a keyframe
+    }
+    let frame = &payload[len + 3..];
+    if frame.len() < 6 {
+        return None;
+    }
+    Some(frame)
+}
+
 /// Walk EBML elements within a region. Visitor receives
 /// (fa, element_id, body_size, element_start_offset).
 fn walk_elements(
@@ -1885,5 +2100,119 @@ mod tests {
         assert!(stats.bytes_requested < MKV_METADATA_ONLY_BUDGET, "{stats:?}");
         assert!(stats.bytes_returned < MKV_METADATA_ONLY_BUDGET, "{stats:?}");
         assert!(stats.max_request_len <= MKV_TEXT_VALUE_LIMIT, "{stats:?}");
+    }
+
+    /// Build a profile-0, 8-bit VP9 key-frame uncompressed header (MSB-first).
+    fn vp9_keyframe_profile0(width: u16, height: u16) -> Vec<u8> {
+        fn push(bytes: &mut Vec<u8>, bitpos: &mut usize, val: u32, n: usize) {
+            for k in (0..n).rev() {
+                let bit = ((val >> k) & 1) as u8;
+                let idx = *bitpos / 8;
+                if idx >= bytes.len() {
+                    bytes.push(0);
+                }
+                bytes[idx] |= bit << (7 - (*bitpos % 8));
+                *bitpos += 1;
+            }
+        }
+        let mut b = Vec::new();
+        let mut p = 0usize;
+        push(&mut b, &mut p, 0b10, 2); // frame_marker
+        push(&mut b, &mut p, 0, 1); // version0
+        push(&mut b, &mut p, 0, 1); // version1 -> profile 0
+        push(&mut b, &mut p, 0, 1); // show_existing_frame
+        push(&mut b, &mut p, 0, 1); // frame_type = key
+        push(&mut b, &mut p, 1, 1); // show_frame
+        push(&mut b, &mut p, 0, 1); // error_resilient_mode
+        push(&mut b, &mut p, 0x498342, 24); // sync code
+        push(&mut b, &mut p, 0, 3); // colorspace = CS_UNKNOWN
+        push(&mut b, &mut p, 0, 1); // reserved (colorspace == 0)
+        push(&mut b, &mut p, (width - 1) as u32, 16);
+        push(&mut b, &mut p, (height - 1) as u32, 16);
+        push(&mut b, &mut p, 0, 1); // has_scaling
+        b
+    }
+
+    fn vp9_mkv_sample() -> Vec<u8> {
+        // Cluster with a Timestamp + a keyframe SimpleBlock for track 1.
+        let frame = vp9_keyframe_profile0(320, 240);
+        let mut block = Vec::new();
+        block.push(0x81); // track number VINT = 1
+        block.extend_from_slice(&[0x00, 0x00]); // relative timecode
+        block.push(0x80); // flags: keyframe, no lacing
+        block.extend_from_slice(&frame);
+        let mut cluster_children = Vec::new();
+        cluster_children.extend(element(&[0xE7], vec![0])); // Timestamp
+        cluster_children.extend(element(&[0xA3], block)); // SimpleBlock
+        let cluster = element(&[0x1F, 0x43, 0xB6, 0x75], cluster_children);
+
+        // Video track (V_VP9) with DefaultDuration = 40 ms (25 fps) and a
+        // Colour element carrying only Range = Limited.
+        let colour = element(&[0x55, 0xB9], vec![1]);
+        let mut video = Vec::new();
+        video.extend(element(&[0xB0], vec![0x01, 0x40])); // PixelWidth 320
+        video.extend(element(&[0xBA], vec![0x00, 0xF0])); // PixelHeight 240
+        video.extend(element(&[0x55, 0xB0], colour));
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![1])); // TrackNumber
+        track.extend(element(&[0x73, 0xC5], vec![0x2A])); // TrackUID = 42
+        track.extend(element(&[0x83], vec![1])); // TrackType = video
+        track.extend(element(&[0x86], b"V_VP9".to_vec())); // CodecID
+        track.extend(element(&[0x23, 0xE3, 0x83], vec![0x02, 0x62, 0x5A, 0x00])); // DefaultDuration 40000000ns
+        track.extend(element(&[0xE0], video));
+        let tracks = element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track));
+
+        // Segment info: TimecodeScale 1e6, Duration 2000 units (2.0 s).
+        let mut info = Vec::new();
+        info.extend(element(&[0x2A, 0xD7, 0xB1], vec![0x0F, 0x42, 0x40]));
+        info.extend(element(&[0x44, 0x89], 2000.0f64.to_be_bytes().to_vec()));
+        let seg_info = element(&[0x15, 0x49, 0xA9, 0x66], info);
+
+        // Track-targeted ENCODER tag.
+        let mut simple_tag = Vec::new();
+        simple_tag.extend(element(&[0x45, 0xA3], b"ENCODER".to_vec()));
+        simple_tag.extend(element(&[0x44, 0x87], b"Lavc-test libvpx-vp9".to_vec()));
+        let mut tag = Vec::new();
+        tag.extend(element(&[0x63, 0xC0], element(&[0x63, 0xC5], vec![0x2A])));
+        tag.extend(element(&[0x67, 0xC8], simple_tag));
+        let tags = element(&[0x12, 0x54, 0xC3, 0x67], element(&[0x73, 0x73], tag));
+
+        let mut segment_payload = Vec::new();
+        segment_payload.extend(seg_info);
+        segment_payload.extend(tracks);
+        segment_payload.extend(tags);
+        segment_payload.extend(cluster);
+
+        let mut buf = Vec::new();
+        buf.extend(ebml_header(b"matroska"));
+        buf.extend(element(&[0x18, 0x53, 0x80, 0x67], segment_payload));
+        buf
+    }
+
+    #[test]
+    fn vp9_track_derives_profile_and_bitdepth_from_bitstream() {
+        let buf = vp9_mkv_sample();
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+
+        let v = |name: &str| fa.retrieve(StreamKind::Video, 0, name).map(|z| z.as_str().to_owned());
+        assert_eq!(v("Format").as_deref(), Some("VP9"));
+        // No CodecPrivate: profile & bit depth come from the keyframe.
+        assert_eq!(v("Format_Profile").as_deref(), Some("0"));
+        assert_eq!(v("BitDepth").as_deref(), Some("8"));
+        // FrameRate derived from DefaultDuration (40 ms → 25 fps).
+        assert_eq!(v("FrameRate_Mode").as_deref(), Some("CFR"));
+        assert_eq!(v("FrameRate").as_deref(), Some("25.000"));
+        assert_eq!(v("FrameRate_Num").as_deref(), Some("25"));
+        assert_eq!(v("FrameRate_Den").as_deref(), Some("1"));
+        assert_eq!(v("Duration").as_deref(), Some("2.000000000"));
+        assert_eq!(v("Delay").as_deref(), Some("0.000"));
+        // Colour source labels match MediaInfoLib for VP9.
+        assert_eq!(v("colour_description_present_Source").as_deref(), Some("Container"));
+        assert_eq!(v("matrix_coefficients_Source").as_deref(), Some("Stream"));
+        // ColorSpace is omitted for VP9.
+        assert_eq!(v("ColorSpace"), None);
+        // Encoded_Library from the track-targeted ENCODER tag.
+        assert_eq!(v("Encoded_Library").as_deref(), Some("Lavc-test libvpx-vp9"));
     }
 }

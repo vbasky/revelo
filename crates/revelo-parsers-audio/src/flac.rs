@@ -159,11 +159,17 @@ fn parse_vorbis_comment(r: &mut Reader<'_, '_>, block_len: usize) -> Option<Vorb
     let vendor_len = r.le_u32("vendor_length")?;
     let vendor_len_usize = vendor_len as usize;
     if r.element_offset() + vendor_len_usize > end_offset {
-        // Malformed — skip to block end.
-        if r.remain() < end_offset - r.element_offset() {
+        // Malformed — skip to block end. `saturating_sub` guards the case
+        // where a short block (`block_len < 4`) let the vendor-length read
+        // advance the cursor past `end_offset`, which would otherwise
+        // underflow this unsigned subtraction and panic under overflow-checks.
+        let to_end = end_offset.saturating_sub(r.element_offset());
+        if r.remain() < to_end {
             return None;
         }
-        r.skip(end_offset - r.element_offset())?; // MalformedComment
+        if to_end > 0 {
+            r.skip(to_end)?; // MalformedComment
+        }
         return None;
     }
 
@@ -541,6 +547,32 @@ mod tests {
         let mut fa = FileAnalyze::new(&buf);
         assert!(parse_flac(&mut fa));
         assert!(fa.access_stats().max_request_len < vendor_len);
+    }
+
+    #[test]
+    fn short_vorbis_comment_block_does_not_underflow() {
+        // A VORBIS_COMMENT block whose declared length (2) is smaller than
+        // the 4-byte vendor_length field. Reading vendor_length advances the
+        // cursor past the block's end_offset; the malformed-skip path must
+        // use a saturating subtraction rather than underflowing (which would
+        // panic under overflow-checks). Regression test for that fix.
+        let block_len = 2usize;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"fLaC");
+        append_streaminfo(&mut buf, false);
+        buf.push(0x80 | BLOCK_TYPE_VORBIS_COMMENT); // last block, type 4
+        buf.extend_from_slice(&[
+            ((block_len >> 16) & 0xff) as u8,
+            ((block_len >> 8) & 0xff) as u8,
+            (block_len & 0xff) as u8,
+        ]);
+        // Provide >=4 readable bytes so the vendor_length read succeeds and
+        // the cursor overshoots end_offset — the pre-fix underflow trigger.
+        buf.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+
+        let mut fa = FileAnalyze::new(&buf);
+        // Must return without panicking.
+        let _ = parse_flac(&mut fa);
     }
 
     #[test]

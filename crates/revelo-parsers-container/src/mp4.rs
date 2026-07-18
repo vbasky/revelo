@@ -118,6 +118,7 @@ const SAMPLE_ENTRY_AVC3: u32 = u32::from_be_bytes(*b"avc3");
 const SAMPLE_ENTRY_HVC1: u32 = u32::from_be_bytes(*b"hvc1");
 const SAMPLE_ENTRY_HEV1: u32 = u32::from_be_bytes(*b"hev1");
 const SAMPLE_ENTRY_MP4V: u32 = u32::from_be_bytes(*b"mp4v");
+const SAMPLE_ENTRY_AV01: u32 = u32::from_be_bytes(*b"av01");
 const BOX_ESDS: u32 = u32::from_be_bytes(*b"esds");
 const BOX_AVCC: u32 = u32::from_be_bytes(*b"avcC");
 const BOX_HVCC: u32 = u32::from_be_bytes(*b"hvcC");
@@ -125,6 +126,7 @@ const BOX_COLR: u32 = u32::from_be_bytes(*b"colr");
 const BOX_DVCC: u32 = u32::from_be_bytes(*b"dvcC");
 const BOX_DVVC: u32 = u32::from_be_bytes(*b"dvvC");
 const BOX_PASP: u32 = u32::from_be_bytes(*b"pasp");
+const BOX_AV1C: u32 = u32::from_be_bytes(*b"av1C");
 
 const MP4_METADATA_VALUE_LIMIT: usize = 64 * 1024;
 const MP4_KEY_VALUE_LIMIT: usize = 4 * 1024;
@@ -132,6 +134,7 @@ const MP4_HANDLER_NAME_LIMIT: usize = 4 * 1024;
 const MP4A_EXTENSION_SCAN_LIMIT: usize = 256 * 1024;
 const MP4_AVCC_PARSE_LIMIT: usize = 256 * 1024;
 const MP4_HVCC_PARSE_LIMIT: usize = 256 * 1024;
+const MP4_AV1C_PARSE_LIMIT: usize = 256 * 1024;
 const MP4_DVCC_PARSE_LIMIT: usize = 5;
 
 #[derive(Debug, Default)]
@@ -239,6 +242,9 @@ struct TrackInfo {
     avc_sps: Option<revelo_parsers_video::AvcInfo>,
     // Parsed HEVC SPS (from hvcC). Carries VUI colour info similar to AVC.
     hevc_sps: Option<revelo_parsers_video::HevcInfo>,
+    /// Decoded AV1 config (from av1C sequence-header OBU). Carries
+    /// profile/level/tier, bit depth, chroma subsampling, colour range.
+    av1_info: Option<revelo_parsers_video::Av1Info>,
     // Encoder info extracted from AVC/HEVC SEI user_data_unregistered
     // message (library + name/version/settings sub-fields).
     encoder_info: Option<revelo_parsers_video::EncoderInfo>,
@@ -1082,6 +1088,7 @@ fn parse_stsd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
             SAMPLE_ENTRY_MP4V => {
                 parse_visual_entry(fa, entry_total, track, "MPEG-4 Visual", "mp4v")
             }
+            SAMPLE_ENTRY_AV01 => parse_visual_entry(fa, entry_total, track, "AV1", "av01"),
             SAMPLE_ENTRY_RTP => {
                 track.hint_codec_id = Some("rtp ");
                 track.has_data = true;
@@ -1374,6 +1381,7 @@ fn parse_visual_entry(
         let body = sub_total - 8;
         match sub_type {
             BOX_AVCC => parse_avcc(fa, body, track),
+            BOX_AV1C => parse_av1c(fa, body, track),
             BOX_HVCC => parse_hvcc(fa, body, track),
             BOX_COLR => parse_colr(fa, body, track),
             BOX_PASP => parse_pasp(fa, body, track),
@@ -1475,7 +1483,294 @@ fn parse_dvcc(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     }
 }
 
-/// Parse avcC (AVCDecoderConfigurationRecord). Layout:/// Parse avcC (AVCDecoderConfigurationRecord). Layout:
+/// Parse av1C (AV1CodecConfigurationRecord, AV1-ISOBMFF §2.3.3). The box
+/// body is the record: a fixed 4-byte header (marker/version, seq_profile,
+/// seq_level_idx_0, seq_tier_0, high_bitdepth/twelve_bit/monochrome and
+/// chroma_subsampling flags), then a `reserved`/`initial_presentation_delay`
+/// byte, followed by the sequence-header OBU in `configOBUs`.
+///
+/// The shared `parse_av1_from_codec_config` yields profile/level/bit-depth
+/// but locates `configOBUs` one byte early, so it never decodes the OBU and
+/// leaves the colour range unset. We therefore locate the sequence-header
+/// OBU at the correct offset (4) ourselves and decode it with the shared
+/// `parse_av1_sequence_header`, which supplies colour_range and colour
+/// description. The record's seq_level_idx_0 stays authoritative for the
+/// level (the sequence header only carries per-operating-point levels).
+fn parse_av1c(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
+    if body_size < 4 {
+        fa.skip_hexa(body_size, "av1c_short");
+        return;
+    }
+    let body = peek_payload_prefix_and_skip(fa, body_size, MP4_AV1C_PARSE_LIMIT, "av1c_payload")
+        .unwrap_or_default();
+    if body.len() < 4 {
+        return;
+    }
+    // Base info from the fixed header: profile, seq_level_idx_0, bit depth
+    // and chroma subsampling all live in the first 4 record bytes, which the
+    // shared parser decodes correctly.
+    let mut info = match revelo_parsers_video::parse_av1_from_codec_config(&body) {
+        Some(i) => i,
+        None => return,
+    };
+    // configOBUs begin after the fixed 4-byte record header. The shared
+    // parser looks for them one byte early and so never decodes the colour
+    // range; locate the sequence-header OBU at the correct offset and pull
+    // colour_config out of it ourselves.
+    if let Some(payload) = av1c_sequence_header_payload(&body[4..])
+        && let Some(colour) = av1_seq_header_colour(payload)
+    {
+        info.monochrome = colour.mono_chrome;
+        info.video_full_range = Some(colour.full_range);
+        info.colour_description_present = colour.colour_description_present;
+        info.colour_primaries = colour.colour_primaries;
+        info.transfer_characteristics = colour.transfer_characteristics;
+        info.matrix_coefficients = colour.matrix_coefficients;
+    }
+    track.av1_info = Some(info);
+}
+
+/// Colour information decoded from an AV1 sequence-header OBU's
+/// `color_config()`.
+struct Av1SeqColour {
+    mono_chrome: bool,
+    colour_description_present: bool,
+    colour_primaries: Option<u8>,
+    transfer_characteristics: Option<u8>,
+    matrix_coefficients: Option<u8>,
+    /// `color_range`: true = full-swing (0-255), false = limited/studio.
+    full_range: bool,
+}
+
+/// Minimal MSB-first bit reader over an AV1 OBU payload.
+struct Av1BitReader<'a> {
+    data: &'a [u8],
+    bit_pos: usize,
+}
+
+impl<'a> Av1BitReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, bit_pos: 0 }
+    }
+
+    /// Read `n` bits (`f(n)` in the AV1 spec). Returns None past end of data.
+    fn f(&mut self, n: u32) -> Option<u64> {
+        let mut v = 0u64;
+        for _ in 0..n {
+            let byte = self.bit_pos / 8;
+            if byte >= self.data.len() {
+                return None;
+            }
+            let bit = 7 - (self.bit_pos % 8);
+            v = (v << 1) | ((self.data[byte] >> bit) & 1) as u64;
+            self.bit_pos += 1;
+        }
+        Some(v)
+    }
+
+    /// Unsigned variable-length code (`uvlc()` in the AV1 spec).
+    fn uvlc(&mut self) -> Option<u64> {
+        let mut leading_zeros = 0u32;
+        loop {
+            let done = self.f(1)? != 0;
+            if done {
+                break;
+            }
+            leading_zeros += 1;
+            if leading_zeros >= 32 {
+                return Some((1u64 << 32) - 1);
+            }
+        }
+        let value = self.f(leading_zeros)?;
+        Some(value + (1u64 << leading_zeros) - 1)
+    }
+}
+
+/// Decode `color_config()` from an AV1 sequence-header OBU payload, walking
+/// the intervening fields per the AV1 bitstream spec (§5.5). Returns None on
+/// truncation. Colour primaries/transfer/matrix constants: CP_BT_709 = 1,
+/// TC_SRGB = 13, MC_IDENTITY = 0.
+fn av1_seq_header_colour(payload: &[u8]) -> Option<Av1SeqColour> {
+    let mut r = Av1BitReader::new(payload);
+    let seq_profile = r.f(3)? as u8;
+    let _still_picture = r.f(1)?;
+    let reduced_still_picture_header = r.f(1)? != 0;
+
+    let mut decoder_model_info_present = false;
+    let mut buffer_delay_length_minus_1 = 0u32;
+
+    if reduced_still_picture_header {
+        let _seq_level_idx_0 = r.f(5)?;
+    } else {
+        let timing_info_present = r.f(1)? != 0;
+        if timing_info_present {
+            // timing_info()
+            let _num_units_in_display_tick = r.f(32)?;
+            let _time_scale = r.f(32)?;
+            if r.f(1)? != 0 {
+                // equal_picture_interval
+                let _num_ticks_per_picture_minus_1 = r.uvlc()?;
+            }
+            decoder_model_info_present = r.f(1)? != 0;
+            if decoder_model_info_present {
+                // decoder_model_info()
+                buffer_delay_length_minus_1 = r.f(5)? as u32;
+                let _num_units_in_decoding_tick = r.f(32)?;
+                let _buffer_removal_time_length_minus_1 = r.f(5)?;
+                let _frame_presentation_time_length_minus_1 = r.f(5)?;
+            }
+        }
+        let initial_display_delay_present = r.f(1)? != 0;
+        let operating_points_cnt_minus_1 = r.f(5)? as usize;
+        for _ in 0..=operating_points_cnt_minus_1 {
+            let _operating_point_idc = r.f(12)?;
+            let seq_level_idx = r.f(5)?;
+            if seq_level_idx > 7 {
+                let _seq_tier = r.f(1)?;
+            }
+            if decoder_model_info_present && r.f(1)? != 0 {
+                // operating_parameters_info()
+                let n = buffer_delay_length_minus_1 + 1;
+                let _decoder_buffer_delay = r.f(n)?;
+                let _encoder_buffer_delay = r.f(n)?;
+                let _low_delay_mode_flag = r.f(1)?;
+            }
+            if initial_display_delay_present && r.f(1)? != 0 {
+                let _initial_display_delay_minus_1 = r.f(4)?;
+            }
+        }
+    }
+
+    let frame_width_bits_minus_1 = r.f(4)? as u32;
+    let frame_height_bits_minus_1 = r.f(4)? as u32;
+    let _max_frame_width_minus_1 = r.f(frame_width_bits_minus_1 + 1)?;
+    let _max_frame_height_minus_1 = r.f(frame_height_bits_minus_1 + 1)?;
+
+    let frame_id_numbers_present = if reduced_still_picture_header { false } else { r.f(1)? != 0 };
+    if frame_id_numbers_present {
+        let _delta_frame_id_length_minus_2 = r.f(4)?;
+        let _additional_frame_id_length_minus_1 = r.f(3)?;
+    }
+
+    let _use_128x128_superblock = r.f(1)?;
+    let _enable_filter_intra = r.f(1)?;
+    let _enable_intra_edge_filter = r.f(1)?;
+
+    if !reduced_still_picture_header {
+        let _enable_interintra_compound = r.f(1)?;
+        let _enable_masked_compound = r.f(1)?;
+        let _enable_warped_motion = r.f(1)?;
+        let _enable_dual_filter = r.f(1)?;
+        let enable_order_hint = r.f(1)? != 0;
+        if enable_order_hint {
+            let _enable_jnt_comp = r.f(1)?;
+            let _enable_ref_frame_mvs = r.f(1)?;
+        }
+        let seq_choose_screen_content_tools = r.f(1)? != 0;
+        let seq_force_screen_content_tools =
+            if seq_choose_screen_content_tools { 2 } else { r.f(1)? };
+        if seq_force_screen_content_tools > 0 {
+            let seq_choose_integer_mv = r.f(1)? != 0;
+            if !seq_choose_integer_mv {
+                let _seq_force_integer_mv = r.f(1)?;
+            }
+        }
+        if enable_order_hint {
+            let _order_hint_bits_minus_1 = r.f(3)?;
+        }
+    }
+
+    let _enable_superres = r.f(1)?;
+    let _enable_cdef = r.f(1)?;
+    let _enable_restoration = r.f(1)?;
+
+    // color_config()
+    let high_bitdepth = r.f(1)? != 0;
+    if seq_profile == 2 && high_bitdepth {
+        let _twelve_bit = r.f(1)?;
+    }
+    let mono_chrome = if seq_profile == 1 { false } else { r.f(1)? != 0 };
+    let colour_description_present = r.f(1)? != 0;
+    let (cp, tc, mc) = if colour_description_present {
+        (r.f(8)? as u8, r.f(8)? as u8, r.f(8)? as u8)
+    } else {
+        // CP/TC/MC unspecified (value 2).
+        (2u8, 2u8, 2u8)
+    };
+    let full_range = if mono_chrome {
+        r.f(1)? != 0
+    } else if cp == 1 && tc == 13 && mc == 0 {
+        // BT.709 primaries + sRGB transfer + identity matrix ⇒ implicit full
+        // range (sRGB), no color_range bit is coded.
+        true
+    } else {
+        r.f(1)? != 0
+    };
+
+    Some(Av1SeqColour {
+        mono_chrome,
+        colour_description_present,
+        colour_primaries: if colour_description_present { Some(cp) } else { None },
+        transfer_characteristics: if colour_description_present { Some(tc) } else { None },
+        matrix_coefficients: if colour_description_present { Some(mc) } else { None },
+        full_range,
+    })
+}
+
+/// Locate the payload of the first AV1 sequence-header OBU (type 1) within
+/// a `configOBUs` byte slice. Returns the OBU payload (the bytes the AV1
+/// sequence-header decoder expects), or `None` if not found.
+fn av1c_sequence_header_payload(obus: &[u8]) -> Option<&[u8]> {
+    const OBU_SEQUENCE_HEADER: u8 = 1;
+    let mut pos = 0usize;
+    while pos < obus.len() {
+        let header = obus[pos];
+        // obu_forbidden_bit must be 0.
+        if header & 0x80 != 0 {
+            return None;
+        }
+        let obu_type = (header >> 3) & 0x0F;
+        let ext_flag = (header >> 2) & 1 != 0;
+        let has_size = (header >> 1) & 1 != 0;
+        let mut p = pos + 1;
+        if ext_flag {
+            p += 1; // temporal_id / spatial_id byte
+        }
+        // obu_size is LEB128-encoded when has_size is set.
+        let (obu_size, after_size) = if has_size {
+            let mut size: usize = 0;
+            let mut shift = 0u32;
+            let mut q = p;
+            loop {
+                if q >= obus.len() || shift >= 56 {
+                    return None;
+                }
+                let b = obus[q];
+                size |= ((b & 0x7F) as usize) << shift;
+                q += 1;
+                if b & 0x80 == 0 {
+                    break;
+                }
+                shift += 7;
+            }
+            (size, q)
+        } else {
+            // Without a size field the OBU runs to the end of the slice.
+            (obus.len().saturating_sub(p), p)
+        };
+        let end = after_size.checked_add(obu_size)?;
+        if end > obus.len() {
+            return None;
+        }
+        if obu_type == OBU_SEQUENCE_HEADER {
+            return Some(&obus[after_size..end]);
+        }
+        pos = end;
+    }
+    None
+}
+
+/// Parse avcC (AVCDecoderConfigurationRecord). Layout:
 ///   1 byte configurationVersion
 ///   1 byte AVCProfileIndication
 ///   1 byte profile_compatibility
@@ -1748,8 +2043,10 @@ fn parse_esds(fa: &mut FileAnalyze, body_size: usize, track: &mut TrackInfo) {
     fa.skip_hexa(4, "version_flags");
 
     // ES_Descriptor (tag 0x03) — walk descriptors until we find the
-    // decoder config + its DecoderSpecificInfo child.
-    parse_descriptor_chain(fa, end - fa.element_offset(), track);
+    // decoder config + its DecoderSpecificInfo child. `saturating_sub`
+    // guards against the cursor having advanced past `end` (malformed box),
+    // which would otherwise underflow and panic under overflow-checks.
+    parse_descriptor_chain(fa, end.saturating_sub(fa.element_offset()), track);
 
     if fa.element_offset() < end {
         fa.skip_hexa(end - fa.element_offset(), "esds_tail");
@@ -2716,6 +3013,43 @@ fn fill_streams(
                     fa.set_field(StreamKind::Video, pos, "BitDepth", bd.to_string());
                 }
                 fa.set_field(StreamKind::Video, pos, "ScanType", "Progressive");
+            }
+            // AV1: av1C carries the sequence header, giving profile,
+            // level, chroma, bit depth and colour range. Field names and
+            // value strings mirror the oracle-validated MKV AV1 mapping.
+            if let Some(av1) = track.av1_info.as_ref() {
+                let profile_name = match av1.profile {
+                    0 => "Main",
+                    1 => "High",
+                    2 => "Professional",
+                    _ => "",
+                };
+                if !profile_name.is_empty() {
+                    fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
+                }
+                // AV1 seq_level_idx → "major.minor": major = 2 + (idx >> 2),
+                // minor = idx & 3 (AV1 spec Annex A.3). Level 0 ⇒ "2.0".
+                let major = 2 + (av1.level >> 2);
+                let minor = av1.level & 3;
+                fa.set_field(StreamKind::Video, pos, "Format_Level", format!("{major}.{minor}"));
+                // Monochrome streams have no chroma planes → no YUV colour.
+                if !av1.monochrome {
+                    fa.set_field(StreamKind::Video, pos, "ColorSpace", "YUV");
+                    fa.set_field(
+                        StreamKind::Video,
+                        pos,
+                        "ChromaSubsampling",
+                        av1.chroma_subsampling,
+                    );
+                }
+                fa.set_field(StreamKind::Video, pos, "BitDepth", av1.bit_depth.to_string());
+                fa.set_field(StreamKind::Video, pos, "ScanType", "Progressive");
+                if let Some(full) = av1.video_full_range {
+                    let range = if full { "Full" } else { "Limited" };
+                    fa.set_field(StreamKind::Video, pos, "colour_range", range);
+                    fa.set_field(StreamKind::Video, pos, "colour_range_Source", "Stream");
+                }
+                fa.set_field(StreamKind::Video, pos, "CodecConfigurationBox", "av1C");
             }
             // Dolby Vision — from dvcC/dvvC config box
             if let Some(dv_prof) = track.dovi_profile {
@@ -3747,5 +4081,48 @@ mod tests {
         assert_eq!(track.hevc_bit_depth_luma, Some(10));
         assert_eq!(fa.element_offset(), body.len());
         assert_eq!(fa.access_stats().max_request_len, MP4_HVCC_PARSE_LIMIT);
+    }
+
+    /// Real av1C box body from an FFmpeg-muxed AV1/MP4 sample (320x240,
+    /// seq_profile 0, seq_level_idx 0, 8-bit 4:2:0, limited range). The
+    /// 4-byte fixed record header is followed by a sequence-header OBU.
+    const SAMPLE_AV1C_BODY: [u8; 17] = [
+        0x81, 0x00, 0x0c, 0x00, // fixed record header
+        0x0a, 0x0b, // OBU header (seq header, has_size) + LEB128 size = 11
+        0x00, 0x00, 0x00, 0x04, 0x3c, 0xff, 0xbc, 0xda, 0xf9, 0x00,
+        0x40, // seq header payload
+    ];
+
+    #[test]
+    fn av1_seq_header_colour_decodes_limited_range() {
+        // configOBUs begin at offset 4; the OBU payload begins after the
+        // 1-byte OBU header and 1-byte LEB128 size.
+        let payload = &SAMPLE_AV1C_BODY[6..];
+        let colour = av1_seq_header_colour(payload).expect("seq header colour");
+        assert!(!colour.mono_chrome);
+        assert!(!colour.colour_description_present);
+        assert!(!colour.full_range, "color_range bit is 0 → Limited");
+    }
+
+    #[test]
+    fn av1c_locates_sequence_header_obu_payload() {
+        let payload = av1c_sequence_header_payload(&SAMPLE_AV1C_BODY[4..]).expect("seq header OBU");
+        assert_eq!(payload, &SAMPLE_AV1C_BODY[6..]);
+    }
+
+    #[test]
+    fn parse_av1c_fills_track_info() {
+        let mut fa = FileAnalyze::new(&SAMPLE_AV1C_BODY);
+        let mut track = TrackInfo::default();
+        parse_av1c(&mut fa, SAMPLE_AV1C_BODY.len(), &mut track);
+
+        let info = track.av1_info.expect("av1_info populated");
+        assert_eq!(info.profile, 0);
+        assert_eq!(info.level, 0); // seq_level_idx_0 → Format_Level "2.0"
+        assert_eq!(info.bit_depth, 8);
+        assert_eq!(info.chroma_subsampling, "4:2:0");
+        assert!(!info.monochrome);
+        assert_eq!(info.video_full_range, Some(false)); // Limited
+        assert_eq!(fa.element_offset(), SAMPLE_AV1C_BODY.len());
     }
 }

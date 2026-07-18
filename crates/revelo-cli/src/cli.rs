@@ -13,9 +13,10 @@ const BANNER: &str = include_str!("banner.txt");
     args_conflicts_with_subcommands = true,
 )]
 pub(crate) struct Cli {
-    /// File path to analyze
+    /// File path(s) or glob pattern(s) to analyze (e.g. "**/*.mp4"). Quote
+    /// globs so the shell doesn't expand them, letting revelo walk the tree.
     #[arg(value_name = "PATH")]
-    pub path: Option<String>,
+    pub paths: Vec<String>,
 
     /// XML output
     #[arg(short = 'x', long)]
@@ -24,6 +25,19 @@ pub(crate) struct Cli {
     /// JSON output
     #[arg(short = 'j', long)]
     pub json: bool,
+
+    /// Emit a single JSON array for multi-file input instead of the default
+    /// NDJSON (one compact JSON object per line). Implies --json.
+    #[arg(long)]
+    pub json_array: bool,
+
+    /// YAML output
+    #[arg(short = 'y', long)]
+    pub yaml: bool,
+
+    /// Self-contained HTML report
+    #[arg(long)]
+    pub html: bool,
 
     /// Text output (default)
     #[arg(short = 't', long)]

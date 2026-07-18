@@ -19,6 +19,8 @@ use std::collections::BTreeMap;
 
 const SYNC: u8 = 0x47;
 const MPEG_TS_PROBE_LIMIT: usize = 2 * 1024 * 1024;
+/// PID of the Service Description Table (DVB EN 300 468).
+const SDT_PID: u16 = 0x0011;
 
 #[derive(Clone, Copy, Debug)]
 struct PacketLayout {
@@ -64,9 +66,23 @@ struct ElementaryStream {
     /// AAC payload params extracted from first ADTS frame inside PES,
     /// when stream_type indicates AAC (0x0F/0x11/0x1C).
     aac: Option<AacInfo>,
-    /// x264 encoder version string scanned from AVC SEI user_data
-    /// (free-form ASCII inside SEI NAL units).
-    avc_encoder: Option<String>,
+    /// AVC elementary-stream params extracted from the first SPS/PPS/SEI
+    /// NAL units inside the PES payload, when stream_type is AVC
+    /// (0x1B/0x1F/0x20).
+    avc: Option<AvcEs>,
+}
+
+/// AVC parameters recovered from the Annex-B elementary stream carried in
+/// the PES payload: the SPS-derived [`AvcInfo`], the constraint_set1_flag
+/// (needed to distinguish "Constrained Baseline" from "Baseline"), the
+/// entropy_coding_mode_flag read from the PPS (CABAC), and the x264/x265
+/// encoder identification recovered from an SEI user_data_unregistered NAL.
+#[derive(Debug)]
+struct AvcEs {
+    info: revelo_parsers_video::AvcInfo,
+    constrained: bool,
+    cabac: Option<bool>,
+    encoder: Option<revelo_parsers_video::EncoderInfo>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -83,6 +99,20 @@ struct Program {
     pmt_pid: u16,
     format_identifier: u32,
     streams: Vec<ElementaryStream>,
+    /// `section_length` field of the PMT section (for the Menu `<extra>`).
+    pmt_section_length: Option<u16>,
+    /// `pointer_field` byte preceding the PMT section (Menu `<extra>`).
+    pmt_pointer_field: Option<u8>,
+}
+
+/// Service description recovered from the SDT (PID 0x0011), keyed by
+/// service_id (== program_number). Populates the Menu ServiceName /
+/// ServiceProvider / ServiceType fields.
+#[derive(Default, Debug, Clone)]
+struct ServiceInfo {
+    provider: Option<String>,
+    name: Option<String>,
+    service_type: Option<u8>,
 }
 
 /// Parse MPEG Transport Stream (ITU-T H.222.0).
@@ -106,7 +136,9 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     // Per-PID accumulator for PSI sections. PSI uses point_field to start.
     let mut psi_buffers: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
     let mut programs_by_pmt_pid: BTreeMap<u16, Program> = BTreeMap::new();
+    let mut sdt_services: BTreeMap<u16, ServiceInfo> = BTreeMap::new();
     let mut pat_seen = false;
+    let mut sdt_seen = false;
 
     let mut pos = first_offset;
     let stride = layout.packet_size;
@@ -139,7 +171,8 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         // Only collect PSI for known PSI PIDs we care about.
         let is_pat = pid == 0;
         let is_pmt = programs_by_pmt_pid.contains_key(&pid);
-        if !is_pat && !is_pmt {
+        let is_sdt = pid == SDT_PID;
+        if !is_pat && !is_pmt && !is_sdt {
             pos += stride;
             continue;
         }
@@ -150,6 +183,10 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 continue;
             }
             let pointer = payload[0] as usize;
+            // Record the PMT's pointer_field for the Menu <extra> section.
+            if is_pmt && let Some(prog) = programs_by_pmt_pid.get_mut(&pid) {
+                prog.pmt_pointer_field.get_or_insert(payload[0]);
+            }
             let section_start = 1 + pointer;
             if section_start >= payload.len() {
                 pos += stride;
@@ -174,10 +211,14 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 if is_pat && !pat_seen {
                     parse_pat(&section, &mut programs_by_pmt_pid);
                     pat_seen = true;
+                } else if is_sdt && !sdt_seen {
+                    parse_sdt(&section, &mut sdt_services);
+                    sdt_seen = true;
                 } else if is_pmt
                     && let Some(prog) = programs_by_pmt_pid.get_mut(&pid)
                     && prog.streams.is_empty()
                 {
+                    prog.pmt_section_length = Some(section_length as u16);
                     parse_pmt(&section, prog);
                 }
             }
@@ -195,8 +236,16 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     // PID, then parse the ADTS sync once we have enough.
     let mut aac_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
     let mut avc_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
+    // First/last presentation timestamp (90 kHz) per ES PID, for Delay
+    // and stream-Duration derivation.
+    let mut pts_first: BTreeMap<u16, u64> = BTreeMap::new();
+    let mut pts_last: BTreeMap<u16, u64> = BTreeMap::new();
+    // Count of ADTS frames seen per AAC PID (for audio Duration).
+    let mut adts_frames: BTreeMap<u16, u64> = BTreeMap::new();
+    let mut es_pids: std::collections::BTreeSet<u16> = std::collections::BTreeSet::new();
     for prog in programs_by_pmt_pid.values() {
         for es in &prog.streams {
+            es_pids.insert(es.pid);
             if matches!(es.stream_type, 0x0F | 0x11 | 0x1C) {
                 aac_pids.insert(es.pid, Vec::new());
             }
@@ -205,7 +254,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             }
         }
     }
-    if !aac_pids.is_empty() || !avc_pids.is_empty() {
+    if !es_pids.is_empty() {
         let mut pos = first_offset;
         while pos + 188 <= buf.len() {
             let sync_pos = pos + layout.bdav_prefix;
@@ -231,8 +280,31 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                 pos += stride;
                 continue;
             }
+            // Capture first/last PES PTS for Delay + Duration derivation.
+            let payload_unit_start = (pkt[1] & 0x40) != 0;
+            if payload_unit_start
+                && es_pids.contains(&pid)
+                && let Some(pts) = parse_pes_pts(&pkt[payload_off..])
+            {
+                pts_first
+                    .entry(pid)
+                    .and_modify(|v| {
+                        if pts < *v {
+                            *v = pts
+                        }
+                    })
+                    .or_insert(pts);
+                pts_last
+                    .entry(pid)
+                    .and_modify(|v| {
+                        if pts > *v {
+                            *v = pts
+                        }
+                    })
+                    .or_insert(pts);
+            }
             if let Some(accum) = aac_pids.get_mut(&pid)
-                && accum.len() < 1024
+                && accum.len() < 512 * 1024
             {
                 accum.extend_from_slice(&pkt[payload_off..]);
             }
@@ -251,11 +323,12 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                     && let Some(accum) = aac_pids.get(&es.pid)
                 {
                     es.aac = sniff_aac_adts(accum);
+                    adts_frames.insert(es.pid, count_adts_frames(accum));
                 }
                 if matches!(es.stream_type, 0x1B | 0x1F | 0x20)
                     && let Some(accum) = avc_pids.get(&es.pid)
                 {
-                    es.avc_encoder = sniff_x264_encoder(accum);
+                    es.avc = sniff_avc(accum);
                 }
             }
         }
@@ -267,19 +340,12 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         _ => "MPEG-TS",
     };
 
-    // Calculate file size and estimate duration from PCR values
-    let _file_size = buf.len();
-    let (duration_ms, overall_bitrate) = estimate_duration_and_bitrate(
-        buf,
-        first_offset,
-        stride,
-        layout.bdav_prefix,
-        &programs_by_pmt_pid,
-    );
+    // Measure the transport-stream bitrate from PCR-vs-byte-position and
+    // derive the overall Duration from it (MediaInfo's TS approach).
+    let timing = measure_ts_timing(buf, first_offset, stride, layout.bdav_prefix);
 
     fa.stream_prepare(StreamKind::General);
     fa.force_field(StreamKind::General, 0, "Format", container_format);
-    fa.set_field(StreamKind::General, 0, "InternetMediaType", "video/mp2t");
 
     // General.ID = program_number of the first program (matches oracle
     // for single-program files; multi-program TS would list each).
@@ -287,12 +353,12 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         fa.set_field(StreamKind::General, 0, "ID", first_prog.program_number.to_string());
     }
 
-    if let Some(dur) = duration_ms {
-        fa.set_field(StreamKind::General, 0, "Duration", dur.to_string());
-    }
-
-    if let Some(br) = overall_bitrate {
-        fa.set_field(StreamKind::General, 0, "OverallBitRate", br.to_string());
+    if let Some(t) = &timing {
+        // Duration carries sub-millisecond precision, so emit it as a
+        // decimal-seconds string (the export layer only reformats values
+        // that parse as integer milliseconds).
+        fa.set_field(StreamKind::General, 0, "Duration", format!("{:.9}", t.duration_s));
+        fa.set_field(StreamKind::General, 0, "OverallBitRate", t.overall_bitrate.to_string());
         fa.set_field(StreamKind::General, 0, "OverallBitRate_Mode", "VBR");
     }
 
@@ -336,8 +402,28 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         fa.set_field(StreamKind::General, 0, "MenuCount", menu_count.to_string());
     }
 
-    // Emit per-stream entries in (program, ES) order.
+    // First video PTS, used to express the audio track's Video_Delay
+    // (audio Delay relative to video).
+    let mut video_ref_pts: Option<u64> = None;
+    'find_video: for prog in programs_by_pmt_pid.values() {
+        for es in &prog.streams {
+            if matches!(
+                stream_kind(es.stream_type, prog_or_es_fid(prog, es)),
+                Some(StreamKind::Video)
+            ) && let Some(&p) = pts_first.get(&es.pid)
+            {
+                video_ref_pts = Some(p);
+                break 'find_video;
+            }
+        }
+    }
+
+    // Emit per-stream entries in (program, ES) order. `menu_members`
+    // records, per program, the (StreamKind, position-in-kind) of each
+    // emitted ES so the Menu track can list its member streams.
+    let mut menu_members: Vec<Vec<(u8, usize)>> = Vec::new();
     for (prog_idx, prog) in programs_by_pmt_pid.values().enumerate() {
+        let mut members: Vec<(u8, usize)> = Vec::new();
         for (es_idx, es) in prog.streams.iter().enumerate() {
             let fid = prog_or_es_fid(prog, es);
             let Some(kind) = stream_kind(es.stream_type, fid) else { continue };
@@ -348,30 +434,42 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             }
             fa.stream_prepare(kind);
             let pos_in_kind = fa.stream_count(kind) - 1;
+            members.push((kind as u8, pos_in_kind));
             // StreamOrder = "<program_idx>-<es_idx_in_program>" per oracle.
             fa.set_field(kind, pos_in_kind, "StreamOrder", format!("{}-{}", prog_idx, es_idx));
             // ID = PID. Oracle renders as decimal.
             fa.set_field(kind, pos_in_kind, "ID", es.pid.to_string());
             fa.set_field(kind, pos_in_kind, "MenuID", prog.program_number.to_string());
             fa.set_field(kind, pos_in_kind, "Format", format);
+            // Delay = first PES presentation timestamp (container-provided).
+            // Audio additionally reports Video_Delay relative to video.
+            if matches!(kind, StreamKind::Video | StreamKind::Audio)
+                && let Some(&pts) = pts_first.get(&es.pid)
+            {
+                fa.set_field(kind, pos_in_kind, "Delay", format!("{:.9}", pts as f64 / 90000.0));
+                fa.set_field(kind, pos_in_kind, "Delay_Source", "Container");
+                if matches!(kind, StreamKind::Audio)
+                    && let Some(vref) = video_ref_pts
+                {
+                    let vd = (pts as f64 - vref as f64) / 90000.0;
+                    fa.set_field(kind, pos_in_kind, "Video_Delay", format!("{vd:.3}"));
+                }
+            }
             // Video CodecID = decimal stream_type (oracle convention).
             // AAC overrides this below with its "<type>-<AOT>" form.
             if matches!(kind, StreamKind::Video) {
                 fa.set_field(kind, pos_in_kind, "CodecID", es.stream_type.to_string());
-                // AVC defaults — full SPS parse would refine
-                // Format_Profile/Level/Width/Height/ChromaSubsampling.
                 if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
+                    // MediaInfo reports MPEG-TS AVC as VFR (frame timing is
+                    // derived from PTS jitter, not the SPS timing_info).
                     fa.set_field(kind, pos_in_kind, "FrameRate_Mode", "VFR");
-                    fa.set_field(kind, pos_in_kind, "BitDepth", "8");
-                    fa.set_field(kind, pos_in_kind, "ScanType", "Progressive");
                     fa.set_field(kind, pos_in_kind, "Compression_Mode", "Lossy");
-                    if let Some(ref lib) = es.avc_encoder {
-                        fa.set_field(kind, pos_in_kind, "Encoded_Library", lib.clone());
-                        // Split "x264 - core 165 r3222 b35605a" into name + version.
-                        if let Some(rest) = lib.strip_prefix("x264 - ") {
-                            fa.set_field(kind, pos_in_kind, "Encoded_Library_Name", "x264");
-                            fa.set_field(kind, pos_in_kind, "Encoded_Library_Version", rest);
-                        }
+                    if let Some(avc) = &es.avc {
+                        emit_avc_fields(fa, kind, pos_in_kind, avc);
+                    } else {
+                        // No SPS recovered — keep the safe H.264 defaults.
+                        fa.set_field(kind, pos_in_kind, "BitDepth", "8");
+                        fa.set_field(kind, pos_in_kind, "ScanType", "Progressive");
                     }
                 }
             }
@@ -405,9 +503,18 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                     fa.set_field(kind, pos_in_kind, "FrameRate", format!("{:.3}", frame_rate));
                 }
                 fa.set_field(kind, pos_in_kind, "Compression_Mode", "Lossy");
+                // Duration from the counted ADTS frames (1024 samples each).
+                if aac.sample_rate > 0
+                    && let Some(&frames) = adts_frames.get(&es.pid)
+                    && frames > 0
+                {
+                    let dur = frames as f64 * 1024.0 / aac.sample_rate as f64;
+                    fa.set_field(kind, pos_in_kind, "Duration", format!("{dur:.3}"));
+                }
             }
             let _ = codec;
         }
+        menu_members.push(members);
     }
 
     // Emit one Menu stream per program. Format = joined ES format names
@@ -427,6 +534,57 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         fa.set_field(StreamKind::Menu, pos, "ID", prog.pmt_pid.to_string());
         fa.set_field(StreamKind::Menu, pos, "MenuID", prog.program_number.to_string());
         fa.set_field(StreamKind::Menu, pos, "Format", formats.join(" / "));
+
+        // Menu Duration = PCR span; Menu Delay = first PCR (both 90 kHz).
+        if let Some(t) = &timing {
+            fa.set_field(
+                StreamKind::Menu,
+                pos,
+                "Duration",
+                format!("{:.9}", t.pcr_span_units as f64 / 90000.0),
+            );
+            fa.set_field(
+                StreamKind::Menu,
+                pos,
+                "Delay",
+                format!("{:.9}", t.first_pcr as f64 / 90000.0),
+            );
+        }
+
+        // List the member streams of this program: StreamKind numbers and
+        // positions within their kind (e.g. "1 / 2" + "0 / 0").
+        if let Some(members) = menu_members.get(prog_idx)
+            && !members.is_empty()
+        {
+            let kinds = members.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>().join(" / ");
+            let poss = members.iter().map(|(_, p)| p.to_string()).collect::<Vec<_>>().join(" / ");
+            fa.set_field(StreamKind::Menu, pos, "List_StreamKind", kinds);
+            fa.set_field(StreamKind::Menu, pos, "List_StreamPos", poss);
+        }
+
+        // Service description from the SDT (keyed by service_id ==
+        // program_number).
+        if let Some(svc) = sdt_services.get(&prog.program_number) {
+            if let Some(name) = &svc.name {
+                fa.set_field(StreamKind::Menu, pos, "ServiceName", name.clone());
+            }
+            if let Some(provider) = &svc.provider {
+                fa.set_field(StreamKind::Menu, pos, "ServiceProvider", provider.clone());
+            }
+            if let Some(t) = svc.service_type
+                && let Some(name) = service_type_name(t)
+            {
+                fa.set_field(StreamKind::Menu, pos, "ServiceType", name);
+            }
+        }
+
+        // <extra>: PMT pointer_field + section_length (mirrors the oracle).
+        if let Some(ptr) = prog.pmt_pointer_field {
+            fa.set_extra_field(StreamKind::Menu, pos, "pointer_field", ptr.to_string());
+        }
+        if let Some(len) = prog.pmt_section_length {
+            fa.set_extra_field(StreamKind::Menu, pos, "section_length", len.to_string());
+        }
     }
 
     true
@@ -464,82 +622,106 @@ fn resync(buf: &[u8], from: usize, layout: &PacketLayout) -> Option<usize> {
     None
 }
 
-/// Estimate duration from PCR (Program Clock Reference) values and calculate bitrate.
-/// PCR is a 33-bit clock reference in 90kHz units found in adaptation fields.
-fn estimate_duration_and_bitrate(
+/// Timing measured from the transport stream's PCR track.
+struct TsTiming {
+    /// Overall bitrate (bit/s), measured from bytes-vs-PCR and rounded.
+    overall_bitrate: u64,
+    /// Overall duration (seconds) = file bytes × 8 / measured bitrate.
+    duration_s: f64,
+    /// Span between first and last PCR (90 kHz units) — the Menu Duration.
+    pcr_span_units: u64,
+    /// First PCR value (90 kHz units) — the Menu Delay.
+    first_pcr: u64,
+}
+
+/// Measure duration and bitrate from PCR (Program Clock Reference) values.
+///
+/// PCR is a 33-bit 90 kHz clock in adaptation fields. MediaInfo derives the
+/// TS bitrate from the number of bytes carried between the first and last
+/// PCR divided by the elapsed PCR time, then computes the overall duration
+/// as `file_size × 8 / bitrate`.
+fn measure_ts_timing(
     buf: &[u8],
     first_offset: usize,
     stride: usize,
     bdav_prefix: usize,
-    _programs: &BTreeMap<u16, Program>,
-) -> (Option<u64>, Option<u64>) {
-    // Collect PCR values from adaptation fields
-    let mut pcr_values: Vec<(usize, u64)> = Vec::new(); // (byte_position, pcr_value)
+) -> Option<TsTiming> {
+    let mut first: Option<(usize, u64)> = None;
+    let mut last: Option<(usize, u64)> = None;
 
     let mut pos = first_offset;
-    while pos + 188 <= buf.len() && pcr_values.len() < 100 {
+    while pos + 188 <= buf.len() {
         let sync_pos = pos + bdav_prefix;
         if sync_pos + 188 > buf.len() || buf[sync_pos] != SYNC {
             pos += stride;
             continue;
         }
-
         let pkt = &buf[sync_pos..sync_pos + 188];
         let adaptation_control = (pkt[3] >> 4) & 0x3;
         let has_adaptation = adaptation_control == 2 || adaptation_control == 3;
-
-        if has_adaptation && pkt.len() > 5 {
+        if has_adaptation {
             let af_len = pkt[4] as usize;
-            if af_len > 0 && pkt.len() > 6 {
-                // Adaptation field flags at byte 5
-                let flags = pkt[5];
-                let pcr_flag = (flags & 0x10) != 0;
-
-                if pcr_flag && af_len >= 7 && pkt.len() >= 12 {
-                    // PCR is 6 bytes: 33-bit base + 6-bit reserved + 9-bit extension
-                    // Read as 48 bits (6 bytes) and extract 33-bit base
-                    let pcr_base = ((pkt[6] as u64) << 25)
-                        | ((pkt[7] as u64) << 17)
-                        | ((pkt[8] as u64) << 9)
-                        | ((pkt[9] as u64) << 1)
-                        | ((pkt[10] as u64) >> 7);
-
-                    pcr_values.push((pos, pcr_base));
+            if af_len >= 7 && (pkt[5] & 0x10) != 0 {
+                let pcr_base = ((pkt[6] as u64) << 25)
+                    | ((pkt[7] as u64) << 17)
+                    | ((pkt[8] as u64) << 9)
+                    | ((pkt[9] as u64) << 1)
+                    | ((pkt[10] as u64) >> 7);
+                if first.is_none() {
+                    first = Some((pos, pcr_base));
                 }
+                last = Some((pos, pcr_base));
             }
         }
         pos += stride;
     }
 
-    if pcr_values.len() < 2 {
-        // Not enough PCR values to estimate duration
-        // Fall back to simple bitrate estimation from file size
-        if !buf.is_empty() {
-            // Assume some default duration if we can't calculate
-            return (None, None);
-        }
-        return (None, None);
+    let (first_pos, first_pcr) = first?;
+    let (last_pos, last_pcr) = last?;
+    if last_pos <= first_pos {
+        return None;
     }
-
-    // Calculate duration from first and last PCR
-    let first_pcr = pcr_values.first().unwrap();
-    let last_pcr = pcr_values.last().unwrap();
-
-    // PCR is in 90kHz units
-    let pcr_diff = if last_pcr.1 >= first_pcr.1 {
-        last_pcr.1 - first_pcr.1
+    // PCR span (90 kHz), wrap-safe over the 33-bit clock.
+    let pcr_span_units = if last_pcr >= first_pcr {
+        last_pcr - first_pcr
     } else {
-        // Handle PCR wraparound (33-bit value wraps)
-        (0x1FFFFFFFF - first_pcr.1) + last_pcr.1
+        (0x1_FFFF_FFFF - first_pcr) + last_pcr
     };
+    if pcr_span_units == 0 {
+        return None;
+    }
+    let bytes_between = (last_pos - first_pos) as f64;
+    let span_s = pcr_span_units as f64 / 90000.0;
+    let bitrate_f = bytes_between * 8.0 / span_s;
+    let overall_bitrate = bitrate_f.round() as u64;
+    let duration_s = buf.len() as f64 * 8.0 / bitrate_f;
 
-    let duration_ms = (pcr_diff * 1000) / 90000; // Convert from 90kHz to ms
+    Some(TsTiming { overall_bitrate, duration_s, pcr_span_units, first_pcr })
+}
 
-    // Calculate overall bitrate
-    let overall_bitrate =
-        if duration_ms > 0 { Some((buf.len() as u64 * 8 * 1000) / duration_ms) } else { None };
-
-    (Some(duration_ms), overall_bitrate)
+/// Count ADTS frames in an accumulated AAC elementary stream. Each ADTS
+/// frame is 1024 PCM samples; the caller multiplies to obtain a sample
+/// count / duration. PES headers embedded in the buffer never match the
+/// 12-bit ADTS sync (`0xFFF`), so a plain scan suffices.
+fn count_adts_frames(buf: &[u8]) -> u64 {
+    let mut i = 0usize;
+    let mut frames = 0u64;
+    while i + 7 <= buf.len() {
+        if buf[i] == 0xFF && (buf[i + 1] & 0xF6) == 0xF0 {
+            let frame_len = (((buf[i + 3] & 0x03) as usize) << 11)
+                | ((buf[i + 4] as usize) << 3)
+                | ((buf[i + 5] as usize) >> 5);
+            if frame_len < 7 {
+                i += 1;
+                continue;
+            }
+            frames += 1;
+            i += frame_len;
+        } else {
+            i += 1;
+        }
+    }
+    frames
 }
 
 fn parse_pat(section: &[u8], programs: &mut BTreeMap<u16, Program>) {
@@ -573,6 +755,8 @@ fn parse_pat(section: &[u8], programs: &mut BTreeMap<u16, Program>) {
             pmt_pid: pid,
             format_identifier: 0,
             streams: Vec::new(),
+            pmt_section_length: None,
+            pmt_pointer_field: None,
         });
     }
 }
@@ -622,9 +806,109 @@ fn parse_pmt(section: &[u8], prog: &mut Program) {
             _language: es_lang,
             _ac3_descriptor: es_ac3,
             aac: None,
-            avc_encoder: None,
+            avc: None,
         });
         i = desc_end;
+    }
+}
+
+/// Parse the SDT (Service Description Table, DVB EN 300 468 §5.2.3) into a
+/// map keyed by service_id. Only the `service_descriptor` (tag 0x48) is
+/// interpreted, yielding service_type + provider + service name.
+///
+/// Layout after the 3-byte section header:
+///   transport_stream_id(16) + version_byte(8) + section_number(8)
+///   + last_section_number(8) + original_network_id(16) + reserved(8)
+///   then N services:
+///     service_id(16) + reserved/EIT flags(8)
+///     + running_status(3)/free_CA(1)/descriptors_loop_length(12)
+///     + descriptors[]
+///   then CRC32(32).
+fn parse_sdt(section: &[u8], services: &mut BTreeMap<u16, ServiceInfo>) {
+    // table_id 0x42 = SDT for the actual transport stream.
+    if section.len() < 12 || section[0] != 0x42 {
+        return;
+    }
+    let section_length = (((section[1] & 0x0F) as usize) << 8) | (section[2] as usize);
+    let end = match (3 + section_length).checked_sub(4) {
+        Some(e) if e <= section.len() => e,
+        _ => return,
+    };
+    // Services begin after the 8-byte header (tsid..original_network_id +
+    // reserved) that follows the 3-byte section header — i.e. at offset 11.
+    let mut i = 11;
+    while i + 5 <= end {
+        let service_id = ((section[i] as u16) << 8) | (section[i + 1] as u16);
+        let loop_len = (((section[i + 3] & 0x0F) as usize) << 8) | (section[i + 4] as usize);
+        let desc_start = i + 5;
+        let desc_end = desc_start + loop_len;
+        if desc_end > end {
+            break;
+        }
+        if let Some(info) = scan_service_descriptor(&section[desc_start..desc_end]) {
+            services.entry(service_id).or_insert(info);
+        }
+        i = desc_end;
+    }
+}
+
+/// Extract service_type / provider / name from a `service_descriptor`
+/// (tag 0x48) within an SDT service descriptor loop.
+fn scan_service_descriptor(desc_block: &[u8]) -> Option<ServiceInfo> {
+    let mut i = 0;
+    while i + 2 <= desc_block.len() {
+        let tag = desc_block[i];
+        let len = desc_block[i + 1] as usize;
+        let payload_end = i + 2 + len;
+        if payload_end > desc_block.len() {
+            break;
+        }
+        if tag == 0x48 && len >= 3 {
+            let data = &desc_block[i + 2..payload_end];
+            let service_type = data[0];
+            let provider_len = data[1] as usize;
+            let provider_end = 2 + provider_len;
+            if provider_end > data.len() {
+                return None;
+            }
+            let provider = dvb_text(&data[2..provider_end]);
+            let name_len_pos = provider_end;
+            if name_len_pos >= data.len() {
+                return None;
+            }
+            let name_len = data[name_len_pos] as usize;
+            let name_start = name_len_pos + 1;
+            let name_end = name_start + name_len;
+            if name_end > data.len() {
+                return None;
+            }
+            let name = dvb_text(&data[name_start..name_end]);
+            return Some(ServiceInfo { provider, name, service_type: Some(service_type) });
+        }
+        i = payload_end;
+    }
+    None
+}
+
+/// Decode a DVB text string. FFmpeg-written SDTs use plain ASCII; a
+/// leading control byte (< 0x20) selects an alternate character table and
+/// is skipped. Returns None for empty strings.
+fn dvb_text(bytes: &[u8]) -> Option<String> {
+    let start = if bytes.first().is_some_and(|&b| b < 0x20) { 1 } else { 0 };
+    let s: String = bytes[start..].iter().map(|&b| b as char).collect();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// DVB service_type (EN 300 468 Table 87) → MediaInfo ServiceType string.
+fn service_type_name(t: u8) -> Option<&'static str> {
+    match t {
+        0x01 => Some("digital television"),
+        0x02 => Some("digital radio sound"),
+        0x03 => Some("Teletext"),
+        0x0C => Some("data broadcast"),
+        0x16 => Some("advanced codec digital SD television"),
+        0x19 => Some("advanced codec digital HD television"),
+        _ => None,
     }
 }
 
@@ -1021,36 +1305,210 @@ fn aac_profile_name(aot: u8) -> Option<&'static str> {
     }
 }
 
-/// Scan AVC ES payload for the "x264 - core N rXXXX hash" string
-/// that x264 stamps into an SEI user_data NAL. Oracle truncates the
-/// Encoded_Library at the hash (before " - H.264..."), so we do too.
-fn sniff_x264_encoder(buf: &[u8]) -> Option<String> {
-    let needle = b"x264 - core ";
-    for i in 0..buf.len().saturating_sub(needle.len() + 10) {
-        if &buf[i..i + needle.len()] != needle {
-            continue;
+/// Find the next Annex-B start code (`00 00 01`) at or after `offset`.
+/// A 4-byte start code (`00 00 00 01`) is located at its `00 00 01`
+/// suffix; the leading zero is left as trailing data of the prior NAL,
+/// which the RBSP parsers ignore.
+fn next_start_code(data: &[u8], offset: usize) -> Option<usize> {
+    let mut i = offset;
+    while i + 3 <= data.len() {
+        if data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 {
+            return Some(i);
         }
-        let start = i;
-        // Stop at the " - H." that immediately follows the hash, or at
-        // any non-printable byte. End at the first such marker.
-        let max_end = (start + 256).min(buf.len());
-        let mut end = start;
-        while end < max_end {
-            // Stop at " - H." boundary.
-            if end + 5 <= buf.len() && &buf[end..end + 5] == b" - H." {
-                break;
-            }
-            let c = buf[end];
-            if c != b' ' && !c.is_ascii_graphic() {
-                break;
-            }
-            end += 1;
-        }
-        if let Ok(s) = std::str::from_utf8(&buf[start..end]) {
-            return Some(s.trim_end().to_string());
-        }
+        i += 1;
     }
     None
+}
+
+/// Recover AVC parameters from an accumulated PES payload.
+///
+/// The buffer holds concatenated PES packet payloads for one AVC PID: the
+/// first packet begins with a PES header (`00 00 01 E0 …`) and every
+/// subsequent same-PID packet appends raw Annex-B elementary-stream bytes.
+/// PES headers decode as NAL type 0 (`0xE0 & 0x1F`) and are ignored, so a
+/// plain start-code scan cleanly isolates the SPS/PPS/SEI NAL units.
+fn sniff_avc(buf: &[u8]) -> Option<AvcEs> {
+    let mut sps: Option<&[u8]> = None;
+    let mut pps: Option<&[u8]> = None;
+    let mut seis: Vec<&[u8]> = Vec::new();
+
+    let mut off = 0usize;
+    while let Some(sc) = next_start_code(buf, off) {
+        let nal_start = sc + 3;
+        if nal_start >= buf.len() {
+            break;
+        }
+        let nal_end = next_start_code(buf, nal_start).unwrap_or(buf.len());
+        let nal = &buf[nal_start..nal_end];
+        if !nal.is_empty() {
+            match nal[0] & 0x1F {
+                7 if sps.is_none() => sps = Some(nal),
+                8 if pps.is_none() => pps = Some(nal),
+                6 => seis.push(nal),
+                _ => {}
+            }
+        }
+        off = nal_end;
+    }
+
+    let sps = sps?;
+    let info = revelo_parsers_video::parse_avc_sps(sps)?;
+    // constraint_set1_flag lives in the byte after profile_idc; the first
+    // four SPS bytes (header, profile_idc, constraint flags, level_idc)
+    // never contain emulation-prevention sequences.
+    let constrained = sps.len() > 2 && (sps[2] & 0x40) != 0;
+    let cabac = pps.and_then(parse_pps_cabac);
+    let encoder = if seis.is_empty() {
+        None
+    } else {
+        revelo_parsers_video::extract_encoder_from_avc_sei_nalus(&seis)
+    };
+    Some(AvcEs { info, constrained, cabac, encoder })
+}
+
+/// Read the entropy_coding_mode_flag from a PPS NAL (1 = CABAC). Layout:
+/// NAL header (1 byte) + ue(pic_parameter_set_id) + ue(seq_parameter_set_id)
+/// + 1 bit entropy_coding_mode_flag.
+fn parse_pps_cabac(pps: &[u8]) -> Option<bool> {
+    if pps.len() < 2 {
+        return None;
+    }
+    let clean = remove_epb(&pps[1..]);
+    let mut off = 0usize;
+    read_ue(&clean, &mut off)?; // pic_parameter_set_id
+    read_ue(&clean, &mut off)?; // seq_parameter_set_id
+    read_bit(&clean, &mut off).map(|b| b == 1)
+}
+
+/// Strip 0x000003 emulation-prevention bytes (collapse to 0x0000).
+fn remove_epb(rbsp: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(rbsp.len());
+    let mut i = 0;
+    while i < rbsp.len() {
+        if i + 2 < rbsp.len() && rbsp[i] == 0 && rbsp[i + 1] == 0 && rbsp[i + 2] == 3 {
+            out.push(0);
+            out.push(0);
+            i += 3;
+        } else {
+            out.push(rbsp[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Read one MSB-first bit from `buf` at bit offset `off`.
+fn read_bit(buf: &[u8], off: &mut usize) -> Option<u32> {
+    let byte = *off / 8;
+    if byte >= buf.len() {
+        return None;
+    }
+    let bit = 7 - (*off % 8);
+    *off += 1;
+    Some(((buf[byte] >> bit) & 1) as u32)
+}
+
+/// Read an unsigned Exp-Golomb `ue(v)` value (H.264 §9.1).
+fn read_ue(buf: &[u8], off: &mut usize) -> Option<u32> {
+    let mut zeros = 0u32;
+    while read_bit(buf, off)? == 0 {
+        zeros += 1;
+        if zeros > 31 {
+            return None;
+        }
+    }
+    let mut val = 0u32;
+    for _ in 0..zeros {
+        val = (val << 1) | read_bit(buf, off)?;
+    }
+    Some(val + (1u32 << zeros) - 1)
+}
+
+/// AVC profile_idc → MediaInfo Format_Profile string. `constrained` is
+/// the constraint_set1_flag, which promotes Baseline to "Constrained
+/// Baseline". Mirrors the avcC mapping in `mp4.rs`.
+fn avc_profile_name(idc: u8, constrained: bool) -> Option<&'static str> {
+    match idc {
+        0x42 => Some(if constrained { "Constrained Baseline" } else { "Baseline" }),
+        0x4D => Some("Main"),
+        0x58 => Some("Extended"),
+        0x64 => Some("High"),
+        0x6E => Some("High 10"),
+        0x7A => Some("High 4:2:2"),
+        0x90 | 0xF4 => Some("High 4:4:4"),
+        _ => None,
+    }
+}
+
+/// AVC level_idc → "X" or "X.Y" (level number is encoded ×10):
+/// 13 → "1.3", 30 → "3", 41 → "4.1".
+fn format_avc_level(idc: u8) -> String {
+    let major = idc / 10;
+    let minor = idc % 10;
+    if minor == 0 { format!("{major}") } else { format!("{major}.{minor}") }
+}
+
+/// Map SPS/PPS/SEI-derived [`AvcEs`] to MediaInfo Video fields. Mirrors
+/// the avcC→Video mapping in `mp4.rs` so MPEG-TS and MP4 agree.
+fn emit_avc_fields(fa: &mut FileAnalyze, kind: StreamKind, pos: usize, avc: &AvcEs) {
+    let info = &avc.info;
+    if let Some(profile) = avc_profile_name(info.profile, avc.constrained) {
+        fa.set_field(kind, pos, "Format_Profile", profile);
+    }
+    fa.set_field(kind, pos, "Format_Level", format_avc_level(info.level));
+    // CABAC from the PPS; Baseline cannot use CABAC, so fall back to "No".
+    let cabac = match avc.cabac {
+        Some(true) => Some("Yes"),
+        Some(false) => Some("No"),
+        None if info.profile == 0x42 => Some("No"),
+        None => None,
+    };
+    if let Some(c) = cabac {
+        fa.set_field(kind, pos, "Format_Settings_CABAC", c);
+    }
+    fa.set_field(kind, pos, "Format_Settings_RefFrames", info.ref_frames.to_string());
+
+    if info.width > 0 && info.height > 0 {
+        fa.set_field(kind, pos, "Width", info.width.to_string());
+        fa.set_field(kind, pos, "Height", info.height.to_string());
+        // PixelAspectRatio from VUI SAR (default 1:1 when absent).
+        let (sar_w, sar_h) = match info.sar {
+            Some((w, h)) if h > 0 => (w as f64, h as f64),
+            _ => (1.0, 1.0),
+        };
+        let par = sar_w / sar_h;
+        let sampled_w = (info.width as f64 * par).round() as u64;
+        let dar = sampled_w as f64 / info.height as f64;
+        fa.set_field(kind, pos, "Sampled_Width", sampled_w.to_string());
+        fa.set_field(kind, pos, "Sampled_Height", info.height.to_string());
+        fa.set_field(kind, pos, "PixelAspectRatio", format!("{par:.3}"));
+        fa.set_field(kind, pos, "DisplayAspectRatio", format!("{dar:.3}"));
+    }
+
+    fa.set_field(kind, pos, "ColorSpace", "YUV");
+    let chroma = match info.chroma_format {
+        0 => "4:0:0",
+        2 => "4:2:2",
+        3 => "4:4:4",
+        _ => "4:2:0",
+    };
+    fa.set_field(kind, pos, "ChromaSubsampling", chroma);
+    let bit_depth = if info.bit_depth > 0 { info.bit_depth } else { 8 };
+    fa.set_field(kind, pos, "BitDepth", bit_depth.to_string());
+    fa.set_field(kind, pos, "ScanType", "Progressive");
+
+    if let Some(enc) = &avc.encoder {
+        fa.set_field(kind, pos, "Encoded_Library", enc.library.clone());
+        if let Some(name) = &enc.name {
+            fa.set_field(kind, pos, "Encoded_Library_Name", name.clone());
+        }
+        if let Some(ver) = &enc.version {
+            fa.set_field(kind, pos, "Encoded_Library_Version", ver.clone());
+        }
+        if let Some(settings) = &enc.settings {
+            fa.set_field(kind, pos, "Encoded_Library_Settings", settings.clone());
+        }
+    }
 }
 
 fn aac_channel_layout(channels: u8) -> (Option<&'static str>, Option<&'static str>) {
@@ -1183,5 +1641,66 @@ mod tests {
         assert!(stats.bytes_requested < MPEG_TS_METADATA_ONLY_BUDGET, "{stats:?}");
         assert!(stats.bytes_returned < MPEG_TS_METADATA_ONLY_BUDGET, "{stats:?}");
         assert_eq!(stats.max_request_len, MPEG_TS_PROBE_LIMIT);
+    }
+
+    // Real Constrained-Baseline SPS/PPS (320x240, level 1.3) extracted
+    // from an x264/FFmpeg MPEG-TS elementary stream.
+    const REAL_SPS: [u8; 23] = [
+        0x67, 0x42, 0xc0, 0x0d, 0xda, 0x05, 0x07, 0xec, 0x04, 0x40, 0x00, 0x00, 0x03, 0x00, 0x40,
+        0x00, 0x00, 0x0c, 0x83, 0xc5, 0x0a, 0xa8, 0x00,
+    ];
+    const REAL_PPS: [u8; 4] = [0x68, 0xce, 0x0f, 0xc8];
+
+    #[test]
+    fn sniff_avc_maps_sps_pps_from_annex_b() {
+        // Annex-B stream: SPS then PPS, each preceded by a start code.
+        let mut es = Vec::new();
+        es.extend_from_slice(&[0, 0, 1]);
+        es.extend_from_slice(&REAL_SPS);
+        es.extend_from_slice(&[0, 0, 1]);
+        es.extend_from_slice(&REAL_PPS);
+
+        let avc = sniff_avc(&es).expect("SPS should parse");
+        assert_eq!(avc.info.profile, 0x42);
+        assert!(avc.constrained, "constraint_set1_flag set → Constrained Baseline");
+        assert_eq!(avc.info.level, 13);
+        assert_eq!(avc.info.width, 320);
+        assert_eq!(avc.info.height, 240);
+        assert_eq!(avc.info.chroma_format, 1); // 4:2:0
+        assert_eq!(avc.info.ref_frames, 1);
+        assert_eq!(avc.cabac, Some(false)); // entropy_coding_mode_flag = 0
+
+        // Field mapping mirrors the mp4.rs avcC template.
+        assert_eq!(
+            avc_profile_name(avc.info.profile, avc.constrained),
+            Some("Constrained Baseline")
+        );
+        assert_eq!(format_avc_level(avc.info.level), "1.3");
+    }
+
+    #[test]
+    fn sniff_avc_handles_4byte_start_codes_and_leading_pes_header() {
+        // Prepend a PES header (start code + stream_id 0xE0) which must be
+        // ignored (NAL type 0), and use 4-byte start codes.
+        let mut es = Vec::new();
+        es.extend_from_slice(&[0, 0, 1, 0xE0, 0x00, 0x00, 0x80, 0x80, 0x05, 0, 0, 0, 0, 0]);
+        es.extend_from_slice(&[0, 0, 0, 1]);
+        es.extend_from_slice(&REAL_SPS);
+        es.extend_from_slice(&[0, 0, 0, 1]);
+        es.extend_from_slice(&REAL_PPS);
+
+        let avc = sniff_avc(&es).expect("SPS should parse past PES header");
+        assert_eq!(avc.info.width, 320);
+        assert_eq!(avc.info.height, 240);
+    }
+
+    #[test]
+    fn count_adts_frames_counts_syncs() {
+        // Two minimal ADTS frames of length 8 bytes each.
+        let frame = [0xFF, 0xF1, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&frame);
+        buf.extend_from_slice(&frame);
+        assert_eq!(count_adts_frames(&buf), 2);
     }
 }

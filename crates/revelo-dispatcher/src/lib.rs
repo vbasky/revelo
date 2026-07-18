@@ -388,4 +388,95 @@ mod tests {
         assert!(stats.bytes_returned < 64 * 1024, "{stats:?}");
         assert!(stats.max_request_len < LARGE_INPUT_RAW_READ_LIMIT, "{stats:?}");
     }
+
+    // --- Malformed-input hardening: fuzz/truncation sweep -----------------
+    //
+    // The dispatcher runs *every* parser in the table against raw input
+    // during detection, so a single parser panicking on truncated or fuzzed
+    // bytes takes down the whole process (and is UB across the C ABI). These
+    // tests run all parsers directly against adversarial buffers; because
+    // they do not catch unwinds, any parser panic fails the suite. Test
+    // builds keep overflow-checks on, so unsigned-underflow bugs surface
+    // here too.
+
+    /// Run every parser in the table against `bytes` on a fresh cursor.
+    fn run_all_parsers(bytes: &[u8]) {
+        for parser in table() {
+            let mut fa = FileAnalyze::new(bytes);
+            let _ = parser(&mut fa);
+        }
+    }
+
+    /// Small deterministic PRNG (xorshift64*). Avoids a dependency and the
+    /// harness-forbidden `Math.random`/`Date` — the seed is fixed so failures
+    /// reproduce exactly.
+    struct XorShift(u64);
+    impl XorShift {
+        fn next_u32(&mut self) -> u32 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            (x >> 32) as u32
+        }
+    }
+
+    #[test]
+    fn parsers_never_panic_on_truncated_magic() {
+        // A representative spread of real format signatures. Feeding every
+        // prefix (including the empty slice) drives each format's detection
+        // and early header reads against a buffer that ends mid-structure.
+        let magics: &[&[u8]] = &[
+            b"RIFF\x00\x00\x00\x00WAVE",
+            b"RIFF\x00\x00\x00\x00AVI ",
+            b"\x00\x00\x00\x20ftypisom",
+            b"\x00\x00\x00\x20ftypM4A ",
+            b"\x1a\x45\xdf\xa3",            // Matroska/WebM EBML
+            b"OggS",                        // Ogg
+            b"fLaC",                        // FLAC
+            b"ID3\x04\x00",                 // MP3/ID3
+            b"FLV\x01\x05\x00\x00\x00\x09", // FLV
+            b"\x47\x40\x00\x10",            // MPEG-TS sync
+            b"\x00\x00\x01\xba",            // MPEG-PS pack
+            b"\x89PNG\r\n\x1a\n",           // PNG
+            b"\xff\xd8\xff\xe0",            // JPEG
+            b"GIF89a",                      // GIF
+            b"BM",                          // BMP
+            b"\x1f\x8b",                    // gzip
+            b"PK\x03\x04",                  // zip
+        ];
+        for m in magics {
+            for len in 0..=m.len() {
+                run_all_parsers(&m[..len]);
+            }
+        }
+    }
+
+    #[test]
+    fn parsers_never_panic_on_random_buffers() {
+        let mut rng = XorShift(0x9E37_79B9_7F4A_7C15);
+        for _ in 0..2000 {
+            let len = (rng.next_u32() % 600) as usize;
+            let buf: Vec<u8> = (0..len).map(|_| (rng.next_u32() & 0xFF) as u8).collect();
+            run_all_parsers(&buf);
+        }
+    }
+
+    #[test]
+    fn parsers_never_panic_on_degenerate_buffers() {
+        // All-zero and all-0xFF buffers exercise the "everything is the same
+        // byte" edge (zero lengths, sentinel counts) that random data rarely
+        // hits, plus a magic followed by a run of zeros (declared-but-absent
+        // payloads / oversized length fields).
+        for len in [0usize, 1, 2, 3, 4, 7, 8, 15, 16, 63, 64, 255, 256, 1023, 4096] {
+            run_all_parsers(&vec![0u8; len]);
+            run_all_parsers(&vec![0xFFu8; len]);
+        }
+        for magic in [&b"RIFF"[..], b"\x1a\x45\xdf\xa3", b"\x00\x00\x00\x20ftypisom"] {
+            let mut buf = magic.to_vec();
+            buf.resize(2048, 0);
+            run_all_parsers(&buf);
+        }
+    }
 }
