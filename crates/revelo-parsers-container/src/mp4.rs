@@ -54,6 +54,17 @@ const BOX_MDAT: u32 = u32::from_be_bytes(*b"mdat");
 const BOX_TKHD: u32 = u32::from_be_bytes(*b"tkhd");
 const BOX_STCO: u32 = u32::from_be_bytes(*b"stco"); // 32-bit chunk offsets
 const BOX_CO64: u32 = u32::from_be_bytes(*b"co64"); // 64-bit chunk offsets
+// Fragmented MP4 (ISO BMFF movie fragments). `mvex`/`trex` live under `moov`
+// and carry per-track sample defaults; `moof`/`traf`/`tfhd`/`trun` carry the
+// actual fragment sample runs. Files using these (e.g. `empty_moov` DASH/CMAF)
+// keep an empty `stbl`, so sample counts/durations/sizes must be aggregated
+// from the fragments instead.
+const BOX_MVEX: u32 = u32::from_be_bytes(*b"mvex");
+const BOX_TREX: u32 = u32::from_be_bytes(*b"trex");
+const BOX_MOOF: u32 = u32::from_be_bytes(*b"moof");
+const BOX_TRAF: u32 = u32::from_be_bytes(*b"traf");
+const BOX_TFHD: u32 = u32::from_be_bytes(*b"tfhd");
+const BOX_TRUN: u32 = u32::from_be_bytes(*b"trun");
 
 /// iTunes-style `©too` (tool/encoder) metadata key.
 const ITUNES_KEY_TOOL: u32 = 0xA9_74_6F_6F;
@@ -154,6 +165,208 @@ struct MovieInfo {
     /// (key_string, value) tuples resolved against `qt_keys` after
     /// parsing the matching ilst. Independent from iTunes metadata.
     qt_metadata: Vec<(String, String)>,
+    /// `mvex` > `trex` per-track sample defaults, as
+    /// `(track_id, default_sample_duration, default_sample_size)`. Used as
+    /// the fallback when a fragment's `tfhd`/`trun` omit those values.
+    trex_defaults: Vec<TrexDefault>,
+}
+
+/// A `trex` (Track Extends) entry — the movie-level default sample duration
+/// and size for a fragmented track, keyed by `track_id`.
+#[derive(Clone, Copy, Default, Debug)]
+struct TrexDefault {
+    track_id: u32,
+    default_sample_duration: u32,
+    default_sample_size: u32,
+}
+
+/// Aggregated sample statistics collected from a track's movie fragments
+/// (`moof`/`traf`/`trun`), keyed by `track_id`. Mirrors what `stts`/`stsz`
+/// would have provided for a non-fragmented track.
+#[derive(Clone, Copy, Default)]
+struct FragmentAccum {
+    track_id: u32,
+    sample_count: u64,
+    total_duration: u64,
+    total_size: u64,
+    min_delta: Option<u32>,
+    max_delta: Option<u32>,
+}
+
+impl FragmentAccum {
+    fn add_sample(&mut self, duration: u32, size: u32) {
+        self.sample_count += 1;
+        self.total_duration += duration as u64;
+        self.total_size += size as u64;
+        self.min_delta = Some(self.min_delta.map_or(duration, |m| m.min(duration)));
+        self.max_delta = Some(self.max_delta.map_or(duration, |m| m.max(duration)));
+    }
+}
+
+/// Parse a `trex` box (movie-level per-track sample defaults), appending its
+/// entry to `movie.trex_defaults`.
+fn parse_trex(fa: &mut FileAnalyze, _box_size: usize, movie: &mut MovieInfo) {
+    let mut r = Reader::wrap(fa);
+    let _version_flags = r.be_u32("version_flags");
+    let track_id = r.be_u32("track_ID").unwrap_or(0);
+    let _default_sample_description_index = r.be_u32("default_sample_description_index");
+    let default_sample_duration = r.be_u32("default_sample_duration").unwrap_or(0);
+    let default_sample_size = r.be_u32("default_sample_size").unwrap_or(0);
+    // default_sample_flags (4 bytes) follows but is unused here.
+    if track_id != 0 {
+        movie.trex_defaults.push(TrexDefault {
+            track_id,
+            default_sample_duration,
+            default_sample_size,
+        });
+    }
+}
+
+/// Parse a `tfhd` (Track Fragment Header). Returns the fragment's
+/// `(track_id, default_sample_duration, default_sample_size)`, filling
+/// missing defaults from the track's `trex` entry.
+fn parse_tfhd(fa: &mut FileAnalyze, _box_size: usize, trex: &[TrexDefault]) -> (u32, u32, u32) {
+    const BASE_DATA_OFFSET_PRESENT: u32 = 0x00_0001;
+    const SAMPLE_DESCRIPTION_INDEX_PRESENT: u32 = 0x00_0002;
+    const DEFAULT_SAMPLE_DURATION_PRESENT: u32 = 0x00_0008;
+    const DEFAULT_SAMPLE_SIZE_PRESENT: u32 = 0x00_0010;
+
+    let mut r = Reader::wrap(fa);
+    let flags = r.be_u32("version_flags").unwrap_or(0) & 0x00FF_FFFF;
+    let track_id = r.be_u32("track_ID").unwrap_or(0);
+    if flags & BASE_DATA_OFFSET_PRESENT != 0 {
+        let _ = r.skip(8);
+    }
+    if flags & SAMPLE_DESCRIPTION_INDEX_PRESENT != 0 {
+        let _ = r.skip(4);
+    }
+    let tfhd_dur = if flags & DEFAULT_SAMPLE_DURATION_PRESENT != 0 {
+        r.be_u32("default_sample_duration")
+    } else {
+        None
+    };
+    let tfhd_size = if flags & DEFAULT_SAMPLE_SIZE_PRESENT != 0 {
+        r.be_u32("default_sample_size")
+    } else {
+        None
+    };
+    let fallback = trex.iter().find(|t| t.track_id == track_id);
+    let def_dur = tfhd_dur.unwrap_or_else(|| fallback.map_or(0, |t| t.default_sample_duration));
+    let def_size = tfhd_size.unwrap_or_else(|| fallback.map_or(0, |t| t.default_sample_size));
+    (track_id, def_dur, def_size)
+}
+
+/// Parse a `trun` (Track Fragment Run), adding each sample's duration and
+/// size to `acc`. Fields the run omits fall back to the fragment defaults.
+fn parse_trun(
+    fa: &mut FileAnalyze,
+    _box_size: usize,
+    def_dur: u32,
+    def_size: u32,
+    acc: &mut FragmentAccum,
+) {
+    const DATA_OFFSET_PRESENT: u32 = 0x00_0001;
+    const FIRST_SAMPLE_FLAGS_PRESENT: u32 = 0x00_0004;
+    const SAMPLE_DURATION_PRESENT: u32 = 0x00_0100;
+    const SAMPLE_SIZE_PRESENT: u32 = 0x00_0200;
+    const SAMPLE_FLAGS_PRESENT: u32 = 0x00_0400;
+    const SAMPLE_CTO_PRESENT: u32 = 0x00_0800;
+
+    let mut r = Reader::wrap(fa);
+    let flags = r.be_u32("version_flags").unwrap_or(0) & 0x00FF_FFFF;
+    // Cap defends against a corrupt sample_count driving a huge loop.
+    let sample_count = r.be_u32("sample_count").unwrap_or(0).min(1_000_000);
+    if flags & DATA_OFFSET_PRESENT != 0 {
+        let _ = r.skip(4);
+    }
+    if flags & FIRST_SAMPLE_FLAGS_PRESENT != 0 {
+        let _ = r.skip(4);
+    }
+    let has_dur = flags & SAMPLE_DURATION_PRESENT != 0;
+    let has_size = flags & SAMPLE_SIZE_PRESENT != 0;
+    let has_flags = flags & SAMPLE_FLAGS_PRESENT != 0;
+    let has_cto = flags & SAMPLE_CTO_PRESENT != 0;
+
+    for _ in 0..sample_count {
+        let dur = if has_dur {
+            match r.be_u32("sample_duration") {
+                Some(v) => v,
+                None => break,
+            }
+        } else {
+            def_dur
+        };
+        let size = if has_size {
+            match r.be_u32("sample_size") {
+                Some(v) => v,
+                None => break,
+            }
+        } else {
+            def_size
+        };
+        if has_flags && r.skip(4).is_none() {
+            break;
+        }
+        if has_cto && r.skip(4).is_none() {
+            break;
+        }
+        acc.add_sample(dur, size);
+    }
+}
+
+/// Parse a `traf` (Track Fragment) — its `tfhd` defaults followed by each
+/// `trun` run — and merge the aggregated samples into `frags`, keyed by
+/// track_id (accumulating across multiple fragments of the same track).
+fn parse_traf(
+    fa: &mut FileAnalyze,
+    box_size: usize,
+    trex: &[TrexDefault],
+    frags: &mut Vec<FragmentAccum>,
+) {
+    let inner = box_size.saturating_sub(8);
+    let mut track_id = 0u32;
+    let mut def_dur = 0u32;
+    let mut def_size = 0u32;
+    let mut acc = FragmentAccum::default();
+    walk_boxes(fa, inner, 1, &mut |fa, t, s, _, _| match t {
+        BOX_TFHD => {
+            let (id, d, sz) = parse_tfhd(fa, s, trex);
+            track_id = id;
+            def_dur = d;
+            def_size = sz;
+        }
+        BOX_TRUN => parse_trun(fa, s, def_dur, def_size, &mut acc),
+        _ => {
+            fa.skip_hexa(s.saturating_sub(8), "traf_child");
+        }
+    });
+    if acc.sample_count == 0 || track_id == 0 {
+        return;
+    }
+    acc.track_id = track_id;
+    if let Some(existing) = frags.iter_mut().find(|f| f.track_id == track_id) {
+        existing.sample_count += acc.sample_count;
+        existing.total_duration += acc.total_duration;
+        existing.total_size += acc.total_size;
+        existing.min_delta = merge_min(existing.min_delta, acc.min_delta);
+        existing.max_delta = merge_max(existing.max_delta, acc.max_delta);
+    } else {
+        frags.push(acc);
+    }
+}
+
+fn merge_min(a: Option<u32>, b: Option<u32>) -> Option<u32> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (x, y) => x.or(y),
+    }
+}
+
+fn merge_max(a: Option<u32>, b: Option<u32>) -> Option<u32> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.max(y)),
+        (x, y) => x.or(y),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -309,6 +522,8 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
     let mut mdat_size: Option<usize> = None;
     let mut mdat_header_size: Option<usize> = None;
     let mut moov_offset: Option<usize> = None;
+    // Movie-fragment sample stats (fragmented MP4), aggregated per track_id.
+    let mut fragments: Vec<FragmentAccum> = Vec::new();
     let file_size = fa.remain();
 
     walk_boxes(fa, file_size, 0, &mut |fa, box_type, box_size, box_start, depth| match box_type {
@@ -352,11 +567,66 @@ pub fn parse_mp4(fa: &mut FileAnalyze) -> bool {
                 handle_inner(fa, t, s, &mut tracks, &mut movie);
             });
         }
+        BOX_MOOF => {
+            // Movie fragment: aggregate each `traf`'s sample runs. `trex`
+            // (parsed above from `moov > mvex`) supplies the defaults; clone
+            // it so the nested visitor doesn't borrow `movie` while `fragments`
+            // is mutated.
+            let header_size = fa.element_offset().saturating_sub(box_start);
+            let inner = box_size.saturating_sub(header_size);
+            let trex = movie.trex_defaults.clone();
+            walk_boxes(fa, inner, depth + 1, &mut |fa, t, s, _, _| {
+                if t == BOX_TRAF {
+                    parse_traf(fa, s, &trex, &mut fragments);
+                } else {
+                    fa.skip_hexa(s.saturating_sub(8), "moof_child");
+                }
+            });
+        }
         _ => {
             let header_size = fa.element_offset().saturating_sub(box_start);
             fa.skip_hexa(box_size.saturating_sub(header_size), "BoxBody");
         }
     });
+
+    // Fragmented MP4: tracks whose `stbl` is empty (`empty_moov`) take their
+    // sample statistics from the fragments collected above. Match by track_id
+    // (falling back to 1-based track order), and only fill fields the sample
+    // tables left empty, so non-fragmented files are completely unaffected.
+    if !fragments.is_empty() {
+        for (idx, track) in tracks.iter_mut().enumerate() {
+            if track.stts_total_samples > 0 {
+                continue;
+            }
+            let tid = track.track_id.unwrap_or((idx + 1) as u32);
+            let Some(frag) = fragments.iter().find(|f| f.track_id == tid) else {
+                continue;
+            };
+            if frag.sample_count == 0 {
+                continue;
+            }
+            track.stts_total_samples = frag.sample_count;
+            track.stts_total_duration = frag.total_duration;
+            track.stts_min_delta = frag.min_delta;
+            track.stts_max_delta = frag.max_delta;
+            // Uniform per-sample duration ⇒ CFR; varying ⇒ leave VFR.
+            track.stts_cfr_delta = match (frag.min_delta, frag.max_delta) {
+                (Some(lo), Some(hi)) if lo == hi => Some(lo),
+                _ => None,
+            };
+            // An `empty_moov` track carries a zero-entry `stsz`/`stco`, so these
+            // may be `Some(0)` rather than `None` — treat zero as unset.
+            if track.sample_count.unwrap_or(0) == 0 {
+                track.sample_count = Some(frag.sample_count.min(u32::MAX as u64) as u32);
+            }
+            if track.duration_units == 0 {
+                track.duration_units = frag.total_duration;
+            }
+            if track.source_stream_size.unwrap_or(0) == 0 && frag.total_size > 0 {
+                track.source_stream_size = Some(frag.total_size);
+            }
+        }
+    }
 
     let layout = BoxLayout { file_size, mdat_offset, mdat_size, mdat_header_size, moov_offset };
     // AVC encoder SEI lives in the first mdat sample, not avcC — scan for
@@ -527,11 +797,14 @@ fn handle_inner(
     movie: &mut MovieInfo,
 ) {
     match box_type {
-        BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA => {
+        BOX_MDIA | BOX_MINF | BOX_STBL | BOX_EDTS | BOX_UDTA | BOX_MVEX => {
             let inner = box_size.saturating_sub(8);
             walk_boxes(fa, inner, 1, &mut |fa, t, s, _, _| {
                 handle_inner(fa, t, s, tracks, movie);
             });
+        }
+        BOX_TREX => {
+            parse_trex(fa, box_size, movie);
         }
         BOX_META => {
             // ISO BMFF `meta` is a FullBox with a 4-byte version_flags
@@ -4124,5 +4397,60 @@ mod tests {
         assert!(!info.monochrome);
         assert_eq!(info.video_full_range, Some(false)); // Limited
         assert_eq!(fa.element_offset(), SAMPLE_AV1C_BODY.len());
+    }
+
+    #[test]
+    fn trun_aggregates_per_sample_duration_and_size() {
+        // trun body: flags with sample-duration (0x100) + sample-size (0x200)
+        // present, sample_count = 3, then (duration, size) per sample. Varying
+        // durations must surface as distinct min/max deltas (→ VFR).
+        let mut body = Vec::new();
+        body.extend_from_slice(&0x0000_0300u32.to_be_bytes());
+        body.extend_from_slice(&3u32.to_be_bytes());
+        for (dur, size) in [(512u32, 100u32), (512, 200), (1024, 300)] {
+            body.extend_from_slice(&dur.to_be_bytes());
+            body.extend_from_slice(&size.to_be_bytes());
+        }
+        let mut fa = FileAnalyze::new(&body);
+        let mut acc = FragmentAccum::default();
+        parse_trun(&mut fa, body.len(), 0, 0, &mut acc);
+        assert_eq!(acc.sample_count, 3);
+        assert_eq!(acc.total_duration, 2048);
+        assert_eq!(acc.total_size, 600);
+        assert_eq!(acc.min_delta, Some(512));
+        assert_eq!(acc.max_delta, Some(1024));
+    }
+
+    #[test]
+    fn trun_uses_defaults_when_per_sample_fields_absent() {
+        // flags = 0 → no per-sample fields; every sample takes the fragment
+        // defaults. Uniform duration ⇒ min == max (CFR).
+        let mut body = Vec::new();
+        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&4u32.to_be_bytes());
+        let mut fa = FileAnalyze::new(&body);
+        let mut acc = FragmentAccum::default();
+        parse_trun(&mut fa, body.len(), 1000, 50, &mut acc);
+        assert_eq!(acc.sample_count, 4);
+        assert_eq!(acc.total_duration, 4000);
+        assert_eq!(acc.total_size, 200);
+        assert_eq!(acc.min_delta, Some(1000));
+        assert_eq!(acc.max_delta, Some(1000));
+    }
+
+    #[test]
+    fn tfhd_falls_back_to_trex_defaults() {
+        // tfhd with only track_ID present (flags = 0): default duration/size
+        // must come from the track's trex entry.
+        let mut body = Vec::new();
+        body.extend_from_slice(&0u32.to_be_bytes()); // version_flags
+        body.extend_from_slice(&7u32.to_be_bytes()); // track_ID
+        let mut fa = FileAnalyze::new(&body);
+        let trex =
+            [TrexDefault { track_id: 7, default_sample_duration: 512, default_sample_size: 999 }];
+        let (id, dur, size) = parse_tfhd(&mut fa, body.len(), &trex);
+        assert_eq!(id, 7);
+        assert_eq!(dur, 512);
+        assert_eq!(size, 999);
     }
 }

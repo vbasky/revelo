@@ -34,6 +34,11 @@
   (all-zero / all-`0xFF`) inputs, asserting none panic.
 - `Format_Settings_SBR` is now emitted for AAC by the FLV path (from the
   AudioSpecificConfig).
+- **Fragmented MP4 (`moof`/`trun`)** — movie-fragment sample runs are parsed
+  (`mvex`/`trex` defaults + `tfhd`/`trun`), aggregated per track_ID, and used to
+  populate Duration, FrameRate, FrameRate_Mode, FrameCount, and StreamSize for
+  tracks whose `stbl` is empty (`empty_moov` DASH/CMAF). frag.mp4 parity 71→83
+  matching lines; non-fragmented files are unaffected.
 
 ### Fixed
 
@@ -59,9 +64,9 @@
 
 ### Known gaps
 
-- **Fragmented MP4 duration** — `moof`/`traf`/`trun` are not yet parsed, so
-  fragmented files (`empty_moov`) report zero sample counts/durations. The fix
-  is scoped in [STATUS.md](STATUS.md).
+- **Fragmented MP4 residuals** — with `moof`/`trun` now parsed, the last gaps
+  are the x264 `Encoded_Library` SEI (needs an `stco` to locate samples in
+  `mdat`, absent in fragmented files) and a few-bps bitrate-rounding difference.
 - **`FrameRate_Mode_Original`** for normalized-VFR sources — the signal is not
   present in a uniform sample table; needs a real-world sample to derive safely.
 

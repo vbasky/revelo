@@ -57,11 +57,15 @@ can't validate a port.
       `extern "C"` cdylib boundary (a parser panic there was UB); added a
       **fuzz/truncation sweep** that runs all 180 parsers against truncated
       magics, random, and degenerate buffers (`revelo-dispatcher` tests).
-- [ ] **Duration calculation precision (fragmented).** Diagnosed: fragmented
-      MP4 (`moof`/`traf`/`trun`, `empty_moov`) is not yet parsed, so sample
-      counts/durations read as 0 (frag.mp4). Fix is scoped — aggregate `trun`
-      sample counts/durations/sizes with `tfhd`/`trex` defaults, keyed by
-      track_ID, and feed tracks whose `stbl` is empty. Segmented MXF unaffected.
+- [x] **Duration calculation precision (fragmented).** Fragmented MP4
+      (`moof`/`traf`/`trun` with `mvex`/`trex` defaults, `empty_moov`) is now
+      parsed: `trun` sample counts/durations/sizes are aggregated per track_ID
+      and fed to tracks whose `stbl` is empty, driving Duration, FrameRate,
+      FrameRate_Mode (VFR), FrameCount, and StreamSize. frag.mp4 parity 71→83
+      matching lines. Remaining gaps are the x264 `Encoded_Library` SEI (needs
+      an `stco`, absent in fragmented files) and exact bitrate rounding.
+      Non-fragmented files are untouched (the merge only fires on an empty
+      `stbl`). Segmented MXF was already unaffected.
 
 ## P1 — output & reporting
 
