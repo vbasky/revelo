@@ -18,9 +18,9 @@
 //!       …
 //! ```
 //! Every key and every scalar value is emitted as a YAML double-quoted
-//! scalar (see [`yaml_escape`]). Quoting unconditionally sidesteps all of
-//! YAML's plain-scalar ambiguities: keys begin with `@`, and values may
-//! contain `:`, `#`, leading spaces, etc.
+//! scalar. Quoting unconditionally sidesteps all of YAML's plain-scalar
+//! ambiguities: keys begin with `@`, and values may contain `:`, `#`,
+//! leading spaces, etc.
 
 use revelo_core::{Stream, StreamCollection, StreamKind};
 
