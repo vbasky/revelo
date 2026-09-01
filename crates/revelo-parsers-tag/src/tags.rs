@@ -491,6 +491,39 @@ mod tests {
     }
 
     #[test]
+    fn tiff_int_readers_reject_out_of_range() {
+        // read_tiff_u16/u32 previously indexed data[off..] without a bounds
+        // check, so a truncated TIFF/EXIF IFD panicked. They must return 0
+        // instead (mirroring read_tiff_f32/f64).
+        for bo in ["BE", "LE"] {
+            assert_eq!(read_tiff_u16(&[0x12], 0, bo), 0);
+            assert_eq!(read_tiff_u16(&[], 0, bo), 0);
+            assert_eq!(read_tiff_u16(&[0u8; 4], 3, bo), 0);
+            assert_eq!(read_tiff_u32(&[0u8; 3], 0, bo), 0);
+            assert_eq!(read_tiff_u32(&[0u8; 8], 6, bo), 0);
+            // In-range still decodes.
+            assert_eq!(read_tiff_u16(&[0x00, 0x2a], 0, "BE"), 0x2a);
+            assert_eq!(read_tiff_u32(&[0, 0, 0, 1], 0, "BE"), 1);
+        }
+    }
+
+    #[test]
+    fn parse_exif_handles_short_partial_window() {
+        // peek_raw_at returns a partial window, so parse_exif can receive fewer
+        // than the 12 bytes it requests. Truncated TIFF-marker inputs must not
+        // panic on the head[0..2] read.
+        for buf in
+            [vec![0x1a], b"II".to_vec(), b"IIExif".to_vec(), b"MM".to_vec(), b"MMExif\0".to_vec()]
+        {
+            let mut fa = FileAnalyze::new(&buf);
+            // Must return a bool, not panic.
+            let _ = parse_exif(&mut fa);
+            let mut fa2 = FileAnalyze::new(&buf);
+            let _ = parse_tags(&mut fa2);
+        }
+    }
+
+    #[test]
     fn id3v1_parses_basic_tag() {
         let mut buf = vec![0u8; 256];
         let start = 256 - 128;
@@ -609,6 +642,11 @@ pub fn parse_exif(fa: &mut FileAnalyze) -> bool {
         Some(b) => b,
         None => return false,
     };
+    // peek_raw_at returns a partial window, so `head` may be shorter than the
+    // 12 bytes requested. Guard before indexing head[0..2] below.
+    if head.len() < 12 {
+        return false;
+    }
     let raw_tiff = &head[0..2] == b"II" || &head[0..2] == b"MM";
     let scan_len = if raw_tiff {
         fa.element_size()
@@ -1401,6 +1439,9 @@ fn exif_type_size(t: u16) -> usize {
 }
 
 fn read_tiff_u16(data: &[u8], off: usize, bo: &str) -> u16 {
+    if off + 2 > data.len() {
+        return 0;
+    }
     if bo == "BE" {
         u16::from_be_bytes([data[off], data[off + 1]])
     } else {
@@ -1409,6 +1450,9 @@ fn read_tiff_u16(data: &[u8], off: usize, bo: &str) -> u16 {
 }
 
 fn read_tiff_u32(data: &[u8], off: usize, bo: &str) -> u32 {
+    if off + 4 > data.len() {
+        return 0;
+    }
     if bo == "BE" {
         u32::from_be_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
     } else {
