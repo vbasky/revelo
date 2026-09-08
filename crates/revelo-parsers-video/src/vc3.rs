@@ -26,7 +26,7 @@ pub fn parse_vc3(fa: &mut FileAnalyze) -> bool {
     let sst = (flags_ss >> 2) & 1;
     let compression_id = u32::from_be_bytes([buf[0x28], buf[0x29], buf[0x2A], buf[0x2B]]);
 
-    let height = if sst != 0 { active_lines * 2 } else { active_lines };
+    let height = if sst != 0 { active_lines.saturating_mul(2) } else { active_lines };
     let width = if compression_id >= 1270 {
         let width_block = (samples_per_line as u32).div_ceil(16);
         (width_block * 16) as u16
@@ -155,5 +155,31 @@ mod tests {
         let buf = vec![0u8; 0x40];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_vc3(&mut fa));
+    }
+
+    #[test]
+    fn vc3_interlaced_active_lines_overflow_does_not_panic() {
+        // active_lines = 0x8000 (32768) with the SST (interlaced) bit set makes
+        // active_lines * 2 overflow u16; it must saturate instead of panicking.
+        let mut buf = vec![0u8; 0x2C];
+        buf[0..4].copy_from_slice(&[0x00, 0x00, 0x02, 0x80]);
+        buf[4] = 3; // version 3
+        buf[0x18] = 0x80;
+        buf[0x19] = 0x00; // active_lines = 32768
+        buf[0x1A] = 0x00;
+        buf[0x1B] = 0x10; // samples_per_line = 16
+        buf[0x22] = 0x00;
+        buf[0x23] = 0x04; // flags_ss → SST bit set (interlaced)
+        buf[0x28] = 0x00;
+        buf[0x29] = 0x00;
+        buf[0x2A] = 0x04;
+        buf[0x2B] = 0xD3; // CID 1235 (DNxHD HQX)
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_vc3(&mut fa));
+        assert_eq!(
+            fa.retrieve(StreamKind::Video, 0, "Height").map(|z| z.as_str().to_owned()),
+            Some("65535".into())
+        );
     }
 }

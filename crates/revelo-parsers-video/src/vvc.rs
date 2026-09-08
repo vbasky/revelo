@@ -118,6 +118,9 @@ fn find_nal_start(data: &[u8], from: usize) -> Option<usize> {
 }
 
 fn parse_sps(sps_nal: &[u8]) -> Option<VvcInfo> {
+    if sps_nal.len() < 2 {
+        return None;
+    }
     let data = remove_epb_3(&sps_nal[2..]);
     if data.len() < 4 {
         return None;
@@ -279,5 +282,14 @@ mod tests {
         let mut fa = FileAnalyze::new(&data);
         let _ = parse_vvc(&mut fa);
         assert_eq!(fa.access_stats().max_request_len, VVC_NAL_SCAN_LIMIT);
+    }
+
+    #[test]
+    fn vvc_short_sps_nal_does_not_panic() {
+        // A single-byte SPS NAL: parse_sps used to slice &sps_nal[2..] with no
+        // length check, panicking on a 1-byte NAL.
+        let data: Vec<u8> = vec![0, 0, 0, 1, 0x78];
+        let mut fa = FileAnalyze::new(&data);
+        assert!(!parse_vvc(&mut fa));
     }
 }

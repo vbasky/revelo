@@ -646,23 +646,18 @@ pub fn parse_hevc_sps(rbsp: &[u8]) -> Option<HevcInfo> {
     read_bits(&clean, &mut offset, 1)?;
 
     // Compute dimensions with conformance window
-    let sub_width_c = match chroma_format_idc {
-        0 => 1,
-        1 => 2,
-        2 => 2,
-        3 => 1,
-        _ => 2,
-    };
-    let sub_height_c = match chroma_format_idc {
-        0 => 1,
-        1 => 2,
-        2 => 1,
-        3 => 1,
-        _ => 2,
+    let (sub_width_c, sub_height_c): (u32, u32) = match chroma_format_idc {
+        0 => (1, 1),
+        1 => (2, 2),
+        2 => (2, 1),
+        3 => (1, 1),
+        _ => (2, 2),
     };
 
-    let width = pic_width - sub_width_c * (conf_win_left + conf_win_right);
-    let height = pic_height - sub_height_c * (conf_win_top + conf_win_bottom);
+    let width = pic_width
+        .saturating_sub(sub_width_c.saturating_mul(conf_win_left.saturating_add(conf_win_right)));
+    let height = pic_height
+        .saturating_sub(sub_height_c.saturating_mul(conf_win_top.saturating_add(conf_win_bottom)));
 
     // Parse VUI for colour information
     let vui_result = parse_vui(&clean, &mut offset);
@@ -1272,5 +1267,95 @@ mod tests {
         // For type 144 > 255: 0xFF + (144-255) = 0xFF + (-111) → wouldn't work since nal[pos] is u8.
         // OK let's test with type 4 (which is < 255 and doesn't need multi-byte encoding).
         // Actually let's skip this test for now, the multi-byte encoding edge case is tricky.
+    }
+
+    #[test]
+    fn hevc_sps_conformance_window_underflow_does_not_panic() {
+        // Minimal HEVC SPS reaching the conformance-window arithmetic with crop
+        // values larger than the coded dimensions: 16 - 2*(6+6) underflows, and
+        // the parse must saturate to 0 instead of panicking.
+        fn ue(v: u32, b: &mut Vec<bool>) {
+            let n = v + 1;
+            let l = 31 - n.leading_zeros();
+            for _ in 0..l {
+                b.push(false);
+            }
+            b.push(true);
+            let m = n - (1 << l);
+            for i in (0..l).rev() {
+                b.push((m >> i) & 1 == 1);
+            }
+        }
+        fn raw(v: u32, n: usize, b: &mut Vec<bool>) {
+            for i in (0..n).rev() {
+                b.push((v >> i) & 1 == 1);
+            }
+        }
+
+        let mut bits: Vec<bool> = Vec::new();
+        raw(0, 4, &mut bits); // sps_video_parameter_set_id
+        raw(0, 3, &mut bits); // sps_max_sub_layers_minus1
+        raw(0, 1, &mut bits); // sps_temporal_id_nesting_flag
+        raw(0, 2, &mut bits); // general_profile_space
+        raw(0, 1, &mut bits); // general_tier_flag
+        raw(0, 5, &mut bits); // general_profile_idc
+        raw(0, 32, &mut bits); // general_profile_compatibility_flag[32]
+        raw(0, 1, &mut bits); // general_progressive_source_flag
+        raw(0, 1, &mut bits); // general_interlaced_source_flag
+        raw(0, 1, &mut bits); // general_non_packed_constraint_flag
+        raw(0, 1, &mut bits); // general_frame_only_constraint_flag
+        raw(0, 32, &mut bits); // general_reserved_zero_44bits (lo)
+        raw(0, 12, &mut bits); // general_reserved_zero_44bits (hi)
+        raw(0, 8, &mut bits); // general_level_idc
+        ue(0, &mut bits); // sps_seq_parameter_set_id
+        ue(1, &mut bits); // chroma_format_idc = 4:2:0
+        ue(16, &mut bits); // pic_width_in_luma_samples
+        ue(16, &mut bits); // pic_height_in_luma_samples
+        raw(1, 1, &mut bits); // conformance_window_flag
+        ue(6, &mut bits); // conf_win_left
+        ue(6, &mut bits); // conf_win_right
+        ue(6, &mut bits); // conf_win_top
+        ue(6, &mut bits); // conf_win_bottom
+        ue(0, &mut bits); // bit_depth_luma_minus8
+        ue(0, &mut bits); // bit_depth_chroma_minus8
+        ue(0, &mut bits); // log2_max_pic_order_cnt_lsb_minus4
+        raw(1, 1, &mut bits); // sps_sub_layer_ordering_info_present_flag
+        ue(0, &mut bits); // sps_max_dec_pic_buffering_minus1[0]
+        ue(0, &mut bits); // sps_max_num_reorder_pics[0]
+        ue(0, &mut bits); // sps_max_latency_increase_plus1[0]
+        ue(0, &mut bits); // log2_min_luma_coding_block_size_minus3
+        ue(0, &mut bits); // log2_diff_max_min_luma_coding_block_size
+        ue(0, &mut bits); // log2_min_transform_block_size_minus2
+        ue(0, &mut bits); // log2_diff_max_min_transform_block_size
+        ue(0, &mut bits); // max_transform_hierarchy_depth_inter
+        ue(0, &mut bits); // max_transform_hierarchy_depth_intra
+        raw(0, 1, &mut bits); // scaling_list_enabled_flag
+        raw(0, 1, &mut bits); // amp_enabled_flag
+        raw(0, 1, &mut bits); // sample_adaptive_offset_enabled_flag
+        raw(0, 1, &mut bits); // pcm_enabled_flag
+        ue(0, &mut bits); // num_short_term_ref_pic_sets
+        raw(0, 1, &mut bits); // long_term_ref_pics_present_flag
+        raw(0, 1, &mut bits); // sps_temporal_mvp_enabled_flag
+        raw(0, 1, &mut bits); // strong_intra_smoothing_enabled_flag
+
+        let mut sps: Vec<u8> = vec![0x42, 0x01]; // 2-byte NAL header (SPS)
+        let mut cur = 0u8;
+        let mut n = 0usize;
+        for bit in bits {
+            cur = (cur << 1) | (bit as u8);
+            n += 1;
+            if n == 8 {
+                sps.push(cur);
+                cur = 0;
+                n = 0;
+            }
+        }
+        if n > 0 {
+            sps.push(cur << (8 - n));
+        }
+
+        let info = parse_hevc_sps(&sps).expect("SPS should parse");
+        assert_eq!(info.width, 0); // crop exceeded frame → saturated
+        assert_eq!(info.height, 0);
     }
 }

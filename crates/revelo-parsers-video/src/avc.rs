@@ -329,7 +329,7 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
             let _fixed_frame_rate_flag = read_bits(&clean, &mut offset, 1)?;
             if num_units_in_tick > 0 && time_scale > 0 {
                 // frame rate = time_scale / (2 * num_units_in_tick)
-                let den = num_units_in_tick * 2;
+                let den = num_units_in_tick.saturating_mul(2);
                 let g = gcd(time_scale, den);
                 frame_rate_num = time_scale / g;
                 frame_rate_den = den / g;
@@ -342,7 +342,7 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
     let pic_width_in_mbs = pic_width_in_mbs_minus1 + 1;
     let pic_height_in_map_units = pic_height_in_map_units_minus1 + 1;
 
-    let (crop_unit_x, crop_unit_y) = match chroma_format_idc {
+    let (crop_unit_x, crop_unit_y): (u32, u32) = match chroma_format_idc {
         0 => (1, 1), // Monochrome
         1 => (2, 2), // 4:2:0
         2 => (2, 1), // 4:2:2
@@ -350,9 +350,16 @@ pub fn parse_sps(rbsp: &[u8]) -> Option<AvcInfo> {
         _ => (2, 2),
     };
 
-    let width = pic_width_in_mbs * 16 - crop_unit_x * (crop_left + crop_right);
-    let stored_height = pic_height_in_map_units * 16 * (2 - frame_mbs_only_flag);
-    let height = stored_height - crop_unit_y * (2 - frame_mbs_only_flag) * (crop_top + crop_bottom);
+    let width = pic_width_in_mbs
+        .saturating_mul(16)
+        .saturating_sub(crop_unit_x.saturating_mul(crop_left.saturating_add(crop_right)));
+    let stored_height =
+        pic_height_in_map_units.saturating_mul(16).saturating_mul(2 - frame_mbs_only_flag);
+    let height = stored_height.saturating_sub(
+        crop_unit_y
+            .saturating_mul(2 - frame_mbs_only_flag)
+            .saturating_mul(crop_top.saturating_add(crop_bottom)),
+    );
 
     let chroma_str = match chroma_format_idc {
         0 => 0,
@@ -1077,5 +1084,83 @@ mod tests {
             assert!(s.library.contains("x264"), "expected x264");
             assert!(s.library.contains("core 165"), "expected core version");
         }
+    }
+
+    #[test]
+    fn sps_crop_window_and_timing_overflow_do_not_panic() {
+        // Encode a minimal Baseline SPS bitstream reaching both vulnerable
+        // arithmetic sites:
+        //  - crop_left = crop_right = 6 with a 16 px frame makes
+        //    16 - 2*(6+6) underflow (was a panic on overflow-checks builds);
+        //  - VUI timing with num_units_in_tick = 0xFFFFFFFF makes *2 overflow
+        //    u32 (was a panic too).
+        fn ue(v: u32, b: &mut Vec<bool>) {
+            let n = v + 1;
+            let l = 31 - n.leading_zeros();
+            for _ in 0..l {
+                b.push(false);
+            }
+            b.push(true);
+            let m = n - (1 << l);
+            for i in (0..l).rev() {
+                b.push((m >> i) & 1 == 1);
+            }
+        }
+        fn raw(v: u32, n: usize, b: &mut Vec<bool>) {
+            for i in (0..n).rev() {
+                b.push((v >> i) & 1 == 1);
+            }
+        }
+
+        let mut bits: Vec<bool> = Vec::new();
+        raw(0x42, 8, &mut bits); // profile_idc = 66 (Baseline)
+        raw(0x00, 8, &mut bits); // constraint_flags
+        raw(0x0A, 8, &mut bits); // level_idc
+        ue(0, &mut bits); // seq_parameter_set_id
+        ue(0, &mut bits); // log2_max_frame_num_minus4
+        ue(0, &mut bits); // pic_order_cnt_type
+        ue(0, &mut bits); // log2_max_pic_order_cnt_lsb_minus4
+        ue(0, &mut bits); // max_num_ref_frames
+        raw(0, 1, &mut bits); // gaps_in_frame_num_value_allowed_flag
+        ue(0, &mut bits); // pic_width_in_mbs_minus1
+        ue(0, &mut bits); // pic_height_in_map_units_minus1
+        raw(1, 1, &mut bits); // frame_mbs_only_flag
+        raw(1, 1, &mut bits); // direct_8x8_inference_flag
+        raw(1, 1, &mut bits); // frame_cropping_flag
+        ue(6, &mut bits); // crop_left
+        ue(6, &mut bits); // crop_right
+        ue(0, &mut bits); // crop_top
+        ue(6, &mut bits); // crop_bottom
+        raw(1, 1, &mut bits); // vui_parameters_present_flag
+        raw(0, 1, &mut bits); // aspect_ratio_info_present
+        raw(0, 1, &mut bits); // overscan_info_present
+        raw(0, 1, &mut bits); // video_signal_type_present
+        raw(0, 1, &mut bits); // chroma_loc_info_present
+        raw(1, 1, &mut bits); // timing_info_present_flag
+        raw(0xFFFF_FFFF, 32, &mut bits); // num_units_in_tick
+        raw(1, 32, &mut bits); // time_scale
+        raw(0, 1, &mut bits); // fixed_frame_rate_flag
+
+        let mut sps: Vec<u8> = vec![0x67]; // NAL header (SPS)
+        let mut cur = 0u8;
+        let mut n = 0usize;
+        for bit in bits {
+            cur = (cur << 1) | (bit as u8);
+            n += 1;
+            if n == 8 {
+                sps.push(cur);
+                cur = 0;
+                n = 0;
+            }
+        }
+        if n > 0 {
+            sps.push(cur << (8 - n));
+        }
+
+        let info = parse_sps(&sps).expect("SPS should parse");
+        assert_eq!(info.width, 0); // crop exceeded frame → saturated
+        assert_eq!(info.height, 4);
+        assert_eq!(info.frame_rate_den, u32::MAX); // 0xFFFFFFFF*2 saturated
+        assert_eq!(info.frame_rate_num, 1);
     }
 }
