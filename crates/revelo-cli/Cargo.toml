@@ -1,6 +1,6 @@
 [package]
 name = "revelo-cli"
-version = "0.5.5"
+version = "0.5.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -27,8 +27,8 @@ exiftool-tables = ["revelo-parsers-tag/exiftool-tables"]
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 memmap2 = "0.9"
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.5" }
-revelo-core = { path = "../revelo-core", version = "0.5.5" }
-revelo-export = { path = "../revelo-export", version = "0.5.5" }
-revelo-util = { path = "../revelo-util", version = "0.5.5" }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.5" }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.6" }
+revelo-core = { path = "../revelo-core", version = "0.5.6" }
+revelo-export = { path = "../revelo-export", version = "0.5.6" }
+revelo-util = { path = "../revelo-util", version = "0.5.6" }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.6" }

@@ -40,6 +40,16 @@
   tracks whose `stbl` is empty (`empty_moov` DASH/CMAF). frag.mp4 parity 71→83
   matching lines; non-fragmented files are unaffected.
 
+### Known gaps
+
+- **Fragmented MP4 residuals** — with `moof`/`trun` now parsed, the last gaps
+  are the x264 `Encoded_Library` SEI (needs an `stco` to locate samples in
+  `mdat`, absent in fragmented files) and a few-bps bitrate-rounding difference.
+- **`FrameRate_Mode_Original`** for normalized-VFR sources — the signal is not
+  present in a uniform sample table; needs a real-world sample to derive safely.
+
+## [0.5.6] - 2026-09-08
+
 ### Fixed
 
 - **Panic firewall at the C ABI** — a parser (or formatter) panic unwinding
@@ -61,14 +71,32 @@
   the Matroska-shaped `Format_Profile@Lx.y`; it now also honours a standalone
   `Format_Level` field (MP4 shape) and suppresses the inferred value when it
   matches what the container reported.
+- **EXIF/TIFF tag-parser panics on truncated input** — `parse_exif` indexed a
+  partial `peek_raw_at` window before its length guard, and `read_tiff_u16` /
+  `read_tiff_u32` indexed `data[off..]` with no bounds check. A 1-byte file or a
+  truncated IFD panicked the top-level `Metadata::from_bytes` / `from_path` on
+  every analyzed file (`parse_tags` runs after detection). Both are guarded now
+  (thanks **@chiliec**, #9).
+- **Video-codec panics on malformed bitstreams** — a top-level fuzz/truncation
+  sweep over `Metadata::from_bytes` (format-signature seeds mutated with
+  truncation, byte-flips and huge length fields) found five more reachable
+  panics, all fixed with saturated arithmetic or bounds guards:
+  - AVC SPS conformance-window crop exceeding the coded frame underflowed the
+    width/height math, and VUI timing with `num_units_in_tick` ≥ 0x80000000
+    overflowed the `*2` frame-rate scale.
+  - HEVC SPS conformance-window crops had the same width/height underflow.
+  - VVC SPS `&sps_nal[2..]` sliced a 1-byte NAL unconditionally.
+  - VC-3 interlaced `active_lines * 2` overflowed `u16` past 32767 lines.
+  Each has a deterministic regression test (RED on the pre-fix code); the sweep
+  is kept as `crates/revelo/tests/fuzz_sweep.rs`.
 
-### Known gaps
+### Thanks
 
-- **Fragmented MP4 residuals** — with `moof`/`trun` now parsed, the last gaps
-  are the x264 `Encoded_Library` SEI (needs an `stco` to locate samples in
-  `mdat`, absent in fragmented files) and a few-bps bitrate-rounding difference.
-- **`FrameRate_Mode_Original`** for normalized-VFR sources — the signal is not
-  present in a uniform sample table; needs a real-world sample to derive safely.
+- **@chiliec** (#9) reported and fixed the EXIF/TIFF tag-parser panics on
+  truncated input — `parse_exif`'s unguarded partial-window read and the
+  unbounded `read_tiff_u16`/`read_tiff_u32` indexing crashed the top-level API
+  on malformed media. That fix shipped here, and the fuzz harness it was found
+  with directly led to the video-codec hardening in this release.
 
 ## [0.5.5] - 2026-07-18
 

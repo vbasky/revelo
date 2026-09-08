@@ -1,6 +1,6 @@
 [package]
 name = "revelo"
-version = "0.5.5"
+version = "0.5.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,9 +22,9 @@ mmap = ["dep:memmap2", "revelo-core/mmap"]
 parallel = ["revelo-dispatcher/parallel"]
 
 [dependencies]
-revelo-core = { path = "../revelo-core", version = "0.5.5", default-features = false }
-revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.5", default-features = false }
-revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.5" }
+revelo-core = { path = "../revelo-core", version = "0.5.6", default-features = false }
+revelo-dispatcher = { path = "../revelo-dispatcher", version = "0.5.6", default-features = false }
+revelo-parsers-tag = { path = "../revelo-parsers-tag", version = "0.5.6" }
 memmap2 = { version = "0.9", optional = true }
 
 [dev-dependencies]
