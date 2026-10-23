@@ -54,7 +54,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: revelo-arch-x86_64
-          path: packaging/arch/revelo-*-x86_64.pkg.tar.zst
+          path: packaging/arch/revelo-[0-9]*-x86_64.pkg.tar.zst
           if-no-files-found: error
 
       - name: Attach to GitHub Release
@@ -62,10 +62,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          pkg=$(ls packaging/arch/revelo-*-x86_64.pkg.tar.zst)
+          shopt -s nullglob
+          pkgs=(packaging/arch/revelo-[0-9]*-x86_64.pkg.tar.zst)
+          if [ ${#pkgs[@]} -eq 0 ]; then
+            echo "::error::No revelo-*-x86_64.pkg.tar.zst (excluding debug splits)."
+            ls -la packaging/arch/*.pkg.tar.* || true
+            exit 1
+          fi
           for i in $(seq 1 30); do
             if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" "$pkg" --clobber
+              gh release upload "$TAG" "${pkgs[@]}" --clobber
               exit 0
             fi
             echo "Release ${TAG} not visible yet (attempt ${i}); waiting."

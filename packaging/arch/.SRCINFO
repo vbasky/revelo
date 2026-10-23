@@ -11,6 +11,7 @@ pkgbase = revelo
 	depends = gcc-libs
 	depends = glibc
 	options = !lto
+	options = !debug
 	source = revelo-0.5.6.tar.gz::https://github.com/vbasky/revelo/archive/refs/tags/v0.5.6.tar.gz
 	source = Cargo.lock
 	sha256sums = 7fda358aa8474bc92f0b87fa92456a3f0bd0a06033bd136a3bdc6c0ea944056a

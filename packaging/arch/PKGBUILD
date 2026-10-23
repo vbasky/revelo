@@ -9,7 +9,7 @@ url='https://github.com/vbasky/revelo'
 license=('BSD-2-Clause')
 depends=('gcc-libs' 'glibc')
 makedepends=('cargo' 'rust')
-options=('!lto')
+options=('!lto' '!debug')
 PKGEXT='.pkg.tar.zst'
 COMPRESSZST=(zstd -c -T0 --ultra -20 -)
 # Cargo.lock is gitignored upstream; ship the release lockfile next to this PKGBUILD.
