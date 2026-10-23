@@ -253,6 +253,8 @@ brew tap vbasky/revelo && brew install revelo    # Homebrew (macOS / Linux)
 # Arch Linux: from a GitHub Release asset, or AUR once published
 #   sudo pacman -U https://github.com/vbasky/revelo/releases/download/v0.5.6/revelo-0.5.6-1-x86_64.pkg.tar.zst
 #   sudo pacman -U https://github.com/vbasky/revelo/releases/download/v0.5.6/revelo-0.5.6-1-aarch64.pkg.tar.zst
+# Debian/Ubuntu: sudo apt install ./revelo_0.5.6-1_amd64.deb   (or _arm64.deb)
+# Fedora/RHEL:   sudo rpm -Uvh revelo-0.5.6-1.x86_64.rpm       (or .aarch64.rpm)
 cargo add revelo-core                            # library (core + dispatcher)
 cargo add revelo-export                          # library (output formatters)
 ```

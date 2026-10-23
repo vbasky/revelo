@@ -1,0 +1,39 @@
+name: revelo
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${REVELO_VERSION}
+release: "1"
+section: utils
+priority: optional
+maintainer: Vikram Bhaskaran <vikram.bhaskaran@outlook.com>
+description: Pure-Rust media metadata extractor (MediaInfo-compatible CLI)
+vendor: Vikram Bhaskaran
+homepage: https://github.com/vbasky/revelo
+license: BSD-2-Clause
+contents:
+  - src: ./target/release/revelo
+    dst: /usr/bin/revelo
+    file_info:
+      mode: 0755
+  - src: ./LICENSE
+    dst: /usr/share/licenses/revelo/LICENSE
+  - src: ./LICENSE
+    dst: /usr/share/doc/revelo/copyright
+  - src: ./README.md
+    dst: /usr/share/doc/revelo/README.md
+  - src: ./CHANGELOG.md
+    dst: /usr/share/doc/revelo/CHANGELOG.md
+overrides:
+  deb:
+    depends:
+      - libc6
+      - libgcc-s1
+  rpm:
+    depends:
+      - glibc
+      - libgcc
+rpm:
+  packager: Vikram Bhaskaran <vikram.bhaskaran@outlook.com>
+  compression: xz
+deb:
+  compression: xz

@@ -1,0 +1,87 @@
+name: Deb and RPM packages
+
+on:
+  push:
+    tags: [v*]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag whose GitHub Release should receive the packages
+        required: true
+        type: string
+        default: v0.5.6
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deb-rpm:
+    name: Build .deb and .rpm (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-deb-rpm-${{ hashFiles('**/Cargo.lock', 'packaging/arch/Cargo.lock') }}
+
+      - name: Restore Cargo.lock
+        run: cp packaging/arch/Cargo.lock Cargo.lock
+
+      - name: Build packages
+        run: bash packaging/linux/pack.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: revelo-deb-rpm-x86_64
+          path: |
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          shopt -s nullglob
+          pkgs=(dist/*.deb dist/*.rpm)
+          if [ ${#pkgs[@]} -eq 0 ]; then
+            echo "::error::No .deb/.rpm in dist/"
+            exit 1
+          fi
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${pkgs[@]}" --clobber
+              exit 0
+            fi
+            echo "Release ${TAG} not visible yet (attempt ${i}); waiting."
+            sleep 20
+          done
+          echo "::error::GitHub release ${TAG} was not found."
+          exit 1

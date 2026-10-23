@@ -83,6 +83,10 @@ fmt-check:
 pkg-arch:
     cd packaging/arch && makepkg -f --nodeps
 
+# Build .deb and .rpm (nFPM)
+pkg-deb-rpm:
+    bash packaging/linux/pack.sh
+
 # Build documentation
 docs:
     cargo doc --no-deps --document-private-items
