@@ -101,7 +101,7 @@ no C++ translation, no FFI wrappers, no generated bindings.
 | **Language** | C++ | Pure Rust |
 | **Memory safety** | Manual | Compile-time guaranteed |
 | **Build** | `./Configure` + `make` + 10 system deps | `cargo build` (no system libs) |
-| **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelo-cli` or `brew tap vbasky/revelo && brew install revelo` |
+| **Install** | `apt install mediainfo` / `brew install mediainfo` | `cargo install revelo-cli`, `brew tap vbasky/revelo && brew install revelo`, or `pacman -U` a GitHub Release `.pkg.tar.zst` |
 | **Parser model** | Virtual `File__Analyze` hierarchy | `fn(&mut FileAnalyze) -> bool` flat table; parallel race for small buffers, bounded sequential detection for large buffers |
 | **Output fidelity** | Reference oracle | Byte-equal XML (differential harness) |
 | **License** | BSD-2-Clause | BSD-2-Clause |
@@ -250,6 +250,9 @@ output/API surface, and the differential test harness.
 ```sh
 cargo install revelo-cli                         # CLI (binary from crates.io)
 brew tap vbasky/revelo && brew install revelo    # Homebrew (macOS / Linux)
+# Arch Linux: from a GitHub Release asset, or AUR once published
+#   sudo pacman -U https://github.com/vbasky/revelo/releases/download/v0.5.6/revelo-0.5.6-1-x86_64.pkg.tar.zst
+#   sudo pacman -U https://github.com/vbasky/revelo/releases/download/v0.5.6/revelo-0.5.6-1-aarch64.pkg.tar.zst
 cargo add revelo-core                            # library (core + dispatcher)
 cargo add revelo-export                          # library (output formatters)
 ```

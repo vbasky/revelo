@@ -1,0 +1,19 @@
+pkgbase = revelo
+	pkgdesc = Pure-Rust media metadata extractor (MediaInfo-compatible CLI)
+	pkgver = 0.5.6
+	pkgrel = 1
+	url = https://github.com/vbasky/revelo
+	arch = x86_64
+	arch = aarch64
+	license = BSD-2-Clause
+	makedepends = cargo
+	makedepends = rust
+	depends = gcc-libs
+	depends = glibc
+	options = !lto
+	source = revelo-0.5.6.tar.gz::https://github.com/vbasky/revelo/archive/refs/tags/v0.5.6.tar.gz
+	source = Cargo.lock
+	sha256sums = 7fda358aa8474bc92f0b87fa92456a3f0bd0a06033bd136a3bdc6c0ea944056a
+	sha256sums = bafd14507793e427143c48d52a4cfd84a985c69a114f40fbc4c9b361e372bfb0
+
+pkgname = revelo

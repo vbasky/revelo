@@ -1,0 +1,7 @@
+src/
+pkg/
+*.pkg.tar.*
+*.log
+revelo-*.tar.gz
+!Cargo.lock
+cargo-home/

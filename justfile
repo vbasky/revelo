@@ -79,6 +79,10 @@ fmt:
 fmt-check:
     cargo fmt --check
 
+# Build the Arch Linux package (zstd)
+pkg-arch:
+    cd packaging/arch && makepkg -f --nodeps
+
 # Build documentation
 docs:
     cargo doc --no-deps --document-private-items

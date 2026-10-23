@@ -1,0 +1,57 @@
+# Maintainer: Vikram Bhaskaran <vikram.bhaskaran@outlook.com>
+
+pkgname=revelo
+pkgver=0.5.6
+pkgrel=1
+pkgdesc='Pure-Rust media metadata extractor (MediaInfo-compatible CLI)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/vbasky/revelo'
+license=('BSD-2-Clause')
+depends=('gcc-libs' 'glibc')
+makedepends=('cargo' 'rust')
+options=('!lto')
+PKGEXT='.pkg.tar.zst'
+COMPRESSZST=(zstd -c -T0 --ultra -20 -)
+# Cargo.lock is gitignored upstream; ship the release lockfile next to this PKGBUILD.
+source=("$pkgname-$pkgver.tar.gz::https://github.com/vbasky/revelo/archive/refs/tags/v$pkgver.tar.gz"
+        'Cargo.lock')
+sha256sums=('7fda358aa8474bc92f0b87fa92456a3f0bd0a06033bd136a3bdc6c0ea944056a'
+            'bafd14507793e427143c48d52a4cfd84a985c69a114f40fbc4c9b361e372bfb0')
+
+_setup_rust() {
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_HOME="$srcdir/cargo-home"
+  export CARGO_TARGET_DIR=target
+  export RUSTFLAGS="${RUSTFLAGS} --remap-path-prefix $srcdir="
+  if [[ -x "$HOME/.cargo/bin/cargo" ]]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+  fi
+}
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  cp "$srcdir/Cargo.lock" Cargo.lock
+  _setup_rust
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  _setup_rust
+  # Default features only: BSD-2-Clause. Do not enable exiftool-tables (GPL/Artistic).
+  cargo build --frozen --release -p revelo-cli
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  _setup_rust
+  cargo test --frozen --release -p revelo-cli
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/revelo "$pkgdir/usr/bin/revelo"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 CHANGELOG.md "$pkgdir/usr/share/doc/$pkgname/CHANGELOG.md"
+}

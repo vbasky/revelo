@@ -1,0 +1,75 @@
+name: Arch package
+
+on:
+  push:
+    tags: [v*]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag whose GitHub Release should receive the package
+        required: true
+        type: string
+        default: v0.5.6
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  arch:
+    name: Build Arch Linux package (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${{ github.ref_name }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build .pkg.tar.zst in Arch container
+        run: |
+          docker run --rm \
+            -v "$PWD":/src \
+            -w /src/packaging/arch \
+            archlinux:base-devel \
+            bash -lc '
+              set -euo pipefail
+              pacman -Syu --noconfirm rust cargo git
+              useradd -m -u 1001 builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              chown -R builder:builder /src
+              su -s /bin/bash builder -c "cd /src/packaging/arch && makepkg -sf --noconfirm --skippgpcheck"
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: revelo-arch-x86_64
+          path: packaging/arch/revelo-*-x86_64.pkg.tar.zst
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          pkg=$(ls packaging/arch/revelo-*-x86_64.pkg.tar.zst)
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "$pkg" --clobber
+              exit 0
+            fi
+            echo "Release ${TAG} not visible yet (attempt ${i}); waiting."
+            sleep 20
+          done
+          echo "::error::GitHub release ${TAG} was not found. Create it first (tag push / release workflow)."
+          exit 1
