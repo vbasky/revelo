@@ -15,6 +15,6 @@ Output is under `dist/`:
 GitHub Actions (`.github/workflows/deb-rpm.yml`) builds the x86_64 pair on `v*` tags and attaches them to the GitHub Release.
 
 ```fish
-sudo apt install ./dist/revelo_0.5.6-1_arm64.deb
-sudo rpm -Uvh dist/revelo-0.5.6-1.aarch64.rpm
+sudo apt install ./dist/revelo_0.5.7-1_arm64.deb
+sudo rpm -Uvh dist/revelo-0.5.7-1.aarch64.rpm
 ```

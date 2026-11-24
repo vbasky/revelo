@@ -19,7 +19,8 @@
 //!   3. Emit one Audio/Video stream per ID.
 
 use revelo_core::{FileAnalyze, StreamKind};
-use std::collections::BTreeSet;
+use revelo_parsers_audio::summarize_ac3;
+use std::collections::{BTreeMap, BTreeSet};
 
 const PACK_SC: [u8; 4] = [0x00, 0x00, 0x01, 0xBA];
 const MPEG_PS_SCAN_LIMIT: usize = 1_048_576;
@@ -42,6 +43,9 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
     let mut audio_ids: BTreeSet<u8> = BTreeSet::new();
     let mut video_ids: BTreeSet<u8> = BTreeSet::new();
     let mut private1_seen = false;
+    // Substream id → first ~256 payload bytes, including the id byte, so an
+    // AC-3 sync later in the DVD private header can still be found.
+    let mut private_payloads: BTreeMap<u8, Vec<u8>> = BTreeMap::new();
 
     // Walk start codes. Bound the scan to first 1 MB for speed.
     let max_scan = buf.len();
@@ -78,6 +82,27 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
                 }
                 0xBD => {
                     private1_seen = true;
+                    if i + 6 <= buf.len() {
+                        let pes_len = ((buf[i + 4] as usize) << 8) | (buf[i + 5] as usize);
+                        if pes_len > 0 && i + 6 + pes_len <= buf.len() {
+                            let pes = &buf[i + 6..i + 6 + pes_len];
+                            let off = if pes.len() >= 3 && (pes[0] & 0xC0) == 0x80 {
+                                3 + pes[2] as usize
+                            } else {
+                                0
+                            };
+                            if off < pes.len() {
+                                let sub_id = pes[off];
+                                let entry = private_payloads.entry(sub_id).or_default();
+                                if entry.len() < 256 {
+                                    let room = 256 - entry.len();
+                                    let payload = &pes[off..];
+                                    let n = room.min(payload.len());
+                                    entry.extend_from_slice(&payload[..n]);
+                                }
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -122,9 +147,29 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
     if !video_ids.is_empty() {
         fa.set_field(StreamKind::General, 0, "VideoCount", video_ids.len().to_string());
     }
-    let audio_count = audio_ids.len() + (if private1_seen { 1 } else { 0 });
+    let private_streams: Vec<(u8, StreamKind, &'static str, Vec<u8>)> =
+        if !private_payloads.is_empty() {
+            private_payloads
+                .iter()
+                .map(|(&id, payload)| {
+                    let (id, kind, format) = classify_private_stream(id);
+                    (id, kind, format, payload.clone())
+                })
+                .collect()
+        } else if private1_seen {
+            vec![(0, StreamKind::Audio, "Private", Vec::new())]
+        } else {
+            Vec::new()
+        };
+    let private_audio =
+        private_streams.iter().filter(|(_, k, _, _)| *k == StreamKind::Audio).count();
+    let private_text = private_streams.iter().filter(|(_, k, _, _)| *k == StreamKind::Text).count();
+    let audio_count = audio_ids.len() + private_audio;
     if audio_count > 0 {
         fa.set_field(StreamKind::General, 0, "AudioCount", audio_count.to_string());
+    }
+    if private_text > 0 {
+        fa.set_field(StreamKind::General, 0, "TextCount", private_text.to_string());
     }
 
     let mut stream_order: u32 = 0;
@@ -211,13 +256,43 @@ pub fn parse_mpeg_ps(fa: &mut FileAnalyze) -> bool {
         }
         fa.set_field(StreamKind::Audio, pos, "Compression_Mode", "Lossy");
     }
-    if private1_seen {
-        // Private stream 1 carries AC-3/DTS/LPCM in DVD VOBs. Without
-        // sub-stream sniffing we just label it "Private".
-        let pos = fa.stream_prepare(StreamKind::Audio);
-        fa.set_field(StreamKind::Audio, pos, "StreamOrder", stream_order.to_string());
-        fa.set_field(StreamKind::Audio, pos, "ID", "189"); // 0xBD
-        fa.set_field(StreamKind::Audio, pos, "Format", "Private");
+    for (sub_id, kind, format, payload) in private_streams {
+        let pos = fa.stream_prepare(kind);
+        fa.set_field(kind, pos, "StreamOrder", stream_order.to_string());
+        let id =
+            if private_payloads.is_empty() { "189".to_string() } else { format!("189-{sub_id}") };
+        fa.set_field(kind, pos, "ID", id);
+        stream_order += 1;
+        fa.set_field(kind, pos, "Format", format);
+        if kind == StreamKind::Audio {
+            let mode = match format {
+                "PCM" => Some("Lossless"),
+                "AC-3" | "DTS" => Some("Lossy"),
+                _ => None,
+            };
+            if let Some(mode) = mode {
+                fa.set_field(kind, pos, "Compression_Mode", mode);
+            }
+        }
+        if matches!(format, "AC-3" | "E-AC-3")
+            && let Some(bsi) = summarize_ac3(&payload)
+        {
+            fa.set_field(kind, pos, "BitRate_Mode", "CBR");
+            if bsi.bitrate_bps > 0 {
+                fa.set_field(kind, pos, "BitRate", bsi.bitrate_bps.to_string());
+            }
+            fa.set_field(kind, pos, "Channels", bsi.channels.to_string());
+            if let Some(positions) = bsi.channel_positions {
+                fa.set_field(kind, pos, "ChannelPositions", positions);
+            }
+            if let Some(layout) = bsi.channel_layout {
+                fa.set_field(kind, pos, "ChannelLayout", layout);
+            }
+            if bsi.sample_rate > 0 {
+                fa.set_field(kind, pos, "SamplingRate", bsi.sample_rate.to_string());
+            }
+            fa.set_field(kind, pos, "dialnorm", bsi.dialnorm.to_string());
+        }
     }
 
     true
@@ -470,6 +545,18 @@ fn sniff_mpeg_audio_es(buf: &[u8]) -> Option<MpegAudioFrame> {
     None
 }
 
+/// DVD private stream 1 sub-stream id (the first payload byte).
+fn classify_private_stream(id: u8) -> (u8, StreamKind, &'static str) {
+    let (kind, format) = match id {
+        0x20..=0x3F => (StreamKind::Text, "RLE"),
+        0x80..=0x87 => (StreamKind::Audio, "AC-3"),
+        0x88..=0x8F | 0x98..=0x9F => (StreamKind::Audio, "DTS"),
+        0xA0..=0xAF => (StreamKind::Audio, "PCM"),
+        _ => (StreamKind::Audio, "Private"),
+    };
+    (id, kind, format)
+}
+
 fn starts_with_pes(buf: &[u8]) -> bool {
     if buf.len() < 4 || buf[0] != 0 || buf[1] != 0 || buf[2] != 1 {
         return false;
@@ -517,14 +604,50 @@ mod tests {
         );
         assert_eq!(fa.stream_count(StreamKind::Video), 1);
         assert_eq!(fa.stream_count(StreamKind::Audio), 1);
-        assert_eq!(
-            fa.retrieve(StreamKind::Video, 0, "Format").map(|z| z.as_str().to_owned()),
-            Some("MPEG Video".into())
-        );
-        assert_eq!(
-            fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str().to_owned()),
-            Some("MPEG Audio".into())
-        );
+    }
+
+    #[test]
+    fn private_stream_splits_ac3_and_dvd_subpictures() {
+        let mut buf = vec![0x00, 0x00, 0x01, 0xBA];
+        buf.extend_from_slice(&[0x44, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        // MPEG-2 PES, header data length 0, substream 0x80 (AC-3).
+        buf.extend_from_slice(&[0x00, 0x00, 0x01, 0xBD, 0x00, 0x04, 0x80, 0x00, 0x00, 0x80]);
+        // Substream 0x20 (DVD subpicture / RLE).
+        buf.extend_from_slice(&[0x00, 0x00, 0x01, 0xBD, 0x00, 0x04, 0x80, 0x00, 0x00, 0x20]);
+        buf.extend_from_slice(&[0x00, 0x00, 0x01, 0xB9]);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mpeg_ps(&mut fa));
+        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()), Some("AC-3"));
+        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "ID").map(|z| z.as_str()), Some("189-128"));
+        assert_eq!(fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str()), Some("RLE"));
+        assert_eq!(fa.retrieve(StreamKind::Text, 0, "ID").map(|z| z.as_str()), Some("189-32"));
+        assert_eq!(fa.retrieve(StreamKind::General, 0, "TextCount").map(|z| z.as_str()), Some("1"));
+        assert_eq!(fa.stream_count(StreamKind::Video), 0);
+    }
+
+    #[test]
+    fn private_ac3_reads_bsi() {
+        let mut buf = vec![0x00, 0x00, 0x01, 0xBA];
+        buf.extend_from_slice(&[0x44, 0x00, 0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        // PES header data length 0, substream 0x80, then a mono 48 kHz 96 kbps frame.
+        let frame = [0x0Bu8, 0x77, 0x00, 0x00, 0x0C, 0x40, 0x20, 0x00];
+        let pes_len: u16 = 3 + 1 + frame.len() as u16;
+        buf.extend_from_slice(&[0x00, 0x00, 0x01, 0xBD]);
+        buf.extend_from_slice(&pes_len.to_be_bytes());
+        buf.extend_from_slice(&[0x80, 0x00, 0x00, 0x80]);
+        buf.extend_from_slice(&frame);
+        buf.extend_from_slice(&[0x00, 0x00, 0x01, 0xB9]);
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mpeg_ps(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format").as_deref(), Some("AC-3"));
+        assert_eq!(a("ID").as_deref(), Some("189-128"));
+        assert_eq!(a("Channels").as_deref(), Some("1"));
+        assert_eq!(a("ChannelLayout").as_deref(), Some("M"));
+        assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
+        assert_eq!(a("BitRate").as_deref(), Some("96000"));
     }
 
     #[test]

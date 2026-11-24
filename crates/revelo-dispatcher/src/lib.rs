@@ -5,7 +5,7 @@
 //!
 //! # Public API
 //!
-//! - [`table`] — returns the ordered `[fn(&mut FileAnalyze) -> bool; 180]`
+//! - [`table`] — returns the ordered `[fn(&mut FileAnalyze) -> bool; 179]`
 //!   array of parser function pointers. Containers come before elementary
 //!   streams to prevent false-positive matches on random bytes.
 //! - [`detect`] — returns the first match in table order. Small buffers use
@@ -67,7 +67,7 @@ use revelo_parsers_container::{
 use revelo_parsers_image::{
     parse_amiga_icon, parse_arriraw, parse_bmp, parse_bpg, parse_cr2, parse_dds, parse_dpx,
     parse_exr, parse_gain_map, parse_gif, parse_ico, parse_jp2, parse_jpeg, parse_pcx, parse_png,
-    parse_psd, parse_raf, parse_rle, parse_tga, parse_tiff, parse_webp,
+    parse_psd, parse_raf, parse_tga, parse_tiff, parse_webp,
 };
 use revelo_parsers_text::{
     parse_arib_std_b24_b37, parse_cdp, parse_cmml, parse_dtvcc_transport, parse_dvb_subtitle,
@@ -123,13 +123,13 @@ fn detect_sequential_with_stats(
     (None, stats)
 }
 
-/// Returns the complete parser dispatch table (180 entries).
+/// Returns the complete parser dispatch table (179 entries).
 ///
 /// Ordering: containers first (header peek → sub-parser delegation),
 /// then video codecs, audio codecs, images, text, and archives.
 /// Container-vs-elementary ordering matters — a raw codec parser
 /// running before a container could false-match on random bytes.
-pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
+pub fn table() -> [fn(&mut FileAnalyze) -> bool; 179] {
     [
         // ── Containers ──────────────────────────────────────────
         parse_wav,           // WAV
@@ -277,9 +277,9 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
         // ── Images (fallback / extension) ───────────────────────
         parse_tga,      // TGA
         parse_gain_map, // Gain Map
-        parse_rle,      // RLE
         // ── Audio (fallback / extension) ────────────────────────
-        parse_adpcm,                // ADPCM
+        // ADPCM, EIA-608, EIA-708, and VBI accept any non-empty buffer.
+        // They stay after every parser that has a real signature.
         parse_adm,                  // ADM
         parse_dolby_audio_metadata, // Dolby Audio Metadata
         parse_pcm,                  // PCM
@@ -293,9 +293,6 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
         parse_pac,             // PAC
         parse_dtvcc_transport, // DTVCC Transport
         parse_scte20,          // SCTE-20
-        parse_eia608,          // EIA-608
-        parse_eia708,          // EIA-708
-        parse_vbi,             // VBI
         parse_webvtt,          // WebVTT
         // ── Video (fallback / extension) ────────────────────────
         parse_vvc,          // VVC / H.266
@@ -324,6 +321,12 @@ pub fn table() -> [fn(&mut FileAnalyze) -> bool; 180] {
         parse_mach_o,  // Mach-O
         parse_mz_exe,  // MZ EXE
         parse_ace,     // ACE
+        // No-magic sub-parsers. Each accepts any non-empty buffer, so they
+        // only run after every signature-based parser has declined.
+        parse_adpcm,  // ADPCM
+        parse_eia608, // EIA-608
+        parse_eia708, // EIA-708
+        parse_vbi,    // VBI
     ]
 }
 
@@ -374,6 +377,25 @@ mod tests {
         bytes[12..16].copy_from_slice(&0u32.to_be_bytes());
         bytes[16..20].copy_from_slice(b"isom");
         bytes
+    }
+
+    #[test]
+    fn adts_is_aac_and_webvtt_is_text() {
+        use revelo_core::StreamKind;
+
+        let adts = [0xFF, 0xF9, 0x50, 0x80, 0, 0, 0, 0, 0, 0];
+        let parser = detect(&adts).expect("ADTS");
+        let mut fa = FileAnalyze::new(&adts);
+        assert!(parser(&mut fa));
+        assert_eq!(fa.retrieve(StreamKind::Audio, 0, "Format").map(|z| z.as_str()), Some("AAC"));
+        assert_eq!(fa.stream_count(StreamKind::Video), 0);
+
+        let vtt = b"WEBVTT\n\n";
+        let parser = detect(vtt).expect("WebVTT");
+        let mut fa = FileAnalyze::new(vtt);
+        assert!(parser(&mut fa));
+        assert_eq!(fa.retrieve(StreamKind::Text, 0, "Format").map(|z| z.as_str()), Some("WebVTT"));
+        assert_ne!(fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str()), Some("RLE"));
     }
 
     #[test]

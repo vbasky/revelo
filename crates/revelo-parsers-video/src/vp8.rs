@@ -1,9 +1,10 @@
 //! VP8 video parser.
 //!
 //! Mirrors MediaInfoLib's `File_Vp8.cpp`. VP8 is a simple intra-frame
-//! codec used in WebM. The parser handles both key frames (I-Frame) and
-//! inter frames, extracting width, height, and format metadata from the
-//! uncompressed header.
+//! codec used in WebM. A raw elementary stream starts with a key frame;
+//! width and height come from that uncompressed header. An inter frame
+//! has no start code and is rejected, so a buffer whose first bit is
+//! set (ADTS AAC, TrueHD) is not claimed as VP8.
 //!
 //! Layout (I-Frame):
 //!   1 byte  bitstream: frame_type(1) | version(3) | show_frame(1) | partition_size(19)
@@ -35,33 +36,23 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
         Some(ft)
     })?;
 
-    if frame_type == 0 {
-        // I-Frame
-        let start_code = r.be_u24("start code")?;
-        if start_code != VP8_START_CODE {
-            r.element_end();
-            return None;
-        }
-        let width = r.le_u16("width")?;
-        let height = r.le_u16("height")?;
-        let w = (width & 0x3FFF) as u32;
-        let h = (height & 0x3FFF) as u32;
+    // A raw VP8 elementary stream starts with a key frame. An inter
+    // frame has no start code, so accepting it claims any buffer whose
+    // first bit is set (ADTS AAC, TrueHD) as VP8.
+    if frame_type != 0 {
         r.element_end();
-
-        fa.stream_prepare(StreamKind::Video);
-        fa.set_field(StreamKind::Video, 0, "Format", "VP8");
-        fa.set_field(StreamKind::Video, 0, "Codec", "VP8");
-        fa.set_field(StreamKind::Video, 0, "BitDepth", "8");
-        fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
-        fa.set_field(StreamKind::Video, 0, "Width", w.to_string());
-        fa.set_field(StreamKind::Video, 0, "Height", h.to_string());
-
-        fa.stream_prepare(StreamKind::General);
-        fa.set_field(StreamKind::General, 0, "Format", "VP8");
-        return Some(());
+        return None;
     }
 
-    // P-Frame (no resolution info)
+    let start_code = r.be_u24("start code")?;
+    if start_code != VP8_START_CODE {
+        r.element_end();
+        return None;
+    }
+    let width = r.le_u16("width")?;
+    let height = r.le_u16("height")?;
+    let w = (width & 0x3FFF) as u32;
+    let h = (height & 0x3FFF) as u32;
     r.element_end();
 
     fa.stream_prepare(StreamKind::Video);
@@ -69,6 +60,8 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
     fa.set_field(StreamKind::Video, 0, "Codec", "VP8");
     fa.set_field(StreamKind::Video, 0, "BitDepth", "8");
     fa.set_field(StreamKind::Video, 0, "ColorSpace", "YUV");
+    fa.set_field(StreamKind::Video, 0, "Width", w.to_string());
+    fa.set_field(StreamKind::Video, 0, "Height", h.to_string());
 
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "VP8");
@@ -114,6 +107,15 @@ mod tests {
     fn rejects_bad_start_code() {
         let mut buf = make_vp8_iframe(320, 240);
         buf[4] = 0xFF; // corrupt start code
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(!parse_vp8(&mut fa));
+    }
+
+    #[test]
+    fn rejects_inter_frame_without_a_start_code() {
+        // ADTS sync 0xFFF9 has the key-frame bit clear in the MSB-first
+        // reader, which used to be accepted as a VP8 inter frame.
+        let buf = [0xFF, 0xF9, 0x50, 0x80, 0, 0, 0, 0, 0, 0];
         let mut fa = FileAnalyze::new(&buf);
         assert!(!parse_vp8(&mut fa));
     }

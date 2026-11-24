@@ -7,6 +7,7 @@ pub fn fill_computed_fields(sc: &mut StreamCollection) {
     fill_format_profile_general(sc);
     fill_bitrate_ranges(sc);
     fill_inferred_av1_level(sc);
+    fill_display_aspect_string(sc);
 }
 
 fn field_val(sc: &StreamCollection, kind: StreamKind, pos: usize, key: &str) -> Option<String> {
@@ -55,12 +56,15 @@ fn fill_compression_ratio(sc: &mut StreamCollection) {
             let sr: u64 =
                 field_val(sc, *kind, i, "SamplingRate").and_then(|v| v.parse().ok()).unwrap_or(0);
             let is_audio = matches!(kind, StreamKind::Audio);
+            // Hostile files can carry u64::MAX rates. Saturate so the
+            // library path cannot panic the way a debug overflow check does.
+            let ms = (dur_s * 1000.0) as u64;
             let uncompressed: u64 = if is_audio && sr > 0 && dur_s > 0.0 {
-                (channels * sr * bit_depth * (dur_s * 1000.0) as u64) / 8 / 1000
+                channels.saturating_mul(sr).saturating_mul(bit_depth).saturating_mul(ms) / 8 / 1000
             } else if dur_s > 0.0 {
                 let br: u64 =
                     field_val(sc, *kind, i, "BitRate").and_then(|v| v.parse().ok()).unwrap_or(0);
-                if br > 0 { (br * (dur_s * 1000.0) as u64) / 8 / 1000 } else { 0 }
+                if br > 0 { br.saturating_mul(ms) / 8 / 1000 } else { 0 }
             } else {
                 0
             };
@@ -84,7 +88,7 @@ fn fill_bitrate_ranges(sc: &mut StreamCollection) {
             if let Some(max_str) = field_val(sc, *kind, i, "BitRate_Maximum")
                 && let Ok(v) = max_str.parse::<u64>()
             {
-                overall_max += v;
+                overall_max = overall_max.saturating_add(v);
             }
             if let Some(br_str) = field_val(sc, *kind, i, "BitRate")
                 && let Ok(v) = br_str.parse::<u64>()
@@ -243,9 +247,9 @@ fn av1_inferred_level_idx(max_dim: u64, fps: f64) -> Option<u8> {
     ];
 
     // Round dimensions up to nearest multiple of 16 (AV1 superblock alignment)
-    let w16 = ((max_dim + 15) / 16) * 16;
-    let h16 = (((max_dim as f64 * 9.0 / 16.0).ceil() as u64 + 15) / 16) * 16;
-    let pic_size = w16 * h16;
+    let w16 = max_dim.saturating_add(15) / 16 * 16;
+    let h16 = ((max_dim as f64 * 9.0 / 16.0).ceil() as u64).saturating_add(15) / 16 * 16;
+    let pic_size = w16.saturating_mul(h16);
     let samples_per_sec = (pic_size as f64 * fps) as u64;
 
     for &(idx, max_pic, max_sps) in levels {
@@ -286,6 +290,41 @@ fn av1_level_name(idx: u8) -> &'static str {
     }
 }
 
+/// `DisplayAspectRatio` is the decimal. The text form (`16:9`) is what
+/// MediaInfo stores beside it. Known decimals map to that string; an
+/// existing `DisplayAspectRatio/String` is copied across.
+fn fill_display_aspect_string(sc: &mut StreamCollection) {
+    for kind in [StreamKind::Video, StreamKind::Image] {
+        let n = sc.stream_count(kind);
+        for i in 0..n {
+            if field_val(sc, kind, i, "DisplayAspectRatio_String").is_some() {
+                continue;
+            }
+            let text = field_val(sc, kind, i, "DisplayAspectRatio/String").or_else(|| {
+                field_val(sc, kind, i, "DisplayAspectRatio").and_then(|raw| aspect_string(&raw))
+            });
+            if let Some(text) = text {
+                sc.set_field(kind, i, "DisplayAspectRatio_String", Ztring::from(text));
+            }
+        }
+    }
+}
+
+fn aspect_string(raw: &str) -> Option<String> {
+    let mapped = match raw {
+        "1.778" => "16:9",
+        "1.333" => "4:3",
+        "1.600" => "16:10",
+        "2.350" | "2.35" => "2.35:1",
+        "2.400" | "2.40" => "2.40:1",
+        "1.850" => "1.85:1",
+        "0.562" => "9:16",
+        "0.750" => "3:4",
+        _ => return None,
+    };
+    Some(mapped.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +362,32 @@ mod tests {
             field_val(&sc, StreamKind::General, 0, "Format_Profile").unwrap(),
             "Base Media / Version 2"
         );
+    }
+
+    #[test]
+    fn numeric_aspect_gains_the_text_form() {
+        let mut sc = StreamCollection::new();
+        sc.stream_prepare(StreamKind::Video);
+        sc.set_field(StreamKind::Video, 0, "DisplayAspectRatio", Ztring::from("1.778"));
+        fill_computed_fields(&mut sc);
+        assert_eq!(
+            field_val(&sc, StreamKind::Video, 0, "DisplayAspectRatio_String").unwrap(),
+            "16:9"
+        );
+    }
+
+    #[test]
+    fn huge_audio_fields_do_not_overflow() {
+        let mut sc = StreamCollection::new();
+        sc.stream_prepare(StreamKind::Audio);
+        let huge = u64::MAX.to_string();
+        sc.set_field(StreamKind::Audio, 0, "StreamSize", Ztring::from("1"));
+        sc.set_field(StreamKind::Audio, 0, "Duration", Ztring::from("1e20"));
+        sc.set_field(StreamKind::Audio, 0, "Channels", Ztring::from(huge.clone()));
+        sc.set_field(StreamKind::Audio, 0, "BitDepth", Ztring::from(huge.clone()));
+        sc.set_field(StreamKind::Audio, 0, "SamplingRate", Ztring::from(huge.clone()));
+        sc.set_field(StreamKind::Audio, 0, "BitRate", Ztring::from(huge.clone()));
+        sc.set_field(StreamKind::Audio, 0, "BitRate_Maximum", Ztring::from(huge));
+        fill_computed_fields(&mut sc);
     }
 }

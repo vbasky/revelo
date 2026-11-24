@@ -120,7 +120,7 @@ pub mod wvpk;
 
 pub use aac::parse_aac;
 pub use aac_adts::parse_aac_adts;
-pub use ac3::parse_ac3;
+pub use ac3::{Ac3Bsi, parse_ac3, summarize_ac3};
 pub use ac4::parse_ac4;
 pub use adm::parse_adm;
 pub use adpcm::parse_adpcm;

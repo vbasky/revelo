@@ -39,7 +39,8 @@ const BOX_EDTS: u32 = u32::from_be_bytes(*b"edts");
 const BOX_ELST: u32 = u32::from_be_bytes(*b"elst");
 const BOX_UDTA: u32 = u32::from_be_bytes(*b"udta");
 const BOX_META: u32 = u32::from_be_bytes(*b"meta");
-#[allow(dead_code)]
+const BOX_TREF: u32 = u32::from_be_bytes(*b"tref");
+const BOX_CHAP: u32 = u32::from_be_bytes(*b"chap");
 const BOX_CHPL: u32 = u32::from_be_bytes(*b"chpl"); // Nero chapter list
 #[allow(dead_code)]
 const BOX_NERO: u32 = u32::from_be_bytes(*b"Nero"); // Nero metadata
@@ -122,6 +123,10 @@ const HANDLER_SUBT: u32 = u32::from_be_bytes(*b"subt");
 const HANDLER_SBTL: u32 = u32::from_be_bytes(*b"sbtl");
 const SAMPLE_ENTRY_RTP: u32 = u32::from_be_bytes(*b"rtp ");
 const SAMPLE_ENTRY_MEBX: u32 = u32::from_be_bytes(*b"mebx");
+const SAMPLE_ENTRY_TX3G: u32 = u32::from_be_bytes(*b"tx3g");
+const SAMPLE_ENTRY_TEXT: u32 = u32::from_be_bytes(*b"text");
+const SAMPLE_ENTRY_STPP: u32 = u32::from_be_bytes(*b"stpp");
+const SAMPLE_ENTRY_WVTT: u32 = u32::from_be_bytes(*b"wvtt");
 
 const SAMPLE_ENTRY_MP4A: u32 = u32::from_be_bytes(*b"mp4a");
 const SAMPLE_ENTRY_AVC1: u32 = u32::from_be_bytes(*b"avc1");
@@ -130,6 +135,22 @@ const SAMPLE_ENTRY_HVC1: u32 = u32::from_be_bytes(*b"hvc1");
 const SAMPLE_ENTRY_HEV1: u32 = u32::from_be_bytes(*b"hev1");
 const SAMPLE_ENTRY_MP4V: u32 = u32::from_be_bytes(*b"mp4v");
 const SAMPLE_ENTRY_AV01: u32 = u32::from_be_bytes(*b"av01");
+const SAMPLE_ENTRY_AC3: u32 = u32::from_be_bytes(*b"ac-3");
+const SAMPLE_ENTRY_EC3: u32 = u32::from_be_bytes(*b"ec-3");
+const SAMPLE_ENTRY_ALAC: u32 = u32::from_be_bytes(*b"alac");
+const SAMPLE_ENTRY_SOWT: u32 = u32::from_be_bytes(*b"sowt");
+const SAMPLE_ENTRY_TWOS: u32 = u32::from_be_bytes(*b"twos");
+const SAMPLE_ENTRY_IN24: u32 = u32::from_be_bytes(*b"in24");
+const SAMPLE_ENTRY_LPCM: u32 = u32::from_be_bytes(*b"lpcm");
+const SAMPLE_ENTRY_IPCM: u32 = u32::from_be_bytes(*b"ipcm");
+const SAMPLE_ENTRY_OPUS: u32 = u32::from_be_bytes(*b"Opus");
+const SAMPLE_ENTRY_FLAC: u32 = u32::from_be_bytes(*b"fLaC");
+const SAMPLE_ENTRY_APCH: u32 = u32::from_be_bytes(*b"apch");
+const SAMPLE_ENTRY_APCN: u32 = u32::from_be_bytes(*b"apcn");
+const SAMPLE_ENTRY_APCS: u32 = u32::from_be_bytes(*b"apcs");
+const SAMPLE_ENTRY_APCO: u32 = u32::from_be_bytes(*b"apco");
+const SAMPLE_ENTRY_AP4H: u32 = u32::from_be_bytes(*b"ap4h");
+const HANDLER_TMCD: u32 = u32::from_be_bytes(*b"tmcd");
 const BOX_ESDS: u32 = u32::from_be_bytes(*b"esds");
 const BOX_AVCC: u32 = u32::from_be_bytes(*b"avcC");
 const BOX_HVCC: u32 = u32::from_be_bytes(*b"hvcC");
@@ -169,6 +190,11 @@ struct MovieInfo {
     /// `(track_id, default_sample_duration, default_sample_size)`. Used as
     /// the fallback when a fragment's `tfhd`/`trun` omit those values.
     trex_defaults: Vec<TrexDefault>,
+    /// Track IDs named by a `tref` / `chap` reference. A text track with
+    /// one of these IDs is a chapter menu, not a subtitle.
+    chapter_track_ids: Vec<u32>,
+    /// Nero `chpl` chapters: start time in milliseconds, then the title.
+    chapters: Vec<(u64, String)>,
 }
 
 /// A `trex` (Track Extends) entry — the movie-level default sample duration
@@ -388,6 +414,8 @@ struct TrackInfo {
     audio_channels: Option<u16>,
     audio_sample_rate: Option<u32>,
     audio_format: Option<&'static str>,
+    /// Sample-entry fourcc when the codec is not described by an esds.
+    audio_codec_id: Option<&'static str>,
     sample_count: Option<u32>,
     /// objectTypeIndication from esds DecoderConfigDescriptor — 0x40
     /// for MPEG-4 Audio, 0x6B for MPEG-1 Audio Layer 3, etc.
@@ -432,6 +460,9 @@ struct TrackInfo {
     /// Sample entry 4cc for timed-metadata tracks (e.g. "mebx" — iPhone
     /// Core Media metadata). Triggers `Format=Timed Metadata Sample`.
     meta_codec_id: Option<&'static str>,
+    /// Text sample entry (tx3g, text, stpp, wvtt).
+    text_format: Option<&'static str>,
+    text_codec_id: Option<&'static str>,
     /// ISO 639-2 three-letter language code from mdhd, e.g. "eng".
     /// Stored raw; conversion to oracle's ISO 639-1 form happens at emit time.
     language: Option<String>,
@@ -914,10 +945,84 @@ fn handle_inner(
                 fa.skip_hexa(box_size.saturating_sub(8), "elst");
             }
         }
+        BOX_TREF => parse_tref(fa, box_size, movie),
+        BOX_CHPL => parse_chpl(fa, box_size, movie),
         _ => {
             fa.skip_hexa(box_size.saturating_sub(8), "BoxBody");
         }
     }
+}
+
+/// `tref` holds reference boxes. `chap` lists the chapter track IDs.
+fn parse_tref(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
+    let inner = box_size.saturating_sub(8);
+    walk_boxes(fa, inner, 1, &mut |fa, box_type, child_size, _, _| {
+        if box_type != BOX_CHAP {
+            fa.skip_hexa(child_size.saturating_sub(8), "tref_child");
+            return;
+        }
+        let mut left = child_size.saturating_sub(8);
+        while left >= 4 {
+            let id = Reader::wrap(fa).be_u32("chapter_track_id").unwrap_or(0);
+            if id != 0 && !movie.chapter_track_ids.contains(&id) {
+                movie.chapter_track_ids.push(id);
+            }
+            left -= 4;
+        }
+        if left > 0 {
+            fa.skip_hexa(left, "chap_tail");
+        }
+    });
+}
+
+/// Nero `chpl`: version, flags, optional reserved u32, count, then
+/// (start in 100 ns units, title length, title) entries.
+fn parse_chpl(fa: &mut FileAnalyze, box_size: usize, movie: &mut MovieInfo) {
+    let body = box_size.saturating_sub(8);
+    let start = fa.element_offset();
+    if body < 5 {
+        fa.skip_hexa(body, "chpl_short");
+        return;
+    }
+    let version = Reader::wrap(fa).be_u8("version").unwrap_or(0);
+    fa.skip_hexa(3, "flags");
+    if version != 0 {
+        if fa.element_offset() + 4 > start + body {
+            fa.skip_hexa((start + body).saturating_sub(fa.element_offset()), "chpl_tail");
+            return;
+        }
+        fa.skip_hexa(4, "chpl_reserved");
+    }
+    let count = Reader::wrap(fa).be_u8("chapter_count").unwrap_or(0);
+    let end = start + body;
+    for _ in 0..count {
+        if fa.element_offset() + 9 > end {
+            break;
+        }
+        let start_100ns = Reader::wrap(fa).be_u64("chapter_start").unwrap_or(0);
+        let len = Reader::wrap(fa).be_u8("title_len").unwrap_or(0) as usize;
+        if fa.element_offset() + len > end {
+            break;
+        }
+        let title = if len == 0 {
+            String::new()
+        } else {
+            String::from_utf8_lossy(fa.read_raw(len)).into_owned()
+        };
+        movie.chapters.push((start_100ns / 10_000, title));
+    }
+    let consumed = fa.element_offset().saturating_sub(start);
+    if consumed < body {
+        fa.skip_hexa(body - consumed, "chpl_tail");
+    }
+}
+
+fn menu_timestamp(ms: u64) -> String {
+    let hours = ms / 3_600_000;
+    let minutes = (ms / 60_000) % 60;
+    let seconds = (ms / 1_000) % 60;
+    let millis = ms % 1000;
+    format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}")
 }
 
 /// Parse tkhd v0/v1 — extract track_ID, alternate_group, and the
@@ -1362,6 +1467,34 @@ fn parse_stsd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
                 parse_visual_entry(fa, entry_total, track, "MPEG-4 Visual", "mp4v")
             }
             SAMPLE_ENTRY_AV01 => parse_visual_entry(fa, entry_total, track, "AV1", "av01"),
+            SAMPLE_ENTRY_AC3 => parse_sound_entry(fa, entry_total, track, "AC-3", "ac-3"),
+            SAMPLE_ENTRY_EC3 => parse_sound_entry(fa, entry_total, track, "E-AC-3", "ec-3"),
+            SAMPLE_ENTRY_ALAC => parse_sound_entry(fa, entry_total, track, "ALAC", "alac"),
+            SAMPLE_ENTRY_SOWT => parse_sound_entry(fa, entry_total, track, "PCM", "sowt"),
+            SAMPLE_ENTRY_TWOS => parse_sound_entry(fa, entry_total, track, "PCM", "twos"),
+            SAMPLE_ENTRY_IN24 => parse_sound_entry(fa, entry_total, track, "PCM", "in24"),
+            SAMPLE_ENTRY_LPCM => parse_sound_entry(fa, entry_total, track, "PCM", "lpcm"),
+            SAMPLE_ENTRY_IPCM => parse_sound_entry(fa, entry_total, track, "PCM", "ipcm"),
+            SAMPLE_ENTRY_OPUS => parse_sound_entry(fa, entry_total, track, "Opus", "Opus"),
+            SAMPLE_ENTRY_FLAC => parse_sound_entry(fa, entry_total, track, "FLAC", "fLaC"),
+            SAMPLE_ENTRY_APCH | SAMPLE_ENTRY_APCN | SAMPLE_ENTRY_APCS | SAMPLE_ENTRY_APCO
+            | SAMPLE_ENTRY_AP4H => {
+                let codec = match entry_type {
+                    SAMPLE_ENTRY_APCH => "apch",
+                    SAMPLE_ENTRY_APCN => "apcn",
+                    SAMPLE_ENTRY_APCS => "apcs",
+                    SAMPLE_ENTRY_APCO => "apco",
+                    _ => "ap4h",
+                };
+                if entry_total < 8 + 78 {
+                    track.video_format = Some("ProRes");
+                    track.video_codec_id = Some(codec);
+                    track.has_data = true;
+                    fa.skip_hexa(entry_total.saturating_sub(8), "prores_short");
+                } else {
+                    parse_visual_entry(fa, entry_total, track, "ProRes", codec);
+                }
+            }
             SAMPLE_ENTRY_RTP => {
                 track.hint_codec_id = Some("rtp ");
                 track.has_data = true;
@@ -1371,6 +1504,25 @@ fn parse_stsd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
                 track.meta_codec_id = Some("mebx");
                 track.has_data = true;
                 fa.skip_hexa(entry_total.saturating_sub(8), "mebx_entry");
+            }
+            SAMPLE_ENTRY_TX3G | SAMPLE_ENTRY_TEXT => {
+                track.text_format = Some("Timed Text");
+                track.text_codec_id =
+                    Some(if entry_type == SAMPLE_ENTRY_TX3G { "tx3g" } else { "text" });
+                track.has_data = true;
+                fa.skip_hexa(entry_total.saturating_sub(8), "text_entry");
+            }
+            SAMPLE_ENTRY_STPP => {
+                track.text_format = Some("TTML");
+                track.text_codec_id = Some("stpp");
+                track.has_data = true;
+                fa.skip_hexa(entry_total.saturating_sub(8), "stpp_entry");
+            }
+            SAMPLE_ENTRY_WVTT => {
+                track.text_format = Some("WebVTT");
+                track.text_codec_id = Some("wvtt");
+                track.has_data = true;
+                fa.skip_hexa(entry_total.saturating_sub(8), "wvtt_entry");
             }
             _ => {
                 // Unknown sample entry — record nothing, just skip.
@@ -1386,6 +1538,46 @@ fn parse_stsd(fa: &mut FileAnalyze, box_size: usize, track: &mut TrackInfo) {
     let consumed = fa.element_offset() - start;
     if consumed < body_size {
         fa.skip_hexa(body_size - consumed, "stsd_tail");
+    }
+}
+
+fn parse_sound_entry(
+    fa: &mut FileAnalyze,
+    entry_total: usize,
+    track: &mut TrackInfo,
+    format: &'static str,
+    codec_id: &'static str,
+) {
+    track.audio_format = Some(format);
+    track.audio_codec_id = Some(codec_id);
+    track.has_data = true;
+    if entry_total < 8 + 28 {
+        fa.skip_hexa(entry_total.saturating_sub(8), "sound_short");
+        return;
+    }
+    fa.skip_hexa(6, "reserved");
+    fa.skip_hexa(2, "data_reference_index");
+    let version = Reader::wrap(fa).be_u16("version").unwrap_or(0);
+    fa.skip_hexa(2, "revision");
+    fa.skip_hexa(4, "vendor");
+    let channels = Reader::wrap(fa).be_u16("channel_count").unwrap_or(0);
+    fa.skip_hexa(2, "sample_size");
+    fa.skip_hexa(2, "pre_defined");
+    fa.skip_hexa(2, "packet_size");
+    let sample_rate = Reader::wrap(fa).be_u32("sample_rate_16.16").unwrap_or(0) >> 16;
+    track.audio_channels = Some(channels);
+    track.audio_sample_rate = Some(sample_rate);
+    let mut consumed = 28usize;
+    let body = entry_total - 8;
+    if version == 1 && body >= consumed + 16 {
+        fa.skip_hexa(16, "sdv1_extra");
+        consumed += 16;
+    } else if version == 2 && body >= consumed + 36 {
+        fa.skip_hexa(36, "sdv2_extra");
+        consumed += 36;
+    }
+    if consumed < body {
+        fa.skip_hexa(body - consumed, "sound_tail");
     }
 }
 
@@ -2927,6 +3119,8 @@ fn fill_streams(
 
     let mut audio_count: u32 = 0;
     let mut video_count: u32 = 0;
+    let mut text_count: u32 = 0;
+    let mut menu_count: u32 = 0;
     let mut other_count: u32 = 0;
     let mut stream_order: u32 = 0;
     let mut meta_track_ids: Vec<u32> = Vec::new();
@@ -2961,6 +3155,8 @@ fn fill_streams(
             {
                 let codec_id = format!("mp4a-{:x}-{}", oti, aot);
                 fa.set_field(StreamKind::Audio, pos, "CodecID", codec_id);
+            } else if let Some(cid) = track.audio_codec_id {
+                fa.set_field(StreamKind::Audio, pos, "CodecID", cid);
             }
             // AAC is fundamentally variable-bitrate; oracle marks all
             // AAC tracks as VBR (even when esds carries an avg bitrate
@@ -3288,8 +3484,8 @@ fn fill_streams(
                 fa.set_field(StreamKind::Video, pos, "ScanType", "Progressive");
             }
             // AV1: av1C carries the sequence header, giving profile,
-            // level, chroma, bit depth and colour range. Field names and
-            // value strings mirror the oracle-validated MKV AV1 mapping.
+            // level, chroma, bit depth and colour range. Profile and
+            // level are separate fields, same as the Matroska path.
             if let Some(av1) = track.av1_info.as_ref() {
                 let profile_name = match av1.profile {
                     0 => "Main",
@@ -3300,11 +3496,10 @@ fn fill_streams(
                 if !profile_name.is_empty() {
                     fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
                 }
-                // AV1 seq_level_idx → "major.minor": major = 2 + (idx >> 2),
-                // minor = idx & 3 (AV1 spec Annex A.3). Level 0 ⇒ "2.0".
-                let major = 2 + (av1.level >> 2);
-                let minor = av1.level & 3;
-                fa.set_field(StreamKind::Video, pos, "Format_Level", format!("{major}.{minor}"));
+                // Level 31 is "not signalled". 0..=23 are "2.0"…"7.3".
+                if let Some(level) = revelo_parsers_video::av1_level_name(av1.level) {
+                    fa.set_field(StreamKind::Video, pos, "Format_Level", level);
+                }
                 // Monochrome streams have no chroma planes → no YUV colour.
                 if !av1.monochrome {
                     fa.set_field(StreamKind::Video, pos, "ColorSpace", "YUV");
@@ -3639,31 +3834,63 @@ fn fill_streams(
                 fa.set_field(StreamKind::Other, pos, "Tagged_Date", s);
             }
             other_count += 1;
-        } else if matches!(track.handler, HANDLER_META | HANDLER_TEXT | HANDLER_SUBT | HANDLER_SBTL)
-        {
-            // Non-codec data tracks (timed metadata, subtitles in MOV
-            // containers, etc.) → emit as Other stream so oracle's
-            // OtherCount + the per-track entries line up.
+        } else if matches!(track.handler, HANDLER_TEXT | HANDLER_SUBT | HANDLER_SBTL) {
+            let id = track.track_id.unwrap_or((track_idx + 1) as u32);
+            // A text track named by `tref`/`chap` is the chapter menu.
+            // Subtitle handlers that are not referenced stay Text.
+            let chapter = movie.chapter_track_ids.contains(&id);
+            let kind = if chapter { StreamKind::Menu } else { StreamKind::Text };
+            let pos = fa.stream_prepare(kind);
+            fa.set_field(kind, pos, "StreamOrder", stream_order.to_string());
+            fa.set_field(kind, pos, "ID", id.to_string());
+            stream_order += 1;
+            if let Some(fmt) = track.text_format {
+                fa.set_field(kind, pos, "Format", fmt);
+            }
+            if let Some(cid) = track.text_codec_id {
+                fa.set_field(kind, pos, "CodecID", cid);
+            }
+            if let Some(t) = track.handler_name.as_deref()
+                && !t.is_empty()
+            {
+                fa.set_field(kind, pos, "Title", t.to_string());
+            }
+            if let Some(ss) = track.source_stream_size {
+                fa.set_field(kind, pos, "StreamSize", ss.to_string());
+            }
+            if track.timescale > 0 && track.duration_units > 0 {
+                let ts = track.timescale as u64;
+                let dur_ms = (track.duration_units * 1000 + ts / 2) / ts;
+                fa.set_field(kind, pos, "Duration", dur_ms.to_string());
+            }
+            if let Some(fc) = track.sample_count {
+                fa.set_field(kind, pos, "FrameCount", fc.to_string());
+            }
+            if track.track_enabled == Some(false) {
+                fa.set_field(kind, pos, "Default", "No");
+            }
+            if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
+                fa.set_field(kind, pos, "Language", lang);
+            }
+            if let Some(s) = track.creation_time.and_then(mp4_date_string) {
+                fa.set_field(kind, pos, "Encoded_Date", s);
+            }
+            if let Some(s) = track.modification_time.and_then(mp4_date_string) {
+                fa.set_field(kind, pos, "Tagged_Date", s);
+            }
+            if chapter {
+                menu_count += 1;
+            } else {
+                text_count += 1;
+            }
+        } else if track.handler == HANDLER_META {
+            // Timed metadata stays Other. Subtitle handlers are Text.
             let pos = fa.stream_prepare(StreamKind::Other);
             fa.set_field(StreamKind::Other, pos, "StreamOrder", stream_order.to_string());
             let id = track.track_id.unwrap_or((track_idx + 1) as u32);
-            // Collect metadata track IDs for the General.Metas field
-            if track.handler == HANDLER_META {
-                meta_track_ids.push(id);
-            }
             fa.set_field(StreamKind::Other, pos, "ID", id.to_string());
             stream_order += 1;
-            // Type label: oracle doesn't emit <Type> for meta-handler
-            // tracks at all (just Format=Timed Metadata Sample carries
-            // the discriminator). Text/Subtitle handlers DO get a Type
-            // label since those are first-class subtitle streams.
-            match track.handler {
-                HANDLER_TEXT => fa.set_field(StreamKind::Other, pos, "Type", "Text"),
-                HANDLER_SUBT | HANDLER_SBTL => {
-                    fa.set_field(StreamKind::Other, pos, "Type", "Subtitle")
-                }
-                _ => {}
-            }
+            meta_track_ids.push(id);
             if let Some(cid) = track.meta_codec_id {
                 if cid == "mebx" {
                     fa.set_field(StreamKind::Other, pos, "Format", "Timed Metadata Sample");
@@ -3708,6 +3935,15 @@ fn fill_streams(
                 fa.set_field(StreamKind::Other, pos, "Tagged_Date", s);
             }
             other_count += 1;
+        } else if track.handler == HANDLER_TMCD {
+            let pos = fa.stream_prepare(StreamKind::Other);
+            fa.set_field(StreamKind::Other, pos, "StreamOrder", stream_order.to_string());
+            let id = track.track_id.unwrap_or((track_idx + 1) as u32);
+            fa.set_field(StreamKind::Other, pos, "ID", id.to_string());
+            stream_order += 1;
+            fa.set_field(StreamKind::Other, pos, "Format", "QuickTime TC");
+            fa.set_field(StreamKind::Other, pos, "CodecID", "tmcd");
+            other_count += 1;
         }
     }
 
@@ -3716,6 +3952,21 @@ fn fill_streams(
     }
     if video_count > 0 {
         fa.set_field(StreamKind::General, 0, "VideoCount", video_count.to_string());
+    }
+    if text_count > 0 {
+        fa.set_field(StreamKind::General, 0, "TextCount", text_count.to_string());
+    }
+    if !movie.chapters.is_empty() {
+        let pos = fa.stream_prepare(StreamKind::Menu);
+        for (ms, title) in &movie.chapters {
+            let stamp = menu_timestamp(*ms);
+            let value = if title.is_empty() { stamp.clone() } else { title.clone() };
+            fa.set_field(StreamKind::Menu, pos, stamp.as_str(), value);
+        }
+        menu_count += 1;
+    }
+    if menu_count > 0 {
+        fa.set_field(StreamKind::General, 0, "MenuCount", menu_count.to_string());
     }
     if other_count > 0 {
         fa.set_field(StreamKind::General, 0, "OtherCount", other_count.to_string());
@@ -4140,6 +4391,21 @@ mod tests {
         mp4_box(b"trak", mp4_box(b"mdia", mp4_box(b"minf", mp4_box(b"stbl", stsd_box(entry)))))
     }
 
+    fn hdlr_box(handler: &[u8; 4]) -> Vec<u8> {
+        let mut body = vec![0u8; 24];
+        body[8..12].copy_from_slice(handler);
+        mp4_box(b"hdlr", body)
+    }
+
+    fn handled_trak(handler: &[u8; 4], entry_type: &[u8; 4]) -> Vec<u8> {
+        let mdia = [
+            hdlr_box(handler),
+            mp4_box(b"minf", mp4_box(b"stbl", stsd_box(mp4_box(entry_type, Vec::new())))),
+        ]
+        .concat();
+        mp4_box(b"trak", mp4_box(b"mdia", mdia))
+    }
+
     fn structured_moov() -> Vec<u8> {
         let metadata = mp4_box(
             b"udta",
@@ -4222,6 +4488,121 @@ mod tests {
                 .map(|z| z.as_str().to_owned())
                 .as_deref(),
             Some("M4A /isom")
+        );
+    }
+
+    #[test]
+    fn sbtl_tx3g_is_text_and_mebx_stays_other() {
+        let mut buf = ftyp_box(b"mp42");
+        buf.extend(mp4_box(
+            b"moov",
+            [handled_trak(b"sbtl", b"tx3g"), handled_trak(b"meta", b"mebx")].concat(),
+        ));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        let field = |kind, name: &str| fa.retrieve(kind, 0, name).map(|z| z.as_str().to_owned());
+        assert_eq!(field(StreamKind::General, "TextCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::General, "OtherCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::Text, "Format").as_deref(), Some("Timed Text"));
+        assert_eq!(field(StreamKind::Text, "CodecID").as_deref(), Some("tx3g"));
+        assert_eq!(field(StreamKind::Other, "Format").as_deref(), Some("Timed Metadata Sample"));
+        assert_eq!(field(StreamKind::Other, "CodecID").as_deref(), Some("mebx"));
+    }
+
+    #[test]
+    fn chapter_track_is_menu_and_subtitle_stays_text() {
+        let tref = mp4_box(b"tref", mp4_box(b"chap", 2u32.to_be_bytes().to_vec()));
+        let subtitle = {
+            let mdia = [
+                hdlr_box(b"sbtl"),
+                mp4_box(b"minf", mp4_box(b"stbl", stsd_box(mp4_box(b"tx3g", Vec::new())))),
+            ]
+            .concat();
+            mp4_box(b"trak", [tref, mp4_box(b"mdia", mdia)].concat())
+        };
+        let chapter_track = handled_trak(b"text", b"text");
+        let mut chpl = vec![1, 0, 0, 0, 0, 0, 0, 0, 2];
+        chpl.extend_from_slice(&0u64.to_be_bytes());
+        chpl.push(3);
+        chpl.extend_from_slice(b"One");
+        chpl.extend_from_slice(&2_000_000u64.to_be_bytes());
+        chpl.push(3);
+        chpl.extend_from_slice(b"Two");
+        let mut buf = ftyp_box(b"mp42");
+        buf.extend(mp4_box(
+            b"moov",
+            [subtitle, chapter_track, mp4_box(b"udta", mp4_box(b"chpl", chpl))].concat(),
+        ));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        let field =
+            |kind, pos, name: &str| fa.retrieve(kind, pos, name).map(|z| z.as_str().to_owned());
+        assert_eq!(field(StreamKind::General, 0, "TextCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::General, 0, "MenuCount").as_deref(), Some("2"));
+        assert_eq!(field(StreamKind::Text, 0, "Format").as_deref(), Some("Timed Text"));
+        assert_eq!(field(StreamKind::Text, 0, "CodecID").as_deref(), Some("tx3g"));
+        assert_eq!(field(StreamKind::Menu, 0, "Format").as_deref(), Some("Timed Text"));
+        assert_eq!(field(StreamKind::Menu, 0, "CodecID").as_deref(), Some("text"));
+        assert_eq!(field(StreamKind::Menu, 1, "00:00:00.000").as_deref(), Some("One"));
+        assert_eq!(field(StreamKind::Menu, 1, "00:00:00.200").as_deref(), Some("Two"));
+    }
+
+    fn sound_entry(fourcc: &[u8; 4], channels: u16, rate: u32) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.resize(6, 0);
+        payload.extend_from_slice(&1u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u32.to_be_bytes());
+        payload.extend_from_slice(&channels.to_be_bytes());
+        payload.extend_from_slice(&16u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&0u16.to_be_bytes());
+        payload.extend_from_slice(&(rate << 16).to_be_bytes());
+        mp4_box(fourcc, payload)
+    }
+
+    fn handled_entry_trak(handler: &[u8; 4], entry: Vec<u8>) -> Vec<u8> {
+        let mdia =
+            [hdlr_box(handler), mp4_box(b"minf", mp4_box(b"stbl", stsd_box(entry)))].concat();
+        mp4_box(b"trak", mp4_box(b"mdia", mdia))
+    }
+
+    #[test]
+    fn ac3_alac_and_prores_sample_entries_become_streams() {
+        let mut buf = ftyp_box(b"mp42");
+        buf.extend(mp4_box(
+            b"moov",
+            [
+                handled_entry_trak(b"soun", sound_entry(b"ac-3", 2, 48_000)),
+                handled_entry_trak(b"soun", sound_entry(b"alac", 2, 44_100)),
+                handled_entry_trak(b"vide", mp4_box(b"apcn", Vec::new())),
+                handled_trak(b"tmcd", b"tmcd"),
+            ]
+            .concat(),
+        ));
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mp4(&mut fa));
+        let field =
+            |kind, pos, name: &str| fa.retrieve(kind, pos, name).map(|z| z.as_str().to_owned());
+        assert_eq!(field(StreamKind::Audio, 0, "Format").as_deref(), Some("AC-3"));
+        assert_eq!(field(StreamKind::Audio, 0, "CodecID").as_deref(), Some("ac-3"));
+        assert_eq!(field(StreamKind::Audio, 0, "Channels").as_deref(), Some("2"));
+        assert_eq!(field(StreamKind::Audio, 0, "SamplingRate").as_deref(), Some("48000"));
+        assert_eq!(field(StreamKind::Audio, 1, "Format").as_deref(), Some("ALAC"));
+        assert_eq!(field(StreamKind::Audio, 1, "CodecID").as_deref(), Some("alac"));
+        assert_eq!(field(StreamKind::Video, 0, "Format").as_deref(), Some("ProRes"));
+        assert_eq!(field(StreamKind::Video, 0, "CodecID").as_deref(), Some("apcn"));
+        assert_eq!(field(StreamKind::Other, 0, "Format").as_deref(), Some("QuickTime TC"));
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "AudioCount").map(|z| z.as_str()),
+            Some("2")
+        );
+        assert_eq!(
+            fa.retrieve(StreamKind::General, 0, "VideoCount").map(|z| z.as_str()),
+            Some("1")
         );
     }
 

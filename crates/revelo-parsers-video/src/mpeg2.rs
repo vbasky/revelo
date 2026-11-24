@@ -60,6 +60,11 @@ pub struct Mpeg2Info {
     pub progressive: bool,
     pub chroma_format: u8,
     pub aspect_ratio: Option<(u16, u16)>,
+    /// Sequence-header bitrate code is the VBR escape `0x3FFFF`.
+    pub vbr: bool,
+    /// 18-bit `bit_rate_value` from the sequence header, before the ×400
+    /// conversion. `0x3FFFF` is the escape and is not a bitrate.
+    pub bit_rate_code: u32,
 }
 
 impl Mpeg2Info {
@@ -133,9 +138,11 @@ pub fn parse_mpeg2_sequence_header(data: &[u8]) -> Option<Mpeg2Info> {
         height: vertical_size,
         frame_rate_numerator: frame_rate_num,
         frame_rate_denominator: frame_rate_den,
-        bit_rate: if bit_rate > 0 { Some(bit_rate * 400) } else { None },
+        bit_rate: if bit_rate > 0 && bit_rate != 0x3FFFF { Some(bit_rate * 400) } else { None },
         vbv_buffer_size: Some(vbv_buffer_size),
         aspect_ratio: aspect,
+        vbr: bit_rate == 0x3FFFF,
+        bit_rate_code: bit_rate,
         ..Default::default()
     };
 
@@ -158,10 +165,14 @@ fn parse_extensions(data: &[u8], info: &mut Mpeg2Info) {
             let ext_id = (data[pos + 4] >> 4) & 0x0F;
 
             match ext_id {
+                // ISO/IEC 13818-2 extension ids: 1 sequence, 2 display, 5 scalable.
                 1 if pos + 6 < data.len() => {
-                    parse_sequence_display_extension(&data[pos + 4..], info);
+                    parse_sequence_extension(&data[pos + 4..], info);
                 }
                 2 if pos + 6 < data.len() => {
+                    parse_sequence_display_extension(&data[pos + 4..], info);
+                }
+                5 if pos + 6 < data.len() => {
                     parse_sequence_scalable_extension(&data[pos + 4..], info);
                 }
                 _ => {}
@@ -171,6 +182,70 @@ fn parse_extensions(data: &[u8], info: &mut Mpeg2Info) {
         } else {
             pos += 1;
         }
+    }
+}
+
+fn parse_sequence_extension(data: &[u8], info: &mut Mpeg2Info) {
+    let mut bits = ExtBits { data, bit: 0 };
+    let Some(parsed) = (|| {
+        let _ext_id = bits.take(4)?;
+        let profile_and_level = bits.take(8)? as u8;
+        let progressive = bits.take(1)? != 0;
+        let chroma = bits.take(2)? as u8;
+        let horizontal_ext = bits.take(2)?;
+        let vertical_ext = bits.take(2)?;
+        let bit_rate_ext = bits.take(12)?;
+        let _marker = bits.take(1)?;
+        let _vbv_ext = bits.take(8)?;
+        Some((profile_and_level, progressive, chroma, horizontal_ext, vertical_ext, bit_rate_ext))
+    })() else {
+        return;
+    };
+    let (profile_and_level, progressive, chroma, horizontal_ext, vertical_ext, bit_rate_ext) =
+        parsed;
+    info.progressive = progressive;
+    if (1..=3).contains(&chroma) {
+        info.chroma_format = chroma;
+    }
+    info.width |= horizontal_ext << 12;
+    info.height |= vertical_ext << 12;
+    let profile_nibble = profile_and_level >> 4;
+    let level_nibble = profile_and_level & 0x0F;
+    if let Some(profile) = match profile_nibble {
+        1 => Some(Mpeg2Profile::High),
+        2 => Some(Mpeg2Profile::SpatiallyScalable),
+        3 => Some(Mpeg2Profile::SNRScalable),
+        4 => Some(Mpeg2Profile::Main),
+        5 => Some(Mpeg2Profile::Simple),
+        _ => None,
+    } {
+        info.profile = Some(profile);
+    }
+    if Mpeg2Level(level_nibble).as_str().is_some() {
+        info.level = Some(Mpeg2Level(level_nibble));
+    }
+    if info.bit_rate_code != 0 && info.bit_rate_code != 0x3FFFF && bit_rate_ext != 0 {
+        info.bit_rate = Some(((bit_rate_ext << 18) | info.bit_rate_code) * 400);
+    }
+}
+
+struct ExtBits<'a> {
+    data: &'a [u8],
+    bit: usize,
+}
+
+impl ExtBits<'_> {
+    fn take(&mut self, n: usize) -> Option<u32> {
+        if n > 24 || self.bit + n > self.data.len() * 8 {
+            return None;
+        }
+        let mut v = 0u32;
+        for _ in 0..n {
+            let byte = self.data[self.bit / 8];
+            v = (v << 1) | u32::from((byte >> (7 - (self.bit % 8))) & 1);
+            self.bit += 1;
+        }
+        Some(v)
     }
 }
 
@@ -206,7 +281,8 @@ fn parse_sequence_scalable_extension(data: &[u8], info: &mut Mpeg2Info) {
         return;
     }
 
-    let scalable_mode = (data[0] >> 5) & 0x03;
+    // scalable_mode is the 2 bits immediately after the 4-bit extension id.
+    let scalable_mode = (data[0] >> 2) & 0x03;
 
     info.profile = match scalable_mode {
         0 => Some(Mpeg2Profile::SNRScalable),
@@ -286,6 +362,10 @@ pub fn fill_mpeg2_streams(fa: &mut FileAnalyze, info: &Mpeg2Info) {
         fa.set_field(StreamKind::Video, 0, "FrameRate", format!("{:.3}", fr));
     }
 
+    if info.vbr {
+        fa.set_field(StreamKind::Video, 0, "BitRate_Mode", "VBR");
+    }
+
     if let Some(bitrate) = info.bit_rate {
         fa.set_field(StreamKind::Video, 0, "BitRate", bitrate.to_string());
     }
@@ -357,5 +437,35 @@ mod tests {
         // Verify we got some reasonable values
         assert!(info.width > 0);
         assert!(info.height > 0);
+    }
+
+    #[test]
+    fn sequence_extension_is_progressive_main_and_vbr_escape_has_no_bitrate() {
+        // 320×240 sequence header with bitrate code 0x3FFFF, then a sequence
+        // extension whose profile_and_level is 0x48 (Main@Main), progressive,
+        // chroma 4:2:0.
+        let data = [
+            0x00, 0x00, 0x01, 0xB3, 0x14, 0x00, 0xF0, 0x21, 0xFF, 0xFF, 0xE0, 0x18, 0x00, 0x00,
+            0x01, 0xB5, 0x14, 0x8A, 0x00, 0x01, 0x00, 0x00,
+        ];
+        let info = parse_mpeg2_sequence_header(&data).expect("header");
+        assert_eq!(info.width, 320);
+        assert_eq!(info.height, 240);
+        assert!(info.progressive);
+        assert!(info.vbr);
+        assert_eq!(info.bit_rate, None);
+        assert_eq!(info.profile, Some(Mpeg2Profile::Main));
+        assert_eq!(info.level.map(|l| l.0), Some(8));
+        assert_eq!(info.chroma_format, 1);
+
+        let mut fa = FileAnalyze::new(&data);
+        fill_mpeg2_streams(&mut fa, &info);
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(v("ScanType").as_deref(), Some("Progressive"));
+        assert_eq!(v("BitRate_Mode").as_deref(), Some("VBR"));
+        assert_eq!(v("BitRate"), None);
+        assert_eq!(v("Format_Profile").as_deref(), Some("Main"));
+        assert_eq!(v("Format_Level").as_deref(), Some("Main"));
+        assert_eq!(v("ChromaSubsampling").as_deref(), Some("4:2:0"));
     }
 }

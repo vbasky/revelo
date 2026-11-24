@@ -104,6 +104,13 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
         if frame_count > 0 {
             r.set_field(StreamKind::Video, 0, "FrameCount", frame_count.to_string());
         }
+        if frame_count > 0 && frame_rate_num > 0 && frame_rate_den > 0 {
+            let dur_ms = (u64::from(frame_count) * u64::from(frame_rate_den) * 1000
+                + u64::from(frame_rate_num) / 2)
+                / u64::from(frame_rate_num);
+            r.set_field(StreamKind::Video, 0, "Duration", dur_ms.to_string());
+            r.set_field(StreamKind::General, 0, "Duration", dur_ms.to_string());
+        }
 
         r.set_field(StreamKind::General, 0, "VideoCount", "1");
     }
@@ -163,6 +170,7 @@ mod tests {
         assert_eq!(v("Height").as_deref(), Some("1080"));
         assert_eq!(v("FrameRate").as_deref(), Some("30.000"));
         assert_eq!(v("FrameCount").as_deref(), Some("300"));
+        assert_eq!(v("Duration").as_deref(), Some("10000"));
     }
 
     #[test]

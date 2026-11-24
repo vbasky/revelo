@@ -1,14 +1,10 @@
 //! RLE (Run-Length Encoded) parser.
 //!
-//! RLE has no file-level magic — in the C++ engine it is only ever
-//! instantiated as a sub-parser from MPEG-PS for DVD subtitle streams
-//! (`File_MpegPs::ChooseParser_RLE`). It does not inspect any bytes;
-//! it simply declares Format=RLE on the General and Text streams.
-//!
-//! This parser mirrors that behavior: any non-empty buffer is accepted
-//! and the same two streams are filled. Because there is no magic to
-//! validate against, callers must place it at the very end of the
-//! dispatch chain so a real format isn't overridden.
+//! RLE has no file-level magic. MediaInfo only instantiates it as a
+//! sub-parser for a DVD subpicture private stream
+//! (`File_MpegPs::ChooseParser_RLE`). It is not in the file-detection
+//! table: a catch-all probe would claim WebVTT and every other
+//! unrecognized file.
 
 use revelo_core::{FileAnalyze, StreamKind};
 

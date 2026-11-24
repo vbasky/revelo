@@ -368,7 +368,7 @@ fn fill_streams(
 /// through unset (matches oracle behavior on those).
 fn channel_layout(channels: u16) -> (Option<&'static str>, Option<&'static str>) {
     match channels {
-        1 => (Some("Front: C"), Some("C")),
+        1 => (Some("Front: C"), Some("M")),
         2 => (Some("Front: L R"), Some("L R")),
         3 => (Some("Front: L C R"), Some("L R C")),
         4 => (Some("Front: L R, Back: L R"), Some("L R Lb Rb")),

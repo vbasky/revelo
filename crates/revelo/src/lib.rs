@@ -82,6 +82,8 @@
 //! (GPL-1.0-or-later OR Artistic-1.0-Perl, © Phil Harvey). A binary or library
 //! built with this feature is subject to those terms.
 
+use revelo_core::computed_fields::fill_computed_fields;
+use revelo_core::file_level::{FileLevelInfo, fill_file_level_fields};
 use revelo_core::stream::{StreamCollection, StreamKind};
 #[cfg(feature = "mmap")]
 use revelo_core::{MediaReadAt, MmapBackend, ReadBackend};
@@ -126,11 +128,14 @@ impl Metadata {
     /// during parsing and returns owned metadata — the caller is free
     /// to drop the buffer afterwards.
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let parser = detect(bytes)?;
-        let mut fa = MediaFile::new(bytes);
-        parser(&mut fa);
-        parse_tags(&mut fa);
-        Some(Metadata { streams: fa.streams().clone() })
+        let mut fa = parse_buffer(bytes)?;
+        let info = FileLevelInfo {
+            file_size: bytes.len() as u64,
+            extension: None,
+            modified_unix_secs: None,
+            local_offset_secs: 0,
+        };
+        Some(finish(&mut fa, &info))
     }
 
     /// Parse a media file from a file path (memory-mapped).
@@ -172,8 +177,9 @@ impl Metadata {
                     let backend = ReadBackend::from(mmap_backend);
                     let mut fa = MediaFile::from_backend(backend);
                     parser(&mut fa);
-                    parse_tags(&mut fa);
-                    return Some(Metadata { streams: fa.streams().clone() });
+                    let meta = file.metadata().ok();
+                    let info = file_level_from(path, meta.as_ref(), mmap.len() as u64);
+                    return Some(finish(&mut fa, &info));
                 }
                 Err(_) => {}
             }
@@ -186,9 +192,10 @@ impl Metadata {
     /// Parse a media file by reading the entire file into memory.
     ///
     /// This is the legacy path — it allocates a `Vec<u8>` proportional
-    /// to the file size, then delegates to [`from_bytes`]. Prefer
-    /// [`from_file`] (memory-mapped) for local files; use this only
-    /// when mmap is unavailable or when you need to own the raw bytes.
+    /// to the file size, then parses that buffer. File size, extension,
+    /// and modification time come from the path. Prefer [`from_file`]
+    /// (memory-mapped) for local files; use this only when mmap is
+    /// unavailable or when you need to own the raw bytes.
     ///
     /// # Memory
     ///
@@ -197,7 +204,10 @@ impl Metadata {
     /// returned [`Metadata`] only contains the parsed stream values.
     pub fn from_file_owned(path: &str) -> Option<Self> {
         let bytes = std::fs::read(path).ok()?;
-        Self::from_bytes(&bytes)
+        let mut fa = parse_buffer(&bytes)?;
+        let meta = std::fs::metadata(path).ok();
+        let info = file_level_from(path, meta.as_ref(), bytes.len() as u64);
+        Some(finish(&mut fa, &info))
     }
 
     /// The raw stream collection for advanced queries.
@@ -258,6 +268,88 @@ impl Metadata {
     }
 }
 
+fn parse_buffer(bytes: &[u8]) -> Option<MediaFile<'_>> {
+    let parser = detect(bytes)?;
+    let mut fa = MediaFile::new(bytes);
+    parser(&mut fa);
+    Some(fa)
+}
+
+fn finish(fa: &mut MediaFile<'_>, info: &FileLevelInfo<'_>) -> Metadata {
+    fill_file_level_fields(fa, info);
+    fill_computed_fields(fa.streams_mut());
+    let _ = parse_tags(fa);
+    Metadata { streams: fa.streams().clone() }
+}
+
+fn file_level_from<'a>(
+    path: &'a str,
+    meta: Option<&std::fs::Metadata>,
+    fallback_size: u64,
+) -> FileLevelInfo<'a> {
+    let extension = std::path::Path::new(path).extension().and_then(|ext| ext.to_str());
+    let file_size = meta.map(|m| m.len()).unwrap_or(fallback_size);
+    let modified_unix_secs = meta
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    FileLevelInfo {
+        file_size,
+        extension,
+        modified_unix_secs,
+        local_offset_secs: local_offset_seconds(),
+    }
+}
+
+fn local_offset_seconds() -> i64 {
+    #[cfg(unix)]
+    if let Some(offset) = local_offset_seconds_unix() {
+        return offset;
+    }
+    0
+}
+
+#[cfg(unix)]
+fn local_offset_seconds_unix() -> Option<i64> {
+    use std::os::raw::{c_char, c_int, c_long};
+
+    type TimeT = i64;
+
+    #[repr(C)]
+    struct Tm {
+        tm_sec: c_int,
+        tm_min: c_int,
+        tm_hour: c_int,
+        tm_mday: c_int,
+        tm_mon: c_int,
+        tm_year: c_int,
+        tm_wday: c_int,
+        tm_yday: c_int,
+        tm_isdst: c_int,
+        tm_gmtoff: c_long,
+        tm_zone: *const c_char,
+    }
+
+    unsafe extern "C" {
+        fn time(tloc: *mut TimeT) -> TimeT;
+        fn localtime_r(timep: *const TimeT, result: *mut Tm) -> *mut Tm;
+    }
+
+    // SAFETY: `time(null)` returns the current timestamp. `localtime_r`
+    // writes into the stack `Tm`, which uses the Unix C layout.
+    unsafe {
+        let now = time(std::ptr::null_mut());
+        if now == -1 {
+            return None;
+        }
+        let mut tm = std::mem::zeroed::<Tm>();
+        if localtime_r(&now, &mut tm).is_null() {
+            return None;
+        }
+        Some(tm.tm_gmtoff as i64)
+    }
+}
+
 #[cfg(all(test, feature = "mmap"))]
 mod tests {
     use super::*;
@@ -276,5 +368,22 @@ mod tests {
         assert_eq!(source.len_u64(), 6);
         assert_eq!(source.window_at(ByteRange::new(2, 3).unwrap()).unwrap(), &[42, 43, 44]);
         assert_eq!(source.window_at_partial(ByteRange::new(4, 8).unwrap()).unwrap(), &[44, 45]);
+    }
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::*;
+
+    #[test]
+    fn from_bytes_reports_file_size() {
+        let mut bytes = 16u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"ftyp");
+        bytes.extend_from_slice(b"isom");
+        bytes.extend_from_slice(&0u32.to_be_bytes());
+        let meta = Metadata::from_bytes(&bytes).unwrap();
+        let size =
+            meta.general().find(|(key, _)| *key == "FileSize").map(|(_, value)| value.to_string());
+        assert_eq!(size.as_deref(), Some("16"));
     }
 }

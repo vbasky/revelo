@@ -95,7 +95,7 @@ pub fn parse_ac3(fa: &mut FileAnalyze) -> bool {
     let bitrate_bps = bitrate_kbps * 1000;
 
     let channels = channel_count(acmod, lfeon);
-    let channel_layout = channel_layout(acmod);
+    let channel_layout = channel_layout(acmod, lfeon);
 
     fill_streams(
         fa,
@@ -159,7 +159,7 @@ fn parse_eac3(fa: &mut FileAnalyze, file_size: usize, fb: &[u8; 8]) -> bool {
     let bitrate_bps = (bytes_per_frame * 8 * sample_rate as u64 / samples_per_frame as u64) as u32;
 
     let channels = channel_count(acmod, lfeon);
-    let channel_layout = channel_layout(acmod);
+    let channel_layout = channel_layout(acmod, lfeon);
 
     let commercial_name =
         if has_atmos { "Dolby Digital Plus with Atmos" } else { "Dolby Digital Plus" };
@@ -221,12 +221,31 @@ fn channel_count(acmod: u8, lfeon: u8) -> u16 {
     base + if lfeon != 0 { 1 } else { 0 }
 }
 
-fn channel_layout(acmod: u8) -> Option<(&'static str, &'static str)> {
-    match acmod {
-        1 => Some(("Front: C", "M")),
-        2 => Some(("Front: L R", "L R")),
+fn channel_layout(acmod: u8, lfeon: u8) -> Option<(&'static str, &'static str)> {
+    let lfe = lfeon != 0;
+    match (acmod, lfe) {
+        (0, false) => Some(("Front: Dual Mono", "M M")),
+        (0, true) => Some(("Front: Dual Mono, LFE", "M M LFE")),
+        (1, false) => Some(("Front: C", "M")),
+        (1, true) => Some(("Front: C, LFE", "M LFE")),
+        (2, false) => Some(("Front: L R", "L R")),
+        (2, true) => Some(("Front: L R, LFE", "L R LFE")),
+        (3, false) => Some(("Front: L C R", "L R C")),
+        (3, true) => Some(("Front: L C R, LFE", "L R C LFE")),
+        (4, false) => Some(("Front: L R, Back: C", "L R S")),
+        (4, true) => Some(("Front: L R, LFE, Back: C", "L R LFE S")),
+        (5, false) => Some(("Front: L C R, Back: C", "L R C S")),
+        (5, true) => Some(("Front: L C R, LFE, Back: C", "L R C LFE S")),
+        (6, false) => Some(("Front: L R, Side: L R", "L R Ls Rs")),
+        (6, true) => Some(("Front: L R, Side: L R, LFE", "L R LFE Ls Rs")),
+        (7, false) => Some(("Front: L C R, Side: L R", "L R C Ls Rs")),
+        (7, true) => Some(("Front: L C R, Side: L R, LFE", "L R C LFE Ls Rs")),
         _ => None,
     }
+}
+
+fn dialnorm_db(code: u8) -> i32 {
+    if code == 0 { -31 } else { -(code as i32) }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -315,7 +334,7 @@ fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8,
     // dialnorm stored as the encoded 5-bit value, displayed as a
     // negative dBFS level.
     fa.set_field(StreamKind::Audio, 0, "bsid", bsid.to_string());
-    let dialnorm_display = if dialnorm == 0 { -31i32 } else { -(dialnorm as i32) };
+    let dialnorm_display = dialnorm_db(dialnorm);
     fa.set_field(StreamKind::Audio, 0, "dialnorm", dialnorm_display.to_string());
     // dsurmod (Dolby Surround mode) is only present in the bitstream for
     // 2/0 stereo (acmod==2); the oracle omits it otherwise.
@@ -326,6 +345,141 @@ fn fill_extra(fa: &mut FileAnalyze, bsid: u8, acmod: u8, dsurmod: u8, lfeon: u8,
     fa.set_field(StreamKind::Audio, 0, "lfeon", lfeon.to_string());
     fa.set_field(StreamKind::Audio, 0, "dialnorm_Average", dialnorm_display.to_string());
     fa.set_field(StreamKind::Audio, 0, "dialnorm_Minimum", dialnorm_display.to_string());
+}
+
+/// Bitstream information from one AC-3 or E-AC-3 syncframe.
+///
+/// Container parsers use this instead of [`parse_ac3`], which also fills a
+/// General stream and would clobber the container's own General fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ac3Bsi {
+    pub format: &'static str,
+    pub sample_rate: u32,
+    pub bitrate_bps: u32,
+    pub channels: u16,
+    pub channel_positions: Option<&'static str>,
+    pub channel_layout: Option<&'static str>,
+    /// Dialnorm as a negative dBFS level. Code 0 is −31.
+    pub dialnorm: i32,
+}
+
+/// Find the first AC-3 or E-AC-3 syncframe in `data` and return its BSI.
+///
+/// The search accepts a container prefix (PES header, DVD private-stream
+/// header) in front of the `0x0B77` sync word.
+pub fn summarize_ac3(data: &[u8]) -> Option<Ac3Bsi> {
+    let mut i = 0;
+    while i + 8 <= data.len() {
+        if data[i] == AC3_SYNC[0]
+            && data[i + 1] == AC3_SYNC[1]
+            && let Some(bsi) = summarize_at(&data[i..])
+        {
+            return Some(bsi);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn summarize_at(data: &[u8]) -> Option<Ac3Bsi> {
+    if data.len() < 8 || data[0] != AC3_SYNC[0] || data[1] != AC3_SYNC[1] {
+        return None;
+    }
+    let bsid_peek = (data[5] >> 3) & 0x1F;
+    if (11..=16).contains(&bsid_peek) {
+        return summarize_eac3_at(data);
+    }
+
+    let fscod = (data[4] >> 6) & 0x3;
+    let frmsizecod = data[4] & 0x3F;
+    if fscod >= 3 || frmsizecod >= 38 {
+        return None;
+    }
+
+    let mut bits = BitCursor { data, bit: 40 };
+    let _bsid = bits.read(5)?;
+    let _bsmod = bits.read(3)?;
+    let acmod = bits.read(3)? as u8;
+    if (acmod & 0x01) != 0 && acmod != 0x01 {
+        bits.skip(2)?;
+    }
+    if (acmod & 0x04) != 0 {
+        bits.skip(2)?;
+    }
+    if acmod == 0x02 {
+        bits.skip(2)?;
+    }
+    let lfeon = bits.read(1)? as u8;
+    let dialnorm = bits.read(5)? as u8;
+    let (positions, layout) = channel_layout(acmod, lfeon).unzip();
+    Some(Ac3Bsi {
+        format: "AC-3",
+        sample_rate: FSCOD_TO_SAMPLE_RATE[fscod as usize],
+        bitrate_bps: BITRATE_KBPS[(frmsizecod >> 1) as usize] * 1000,
+        channels: channel_count(acmod, lfeon),
+        channel_positions: positions,
+        channel_layout: layout,
+        dialnorm: dialnorm_db(dialnorm),
+    })
+}
+
+fn summarize_eac3_at(data: &[u8]) -> Option<Ac3Bsi> {
+    let fb = data.get(..8)?;
+    let frmsiz = get_bits(fb, 21, 11);
+    let fscod = get_bits(fb, 32, 2) as usize;
+    let (sample_rate, numblks) = if fscod == 3 {
+        let fscod2 = get_bits(fb, 34, 2) as usize;
+        (REDUCED_SAMPLE_RATE[fscod2], 6u32)
+    } else {
+        let numblkscod = get_bits(fb, 34, 2) as usize;
+        (FSCOD_TO_SAMPLE_RATE[fscod], NUMBLKS[numblkscod])
+    };
+    if sample_rate == 0 {
+        return None;
+    }
+    let acmod = get_bits(fb, 36, 3) as u8;
+    let lfeon = get_bits(fb, 39, 1) as u8;
+    let dialnorm = get_bits(fb, 45, 5) as u8;
+    let samples_per_frame = 256 * numblks;
+    let bytes_per_frame = (frmsiz + 1) * 2;
+    if samples_per_frame == 0 {
+        return None;
+    }
+    let bitrate_bps = bytes_per_frame * 8 * sample_rate / samples_per_frame;
+    let (positions, layout) = channel_layout(acmod, lfeon).unzip();
+    Some(Ac3Bsi {
+        format: "E-AC-3",
+        sample_rate,
+        bitrate_bps,
+        channels: channel_count(acmod, lfeon),
+        channel_positions: positions,
+        channel_layout: layout,
+        dialnorm: dialnorm_db(dialnorm),
+    })
+}
+
+struct BitCursor<'a> {
+    data: &'a [u8],
+    bit: usize,
+}
+
+impl BitCursor<'_> {
+    fn read(&mut self, n: usize) -> Option<u32> {
+        if n > 24 || self.bit + n > self.data.len() * 8 {
+            return None;
+        }
+        let mut v = 0u32;
+        for _ in 0..n {
+            let byte = self.data[self.bit / 8];
+            v = (v << 1) | u32::from((byte >> (7 - (self.bit % 8))) & 1);
+            self.bit += 1;
+        }
+        Some(v)
+    }
+
+    fn skip(&mut self, n: usize) -> Option<()> {
+        self.read(n).map(|_| ())
+    }
 }
 
 #[cfg(test)]
@@ -503,5 +657,93 @@ mod tests {
         assert_eq!(get_bits(&data, 1, 2), 1); // "01"
         assert_eq!(get_bits(&data, 4, 4), 0x0C); // "1100"
         assert_eq!(get_bits(&data, 8, 1), 0); // past end → 0 (no-Option version)
+    }
+
+    #[test]
+    fn summarize_agrees_with_parse_ac3() {
+        let buf = make_ac3_frame(0, 12, 8, 0, 2, 0, 1, 27);
+        let bsi = summarize_ac3(&buf).expect("bsi");
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_ac3(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(bsi.format, "AC-3");
+        assert_eq!(bsi.sample_rate, 48000);
+        assert_eq!(bsi.bitrate_bps, 96_000);
+        assert_eq!(bsi.channels, 2);
+        assert_eq!(bsi.channel_layout, Some("L R"));
+        assert_eq!(a("SamplingRate").as_deref(), Some("48000"));
+        assert_eq!(a("BitRate").as_deref(), Some("96000"));
+        assert_eq!(a("Channels").as_deref(), Some("2"));
+        assert_eq!(a("ChannelLayout").as_deref(), Some("L R"));
+        assert_eq!(a("dialnorm").as_deref(), Some(bsi.dialnorm.to_string().as_str()));
+    }
+
+    #[test]
+    fn summarize_five_point_one_and_eac3() {
+        // acmod 7 + lfe, with the cmixlev/surmixlev bits the stereo fixture omits.
+        let mut w = BitPack::new();
+        w.push(0x0B77, 16);
+        w.push(0, 16); // crc
+        w.push(0, 2); // fscod 48 kHz
+        w.push(12, 6); // 96 kbps
+        w.push(8, 5); // bsid
+        w.push(0, 3); // bsmod
+        w.push(7, 3); // acmod 3/2
+        w.push(0, 2); // cmixlev
+        w.push(0, 2); // surmixlev
+        w.push(1, 1); // lfeon
+        w.push(27, 5); // dialnorm
+        w.finish();
+        let bsi = summarize_ac3(&w.buf).expect("5.1");
+        assert_eq!(bsi.channels, 6);
+        assert_eq!(bsi.channel_positions, Some("Front: L C R, Side: L R, LFE"));
+        assert_eq!(bsi.channel_layout, Some("L R C LFE Ls Rs"));
+        assert_eq!(bsi.sample_rate, 48000);
+        assert_eq!(bsi.bitrate_bps, 96_000);
+        assert_eq!(bsi.dialnorm, -27);
+
+        let eac3 = make_eac3_frame(0, 0, 64, 0, 3, 7, 1, 16, 27);
+        let mut fa = FileAnalyze::new(&eac3);
+        assert!(parse_ac3(&mut fa));
+        let summary = summarize_ac3(&eac3).expect("eac3");
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(summary.format, "E-AC-3");
+        assert_eq!(summary.channels, 6);
+        assert_eq!(summary.channel_layout, Some("L R C LFE Ls Rs"));
+        assert_eq!(a("SamplingRate").as_deref(), Some(summary.sample_rate.to_string().as_str()));
+        assert_eq!(a("BitRate").as_deref(), Some(summary.bitrate_bps.to_string().as_str()));
+        assert_eq!(a("dialnorm").as_deref(), Some(summary.dialnorm.to_string().as_str()));
+    }
+
+    /// MSB-first bit packer used to build an AC-3 header with conditional fields.
+    struct BitPack {
+        buf: Vec<u8>,
+        acc: u8,
+        nbits: u8,
+    }
+
+    impl BitPack {
+        fn new() -> Self {
+            Self { buf: Vec::new(), acc: 0, nbits: 0 }
+        }
+        fn push(&mut self, value: u32, n: u8) {
+            for i in (0..n).rev() {
+                let bit = ((value >> i) & 1) as u8;
+                self.acc = (self.acc << 1) | bit;
+                self.nbits += 1;
+                if self.nbits == 8 {
+                    self.buf.push(self.acc);
+                    self.acc = 0;
+                    self.nbits = 0;
+                }
+            }
+        }
+        fn finish(&mut self) {
+            if self.nbits > 0 {
+                self.acc <<= 8 - self.nbits;
+                self.buf.push(self.acc);
+                self.nbits = 0;
+            }
+        }
     }
 }

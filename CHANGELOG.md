@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.7] - 2026-11-24
 
 ### Added
 
@@ -39,6 +39,62 @@
   populate Duration, FrameRate, FrameRate_Mode, FrameCount, and StreamSize for
   tracks whose `stbl` is empty (`empty_moov` DASH/CMAF). frag.mp4 parity 71→83
   matching lines; non-fragmented files are unaffected.
+- **File-level fields for library callers.** `Metadata::from_bytes`, `from_file`,
+  and `from_file_owned` now fill `FileSize` and, when duration is a positive
+  whole number of milliseconds, `OverallBitRate`.
+- **Subtitle and chapter streams.** Matroska track type `0x11` is Text.
+  MP4/MOV handlers `text`, `subt`, and `sbtl` are Text (`tx3g`/`text` → Timed
+  Text, `stpp` → TTML, `wvtt` → WebVTT). Matroska chapters and MP4 `tref`/`chap`
+  tracks, plus Nero `chpl`, are Menu. Image attachments are Image. `meta`/`mebx`
+  stays Other.
+- **AC-3 bitstream info inside MPEG-TS and MPEG-PS** via `summarize_ac3`
+  (channels, layout, sample rate, bitrate, dialnorm). Container parsers do not
+  call `parse_ac3`.
+- **RealMedia, DV, and Dirac.** RealMedia walks PROP/MDPR/CONT. DV DIF reports
+  720×480 at 29.970 when DSF is 0 and 720×576 at 25 when DSF is 1. A Dirac
+  sequence header fills width, height, frame rate, chroma, and scan type.
+- **Cue counts.** Elementary SubRip and WebVTT set `Events_Total` and
+  `Duration` from a walk capped at 1 MiB. A non-SubRip file still peeks only
+  512 bytes.
+- **C API report options.** `MediaInfo_Inform` honors `Output=XML`, `JSON`,
+  and `HTML`. `Count_Get` returns a stream count or a field count.
+
+### Fixed
+
+- **AV1 profile and level** are separate fields. `av1_level_name` follows
+  Annex A.3 (index 19 is 6.3). Levels that are not signalled stay unset.
+- **`DisplayAspectRatio_String`** is filled from a known ratio, or copied from
+  an existing `DisplayAspectRatio/String`.
+- **Matroska metadata.** Stream duration is whole milliseconds. `MuxingApp` is
+  `Encoded_Library` and `WritingApp` is `Encoded_Application`. `LanguageBCP47`
+  is preferred. Accessibility flags `0x55AB`–`0x55AF` join into `ServiceKind`.
+  Statistics tags map to `BitRate`, `StreamSize`, `Duration`, and `FrameCount`.
+  A missing `Channels` element defaults to 1. Opus does not copy the container
+  bit depth.
+- **MPEG-2 sequence extension.** Extension id 1 is the sequence extension.
+  Bitrate code `0x3FFFF` is VBR and does not emit `BitRate`.
+- **Detection.** VP8 accepts only a key frame. MPEG-TS stream type `0x24` is
+  HEVC. Language `ger`/`deu` is `de`. MPEG-PS private stream 1 is split by
+  substream id. MP4 audio FourCCs (`ac-3`, `ec-3`, `alac`, `sowt`, `twos`,
+  `in24`, `lpcm`, `ipcm`, Opus, `fLaC`) and ProRes sample entries are typed.
+  `A_TRUEHD` is TrueHD.
+- **Computed fields no longer panic** when a hostile file carries enormous
+  channel, rate, duration, or bitrate values. The compression-ratio and
+  overall-maximum sums saturate.
+- **Channel layouts and durations.** FLAC mono is `M`. Opus 6-channel layout is
+  `L R C LFE Ls Rs`. WAV 5.1 uses that same layout. IVF duration comes from
+  the frame count. CAF `alac` is `ALAC`, with duration when the packet size is
+  known.
+
+### Changed
+
+- **C string ownership.** `MediaInfo_Inform`, `MediaInfo_Get`, and
+  `MediaInfo_Option` return a pointer owned by the handle, valid until the
+  next call or `MediaInfo_Delete`. Callers must not free it. A missing Get
+  and an unknown option return an empty string.
+- **Unrecognized files** are reported as ADPCM. `parse_rle` is not in the
+  detection table. ADPCM, EIA-608, EIA-708, and VBI stay at the end of the
+  table.
 
 ### Known gaps
 
@@ -47,6 +103,11 @@
   `mdat`, absent in fragmented files) and a few-bps bitrate-rounding difference.
 - **`FrameRate_Mode_Original`** for normalized-VFR sources — the signal is not
   present in a uniform sample table; needs a real-world sample to derive safely.
+- **MediaInfo catalog.** `Complete=1` display strings, `Info_Parameters`, the
+  rest of the C exports (wchar, buffer, and list), button tracks, unfamiliar
+  MP4 FourCCs, and MP3/FLAC General Title are still absent. DV duration is not
+  derived from the DIF frame count. MPEG-TS video duration is the first-to-last
+  PTS span. Subtitle `Events_Total` covers the first 1 MiB.
 
 ## [0.5.6] - 2026-09-08
 

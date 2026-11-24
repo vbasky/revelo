@@ -15,6 +15,7 @@
 //!      mapped from stream_type per ITU-T H.222.0 + Bluray/ATSC overlays.
 
 use revelo_core::{FileAnalyze, StreamKind};
+use revelo_parsers_audio::{Ac3Bsi, summarize_ac3};
 use std::collections::BTreeMap;
 
 const SYNC: u8 = 0x47;
@@ -61,8 +62,11 @@ struct ElementaryStream {
     /// Registration descriptor format identifier (4 ASCII bytes packed
     /// big-endian, e.g. 'HDMV' = 0x48444D56).
     format_identifier: u32,
-    _language: Option<String>,
-    _ac3_descriptor: bool,
+    language: Option<String>,
+    /// Format named by a private-stream descriptor (0x06) when the
+    /// stream_type table has no entry. AC-3, E-AC-3, DVB subtitles.
+    private_format: Option<&'static str>,
+    private_kind: Option<StreamKind>,
     /// AAC payload params extracted from first ADTS frame inside PES,
     /// when stream_type indicates AAC (0x0F/0x11/0x1C).
     aac: Option<AacInfo>,
@@ -70,6 +74,8 @@ struct ElementaryStream {
     /// NAL units inside the PES payload, when stream_type is AVC
     /// (0x1B/0x1F/0x20).
     avc: Option<AvcEs>,
+    /// AC-3 / E-AC-3 BSI recovered from the first syncframe in the PES.
+    ac3: Option<Ac3Bsi>,
 }
 
 /// AVC parameters recovered from the Annex-B elementary stream carried in
@@ -236,6 +242,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     // PID, then parse the ADTS sync once we have enough.
     let mut aac_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
     let mut avc_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
+    let mut ac3_pids: BTreeMap<u16, Vec<u8>> = BTreeMap::new();
     // First/last presentation timestamp (90 kHz) per ES PID, for Delay
     // and stream-Duration derivation.
     let mut pts_first: BTreeMap<u16, u64> = BTreeMap::new();
@@ -251,6 +258,9 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             }
             if matches!(es.stream_type, 0x1B | 0x1F | 0x20) {
                 avc_pids.insert(es.pid, Vec::new());
+            }
+            if es_wants_ac3(prog, es) {
+                ac3_pids.insert(es.pid, Vec::new());
             }
         }
     }
@@ -313,6 +323,14 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             {
                 accum.extend_from_slice(&pkt[payload_off..]);
             }
+            if let Some(accum) = ac3_pids.get_mut(&pid)
+                && accum.len() < 4096
+            {
+                let room = 4096 - accum.len();
+                let payload = &pkt[payload_off..];
+                let n = room.min(payload.len());
+                accum.extend_from_slice(&payload[..n]);
+            }
             pos += stride;
         }
         // Now parse each accumulator: skip past PES header to ES payload,
@@ -329,6 +347,9 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                     && let Some(accum) = avc_pids.get(&es.pid)
                 {
                     es.avc = sniff_avc(accum);
+                }
+                if let Some(accum) = ac3_pids.get(&es.pid) {
+                    es.ac3 = summarize_ac3(accum);
                 }
             }
         }
@@ -370,16 +391,12 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     // at least one identifiable ES), not stream_type→Menu mapping.
     let menu_count = programs_by_pmt_pid
         .values()
-        .filter(|p| {
-            p.streams
-                .iter()
-                .any(|es| !stream_format(es.stream_type, prog_or_es_fid(p, es)).is_empty())
-        })
+        .filter(|p| p.streams.iter().any(|es| es_stream(p, es).is_some()))
         .count() as u32;
 
     for prog in programs_by_pmt_pid.values() {
         for es in &prog.streams {
-            let kind = stream_kind(es.stream_type, prog_or_es_fid(prog, es));
+            let kind = es_stream(prog, es).map(|(kind, _)| kind);
             match kind {
                 Some(StreamKind::Video) => video_count += 1,
                 Some(StreamKind::Audio) => audio_count += 1,
@@ -407,10 +424,8 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     let mut video_ref_pts: Option<u64> = None;
     'find_video: for prog in programs_by_pmt_pid.values() {
         for es in &prog.streams {
-            if matches!(
-                stream_kind(es.stream_type, prog_or_es_fid(prog, es)),
-                Some(StreamKind::Video)
-            ) && let Some(&p) = pts_first.get(&es.pid)
+            if matches!(es_stream(prog, es), Some((StreamKind::Video, _)))
+                && let Some(&p) = pts_first.get(&es.pid)
             {
                 video_ref_pts = Some(p);
                 break 'find_video;
@@ -425,13 +440,8 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
     for (prog_idx, prog) in programs_by_pmt_pid.values().enumerate() {
         let mut members: Vec<(u8, usize)> = Vec::new();
         for (es_idx, es) in prog.streams.iter().enumerate() {
-            let fid = prog_or_es_fid(prog, es);
-            let Some(kind) = stream_kind(es.stream_type, fid) else { continue };
-            let format = stream_format(es.stream_type, fid);
-            let codec = stream_codec(es.stream_type, fid);
-            if format.is_empty() {
-                continue;
-            }
+            let Some((kind, format)) = es_stream(prog, es) else { continue };
+            let codec = stream_codec(es.stream_type, prog_or_es_fid(prog, es));
             fa.stream_prepare(kind);
             let pos_in_kind = fa.stream_count(kind) - 1;
             members.push((kind as u8, pos_in_kind));
@@ -441,6 +451,9 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             fa.set_field(kind, pos_in_kind, "ID", es.pid.to_string());
             fa.set_field(kind, pos_in_kind, "MenuID", prog.program_number.to_string());
             fa.set_field(kind, pos_in_kind, "Format", format);
+            if let Some(lang) = es.language.as_deref().and_then(ts_language) {
+                fa.set_field(kind, pos_in_kind, "Language", lang);
+            }
             // Delay = first PES presentation timestamp (container-provided).
             // Audio additionally reports Video_Delay relative to video.
             if matches!(kind, StreamKind::Video | StreamKind::Audio)
@@ -448,6 +461,14 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
             {
                 fa.set_field(kind, pos_in_kind, "Delay", format!("{:.9}", pts as f64 / 90000.0));
                 fa.set_field(kind, pos_in_kind, "Delay_Source", "Container");
+                if matches!(kind, StreamKind::Video)
+                    && let (Some(&first), Some(&last)) =
+                        (pts_first.get(&es.pid), pts_last.get(&es.pid))
+                    && last > first
+                {
+                    let dur = (last - first) as f64 / 90000.0;
+                    fa.set_field(kind, pos_in_kind, "Duration", format!("{dur:.9}"));
+                }
                 if matches!(kind, StreamKind::Audio)
                     && let Some(vref) = video_ref_pts
                 {
@@ -512,6 +533,24 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
                     fa.set_field(kind, pos_in_kind, "Duration", format!("{dur:.3}"));
                 }
             }
+            if let Some(bsi) = es.ac3 {
+                fa.set_field(kind, pos_in_kind, "BitRate_Mode", "CBR");
+                if bsi.bitrate_bps > 0 {
+                    fa.set_field(kind, pos_in_kind, "BitRate", bsi.bitrate_bps.to_string());
+                }
+                fa.set_field(kind, pos_in_kind, "Channels", bsi.channels.to_string());
+                if let Some(positions) = bsi.channel_positions {
+                    fa.set_field(kind, pos_in_kind, "ChannelPositions", positions);
+                }
+                if let Some(layout) = bsi.channel_layout {
+                    fa.set_field(kind, pos_in_kind, "ChannelLayout", layout);
+                }
+                if bsi.sample_rate > 0 {
+                    fa.set_field(kind, pos_in_kind, "SamplingRate", bsi.sample_rate.to_string());
+                }
+                fa.set_field(kind, pos_in_kind, "dialnorm", bsi.dialnorm.to_string());
+                fa.set_field(kind, pos_in_kind, "Compression_Mode", "Lossy");
+            }
             let _ = codec;
         }
         menu_members.push(members);
@@ -523,8 +562,7 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
         let formats: Vec<&'static str> = prog
             .streams
             .iter()
-            .map(|es| stream_format(es.stream_type, prog_or_es_fid(prog, es)))
-            .filter(|f| !f.is_empty())
+            .filter_map(|es| es_stream(prog, es).map(|(_, format)| format))
             .collect();
         if formats.is_empty() {
             continue;
@@ -591,7 +629,30 @@ pub fn parse_mpeg_ts(fa: &mut FileAnalyze) -> bool {
 }
 
 fn prog_or_es_fid(prog: &Program, es: &ElementaryStream) -> u32 {
-    if es.format_identifier != 0 { es.format_identifier } else { prog.format_identifier }
+    // An elementary-stream registration wins only when this stream_type
+    // is in its table. ffmpeg tags Blu-ray E-AC-3 with `EAC3` while the
+    // program registration `HDMV` is what maps stream_type 0x84.
+    if es.format_identifier != 0 && !stream_format(es.stream_type, es.format_identifier).is_empty()
+    {
+        return es.format_identifier;
+    }
+    if prog.format_identifier != 0 { prog.format_identifier } else { es.format_identifier }
+}
+
+fn es_wants_ac3(prog: &Program, es: &ElementaryStream) -> bool {
+    matches!(es_stream(prog, es), Some((_, "AC-3" | "E-AC-3")))
+}
+
+fn es_stream(prog: &Program, es: &ElementaryStream) -> Option<(StreamKind, &'static str)> {
+    let fid = prog_or_es_fid(prog, es);
+    let format = stream_format(es.stream_type, fid);
+    if !format.is_empty() {
+        return stream_kind(es.stream_type, fid).map(|kind| (kind, format));
+    }
+    match (es.private_kind, es.private_format) {
+        (Some(kind), Some(format)) => Some((kind, format)),
+        _ => None,
+    }
 }
 
 fn find_first_sync(buf: &[u8], layout: &PacketLayout) -> Option<usize> {
@@ -798,15 +859,17 @@ fn parse_pmt(section: &[u8], prog: &mut Program) {
             break;
         }
         let es_fid = scan_registration(&section[desc_start..desc_end]);
-        let (es_lang, es_ac3) = scan_descriptors(&section[desc_start..desc_end]);
+        let described = scan_descriptors(&section[desc_start..desc_end]);
         prog.streams.push(ElementaryStream {
             pid: es_pid,
             stream_type,
             format_identifier: es_fid,
-            _language: es_lang,
-            _ac3_descriptor: es_ac3,
+            language: described.language,
+            private_format: described.private_format,
+            private_kind: described.private_kind,
             aac: None,
             avc: None,
+            ac3: None,
         });
         i = desc_end;
     }
@@ -912,9 +975,14 @@ fn service_type_name(t: u8) -> Option<&'static str> {
     }
 }
 
-fn scan_descriptors(desc_block: &[u8]) -> (Option<String>, bool) {
-    let mut lang = None;
-    let mut ac3 = false;
+struct DescriptorInfo {
+    language: Option<String>,
+    private_format: Option<&'static str>,
+    private_kind: Option<StreamKind>,
+}
+
+fn scan_descriptors(desc_block: &[u8]) -> DescriptorInfo {
+    let mut info = DescriptorInfo { language: None, private_format: None, private_kind: None };
     let mut i = 0;
     while i + 2 <= desc_block.len() {
         let tag = desc_block[i];
@@ -925,19 +993,55 @@ fn scan_descriptors(desc_block: &[u8]) -> (Option<String>, bool) {
         }
         let data = &desc_block[i + 2..payload_end];
         match tag {
-            0x0A if len >= 4 => {
+            0x0A if len >= 3 => {
                 if let Ok(s) = std::str::from_utf8(&data[0..3]) {
-                    lang = Some(s.to_string());
+                    info.language = Some(s.to_string());
                 }
             }
-            0x6A | 0x7A => {
-                ac3 = true;
+            // DVB AC-3 (0x6A) and enhanced AC-3 (0x7A). stream_type 0x06
+            // carries these with no stream_type-table entry.
+            0x6A => {
+                info.private_format = Some("AC-3");
+                info.private_kind = Some(StreamKind::Audio);
+            }
+            0x7A => {
+                info.private_format = Some("E-AC-3");
+                info.private_kind = Some(StreamKind::Audio);
+            }
+            0x59 => {
+                info.private_format = Some("DVB Subtitle");
+                info.private_kind = Some(StreamKind::Text);
+            }
+            0x56 => {
+                info.private_format = Some("Teletext");
+                info.private_kind = Some(StreamKind::Text);
             }
             _ => {}
         }
         i = payload_end;
     }
-    (lang, ac3)
+    info
+}
+
+/// ISO 639-2 code from a language descriptor, as MediaInfo's two-letter form.
+fn ts_language(code: &str) -> Option<&'static str> {
+    match code {
+        "und" => None,
+        "eng" => Some("en"),
+        "spa" => Some("es"),
+        "fre" | "fra" => Some("fr"),
+        "ger" | "deu" => Some("de"),
+        "ita" => Some("it"),
+        "jpn" => Some("ja"),
+        "kor" => Some("ko"),
+        "chi" | "zho" => Some("zh"),
+        "rus" => Some("ru"),
+        "por" => Some("pt"),
+        "dut" | "nld" => Some("nl"),
+        "ara" => Some("ar"),
+        "hin" => Some("hi"),
+        _ => None,
+    }
 }
 
 fn scan_registration(desc_block: &[u8]) -> u32 {
@@ -1005,8 +1109,11 @@ fn stream_format(stream_type: u8, fid: u32) -> &'static str {
         0x1B | 0x1F | 0x20 => "AVC",
         0x1D => "Timed Text",
         0x1E => "MPEG Video",
-        0x21 | 0x24 => "JPEG 2000",
-        0x27 => "HEVC",
+        // 0x21 is JPEG 2000. 0x24 is HEVC (ISO/IEC 13818-1). The old
+        // table used JPEG 2000 for both, and nothing replaced 0x24
+        // after the PES payload was read.
+        0x21 => "JPEG 2000",
+        0x24 | 0x27 => "HEVC",
         0x2D | 0x2E => "MPEG-H 3D Audio",
         0x32 => "JPEG XS",
         0x33 | 0x34 => "VVC",
@@ -1607,6 +1714,39 @@ mod tests {
         }
         s.extend_from_slice(&[0, 0, 0, 0]);
         s
+    }
+
+    #[test]
+    fn hevc_stream_type_is_hevc_and_hdmv_eac3_survives_its_own_registration() {
+        assert_eq!(stream_format(0x24, 0), "HEVC");
+        assert_eq!(stream_format(0x21, 0), "JPEG 2000");
+
+        let prog = Program { format_identifier: FID_HDMV, ..Program::default() };
+        let es = ElementaryStream {
+            stream_type: 0x84,
+            format_identifier: u32::from_be_bytes(*b"EAC3"),
+            ..ElementaryStream::default()
+        };
+        assert_eq!(es_stream(&prog, &es), Some((StreamKind::Audio, "E-AC-3")));
+    }
+
+    #[test]
+    fn private_data_descriptor_names_ac3_and_language() {
+        let described = scan_descriptors(&[0x0A, 4, b'g', b'e', b'r', 0, 0x6A, 1, 0x00]);
+        assert_eq!(described.language.as_deref(), Some("ger"));
+        assert_eq!(described.private_format, Some("AC-3"));
+        assert_eq!(described.private_kind, Some(StreamKind::Audio));
+        assert_eq!(ts_language("ger"), Some("de"));
+
+        let prog = Program::default();
+        let es = ElementaryStream {
+            stream_type: 0x06,
+            language: described.language,
+            private_format: described.private_format,
+            private_kind: described.private_kind,
+            ..ElementaryStream::default()
+        };
+        assert_eq!(es_stream(&prog, &es), Some((StreamKind::Audio, "AC-3")));
     }
 
     #[test]

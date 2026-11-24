@@ -320,6 +320,15 @@ pub fn parse_wav(fa: &mut FileAnalyze) -> bool {
     }
 }
 
+fn pcm_channel_layout(channels: u16) -> Option<(&'static str, &'static str)> {
+    match channels {
+        1 => Some(("Front: C", "C")),
+        2 => Some(("Front: L R", "L R")),
+        6 => Some(("Front: L C R, Side: L R, LFE", "L R C LFE Ls Rs")),
+        _ => None,
+    }
+}
+
 fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u64, bwf: &Option<BwfInfo>) {
     fa.stream_prepare(StreamKind::General);
     fa.set_field(StreamKind::General, 0, "Format", "Wave");
@@ -351,6 +360,10 @@ fn fill_streams(fa: &mut FileAnalyze, fmt: &FmtChunk, data_size: u64, bwf: &Opti
     }
 
     fa.set_field(StreamKind::Audio, 0, "Channels", fmt.num_channels.to_string());
+    if let Some((positions, layout)) = pcm_channel_layout(fmt.num_channels) {
+        fa.set_field(StreamKind::Audio, 0, "ChannelPositions", positions);
+        fa.set_field(StreamKind::Audio, 0, "ChannelLayout", layout);
+    }
     fa.set_field(StreamKind::Audio, 0, "SamplingRate", fmt.sample_rate.to_string());
     fa.set_field(StreamKind::Audio, 0, "BitDepth", fmt.bits_per_sample.to_string());
     fa.set_field(StreamKind::Audio, 0, "StreamSize", data_size.to_string());
@@ -556,6 +569,18 @@ mod tests {
         assert_eq!(a("SamplingCount").as_deref(), Some("1600"));
         assert_eq!(a("Duration").as_deref(), Some("200")); // 1600/8000 = 0.2s = 200ms
         assert_eq!(a("StreamSize").as_deref(), Some("3200"));
+        assert_eq!(a("ChannelLayout").as_deref(), Some("C"));
+    }
+
+    #[test]
+    fn wav_surround_layout() {
+        let buf = make_pcm_wav(6, 48000, 16, 48);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_wav(&mut fa));
+        let a = |key: &str| fa.retrieve(StreamKind::Audio, 0, key).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Channels").as_deref(), Some("6"));
+        assert_eq!(a("ChannelPositions").as_deref(), Some("Front: L C R, Side: L R, LFE"));
+        assert_eq!(a("ChannelLayout").as_deref(), Some("L R C LFE Ls Rs"));
     }
 
     #[test]

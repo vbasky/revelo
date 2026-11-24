@@ -23,6 +23,16 @@ const OBU_TILE_LIST: u8 = 8;
 const OBU_PADDING: u8 = 15;
 const AV1_OBU_SCAN_LIMIT: usize = 1024 * 1024;
 
+/// AV1 `seq_level_idx` 0..=23 as `"2.0"` … `"7.3"`. Index 31 means the
+/// level was not signalled, and 24..=30 are reserved.
+pub fn av1_level_name(level: u8) -> Option<&'static str> {
+    const NAMES: [&str; 24] = [
+        "2.0", "2.1", "2.2", "2.3", "3.0", "3.1", "3.2", "3.3", "4.0", "4.1", "4.2", "4.3", "5.0",
+        "5.1", "5.2", "5.3", "6.0", "6.1", "6.2", "6.3", "7.0", "7.1", "7.2", "7.3",
+    ];
+    NAMES.get(level as usize).copied()
+}
+
 /// AV1 sequence header info extracted from OBU.
 #[derive(Debug)]
 pub struct Av1Info {
@@ -484,34 +494,9 @@ pub fn parse_av1(fa: &mut FileAnalyze) -> bool {
         _ => "Unknown",
     };
 
-    // Map level index to level string (AV1 spec section A.3)
-    let level_str = match info.level {
-        0 => "2.0",
-        1 => "2.1",
-        2 => "3.0",
-        3 => "3.1",
-        4 => "4.0",
-        5 => "4.1",
-        6 => "5.0",
-        7 => "5.1",
-        8 => "5.2",
-        9 => "5.3",
-        10 => "6.0",
-        11 => "6.1",
-        12 => "6.2",
-        13 => "6.3",
-        _ => "",
-    };
-
-    if !level_str.is_empty() {
-        fa.set_field(
-            StreamKind::Video,
-            0,
-            "Format_Profile",
-            format!("{}@L{}", profile_name, level_str),
-        );
-    } else {
-        fa.set_field(StreamKind::Video, 0, "Format_Profile", profile_name);
+    fa.set_field(StreamKind::Video, 0, "Format_Profile", profile_name);
+    if let Some(level) = av1_level_name(info.level) {
+        fa.set_field(StreamKind::Video, 0, "Format_Level", level);
     }
     fa.set_field(StreamKind::Video, 0, "Format_Info", "AOMedia Video 1");
 
@@ -740,6 +725,16 @@ mod tests {
     }
 
     #[test]
+    fn level_names_follow_annex_a3() {
+        assert_eq!(av1_level_name(0), Some("2.0"));
+        assert_eq!(av1_level_name(2), Some("2.2"));
+        assert_eq!(av1_level_name(13), Some("5.1"));
+        assert_eq!(av1_level_name(19), Some("6.3"));
+        assert_eq!(av1_level_name(23), Some("7.3"));
+        assert_eq!(av1_level_name(31), None);
+    }
+
+    #[test]
     fn rejects_empty_data() {
         let buf = vec![];
         assert!(parse_av1_sequence_header(&buf).is_none());
@@ -764,6 +759,10 @@ mod tests {
         assert!(parse_av1(&mut fa));
         let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
         assert_eq!(v("Format").as_deref(), Some("AV1"));
+        assert_eq!(v("Format_Profile").as_deref(), Some("Main"));
+        // The helper writes frame_width_bits into the same byte as the
+        // level's low bits, so this 320-wide sample signals seq_level_idx 2.
+        assert_eq!(v("Format_Level").as_deref(), Some("2.2"));
         assert!(v("Width").is_some());
         assert!(v("Height").is_some());
     }
@@ -782,6 +781,7 @@ mod tests {
         assert!(info.is_some());
         let info = info.unwrap();
         assert_eq!(info.profile, 0);
+        assert_eq!(info.level, 0);
         assert_eq!(info.width, 320);
         assert_eq!(info.height, 240);
         assert_eq!(info.bit_depth, 8);

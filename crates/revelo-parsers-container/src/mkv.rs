@@ -44,13 +44,11 @@ const CHAPTERS: u64 = 0x1043A770;
 const ATTACHMENTS: u64 = 0x1941A469;
 const EDITION_ENTRY: u64 = 0x45B9;
 const CHAPTER_ATOM: u64 = 0xB6;
-#[allow(dead_code)]
 const CHAPTER_TIME_START: u64 = 0x91;
 #[allow(dead_code)]
 const CHAPTER_TIME_END: u64 = 0x92;
 const CHAPTER_DISPLAY: u64 = 0x80;
 const CHAP_STRING: u64 = 0x85;
-#[allow(dead_code)]
 const CHAP_LANGUAGE: u64 = 0x437C;
 const ATTACHED_FILE: u64 = 0x61A7;
 const FILE_DESCRIPTION: u64 = 0x467E; // File description
@@ -73,6 +71,8 @@ const CRC32: u64 = 0xBF;
 const SEGMENT_UUID: u64 = 0x73A4;
 const TIMECODE_SCALE: u64 = 0x2AD7B1;
 const DURATION: u64 = 0x4489;
+const DATE_UTC: u64 = 0x4461;
+const TITLE: u64 = 0x7BA9;
 const MUXING_APP: u64 = 0x4D80;
 const WRITING_APP: u64 = 0x5741;
 
@@ -83,6 +83,11 @@ const TRACK_UID: u64 = 0x73C5;
 const TRACK_TYPE: u64 = 0x83;
 const FLAG_DEFAULT: u64 = 0x88;
 const FLAG_FORCED: u64 = 0x55AA;
+const FLAG_HEARING_IMPAIRED: u64 = 0x55AB;
+const FLAG_VISUAL_IMPAIRED: u64 = 0x55AC;
+const FLAG_TEXT_DESCRIPTIONS: u64 = 0x55AD;
+const FLAG_ORIGINAL: u64 = 0x55AE;
+const FLAG_COMMENTARY: u64 = 0x55AF;
 const CODEC_ID: u64 = 0x86;
 const CODEC_PRIVATE: u64 = 0x63A2;
 const AUDIO_BLOCK: u64 = 0xE1;
@@ -92,6 +97,7 @@ const BIT_DEPTH: u64 = 0x6264;
 
 // Track entry — additional children.
 const LANGUAGE: u64 = 0x22B59C;
+const LANGUAGE_BCP47: u64 = 0x22B59D;
 const NAME: u64 = 0x536E;
 const DEFAULT_DURATION: u64 = 0x23E383;
 
@@ -204,15 +210,10 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
                         }
                         TAGS => parse_tags(fa, sz, &mut tag_pairs),
                         CHAPTERS => {
-                            let (count, names) = count_chapters(fa, sz);
-                            movie.chapter_names = names;
-                            movie.chapter_count = count;
+                            movie.editions = collect_chapters(fa, sz);
                         }
                         ATTACHMENTS => {
-                            let (count, has_cover, cover_mime) = count_attachments(fa, sz);
-                            movie.has_cover_art = has_cover;
-                            movie.cover_mime_type = cover_mime;
-                            movie.attachment_count = count;
+                            movie.attachments = collect_attachments(fa, sz);
                         }
                         _ => fa.skip_hexa(sz, "segment_child"),
                     }
@@ -247,16 +248,29 @@ pub fn parse_mkv(fa: &mut FileAnalyze) -> bool {
 
 #[derive(Default)]
 struct MovieInfo {
-    chapter_count: usize,
-    chapter_names: Vec<String>,
-    attachment_count: usize,
-    has_cover_art: bool,
-    cover_mime_type: Option<String>,
+    editions: Vec<Vec<ChapterEntry>>,
+    attachments: Vec<AttachmentInfo>,
     segment_uuid: Option<Vec<u8>>,
     timecode_scale: Option<u64>,
     duration_units: Option<f64>,
+    title: Option<String>,
+    /// `YYYY-MM-DD HH:MM:SS UTC`, from DateUTC.
+    encoded_date: Option<String>,
     muxing_app: Option<String>,
     writing_app: Option<String>,
+}
+
+struct ChapterEntry {
+    /// ChapterTimeStart in nanoseconds.
+    start_ns: u64,
+    /// Display text. Empty when the atom has a time and no ChapString.
+    text: String,
+}
+
+struct AttachmentInfo {
+    name: Option<String>,
+    description: Option<String>,
+    mime: Option<String>,
 }
 
 #[derive(Default)]
@@ -269,6 +283,13 @@ struct TrackInfo {
     codec_id: Option<String>,
     /// ISO 639-2 three-letter code from Language element, e.g. "eng".
     language: Option<String>,
+    /// BCP-47 tag from LanguageBCP47 / LanguageIETF, e.g. "pt-BR".
+    language_bcp47: Option<String>,
+    flag_hearing_impaired: bool,
+    flag_visual_impaired: bool,
+    flag_text_descriptions: bool,
+    flag_original: bool,
+    flag_commentary: bool,
     /// Track Name element — track title.
     name: Option<String>,
     /// DefaultDuration in nanoseconds (per-frame for video, per-sample for audio).
@@ -349,6 +370,12 @@ fn parse_segment_info(fa: &mut FileAnalyze, size: usize, movie: &mut MovieInfo) 
         DURATION => {
             movie.duration_units = Some(read_float(fa, sz));
         }
+        DATE_UTC => {
+            movie.encoded_date = read_date_utc(fa, sz);
+        }
+        TITLE => {
+            movie.title = read_string_limited(fa, sz, "title");
+        }
         MUXING_APP => {
             movie.muxing_app = read_string_limited(fa, sz, "muxing_app");
         }
@@ -377,11 +404,19 @@ fn parse_track_entry(fa: &mut FileAnalyze, size: usize, entry: &mut TrackInfo) {
         TRACK_TYPE => entry.track_type = Some(read_uint(fa, sz)),
         FLAG_DEFAULT => entry.flag_default = Some(read_uint(fa, sz) != 0),
         FLAG_FORCED => entry.flag_forced = Some(read_uint(fa, sz) != 0),
+        FLAG_HEARING_IMPAIRED => entry.flag_hearing_impaired = read_uint(fa, sz) != 0,
+        FLAG_VISUAL_IMPAIRED => entry.flag_visual_impaired = read_uint(fa, sz) != 0,
+        FLAG_TEXT_DESCRIPTIONS => entry.flag_text_descriptions = read_uint(fa, sz) != 0,
+        FLAG_ORIGINAL => entry.flag_original = read_uint(fa, sz) != 0,
+        FLAG_COMMENTARY => entry.flag_commentary = read_uint(fa, sz) != 0,
         CODEC_ID => {
             entry.codec_id = read_string_limited(fa, sz, "codec_id");
         }
         LANGUAGE => {
             entry.language = read_string_limited(fa, sz, "language");
+        }
+        LANGUAGE_BCP47 => {
+            entry.language_bcp47 = read_string_limited(fa, sz, "language_bcp47");
         }
         NAME => {
             entry.name = read_string_limited(fa, sz, "track_name");
@@ -422,129 +457,114 @@ fn parse_track_entry(fa: &mut FileAnalyze, size: usize, entry: &mut TrackInfo) {
     });
 }
 
-/// Count chapters by walking the Chapters element.
-fn count_chapters(fa: &mut FileAnalyze, size: usize) -> (usize, Vec<String>) {
-    let mut count = 0usize;
-    let mut names = Vec::new();
-    walk_elements(fa, size, &mut |fa, id, sz, _| {
-        match id {
-            EDITION_ENTRY => {
-                // Walk edition entry to count chapter atoms and extract names
-                let (edition_count, edition_names) = count_edition_chapters(fa, sz);
-                count += edition_count;
-                names.extend(edition_names);
-            }
-            _ => fa.skip_hexa(sz, "chapters_child"),
-        }
+/// One Menu stream per edition. Each chapter with a start time becomes a
+/// `HH:MM:SS.mmm` field on that stream.
+fn collect_chapters(fa: &mut FileAnalyze, size: usize) -> Vec<Vec<ChapterEntry>> {
+    let mut editions = Vec::new();
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        EDITION_ENTRY => editions.push(collect_edition_chapters(fa, sz)),
+        _ => fa.skip_hexa(sz, "chapters_child"),
     });
-    (count, names)
+    editions
 }
 
-fn count_edition_chapters(fa: &mut FileAnalyze, size: usize) -> (usize, Vec<String>) {
-    let mut count = 0usize;
-    let mut names = Vec::new();
-    walk_elements(fa, size, &mut |fa, id, sz, _| {
-        match id {
-            CHAPTER_ATOM => {
-                count += 1;
-                // Extract chapter name from ChapterDisplay
-                if let Some(name) = extract_chapter_name(fa, sz) {
-                    names.push(name);
-                }
-            }
-            _ => fa.skip_hexa(sz, "edition_child"),
-        }
+fn collect_edition_chapters(fa: &mut FileAnalyze, size: usize) -> Vec<ChapterEntry> {
+    let mut chapters = Vec::new();
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        CHAPTER_ATOM => chapters.extend(collect_chapter_atom(fa, sz)),
+        _ => fa.skip_hexa(sz, "edition_child"),
     });
-    (count, names)
+    chapters
 }
 
-/// Extract chapter name from ChapterAtom
-fn extract_chapter_name(fa: &mut FileAnalyze, size: usize) -> Option<String> {
+fn collect_chapter_atom(fa: &mut FileAnalyze, size: usize) -> Vec<ChapterEntry> {
+    let mut start_ns = None;
+    let mut displays = Vec::new();
+    let mut nested = Vec::new();
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        CHAPTER_TIME_START => start_ns = Some(read_uint(fa, sz)),
+        CHAPTER_DISPLAY => {
+            if let Some(text) = chapter_display_text(fa, sz) {
+                displays.push(text);
+            }
+        }
+        CHAPTER_ATOM => nested.extend(collect_chapter_atom(fa, sz)),
+        _ => fa.skip_hexa(sz, "chapteratom_child"),
+    });
+    let mut out = Vec::new();
+    if let Some(start_ns) = start_ns {
+        out.push(ChapterEntry { start_ns, text: displays.join(" - ") });
+    }
+    out.extend(nested);
+    out
+}
+
+/// ChapString, prefixed with the 2-letter language when ChapLanguage is set.
+fn chapter_display_text(fa: &mut FileAnalyze, size: usize) -> Option<String> {
+    let mut lang = None;
     let mut name = None;
-    walk_elements(fa, size, &mut |fa, id, sz, _| {
-        match id {
-            CHAPTER_DISPLAY => {
-                // Look for ChapString inside ChapterDisplay
-                walk_elements(fa, sz, &mut |fa, id2, sz2, _| match id2 {
-                    CHAP_STRING => {
-                        name = read_string_limited(fa, sz2, "chapter_string");
-                    }
-                    _ => fa.skip_hexa(sz2, "chapterdisplay_child"),
-                });
-            }
-            _ => fa.skip_hexa(sz, "chapteratom_child"),
-        }
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        CHAP_STRING => name = read_string_limited(fa, sz, "chapter_string"),
+        CHAP_LANGUAGE => lang = read_string_limited(fa, sz, "chapter_language"),
+        _ => fa.skip_hexa(sz, "chapterdisplay_child"),
     });
-    name
+    let name = name.unwrap_or_default();
+    let mut text = String::new();
+    if let Some(code) = lang.as_deref()
+        && !code.is_empty()
+        && !code.eq_ignore_ascii_case("und")
+    {
+        text.push_str(iso639_emit(code).unwrap_or(code));
+        text.push(':');
+    }
+    text.push_str(&name);
+    if text.is_empty() { None } else { Some(text) }
 }
 
-/// Count attachments by walking the Attachments element.
-fn count_attachments(fa: &mut FileAnalyze, size: usize) -> (usize, bool, Option<String>) {
-    let mut count = 0usize;
-    let mut has_cover = false;
-    let mut cover_mime = None;
-    walk_elements(fa, size, &mut |fa, id, sz, _| {
-        match id {
-            ATTACHED_FILE => {
-                count += 1;
-                // Check if this attachment is cover art
-                let (is_cover, mime) = check_attachment_cover(fa, sz);
-                if is_cover {
-                    has_cover = true;
-                    if cover_mime.is_none() {
-                        cover_mime = mime;
-                    }
-                }
-            }
-            _ => fa.skip_hexa(sz, "attachments_child"),
-        }
+fn collect_attachments(fa: &mut FileAnalyze, size: usize) -> Vec<AttachmentInfo> {
+    let mut attachments = Vec::new();
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        ATTACHED_FILE => attachments.push(read_attachment(fa, sz)),
+        _ => fa.skip_hexa(sz, "attachments_child"),
     });
-    (count, has_cover, cover_mime)
+    attachments
 }
 
-/// Check if attachment is cover art by examining FileName and FileMimeType
-fn check_attachment_cover(fa: &mut FileAnalyze, size: usize) -> (bool, Option<String>) {
-    let mut is_cover = false;
-    let mut mime_type = None;
-    walk_elements(fa, size, &mut |fa, id, sz, _| {
-        match id {
-            FILE_NAME => {
-                if let Some(name) = read_string_limited(fa, sz, "file_name") {
-                    let lower = name.to_lowercase();
-                    // Common cover art filenames
-                    if lower.contains("cover")
-                        || lower.contains("folder")
-                        || lower.contains("album")
-                        || lower.contains("front")
-                        || lower.ends_with(".jpg")
-                        || lower.ends_with(".jpeg")
-                        || lower.ends_with(".png")
-                    {
-                        is_cover = true;
-                    }
-                }
-            }
-            FILE_MIME_TYPE => {
-                if let Some(mime) = read_string_limited(fa, sz, "file_mime_type") {
-                    // Image MIME types indicate potential cover
-                    if mime.starts_with("image/") {
-                        is_cover = true;
-                    }
-                    mime_type = Some(mime);
-                }
-            }
-            FILE_DESCRIPTION => {
-                if let Some(desc) = read_string_limited(fa, sz, "file_description") {
-                    let lower = desc.to_lowercase();
-                    if lower.contains("cover") || lower.contains("poster") {
-                        is_cover = true;
-                    }
-                }
-            }
-            _ => fa.skip_hexa(sz, "attachedfile_child"),
-        }
+fn read_attachment(fa: &mut FileAnalyze, size: usize) -> AttachmentInfo {
+    let mut info = AttachmentInfo { name: None, description: None, mime: None };
+    walk_elements(fa, size, &mut |fa, id, sz, _| match id {
+        FILE_NAME => info.name = read_string_limited(fa, sz, "file_name"),
+        FILE_MIME_TYPE => info.mime = read_string_limited(fa, sz, "file_mime_type"),
+        FILE_DESCRIPTION => info.description = read_string_limited(fa, sz, "file_description"),
+        _ => fa.skip_hexa(sz, "attachedfile_child"),
     });
-    (is_cover, mime_type)
+    info
+}
+
+fn attachment_is_cover(att: &AttachmentInfo) -> bool {
+    if let Some(name) = att.name.as_deref() {
+        let lower = name.to_lowercase();
+        if lower.contains("cover")
+            || lower.contains("folder")
+            || lower.contains("album")
+            || lower.contains("front")
+            || lower.ends_with(".jpg")
+            || lower.ends_with(".jpeg")
+            || lower.ends_with(".png")
+        {
+            return true;
+        }
+    }
+    if att.mime.as_deref().is_some_and(|mime| mime.starts_with("image/")) {
+        return true;
+    }
+    if let Some(desc) = att.description.as_deref() {
+        let lower = desc.to_lowercase();
+        if lower.contains("cover") || lower.contains("poster") {
+            return true;
+        }
+    }
+    false
 }
 
 /// EBML header and segment-level flags describing the Matroska container.
@@ -584,11 +604,19 @@ fn fill_streams(
     if doc_type_version > 0 {
         fa.set_field(StreamKind::General, 0, "Format_Version", doc_type_version.to_string());
     }
+    // MuxingApp is the library (libmatroska). WritingApp is the application
+    // (mkvmerge). MediaInfo stores them that way around.
     if let Some(app) = movie.muxing_app.as_deref() {
-        fa.set_field(StreamKind::General, 0, "Encoded_Application", app);
+        fa.set_field(StreamKind::General, 0, "Encoded_Library", app);
     }
     if let Some(app) = movie.writing_app.as_deref() {
-        fa.set_field(StreamKind::General, 0, "Encoded_Library", app);
+        fa.set_field(StreamKind::General, 0, "Encoded_Application", app);
+    }
+    if let Some(title) = movie.title.as_deref() {
+        fa.set_field(StreamKind::General, 0, "Title", title);
+    }
+    if let Some(date) = movie.encoded_date.as_deref() {
+        fa.set_field(StreamKind::General, 0, "Encoded_Date", date);
     }
     fa.set_field(StreamKind::General, 0, "IsStreamable", if is_streamable { "Yes" } else { "No" });
     if crc32_at_level1 {
@@ -613,6 +641,7 @@ fn fill_streams(
 
     let mut audio_count: u32 = 0;
     let mut video_count: u32 = 0;
+    let mut text_count: u32 = 0;
     let mut stream_order: u32 = 0;
     for track in tracks {
         match track.track_type {
@@ -656,7 +685,12 @@ fn fill_streams(
                         );
                     }
                 }
-                if let Some(bd) = track.audio_bit_depth {
+                // Opus has no PCM bit depth. Muxers still write Audio/BitDepth
+                // as the decoder's float width (32). Copying it reports a
+                // sample depth the codec does not have.
+                if let Some(bd) = track.audio_bit_depth
+                    && track.codec_id.as_deref() != Some("A_OPUS")
+                {
                     fa.set_field(StreamKind::Audio, pos, "BitDepth", bd.to_string());
                 }
 
@@ -855,16 +889,13 @@ fn fill_streams(
                 fa.set_field(StreamKind::Audio, pos, "Delay", "0.000");
                 fa.set_field(StreamKind::Audio, pos, "Delay_Source", "Container");
                 fa.set_field(StreamKind::Audio, pos, "Video_Delay", "0.000");
-                // MKV oracle emits Audio.Duration with 9 fractional
-                // digits (the file's float precision). Store the
-                // pre-formatted string here so the exporter's
-                // ms-to-seconds conversion doesn't touch it.
-                if let Some(s) = duration_seconds {
-                    fa.set_field(StreamKind::Audio, pos, "Duration", format!("{:.9}", s));
+                // Same unit as General.Duration: whole milliseconds. The
+                // exporter turns that into seconds. A pre-formatted seconds
+                // string would skip that conversion and disagree with General.
+                if let Some(ms) = duration_ms {
+                    fa.set_field(StreamKind::Audio, pos, "Duration", ms.to_string());
                 }
-                if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
-                    fa.set_field(StreamKind::Audio, pos, "Language", lang);
-                }
+                emit_language(fa, StreamKind::Audio, pos, track);
                 if let Some(name) = track.name.as_deref() {
                     fa.set_field(StreamKind::Audio, pos, "Title", name);
                 } else if let Some(tag_title) = track_name_from_tags(tag_pairs, track.uid) {
@@ -903,6 +934,18 @@ fn fill_streams(
                         fa.set_field(StreamKind::Audio, pos, "Encoded_Library", v.to_string());
                     }
                 }
+                if fa.retrieve(StreamKind::Audio, pos, "Channels").is_none() {
+                    fa.set_field(StreamKind::Audio, pos, "Channels", "1");
+                    let (positions, layout) = channel_layout(1);
+                    if let Some(p) = positions {
+                        fa.set_field(StreamKind::Audio, pos, "ChannelPositions", p);
+                    }
+                    if let Some(l) = layout {
+                        fa.set_field(StreamKind::Audio, pos, "ChannelLayout", l);
+                    }
+                }
+                apply_service_kind(fa, StreamKind::Audio, pos, track);
+                apply_statistics(fa, StreamKind::Audio, pos, track.uid, tag_pairs);
                 audio_count += 1;
             }
             Some(1) => {
@@ -963,17 +1006,12 @@ fn fill_streams(
                 };
                 match (frame_count, frame_dur_ns) {
                     (Some(fc), Some(ns)) => {
-                        let video_secs = fc as f64 * ns as f64 / 1_000_000_000.0;
-                        fa.set_field(
-                            StreamKind::Video,
-                            pos,
-                            "Duration",
-                            format!("{video_secs:.9}"),
-                        );
+                        let video_ms = (fc as f64 * ns as f64 / 1_000_000.0).round() as u64;
+                        fa.set_field(StreamKind::Video, pos, "Duration", video_ms.to_string());
                     }
                     _ => {
-                        if let Some(s) = duration_seconds {
-                            fa.set_field(StreamKind::Video, pos, "Duration", format!("{s:.9}"));
+                        if let Some(ms) = duration_ms {
+                            fa.set_field(StreamKind::Video, pos, "Duration", ms.to_string());
                         }
                     }
                 }
@@ -1046,33 +1084,9 @@ fn fill_streams(
                         2 => "Professional",
                         _ => "Unknown",
                     };
-                    // Map level index to level string (AV1 spec section A.3)
-                    let level_str = match info.level {
-                        0 => "2.0",
-                        1 => "2.1",
-                        2 => "3.0",
-                        3 => "3.1",
-                        4 => "4.0",
-                        5 => "4.1",
-                        6 => "5.0",
-                        7 => "5.1",
-                        8 => "5.2",
-                        9 => "5.3",
-                        10 => "6.0",
-                        11 => "6.1",
-                        12 => "6.2",
-                        13 => "6.3",
-                        _ => "",
-                    };
-                    if !level_str.is_empty() {
-                        fa.set_field(
-                            StreamKind::Video,
-                            pos,
-                            "Format_Profile",
-                            format!("{}@L{}", profile_name, level_str),
-                        );
-                    } else {
-                        fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
+                    fa.set_field(StreamKind::Video, pos, "Format_Profile", profile_name);
+                    if let Some(level) = revelo_parsers_video::av1_level_name(info.level) {
+                        fa.set_field(StreamKind::Video, pos, "Format_Level", level);
                     }
                     fa.set_field(StreamKind::Video, pos, "Format_Info", "AOMedia Video 1");
                 }
@@ -1455,9 +1469,7 @@ fn fill_streams(
                 } else if let Some(tag_title) = track_name_from_tags(tag_pairs, track.uid) {
                     fa.set_field(StreamKind::Video, pos, "Title", tag_title.as_str());
                 }
-                if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
-                    fa.set_field(StreamKind::Video, pos, "Language", lang);
-                }
+                emit_language(fa, StreamKind::Video, pos, track);
                 let video_default = track.flag_default.unwrap_or(true);
                 fa.set_field(
                     StreamKind::Video,
@@ -1489,7 +1501,47 @@ fn fill_streams(
                         fa.set_field(StreamKind::Video, pos, "Encoded_Library", v.to_string());
                     }
                 }
+                apply_service_kind(fa, StreamKind::Video, pos, track);
+                apply_statistics(fa, StreamKind::Video, pos, track.uid, tag_pairs);
                 video_count += 1;
+            }
+            Some(0x11) => {
+                let pos = fa.stream_prepare(StreamKind::Text);
+                fa.set_field(StreamKind::Text, pos, "StreamOrder", stream_order.to_string());
+                stream_order += 1;
+                if let Some(n) = track.number {
+                    fa.set_field(StreamKind::Text, pos, "ID", n.to_string());
+                }
+                if let Some(uid) = track.uid {
+                    fa.set_field(StreamKind::Text, pos, "UniqueID", uid.to_string());
+                }
+                if let Some(c) = track.codec_id.as_deref() {
+                    if let Some(fmt) = mkv_text_format(c) {
+                        fa.set_field(StreamKind::Text, pos, "Format", fmt);
+                    }
+                    fa.set_field(StreamKind::Text, pos, "CodecID", c);
+                }
+                if let Some(ms) = duration_ms {
+                    fa.set_field(StreamKind::Text, pos, "Duration", ms.to_string());
+                }
+                emit_language(fa, StreamKind::Text, pos, track);
+                if let Some(name) = track.name.as_deref() {
+                    fa.set_field(StreamKind::Text, pos, "Title", name);
+                } else if let Some(tag_title) = track_name_from_tags(tag_pairs, track.uid) {
+                    fa.set_field(StreamKind::Text, pos, "Title", tag_title.as_str());
+                }
+                let text_default = track.flag_default.unwrap_or(true);
+                fa.set_field(
+                    StreamKind::Text,
+                    pos,
+                    "Default",
+                    if text_default { "Yes" } else { "No" },
+                );
+                let forced = track.flag_forced.unwrap_or(false);
+                fa.set_field(StreamKind::Text, pos, "Forced", if forced { "Yes" } else { "No" });
+                apply_service_kind(fa, StreamKind::Text, pos, track);
+                apply_statistics(fa, StreamKind::Text, pos, track.uid, tag_pairs);
+                text_count += 1;
             }
             _ => {}
         }
@@ -1501,14 +1553,20 @@ fn fill_streams(
     if video_count > 0 {
         fa.set_field(StreamKind::General, 0, "VideoCount", video_count.to_string());
     }
-    // Chapter/Menu count
-    if movie.chapter_count > 0 {
-        fa.set_field(StreamKind::General, 0, "MenuCount", "1");
+    if text_count > 0 {
+        fa.set_field(StreamKind::General, 0, "TextCount", text_count.to_string());
     }
-    // Cover art detection
-    if movie.has_cover_art {
+    let menu_count = fill_menus(fa, movie);
+    if menu_count > 0 {
+        fa.set_field(StreamKind::General, 0, "MenuCount", menu_count.to_string());
+    }
+    let image_count = fill_images(fa, movie);
+    if image_count > 0 {
+        fa.set_field(StreamKind::General, 0, "ImageCount", image_count.to_string());
+    }
+    if let Some(cover) = movie.attachments.iter().find(|att| attachment_is_cover(att)) {
         fa.set_field(StreamKind::General, 0, "Cover", "Yes");
-        if let Some(ref mime) = movie.cover_mime_type {
+        if let Some(mime) = cover.mime.as_deref() {
             let cover_type = if mime.contains("png") {
                 "PNG"
             } else if mime.contains("jpeg") || mime.contains("jpg") {
@@ -1517,7 +1575,7 @@ fn fill_streams(
                 "Unknown"
             };
             fa.set_field(StreamKind::General, 0, "Cover_Type", cover_type);
-            fa.set_field(StreamKind::General, 0, "Cover_Mime", mime.clone());
+            fa.set_field(StreamKind::General, 0, "Cover_Mime", mime);
         }
     }
     if let Some(ms) = duration_ms {
@@ -1530,6 +1588,153 @@ fn fill_streams(
             let overall_bitrate = (file_size as f64 * 8000.0 / ms as f64).round() as u64;
             fa.set_field(StreamKind::General, 0, "OverallBitRate", overall_bitrate.to_string());
         }
+    }
+}
+
+fn emit_language(fa: &mut FileAnalyze, kind: StreamKind, pos: usize, track: &TrackInfo) {
+    if let Some(bcp) = track.language_bcp47.as_deref() {
+        let bcp = bcp.trim();
+        if !bcp.is_empty() && !bcp.eq_ignore_ascii_case("und") {
+            fa.set_field(kind, pos, "Language", bcp);
+            return;
+        }
+    }
+    if let Some(lang) = track.language.as_deref().and_then(iso639_emit) {
+        fa.set_field(kind, pos, "Language", lang);
+    }
+}
+
+fn apply_service_kind(fa: &mut FileAnalyze, kind: StreamKind, pos: usize, track: &TrackInfo) {
+    let flags = [
+        (track.flag_hearing_impaired, "HI", "Hearing Impaired"),
+        (track.flag_visual_impaired, "VI", "Visually Impaired"),
+        (track.flag_text_descriptions, "TD", "Text Descriptions"),
+        (track.flag_original, "O", "Original"),
+        (track.flag_commentary, "C", "Commentary"),
+    ];
+    let mut codes = Vec::new();
+    let mut names = Vec::new();
+    for (on, code, name) in flags {
+        if on {
+            codes.push(code);
+            names.push(name);
+        }
+    }
+    if codes.is_empty() {
+        return;
+    }
+    fa.set_field(kind, pos, "ServiceKind", codes.join(" / "));
+    fa.set_field(kind, pos, "ServiceKind_String", names.join(" / "));
+}
+
+fn apply_statistics(
+    fa: &mut FileAnalyze,
+    kind: StreamKind,
+    pos: usize,
+    uid: Option<u64>,
+    tags: &[TagEntry],
+) {
+    let Some(uid) = uid else { return };
+    for tag in tags {
+        if tag.target_track_uid != uid {
+            continue;
+        }
+        let value = tag.value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        if tag.name.eq_ignore_ascii_case("BPS") {
+            fa.force_field(kind, pos, "BitRate", value);
+        } else if tag.name.eq_ignore_ascii_case("NUMBER_OF_BYTES") {
+            fa.force_field(kind, pos, "StreamSize", value);
+        } else if tag.name.eq_ignore_ascii_case("NUMBER_OF_FRAMES") {
+            fa.force_field(kind, pos, "FrameCount", value);
+        } else if tag.name.eq_ignore_ascii_case("DURATION")
+            && let Some(ms) = statistics_duration_ms(value)
+        {
+            fa.force_field(kind, pos, "Duration", ms.to_string());
+        }
+    }
+}
+
+/// mkvmerge statistics duration `HH:MM:SS.nnnnnnnnn` → whole milliseconds.
+fn statistics_duration_ms(value: &str) -> Option<u64> {
+    let mut parts = value.split(':');
+    let hours: f64 = parts.next()?.parse().ok()?;
+    let minutes: f64 = parts.next()?.parse().ok()?;
+    let seconds: f64 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !hours.is_finite() || !minutes.is_finite() || !seconds.is_finite()
+    {
+        return None;
+    }
+    let ms = hours * 3_600_000.0 + minutes * 60_000.0 + seconds * 1000.0;
+    if ms < 0.0 || ms > u64::MAX as f64 {
+        return None;
+    }
+    Some(ms.round() as u64)
+}
+
+fn fill_menus(fa: &mut FileAnalyze, movie: &MovieInfo) -> u32 {
+    let mut count = 0u32;
+    for edition in &movie.editions {
+        if edition.is_empty() {
+            continue;
+        }
+        let pos = fa.stream_prepare(StreamKind::Menu);
+        for chapter in edition {
+            let stamp = chapter_timestamp(chapter.start_ns);
+            let value = if chapter.text.is_empty() { stamp.clone() } else { chapter.text.clone() };
+            fa.set_field(StreamKind::Menu, pos, stamp.as_str(), value);
+        }
+        count += 1;
+    }
+    count
+}
+
+fn chapter_timestamp(ns: u64) -> String {
+    let ms = ns / 1_000_000;
+    let hours = ms / 3_600_000;
+    let minutes = (ms / 60_000) % 60;
+    let seconds = (ms / 1_000) % 60;
+    let millis = ms % 1000;
+    format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}")
+}
+
+fn fill_images(fa: &mut FileAnalyze, movie: &MovieInfo) -> u32 {
+    let mut count = 0u32;
+    for att in &movie.attachments {
+        let Some(fmt) = att.mime.as_deref().and_then(image_format_from_mime) else {
+            continue;
+        };
+        let pos = fa.stream_prepare(StreamKind::Image);
+        fa.set_field(StreamKind::Image, pos, "Format", fmt);
+        if let Some(name) = att.name.as_deref().filter(|n| !n.is_empty()) {
+            fa.set_field(StreamKind::Image, pos, "Title", name);
+        } else if let Some(desc) = att.description.as_deref().filter(|n| !n.is_empty()) {
+            fa.set_field(StreamKind::Image, pos, "Title", desc);
+        }
+        count += 1;
+    }
+    count
+}
+
+fn image_format_from_mime(mime: &str) -> Option<&'static str> {
+    let mime = mime.to_ascii_lowercase();
+    if !mime.starts_with("image/") {
+        return None;
+    }
+    if mime.contains("jpeg") || mime.contains("jpg") {
+        Some("JPEG")
+    } else if mime.contains("png") {
+        Some("PNG")
+    } else if mime.contains("gif") {
+        Some("GIF")
+    } else if mime.contains("bmp") {
+        Some("BMP")
+    } else if mime.contains("webp") {
+        Some("WebP")
+    } else {
+        Some("Image")
     }
 }
 
@@ -1643,21 +1848,18 @@ fn cicp_matrix(idc: u16) -> Option<&'static str> {
 
 fn channel_layout(channels: u16) -> (Option<&'static str>, Option<&'static str>) {
     match channels {
-        1 => (Some("Front: C"), Some("C")),
+        // Matroska mono is "M". Positions stay "Front: C".
+        1 => (Some("Front: C"), Some("M")),
         2 => (Some("Front: L R"), Some("L R")),
+        6 => (Some("Front: L C R, Side: L R, LFE"), Some("L R C LFE Ls Rs")),
         _ => (None, None),
     }
 }
 
-/// Channel-layout strings vary by codec. Vorbis/Opus mono is "M"
-/// (matches oracle for Ogg/WebM); AC-3-style mono uses "C".
 fn channel_layout_for_codec(
     channels: u16,
-    codec_id: &str,
+    _codec_id: &str,
 ) -> (Option<&'static str>, Option<&'static str>) {
-    if matches!(codec_id, "A_OPUS" | "A_VORBIS") && channels == 1 {
-        return (Some("Front: C"), Some("M"));
-    }
     channel_layout(channels)
 }
 
@@ -1686,6 +1888,7 @@ fn mkv_codec_to_format(codec_id: &str) -> Option<&'static str> {
         "A_EAC3" => Some("E-AC-3"),
         "A_DTS" => Some("DTS"),
         "A_FLAC" => Some("FLAC"),
+        "A_TRUEHD" => Some("TrueHD"),
         "A_MPEG/L3" => Some("MPEG Audio"),
         "A_MPEG/L2" => Some("MPEG Audio"),
         "A_PCM/INT/LIT" | "A_PCM/INT/BIG" | "A_PCM/FLOAT/IEEE" => Some("PCM"),
@@ -1696,6 +1899,23 @@ fn mkv_codec_to_format(codec_id: &str) -> Option<&'static str> {
         "V_DOLBYVISION" => Some("Dolby Vision"),
         "V_DOLBYVISION/AVC" => Some("Dolby Vision"),
         "V_DOLBYVISION/HEVC" => Some("Dolby Vision"),
+        _ => None,
+    }
+}
+
+fn mkv_text_format(codec_id: &str) -> Option<&'static str> {
+    match codec_id {
+        "S_TEXT/UTF8" => Some("UTF-8"),
+        "S_TEXT/ASCII" => Some("ASCII"),
+        "S_TEXT/ASS" | "S_ASS" => Some("ASS"),
+        "S_TEXT/SSA" | "S_SSA" => Some("SSA"),
+        "S_TEXT/WEBVTT" => Some("WebVTT"),
+        "S_TEXT/USF" => Some("USF"),
+        "S_HDMV/PGS" => Some("PGS"),
+        "S_HDMV/TEXTST" => Some("TextST"),
+        "S_DVBSUB" => Some("DVB Subtitle"),
+        "S_VOBSUB" => Some("VobSub"),
+        "S_KATE" => Some("Kate"),
         _ => None,
     }
 }
@@ -1743,6 +1963,45 @@ fn read_bytes_limited(
 fn read_string_limited(fa: &mut FileAnalyze, size: usize, skip_label: &str) -> Option<String> {
     let bytes = read_bytes_limited(fa, size, MKV_TEXT_VALUE_LIMIT, skip_label)?;
     Some(strip_nuls(&bytes))
+}
+
+/// DateUTC is a signed big-endian nanosecond offset from 2001-01-01 UTC.
+fn read_date_utc(fa: &mut FileAnalyze, size: usize) -> Option<String> {
+    if size == 0 || size > 8 {
+        fa.skip_hexa(size, "date_utc");
+        return None;
+    }
+    let raw = read_uint(fa, size);
+    let shift = (8 - size) * 8;
+    let ns = ((raw << shift) as i64) >> shift;
+    let secs = ns.div_euclid(1_000_000_000);
+    let unix = secs.checked_add(978_307_200)?;
+    Some(format_unix_utc(unix))
+}
+
+fn format_unix_utc(unix: i64) -> String {
+    let days = unix.div_euclid(86_400);
+    let sod = unix.rem_euclid(86_400) as u32;
+    let (year, month, day) = civil_from_unix_days(days);
+    let hours = sod / 3600;
+    let minutes = (sod % 3600) / 60;
+    let seconds = sod % 60;
+    format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}:{seconds:02} UTC")
+}
+
+/// Howard Hinnant's `civil_from_days`. `days` is days since 1970-01-01.
+fn civil_from_unix_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+    (year as i32, month as u32, day as u32)
 }
 
 fn read_uint(fa: &mut FileAnalyze, size: usize) -> u64 {
@@ -2051,6 +2310,184 @@ mod tests {
     }
 
     #[test]
+    fn opus_does_not_copy_container_bit_depth() {
+        let mut opus = Vec::new();
+        opus.extend(element(&[0xD7], vec![1]));
+        opus.extend(element(&[0x83], vec![2]));
+        opus.extend(element(&[0x86], b"A_OPUS".to_vec()));
+        opus.extend(element(&[0xE1], element(&[0x62, 0x64], vec![32])));
+
+        let mut pcm = Vec::new();
+        pcm.extend(element(&[0xD7], vec![1]));
+        pcm.extend(element(&[0x83], vec![2]));
+        pcm.extend(element(&[0x86], b"A_PCM/INT/LIT".to_vec()));
+        pcm.extend(element(&[0xE1], element(&[0x62, 0x64], vec![24])));
+
+        for (track, expect) in [(opus, None), (pcm, Some("24"))] {
+            let buf = {
+                let mut buf = Vec::new();
+                buf.extend(ebml_header(b"webm"));
+                buf.extend(element(
+                    &[0x18, 0x53, 0x80, 0x67],
+                    element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track)),
+                ));
+                buf
+            };
+            let mut fa = FileAnalyze::new(&buf);
+            assert!(parse_mkv(&mut fa));
+            assert_eq!(
+                fa.retrieve(StreamKind::Audio, 0, "BitDepth")
+                    .map(|z| z.as_str().to_owned())
+                    .as_deref(),
+                expect
+            );
+        }
+    }
+
+    #[test]
+    fn subtitle_track_is_text() {
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![3]));
+        track.extend(element(&[0x83], vec![0x11]));
+        track.extend(element(&[0x86], b"S_TEXT/UTF8".to_vec()));
+
+        let mut buf = Vec::new();
+        buf.extend(ebml_header(b"matroska"));
+        buf.extend(element(
+            &[0x18, 0x53, 0x80, 0x67],
+            element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track)),
+        ));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+        let field = |kind, name: &str| fa.retrieve(kind, 0, name).map(|z| z.as_str().to_owned());
+        assert_eq!(field(StreamKind::General, "TextCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::Text, "Format").as_deref(), Some("UTF-8"));
+        assert_eq!(field(StreamKind::Text, "CodecID").as_deref(), Some("S_TEXT/UTF8"));
+        assert_eq!(field(StreamKind::Text, "ID").as_deref(), Some("3"));
+        assert_eq!(fa.stream_count(StreamKind::Audio), 0);
+        assert_eq!(fa.stream_count(StreamKind::Video), 0);
+    }
+
+    #[test]
+    fn segment_info_chapters_attachments_and_statistics() {
+        let mut info = Vec::new();
+        info.extend(element(&[0x7B, 0xA9], b"Demo".to_vec()));
+        info.extend(element(&[0x44, 0x61], vec![0; 8]));
+        info.extend(element(&[0x4D, 0x80], b"libebml".to_vec()));
+        info.extend(element(&[0x57, 0x41], b"mkvmerge".to_vec()));
+
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![1]));
+        track.extend(element(&[0x73, 0xC5], vec![42]));
+        track.extend(element(&[0x83], vec![2]));
+        track.extend(element(&[0x86], b"A_AAC".to_vec()));
+        track.extend(element(&[0x22, 0xB5, 0x9C], b"eng".to_vec()));
+        track.extend(element(&[0x22, 0xB5, 0x9D], b"pt-BR".to_vec()));
+        track.extend(element(&[0x55, 0xAB], vec![1]));
+        track.extend(element(&[0x55, 0xAF], vec![1]));
+
+        let mut simple = Vec::new();
+        for (name, value) in [
+            ("BPS", "96000"),
+            ("NUMBER_OF_BYTES", "12000"),
+            ("NUMBER_OF_FRAMES", "50"),
+            ("DURATION", "00:00:01.500000000"),
+        ] {
+            let mut tag = Vec::new();
+            tag.extend(element(&[0x45, 0xA3], name.as_bytes().to_vec()));
+            tag.extend(element(&[0x44, 0x87], value.as_bytes().to_vec()));
+            simple.extend(element(&[0x67, 0xC8], tag));
+        }
+        let mut tag = element(&[0x63, 0xC0], element(&[0x63, 0xC5], vec![42]));
+        tag.extend(simple);
+        let tags = element(&[0x12, 0x54, 0xC3, 0x67], element(&[0x73, 0x73], tag));
+
+        let chapter = |ns: u64, name: &[u8]| {
+            let mut atom = Vec::new();
+            atom.extend(element(&[0x91], ns.to_be_bytes().to_vec()));
+            atom.extend(element(&[0x80], element(&[0x85], name.to_vec())));
+            element(&[0xB6], atom)
+        };
+        let mut edition = Vec::new();
+        edition.extend(chapter(0, b"Intro"));
+        edition.extend(chapter(1_500_000_000, b"Next"));
+        let chapters = element(&[0x10, 0x43, 0xA7, 0x70], element(&[0x45, 0xB9], edition));
+
+        let mut attached = Vec::new();
+        attached.extend(element(&[0x46, 0x6E], b"cover.jpg".to_vec()));
+        attached.extend(element(&[0x46, 0x60], b"image/jpeg".to_vec()));
+        let attachments = element(&[0x19, 0x41, 0xA4, 0x69], element(&[0x61, 0xA7], attached));
+
+        let mut segment = Vec::new();
+        segment.extend(element(&[0x15, 0x49, 0xA9, 0x66], info));
+        segment.extend(element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track)));
+        segment.extend(tags);
+        segment.extend(chapters);
+        segment.extend(attachments);
+
+        let mut buf = Vec::new();
+        buf.extend(ebml_header(b"matroska"));
+        buf.extend(element(&[0x18, 0x53, 0x80, 0x67], segment));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+        let field =
+            |kind, pos, name: &str| fa.retrieve(kind, pos, name).map(|z| z.as_str().to_owned());
+        assert_eq!(field(StreamKind::General, 0, "Title").as_deref(), Some("Demo"));
+        assert_eq!(
+            field(StreamKind::General, 0, "Encoded_Date").as_deref(),
+            Some("2001-01-01 00:00:00 UTC")
+        );
+        assert_eq!(field(StreamKind::General, 0, "Encoded_Library").as_deref(), Some("libebml"));
+        assert_eq!(
+            field(StreamKind::General, 0, "Encoded_Application").as_deref(),
+            Some("mkvmerge")
+        );
+        assert_eq!(field(StreamKind::Audio, 0, "Language").as_deref(), Some("pt-BR"));
+        assert_eq!(field(StreamKind::Audio, 0, "Channels").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::Audio, 0, "ChannelLayout").as_deref(), Some("M"));
+        assert_eq!(field(StreamKind::Audio, 0, "ServiceKind").as_deref(), Some("HI / C"));
+        assert_eq!(
+            field(StreamKind::Audio, 0, "ServiceKind_String").as_deref(),
+            Some("Hearing Impaired / Commentary")
+        );
+        assert_eq!(field(StreamKind::Audio, 0, "BitRate").as_deref(), Some("96000"));
+        assert_eq!(field(StreamKind::Audio, 0, "StreamSize").as_deref(), Some("12000"));
+        assert_eq!(field(StreamKind::Audio, 0, "FrameCount").as_deref(), Some("50"));
+        assert_eq!(field(StreamKind::Audio, 0, "Duration").as_deref(), Some("1500"));
+        assert_eq!(field(StreamKind::General, 0, "MenuCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::Menu, 0, "00:00:00.000").as_deref(), Some("Intro"));
+        assert_eq!(field(StreamKind::Menu, 0, "00:00:01.500").as_deref(), Some("Next"));
+        assert_eq!(field(StreamKind::General, 0, "ImageCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::Image, 0, "Format").as_deref(), Some("JPEG"));
+        assert_eq!(field(StreamKind::Image, 0, "Title").as_deref(), Some("cover.jpg"));
+        assert_eq!(field(StreamKind::General, 0, "Cover").as_deref(), Some("Yes"));
+    }
+
+    #[test]
+    fn truehd_track_is_audio() {
+        let mut track = Vec::new();
+        track.extend(element(&[0xD7], vec![1]));
+        track.extend(element(&[0x83], vec![0x02]));
+        track.extend(element(&[0x86], b"A_TRUEHD".to_vec()));
+
+        let mut buf = Vec::new();
+        buf.extend(ebml_header(b"matroska"));
+        buf.extend(element(
+            &[0x18, 0x53, 0x80, 0x67],
+            element(&[0x16, 0x54, 0xAE, 0x6B], element(&[0xAE], track)),
+        ));
+
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_mkv(&mut fa));
+        let field = |kind, name: &str| fa.retrieve(kind, 0, name).map(|z| z.as_str().to_owned());
+        assert_eq!(field(StreamKind::General, "AudioCount").as_deref(), Some("1"));
+        assert_eq!(field(StreamKind::Audio, "Format").as_deref(), Some("TrueHD"));
+        assert_eq!(field(StreamKind::Audio, "CodecID").as_deref(), Some("A_TRUEHD"));
+    }
+
+    #[test]
     fn rejects_non_ebml_buffer() {
         let mut fa = FileAnalyze::new(b"NOT a Matroska file at all");
         assert!(!parse_mkv(&mut fa));
@@ -2205,7 +2642,7 @@ mod tests {
         assert_eq!(v("FrameRate").as_deref(), Some("25.000"));
         assert_eq!(v("FrameRate_Num").as_deref(), Some("25"));
         assert_eq!(v("FrameRate_Den").as_deref(), Some("1"));
-        assert_eq!(v("Duration").as_deref(), Some("2.000000000"));
+        assert_eq!(v("Duration").as_deref(), Some("2000"));
         assert_eq!(v("Delay").as_deref(), Some("0.000"));
         // Colour source labels match MediaInfoLib for VP9.
         assert_eq!(v("colour_description_present_Source").as_deref(), Some("Container"));

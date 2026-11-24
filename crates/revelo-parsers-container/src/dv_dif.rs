@@ -44,8 +44,27 @@ pub fn parse_dv_dif(fa: &mut FileAnalyze) -> bool {
         return false;
     }
 
+    // DSF is bit 7 of header byte 3. 0 is 525/60 (720×480, 30000/1001);
+    // 1 is 625/50 (720×576, 25 fps). APT (byte 4) selects the SMPTE variant
+    // and does not change those raster sizes. Copy it before `fa` is
+    // borrowed mutably below.
+    let dsf = (buf[3] & 0x80) != 0;
+
     fa.stream_prepare(StreamKind::General);
     fa.force_field(StreamKind::General, 0, "Format", "DV");
+    let (width, height, rate, num, den) = if dsf {
+        (720u32, 576u32, "25.000", 25u32, 1u32)
+    } else {
+        (720, 480, "29.970", 30000, 1001)
+    };
+    let pos = fa.stream_prepare(StreamKind::Video);
+    fa.set_field(StreamKind::Video, pos, "Format", "DV");
+    fa.set_field(StreamKind::Video, pos, "Width", width.to_string());
+    fa.set_field(StreamKind::Video, pos, "Height", height.to_string());
+    fa.set_field(StreamKind::Video, pos, "FrameRate", rate);
+    fa.set_field(StreamKind::Video, pos, "FrameRate_Num", num.to_string());
+    fa.set_field(StreamKind::Video, pos, "FrameRate_Den", den.to_string());
+    fa.set_field(StreamKind::General, 0, "VideoCount", "1");
     true
 }
 
@@ -118,6 +137,12 @@ mod tests {
             fa.retrieve(StreamKind::General, 0, "Format").map(|z| z.as_str().to_owned()),
             Some("DV".to_owned())
         );
+        // build_dv_sync leaves header byte 3 clear, so DSF is 525/60.
+        let v = |k: &str| fa.retrieve(StreamKind::Video, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(v("Format").as_deref(), Some("DV"));
+        assert_eq!(v("Width").as_deref(), Some("720"));
+        assert_eq!(v("Height").as_deref(), Some("480"));
+        assert_eq!(v("FrameRate").as_deref(), Some("29.970"));
     }
 
     #[test]

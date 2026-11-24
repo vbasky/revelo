@@ -100,7 +100,7 @@ pub mod mpeg4v;
 pub use afd_bar_data::parse_afd_bar_data;
 pub use aic::parse_aic;
 pub use apv::parse_apv;
-pub use av1::{Av1Info, parse_av1, parse_av1_from_codec_config};
+pub use av1::{Av1Info, av1_level_name, parse_av1, parse_av1_from_codec_config};
 pub use avc::{
     AvcInfo, EncoderInfo, extract_encoder_from_avc_sei_nalus, gop_detect, parse_avc,
     parse_sps as parse_avc_sps, parse_x264_style_encoder,

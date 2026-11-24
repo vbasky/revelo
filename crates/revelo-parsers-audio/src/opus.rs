@@ -6,7 +6,7 @@ const OPUS_CHANNEL_POSITIONS: [&str; 8] = [
     "Front: L C R",
     "Front: L R,   Rear: L R",
     "Front: L C R, Back: L R",
-    "Front: L C R, Back: L R, LFE",
+    "Front: L C R, Side: L R, LFE",
     "Front: L C R, Side: L R, Back: C, LFE",
     "Front: L C R, Side: L R, Back: L R, LFE",
 ];
@@ -17,7 +17,7 @@ const OPUS_CHANNEL_LAYOUT: [&str; 8] = [
     "L R C",
     "L R BL BR",
     "L R BL BR LFE",
-    "L R C BL BR LFE",
+    "L R C LFE Ls Rs",
     "L R C SL SR BC LFE",
     "L R C SL SR BL BR LFE",
 ];

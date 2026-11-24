@@ -29,6 +29,7 @@ use revelo_core::{FileAnalyze, Reader, StreamKind};
 
 const MAGIC_CAFF: u32 = u32::from_be_bytes(*b"caff");
 const CHUNK_DESC: u32 = u32::from_be_bytes(*b"desc");
+const CHUNK_DATA: u32 = u32::from_be_bytes(*b"data");
 
 #[derive(Debug, Default)]
 struct AudioDesc {
@@ -66,6 +67,7 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
     r.be_u16("FileFlags")?;
 
     let mut desc: Option<AudioDesc> = None;
+    let mut data_bytes: Option<u64> = None;
 
     // Only Version 1 is supported by MediaInfoLib; for other versions we
     // still emit General.Format=CAF and stop parsing chunks.
@@ -85,6 +87,15 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
                 if effective > 32 {
                     r.skip(effective - 32)?; // Extension
                 }
+            } else if chunk_type == CHUNK_DATA {
+                // The first 4 bytes of a data chunk are the edit count.
+                let audio = effective.saturating_sub(4);
+                if audio > 0 {
+                    data_bytes = Some(audio as u64);
+                }
+                if effective > 0 {
+                    r.skip(effective)?;
+                }
             } else if effective > 0 {
                 r.skip(effective)?; // Chunk
             }
@@ -99,7 +110,7 @@ fn parse(fa: &mut FileAnalyze) -> Option<()> {
 
     r.stream_prepare(StreamKind::Audio);
     if let Some(d) = desc {
-        fill_audio(r, &d);
+        fill_audio(r, &d, data_bytes);
     }
     r.set_field(StreamKind::General, 0, "AudioCount", "1");
     Some(())
@@ -124,7 +135,7 @@ fn parse_desc(r: &mut Reader<'_, '_>) -> Option<AudioDesc> {
     })
 }
 
-fn fill_audio(r: &mut Reader<'_, '_>, d: &AudioDesc) {
+fn fill_audio(r: &mut Reader<'_, '_>, d: &AudioDesc, data_bytes: Option<u64>) {
     // FormatID is a 4-character codec tag (e.g. "lpcm", "aac ", "alac").
     // MediaInfoLib runs it through CodecID_Fill; we emit the raw FourCC
     // here and let downstream codec-id mapping (when added) refine it.
@@ -154,10 +165,27 @@ fn fill_audio(r: &mut Reader<'_, '_>, d: &AudioDesc) {
             d.sample_rate * (d.bytes_per_packet as f64) * 8.0 / (d.frames_per_packet as f64);
         r.set_field(StreamKind::Audio, 0, "BitRate", (bitrate.round() as u64).to_string());
     }
+    if let Some(bytes) = data_bytes
+        && d.bytes_per_packet > 0
+        && d.frames_per_packet > 0
+        && d.sample_rate > 0.0
+    {
+        let packets = bytes / u64::from(d.bytes_per_packet);
+        let frames = packets * u64::from(d.frames_per_packet);
+        let rate = d.sample_rate.round() as u64;
+        if rate > 0 && frames > 0 {
+            let dur_ms = (frames * 1000 + rate / 2) / rate;
+            r.set_field(StreamKind::Audio, 0, "Duration", dur_ms.to_string());
+            r.set_field(StreamKind::General, 0, "Duration", dur_ms.to_string());
+        }
+    }
 }
 
 fn format_id_to_string(id: u32) -> String {
     let bytes = id.to_be_bytes();
+    if &bytes == b"alac" {
+        return "ALAC".to_string();
+    }
     if bytes.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
         // Trim trailing spaces — "aac " becomes "aac".
         String::from_utf8_lossy(&bytes).trim_end().to_string()
@@ -212,6 +240,15 @@ mod tests {
         assert_eq!(a("BitDepth").as_deref(), Some("16"));
         // BitRate = 48000 * 2 * 8 / 1 = 768000.
         assert_eq!(a("BitRate").as_deref(), Some("768000"));
+    }
+
+    #[test]
+    fn alac_format_is_the_codec_name() {
+        let buf = make_caf(b"alac", 44100.0, 2, 16);
+        let mut fa = FileAnalyze::new(&buf);
+        assert!(parse_caf(&mut fa));
+        let a = |k: &str| fa.retrieve(StreamKind::Audio, 0, k).map(|z| z.as_str().to_owned());
+        assert_eq!(a("Format").as_deref(), Some("ALAC"));
     }
 
     #[test]
