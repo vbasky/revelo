@@ -9,8 +9,8 @@
 //!   \n
 //!
 //! Detection accepts an optional UTF-8 BOM and either LF or CRLF line endings.
-//! Event and duration counts read at most [`CUE_SCAN_LIMIT`] bytes. The reject
-//! path stops at [`DETECT_WINDOW`] so a large non-SubRip file is not scanned.
+//! Event and duration counts read at most 1 MiB. The reject path stops after
+//! 512 bytes so a large non-SubRip file is not scanned.
 
 use revelo_core::{FileAnalyze, StreamKind};
 

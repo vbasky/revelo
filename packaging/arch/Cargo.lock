@@ -854,7 +854,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "revelo"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "criterion",
  "memmap2",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-cdylib"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-dispatcher",
@@ -890,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-cli"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "clap",
  "glob",
@@ -904,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-core"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "memmap2",
  "revelo-util",
@@ -912,7 +912,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-diff"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-dispatcher",
@@ -922,7 +922,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-dispatcher"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "rayon",
  "revelo-core",
@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-exif-diff"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-dispatcher",
@@ -946,11 +946,11 @@ dependencies = [
 
 [[package]]
 name = "revelo-exiftool-tables"
-version = "0.5.6"
+version = "0.5.7"
 
 [[package]]
 name = "revelo-export"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-util",
@@ -958,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-parsers-archive"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-util",
@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-parsers-audio"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-util",
@@ -974,16 +974,17 @@ dependencies = [
 
 [[package]]
 name = "revelo-parsers-container"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
+ "revelo-parsers-audio",
  "revelo-parsers-video",
  "revelo-util",
 ]
 
 [[package]]
 name = "revelo-parsers-image"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-util",
@@ -991,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-parsers-tag"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "flate2",
  "revelo-core",
@@ -1001,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-parsers-text"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-util",
@@ -1009,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "revelo-parsers-video"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
  "revelo-util",
@@ -1017,18 +1018,18 @@ dependencies = [
 
 [[package]]
 name = "revelo-reader"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo-core",
 ]
 
 [[package]]
 name = "revelo-util"
-version = "0.5.6"
+version = "0.5.7"
 
 [[package]]
 name = "revelo-wasm"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "revelo",
  "serde",

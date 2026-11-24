@@ -9,7 +9,7 @@ on:
         description: Git tag whose GitHub Release should receive the package
         required: true
         type: string
-        default: v0.5.6
+        default: v0.5.7
 
 permissions:
   contents: write
